@@ -730,6 +730,7 @@ impl GoalKindPlannerExt for GoalKind {
             }
         }
 
+        let actor = state.snapshot().actor();
         if let Some(payload) = payload_override_from_affordance(self, affordance_payload)? {
             if semantics.op_kind == PlannerOpKind::ConsultRecord {
                 let Some(record) = payload.as_consult_record().map(|consult| consult.record) else {
@@ -745,10 +746,29 @@ impl GoalKindPlannerExt for GoalKind {
                     return Err(GoalPayloadOverrideError::UnsupportedGoal);
                 }
             }
+            if let Some(ask) = payload.as_ask_witness() {
+                let cooldown_key = worldwake_core::AskWitnessMemoryKey {
+                    counterparty: ask.target,
+                    topic_entity: ask.topic_entity,
+                    topic_commodity: ask.topic_commodity,
+                };
+                if state.ask_witness_memory(actor, &cooldown_key).is_some() {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                }
+            }
+            if let Some(ask) = payload.as_ask_about_person() {
+                let cooldown_key = worldwake_core::AskWitnessMemoryKey {
+                    counterparty: ask.target,
+                    topic_entity: Some(ask.subject),
+                    topic_commodity: None,
+                };
+                if state.ask_witness_memory(actor, &cooldown_key).is_some() {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                }
+            }
             return Ok(Some(payload));
         }
 
-        let actor = state.snapshot().actor();
         if political_step_blocked_by_unknown_vacancy(self, state, semantics.op_kind) {
             return Err(GoalPayloadOverrideError::UnsupportedGoal);
         }
@@ -862,15 +882,23 @@ impl GoalKindPlannerExt for GoalKind {
             },
             PlannerOpKind::AskWitness => match self {
                 GoalKind::AskWitness { witness, topic } => {
+                    let actor = state.snapshot().actor();
                     let Some(target_witness) = targets.first().copied() else {
                         return Err(GoalPayloadOverrideError::MissingTarget);
                     };
                     if target_witness != *witness {
                         return Err(GoalPayloadOverrideError::UnsupportedGoal);
                     }
-                    Ok(Some(ActionPayload::AskWitness(
-                        ask_witness_payload_for_topic(*witness, *topic)?,
-                    )))
+                    let payload = ask_witness_payload_for_topic(*witness, *topic)?;
+                    let cooldown_key = worldwake_core::AskWitnessMemoryKey {
+                        counterparty: payload.target,
+                        topic_entity: payload.topic_entity,
+                        topic_commodity: payload.topic_commodity,
+                    };
+                    if state.ask_witness_memory(actor, &cooldown_key).is_some() {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                    }
+                    Ok(Some(ActionPayload::AskWitness(payload)))
                 }
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
@@ -898,6 +926,14 @@ impl GoalKindPlannerExt for GoalKind {
                     let Some(&target) = targets.first() else {
                         return Err(GoalPayloadOverrideError::UnsupportedGoal);
                     };
+                    let cooldown_key = worldwake_core::AskWitnessMemoryKey {
+                        counterparty: target,
+                        topic_entity: Some(*subject),
+                        topic_commodity: None,
+                    };
+                    if state.ask_witness_memory(actor, &cooldown_key).is_some() {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                    }
                     Ok(Some(ActionPayload::AskAboutPerson(
                         AskAboutPersonActionPayload {
                             target,
@@ -2511,21 +2547,21 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::ActionDomain;
     use worldwake_core::{
-        AcquisitionQuantity, ActionDefId, ArtifactActionability, ArtifactCredibility,
-        ArtifactExistence, ArtifactKind, ArtifactLegalEffect, ArtifactPostingContext,
-        ArtifactVisibility, AskWitnessMemory, AskWitnessMemoryKey, BelievedArtifactState,
-        BelievedBountyTerms, BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory,
-        BodyCostPerTick, BountyTarget, BountyTerms, CloseCause, CognitiveProfile, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
-        DeprivationExposure, DisposalProfile, DriveEscalationProfile, DriveThresholds, EntityId,
-        EntityKind, EpistemicDispositionProfile, EpistemicSubject, ExecutionBudget,
-        HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
-        InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, NoticeTopic, OfficeData, PerceptionSource, Permille, ProofRequirement,
-        PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind, ResourceSource,
-        RewardSource, SocialObservation, SocialObservationDetail, SuccessionLaw, TellTopic, Tick,
-        TickRange, TradeDispositionProfile, UniqueItemKind, ViolationId, VisibilitySpec,
-        WashBasinState, WorkstationTag, Wound,
+        AcquisitionQuantity, ActionDefId, AgentBeliefStore, ArtifactActionability,
+        ArtifactCredibility, ArtifactExistence, ArtifactKind, ArtifactLegalEffect,
+        ArtifactPostingContext, ArtifactVisibility, AskWitnessMemory, AskWitnessMemoryKey,
+        BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
+        BelievedInstitutionalClaim, BlockerMemory, BodyCostPerTick, BountyTarget, BountyTerms,
+        CloseCause, CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
+        DemandObservation, DemandObservationReason, DeprivationExposure, DisposalProfile,
+        DriveEscalationProfile, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
+        EpistemicSubject, ExecutionBudget, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData, PerceptionSource, Permille,
+        ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind,
+        ResourceSource, RewardSource, SocialObservation, SocialObservationDetail, SuccessionLaw,
+        TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, ViolationId,
+        VisibilitySpec, WashBasinState, WorkstationTag, Wound,
         test_utils::{entity_id, sample_trade_disposition_profile},
     };
 
@@ -3586,6 +3622,7 @@ mod tests {
         consultation_speed_factors: BTreeMap<EntityId, Permille>,
         record_data: BTreeMap<EntityId, worldwake_core::RecordData>,
         known_entity_beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
+        belief_stores: BTreeMap<EntityId, AgentBeliefStore>,
         known_institutional_beliefs: BTreeMap<EntityId, Vec<BelievedInstitutionalClaim>>,
         epistemic_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
         ask_witness_memories: BTreeMap<(EntityId, AskWitnessMemoryKey), AskWitnessMemory>,
@@ -3639,6 +3676,7 @@ mod tests {
                 consultation_speed_factors: BTreeMap::new(),
                 record_data: BTreeMap::new(),
                 known_entity_beliefs: BTreeMap::new(),
+                belief_stores: BTreeMap::new(),
                 known_institutional_beliefs: BTreeMap::new(),
                 epistemic_profiles: BTreeMap::new(),
                 ask_witness_memories: BTreeMap::new(),
@@ -3784,6 +3822,10 @@ mod tests {
                 .get(&agent)
                 .cloned()
                 .unwrap_or_default()
+        }
+
+        fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
+            self.belief_stores.get(&agent)
         }
 
         fn belief_confidence_policy(
@@ -4956,6 +4998,94 @@ mod tests {
         };
         let def = ActionDef {
             id: ActionDefId(27),
+            name: "ask_about_person".to_string(),
+            domain: ActionDomain::Epistemic,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::AskAboutPerson,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            synthetic_cargo: PlannerSyntheticCargo::None,
+        };
+
+        let result = goal.build_payload_override(None, &state, &[witness], &def, &semantics);
+
+        assert_eq!(result, Err(GoalPayloadOverrideError::UnsupportedGoal));
+    }
+
+    #[test]
+    fn search_for_missing_rejects_ask_about_person_payload_during_ask_memory_retention() {
+        let actor = entity(1);
+        let place = entity(10);
+        let remote = entity(11);
+        let witness = entity(12);
+        let subject = entity(13);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, place, remote, witness, subject]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(witness, EntityKind::Agent);
+        view.kinds.insert(subject, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.kinds.insert(remote, EntityKind::Place);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(witness, place);
+        view.effective_places.insert(subject, remote);
+        view.entities_at.insert(place, vec![actor, witness]);
+        view.entities_at.insert(remote, vec![subject]);
+        view.epistemic_profiles.insert(
+            actor,
+            EpistemicDispositionProfile {
+                ask_memory_retention_ticks: 10,
+                ..EpistemicDispositionProfile::default()
+            },
+        );
+        let memory_key = AskWitnessMemoryKey {
+            counterparty: witness,
+            topic_entity: Some(subject),
+            topic_commodity: None,
+        };
+        let mut store = AgentBeliefStore::new();
+        store.record_asked_witness(
+            memory_key,
+            AskWitnessMemory {
+                asked_tick: Tick(4),
+            },
+        );
+        view.belief_stores.insert(actor, store);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([witness, subject]),
+            &BTreeSet::from([place, remote]),
+            6,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::SearchForMissing {
+            subject,
+            last_seen: Some(remote),
+        };
+        let def = ActionDef {
+            id: ActionDefId(29),
             name: "ask_about_person".to_string(),
             domain: ActionDomain::Epistemic,
             actor_constraints: Vec::new(),

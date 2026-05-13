@@ -1,4 +1,4 @@
-//! Golden coverage for S139 AskWitness epistemic sensing.
+//! Golden coverage for S139 `AskWitness` epistemic sensing.
 
 mod golden_harness;
 

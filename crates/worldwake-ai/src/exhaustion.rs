@@ -266,8 +266,11 @@ fn position_and_target_dead_conditions(
     let target = match *goal {
         GoalKind::LootCorpse { corpse } | GoalKind::BuryCorpse { corpse, .. } => corpse,
         GoalKind::ShareBelief { listener, .. } => listener,
+        GoalKind::AskWitness { witness, .. } => witness,
         GoalKind::Accuse { accused, .. } => accused,
-        _ => unreachable!("PositionAndTargetDead strategy requires corpse, share, or accuse goal"),
+        _ => unreachable!(
+            "PositionAndTargetDead strategy requires corpse, share, ask-witness, or accuse goal"
+        ),
     };
     conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
     conditions.insert(ExhaustionInvalidationCondition::TargetDead(target));

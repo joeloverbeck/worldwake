@@ -1736,6 +1736,26 @@ impl SocialBeliefView for PlanningState<'_> {
             None => RecipientKnowledgeStatus::UnknownToSpeaker,
         })
     }
+
+    fn ask_witness_memory(
+        &self,
+        actor: EntityId,
+        key: &worldwake_core::AskWitnessMemoryKey,
+    ) -> Option<worldwake_core::AskWitnessMemory> {
+        if actor != self.snapshot.actor() {
+            return None;
+        }
+
+        let profile = self.epistemic_disposition_profile(actor)?;
+        self.snapshot
+            .actor_belief_store
+            .ask_witness_memory(
+                key,
+                self.snapshot.current_tick,
+                profile.ask_memory_retention_ticks,
+            )
+            .cloned()
+    }
 }
 
 impl PoliticalBeliefView for PlanningState<'_> {
