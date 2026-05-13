@@ -13,10 +13,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
     AcquisitionQuantity, ActionDefId, ArtifactActionability, ArtifactKind, BountyTarget,
-    CommodityKind, CommodityPurpose, EntityId, EpistemicSubject, ExecutionBudget, GoalKey,
-    GoalKind, InstitutionalBeliefRead, LoadUnits, MultiplierPermille, OUTDOOR_RELIEF_TAGS,
-    PerceptionSource, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw, TellTopic, Tick,
-    WorkstationTag, belief_confidence,
+    CommodityKind, CommodityPurpose, EntityId, EpistemicDispositionProfile, EpistemicSubject,
+    ExecutionBudget, GoalKey, GoalKind, InstitutionalBeliefRead, LoadUnits, MultiplierPermille,
+    OUTDOOR_RELIEF_TAGS, PerceptionSource, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw,
+    TellTopic, Tick, WorkstationTag, belief_confidence,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload,
@@ -127,6 +127,16 @@ fn ask_witness_payload_matches_subject(
             commodity, source, ..
         } => payload.topic_entity == Some(source) && payload.topic_commodity == Some(commodity),
     }
+}
+
+fn report_is_fresh_enough_for_witness_preference(
+    staleness_ticks: u64,
+    profile: &EpistemicDispositionProfile,
+    confidence_policy: &worldwake_core::BeliefConfidencePolicy,
+) -> bool {
+    let staleness_penalty = u64::from(confidence_policy.staleness_penalty_per_tick.value());
+    let freshness_budget = u64::from(profile.witness_recency_preference.value());
+    staleness_ticks.saturating_mul(staleness_penalty) <= freshness_budget
 }
 
 pub(crate) fn epistemic_subject_for_belief(
@@ -1741,11 +1751,15 @@ fn ask_witness_goal_satisfied(
             let staleness_ticks = current_tick
                 .0
                 .saturating_sub(belief.last_observed_tick().unwrap_or(Tick(0)).0);
-            // TODO(S139EPISENSUB-002): add the witness_recency_preference freshness
-            // refinement once that profile field lands. Until then, the existing
-            // confidence threshold is the active satisfaction gate.
-            belief_confidence(&belief.source, staleness_ticks, &confidence_policy)
-                >= profile.stale_evidence_barrier_threshold
+            let confidence_satisfies =
+                belief_confidence(&belief.source, staleness_ticks, &confidence_policy)
+                    >= profile.stale_evidence_barrier_threshold;
+            let freshness_satisfies = report_is_fresh_enough_for_witness_preference(
+                staleness_ticks,
+                &profile,
+                &confidence_policy,
+            );
+            confidence_satisfies || freshness_satisfies
         })
 }
 
@@ -4698,14 +4712,18 @@ mod tests {
         );
     }
 
-    #[test]
-    fn ask_witness_goal_is_satisfied_by_matching_report_above_threshold() {
+    fn ask_witness_goal_satisfied_with_report_age(
+        staleness_ticks: u64,
+        profile: EpistemicDispositionProfile,
+    ) -> bool {
         let actor = entity(1);
         let witness = entity(2);
         let subject = entity(3);
         let place = entity(10);
+        let current_tick = Tick(100);
+        let observed_tick = Tick(current_tick.0.saturating_sub(staleness_ticks));
         let mut view = TestBeliefView {
-            current_tick: Tick(1),
+            current_tick,
             ..Default::default()
         };
         view.alive.extend([actor, witness, subject, place]);
@@ -4716,10 +4734,9 @@ mod tests {
         view.effective_places.insert(actor, place);
         view.effective_places.insert(witness, place);
         view.entities_at.insert(place, vec![actor, witness]);
-        view.epistemic_profiles
-            .insert(actor, EpistemicDispositionProfile::default());
+        view.epistemic_profiles.insert(actor, profile);
         let mut belief = BelievedEntityState::single_observation_defaults(
-            Tick(1),
+            observed_tick,
             PerceptionSource::Report {
                 from: witness,
                 chain_len: 1,
@@ -4743,7 +4760,43 @@ mod tests {
             topic: TellTopic::EntityBelief { subject },
         };
 
-        assert!(goal.is_satisfied(&state));
+        goal.is_satisfied(&state)
+    }
+
+    #[test]
+    fn ask_witness_goal_is_satisfied_by_recent_below_threshold_report() {
+        let profile = EpistemicDispositionProfile {
+            stale_evidence_barrier_threshold: pm(400),
+            witness_query_duration_ticks: NonZeroU32::new(2).unwrap(),
+            ask_memory_retention_ticks: 12,
+            witness_recency_preference: pm(500),
+        };
+
+        assert!(ask_witness_goal_satisfied_with_report_age(35, profile));
+    }
+
+    #[test]
+    fn ask_witness_goal_rejects_stale_below_threshold_report() {
+        let profile = EpistemicDispositionProfile {
+            stale_evidence_barrier_threshold: pm(400),
+            witness_query_duration_ticks: NonZeroU32::new(2).unwrap(),
+            ask_memory_retention_ticks: 12,
+            witness_recency_preference: pm(500),
+        };
+
+        assert!(!ask_witness_goal_satisfied_with_report_age(42, profile));
+    }
+
+    #[test]
+    fn ask_witness_goal_is_satisfied_by_matching_report_above_threshold() {
+        let profile = EpistemicDispositionProfile {
+            stale_evidence_barrier_threshold: pm(200),
+            witness_query_duration_ticks: NonZeroU32::new(2).unwrap(),
+            ask_memory_retention_ticks: 12,
+            witness_recency_preference: pm(100),
+        };
+
+        assert!(ask_witness_goal_satisfied_with_report_age(42, profile));
     }
 
     #[test]

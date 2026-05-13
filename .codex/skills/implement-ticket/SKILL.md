@@ -292,6 +292,8 @@ When a shared serialized-surface ticket widens a schema, payload, enum, or savea
 
 Load `references/closeout.md` unless Step 0 classified the ticket as a clear small/local fast path and `references/ticket-classification.md` already covers the final ticket truthing, stale-scan, hygiene, and status requirements for the landed diff.
 
+Hard stop before the status flip: do not set `Status: COMPLETED` until `python3 .codex/skills/implement-ticket/scripts/check_closeout.py <ticket-path>` has passed on the final result-tense closeout prose, unless using the explicit same-patch exception from the Mandatory Closeout Checklist.
+
 If final edits happen after broad verification, classify the freshness boundary before reporting completion: code, generated artifact, scenario, or executable-proof edits require rerunning the relevant broad or targeted executable checks; non-generated ticket/spec Markdown edits normally require `git diff --check` plus any targeted stale-claim scans. Record which broad gates were pre-final-edit and which post-edit checks prove the final diff.
 After final ticket/spec Markdown edits made after executable verification, run `git diff --check` or explicitly record why it was not run before reporting completion.
 
