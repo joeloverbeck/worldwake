@@ -619,7 +619,7 @@ S136 (completed, archived)
 - [x] `apply_hypothetical_transition` removed; conformance test reshaped to coverage assertions over `EffectSchema`
 - [x] `max_snapshot_entities_per_place` removed; planner snapshot reads from `observation_budget`-truncated belief observations only
 - [x] S136 always-on decision payload extension landed: rejected-goal dimensions, failure-path `decisive_*` refs, frame assumptions with step provenance, observer summaries, replay/save-load coverage, golden payload-shape coverage, and payload-size soak enforcement
-- [ ] Plan repair golden shows ≥30% reduction in full-replan triggers vs pre-S137 baseline on `survival-baseline.ron`
+- [ ] Plan repair golden shows ≥30% reduction in full-replan triggers vs pre-S137 baseline on `survival-baseline.ron` or an explicitly corrected Phase 11 witness. `S137PLACAULIN-010` landed substrate goldens but proved the current survival-baseline replay still emits `ReplanTriggered=82` and `RepairApplied=0`; `tickets/S137PLACAULIN-012.md` owns the remaining gate diagnosis and landing.
 - [x] Opportunity compiler goldens prove profile/risk salience, trace/load carriage, effect-schema index miss behavior, learned-memory damping, deterministic replay hashing, and compiler-load bounds
 - [x] S140 multi-axis artifact lifecycle core goldens prove the five axis paths, including source-backed legal-effect suspension/restoration and bounded source-backed credibility refutation; full Scenario G justice/witness/case-chain coverage remains owned outside S140.
 - [x] Motive-source ranking regression: single-source behavior remains stable under existing goldens, and multi-source offers prove contribution sums through dedicated S141 tests

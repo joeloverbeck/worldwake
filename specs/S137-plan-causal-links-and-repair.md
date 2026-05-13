@@ -43,7 +43,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 4. **Typed `RepairKind` set (5 variants).** `RebindTarget`, `ReplaceProvider`, `InsertVerification`, `DowngradeToProgressBarrier`, `Abandon`. All five preserve a non-trivial prefix except `Abandon`, which surrenders. `SubstituteMethodBranch` is deferred to Phase 12 with HTN methods; not introduced in S137. The migration absorbs the existing 4 variants per the mapping in Deliverables D8.
 5. **Single-truth clearing condition.** The repair search consults `DiscrepancyEntry.clearing_condition` (the existing per-instance `DiscrepancyClearing` value populated at discrepancy-record time) to decide whether the broken link is repairable in place or must be replanned around. No per-variant constant template is added — that would create dual representation (FND-28).
 6. **Repair memory feedback (single-key migration).** `RepairMemory` migrates from `BTreeMap<RepairKey, RepairEntry>` to `BTreeMap<BreachSignature, RepairEntry>`, where `BreachSignature` captures the invalidator tag, step target, and goal key. `RepairEntry` gains direct discriminators `kind: RepairKind` and `succeeded: bool`. The repair search consults this memory to skip recently-failed `RepairKind` variants for the same breach signature. The migration is single-truth; no parallel `successful_kinds`/`failed_kinds` collections coexist with the existing `repairs` field.
-7. **Determinism.** Repair attempts run in a fixed `RepairKind` order (declared `Ord` derive sequence); ties resolve by `BTreeMap`-stable iteration over candidate provider steps. `BTreeMap`/`BTreeSet` only in authoritative state per CLAUDE.md determinism invariant.
+7. **Determinism.** Repair attempts run in a fixed `RepairKind` order (declared `Ord` derive sequence); ties resolve by `BTreeMap`-stable iteration over candidate provider steps. `BTreeMap`/`BTreeSet` only in authoritative state per AGENTS.md determinism invariant.
 8. **No silent privilege.** Repair only writes to the same plan/belief/discrepancy state full replan would write to. Repair uses `apply_effects_with_context` (worldwake-sim shared service, FND-26-allowed) for hypothetical effect evaluation; no bypass of contention, locality, or S134's effect schema.
 
 ## Non-Goals
@@ -363,7 +363,7 @@ Both have `#[serde(default)]` for scenario/text-serde omitted-field tolerance. B
 
 ## Authoritative-to-AI Checklist
 
-Per CLAUDE.md's Authoritative-to-AI Impact Rule (D6 modifies revalidation routing):
+Per AGENTS.md's Authoritative-to-AI Impact Rule (D6 modifies revalidation routing):
 
 1. `get_affordances` — N/A (no affordance-query changes).
 2. `generate_candidates` — N/A (no new `GoalKind`).
@@ -375,13 +375,14 @@ Per CLAUDE.md's Authoritative-to-AI Impact Rule (D6 modifies revalidation routin
 
 ## Validation and Falsification
 
-- **Golden coverage**: new `golden_plan_repair.rs` under `crates/worldwake-ai/tests/` with five scenarios:
+- **Golden coverage**: new `golden_plan_repair.rs` under `crates/worldwake-ai/tests/` with six substrate scenarios:
   1. Merchant-moved breach → expect `RepairKind::RebindTarget` selecting a sibling merchant; preserved prefix retained.
   2. Stale belief breach → expect `RepairKind::InsertVerification` splicing `AskWitness` (S139, soft-dep — if S139 is unimplemented at golden-write time, this scenario asserts `RepairFailure::NoEpistemicSubstrate` and the search falls to the next kind).
-  3. Repeat-failed repair → expect `RepairKind::Abandon` after `RepairMemory.repairs[signature].succeeded == false` records exist within TTL for the same breach.
+  3. Recently failed repair kind → expect `RepairFailure::RecentlyFailed` for the single `RepairKind` stored in `RepairMemory.repairs[signature]`; broader all-kinds repeat-failed surrender is follow-up-owned if needed because the live `RepairMemory` stores one `RepairEntry` per `BreachSignature`.
   4. Discrepancy entry with `DiscrepancyClearing::CommodityAvailabilityChanged` cleared → expect blocker cleared structurally rather than via TTL.
   5. Repair budget exhaustion → expect fall-through to full replan with `RepairOutcome::Failed { tried: [...] }` recorded and `classify_accepted_repair` running on the resulting plan.
-- **Plan-survival metric (Phase 11 gate)**: `survival-baseline.ron` 1440-tick replay shows ≥30% reduction in `EventTag::ReplanTriggered` count compared to a pre-S137 baseline run captured on the same scenario and seed. Define the baseline as the count of `ReplanTriggered` events emitted by `handle_current_step_failure` in the current `main` branch immediately before S137 lands; record the absolute number in the golden test fixture for reproducibility. The corresponding rise in `EventTag::RepairApplied` events should approximately balance the reduction (within ±10%).
+  6. Abandon final local outcome → expect an empty `ProgressBarrier` plan when no preserved prefix can be retained after earlier repair axes fail.
+- **Plan-survival metric (Phase 11 gate)**: `survival-baseline.ron` 1440-tick replay should eventually show ≥30% reduction in `EventTag::ReplanTriggered` count compared to a pre-S137 baseline run captured on the same scenario and seed. Ticket `S137PLACAULIN-010` proved the current live witness still emits `ReplanTriggered=82` and `RepairApplied=0` over 1440 ticks, so the counter gate is not part of that validation-only ticket. Follow-up `tickets/S137PLACAULIN-012.md` owns diagnosing whether this requires a production-routing fix, a different scenario witness, or a metric/spec correction before the Phase 11 gate can close.
 - **No regression**: existing 1440-tick goldens (`survival-baseline.ron`, `survival-scattered.ron`, `survival-contested.ron` under `scenarios/`) continue to pass without modification — repair is additive at the agent-tick level and the migration is semantics-preserving for the existing 4 `RepairKind` variants.
 
 ## Risks
