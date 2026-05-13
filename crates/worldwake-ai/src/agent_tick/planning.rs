@@ -1478,8 +1478,10 @@ fn classify_accepted_repair(
         {
             return Some(AcceptedRepairProvenance {
                 goal_key: selected_plan.goal,
-                repair_kind: RepairKind::AlternateRecipe,
+                repair_kind: RepairKind::RebindTarget,
                 substitute_target: None,
+                substitute_recipe: Some(*selected_recipe),
+                records_repair_memory: false,
             });
         }
         _ => {}
@@ -1492,8 +1494,10 @@ fn classify_accepted_repair(
     {
         return Some(AcceptedRepairProvenance {
             goal_key: selected_plan.goal,
-            repair_kind: RepairKind::AlternateMerchant,
+            repair_kind: RepairKind::RebindTarget,
             substitute_target: Some(selected_counterparty),
+            substitute_recipe: None,
+            records_repair_memory: false,
         });
     }
 
@@ -1502,8 +1506,10 @@ fn classify_accepted_repair(
     {
         return Some(AcceptedRepairProvenance {
             goal_key: selected_plan.goal,
-            repair_kind: RepairKind::AlternateTarget,
+            repair_kind: RepairKind::RebindTarget,
             substitute_target: Some(substitute_target),
+            substitute_recipe: None,
+            records_repair_memory: true,
         });
     }
 
@@ -1517,8 +1523,10 @@ fn classify_accepted_repair(
     {
         return Some(AcceptedRepairProvenance {
             goal_key: selected_plan.goal,
-            repair_kind: RepairKind::AlternateRoute,
+            repair_kind: RepairKind::ReplaceProvider,
             substitute_target: None,
+            substitute_recipe: None,
+            records_repair_memory: false,
         });
     }
 
@@ -3391,8 +3399,10 @@ mod tests {
         .expect("merchant replacement should classify as a repair");
 
         assert_eq!(repair.goal_key, goal);
-        assert_eq!(repair.repair_kind, RepairKind::AlternateMerchant);
+        assert_eq!(repair.repair_kind, RepairKind::RebindTarget);
         assert_eq!(repair.substitute_target, Some(seller_b));
+        assert_eq!(repair.substitute_recipe, None);
+        assert!(!repair.records_repair_memory);
     }
 
     #[test]
@@ -3455,8 +3465,10 @@ mod tests {
         .expect("recipe replacement should classify as a repair");
 
         assert_eq!(repair.goal_key, selected_goal);
-        assert_eq!(repair.repair_kind, RepairKind::AlternateRecipe);
+        assert_eq!(repair.repair_kind, RepairKind::RebindTarget);
         assert_eq!(repair.substitute_target, None);
+        assert_eq!(repair.substitute_recipe, Some(recipe_b));
+        assert!(!repair.records_repair_memory);
     }
 
     #[test]
@@ -3497,8 +3509,10 @@ mod tests {
         .expect("route replacement should classify as a repair");
 
         assert_eq!(repair.goal_key, goal);
-        assert_eq!(repair.repair_kind, RepairKind::AlternateRoute);
+        assert_eq!(repair.repair_kind, RepairKind::ReplaceProvider);
         assert_eq!(repair.substitute_target, None);
+        assert_eq!(repair.substitute_recipe, None);
+        assert!(!repair.records_repair_memory);
     }
 
     #[test]

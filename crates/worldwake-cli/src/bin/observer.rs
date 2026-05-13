@@ -5474,8 +5474,9 @@ mod tests {
                 agent,
                 goal_key: support_goal,
                 step_index: 2,
-                repair_kind: worldwake_core::RepairKind::AlternateMerchant,
+                repair_kind: worldwake_core::RepairKind::RebindTarget,
                 substitute_target: Some(target),
+                substitute_recipe: None,
             }),
         );
         emit_decision_event(

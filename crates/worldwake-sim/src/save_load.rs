@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 80;
+pub const SAVE_FORMAT_VERSION: u32 = 81;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -1154,8 +1154,9 @@ mod tests {
                     agent: actor,
                     goal_key: support_goal,
                     step_index: 2,
-                    repair_kind: RepairKind::AlternateMerchant,
+                    repair_kind: RepairKind::RebindTarget,
                     substitute_target: Some(target),
+                    substitute_recipe: None,
                 }),
             ),
             (
@@ -1227,6 +1228,11 @@ mod tests {
     }
 
     #[test]
+    fn save_format_version_is_81_after_repair_kind_migration() {
+        assert_eq!(SAVE_FORMAT_VERSION, 81);
+    }
+
+    #[test]
     fn save_to_bytes_roundtrip_preserves_full_nondefault_state() {
         let (state, actor, target, reserved_item) = populated_state();
 
@@ -1234,7 +1240,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 80);
+        assert_eq!(SAVE_FORMAT_VERSION, 81);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]

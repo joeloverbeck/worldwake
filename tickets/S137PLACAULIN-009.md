@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None (observer-only — read-only consumer of event log + decision trace)
-**Deps**: 003 (RepairAppliedPayload.substitute_recipe), 008 (RepairAttemptTrace)
+**Deps**: archive/tickets/S137PLACAULIN-003.md (RepairAppliedPayload.substitute_recipe), 008 (RepairAttemptTrace)
 
 ## Problem
 
@@ -14,7 +14,7 @@ S137 D12 extends Observer Section 3b (`render_decision_history_section` at `crat
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. `render_decision_history_section` lives at `crates/worldwake-cli/src/bin/observer.rs:828`. Existing format is a table with columns `| Tick | Agent | Event | Payload Summary |`, rendering all decision events via `decision_event_name()` and `decision_payload_summary()`. No existing `RepairApplied`-specific rendering — payload summary is generic. Ticket 003 adds `substitute_recipe: Option<RecipeId>` to `RepairAppliedPayload`; ticket 008 adds `RepairAttemptTrace` to `AgentDecisionTrace`.
+1. `render_decision_history_section` lives at `crates/worldwake-cli/src/bin/observer.rs:828`. Existing format is a table with columns `| Tick | Agent | Event | Payload Summary |`, rendering all decision events via `decision_event_name()` and `decision_payload_summary()`. No existing `RepairApplied`-specific rendering — payload summary is generic. `archive/tickets/S137PLACAULIN-003.md` adds `substitute_recipe: Option<RecipeId>` to `RepairAppliedPayload`; ticket 008 adds `RepairAttemptTrace` to `AgentDecisionTrace`.
 2. Spec `specs/S137-plan-causal-links-and-repair.md` D12 specifies the new output format (example at the bottom of the spec): `Tick 412 — Agent A — RepairApplied: ReplaceProvider`, then indented lines for breach, substitute_target, substitute_recipe, and rejected alternatives.
 3. Shared boundary: the observer's read-only consumer relationship with the event log and decision trace per `references/worldwake-validation-patterns.md` Read-Only Tooling Consumer. Observer reads via public APIs (`scheduler.active_actions()`, decision-trace sink iteration); does not mutate simulation state.
 4. **Tooling-only ticket**: this ticket has no engine changes. Per the spec-to-tickets observer-only guidance, Assumption Reassessment items 1-3 are sufficient; items 4-15 do not apply.
@@ -51,14 +51,14 @@ If display strings are needed for the new `RepairKind` variants and `RepairFailu
 
 ## Files to Touch
 
-- `crates/worldwake-cli/src/bin/observer.rs` (modify — `render_decision_history_section` at 828; also covers the existing site at 5477 that was migrated in ticket 003)
+- `crates/worldwake-cli/src/bin/observer.rs` (modify — `render_decision_history_section` at 828; also covers the existing site at 5477 that was migrated in `archive/tickets/S137PLACAULIN-003.md`)
 
 ## Out of Scope
 
 - Engine logic changes — purely a rendering update.
 - Other observer sections (1, 2, 4, ...) — unchanged.
 - Decision-trace shape — ticket 008 owns `RepairAttemptTrace` shape.
-- `EventTag::RepairApplied` payload shape — ticket 003 owns the `substitute_recipe` field.
+- `EventTag::RepairApplied` payload shape — `archive/tickets/S137PLACAULIN-003.md` owns the `substitute_recipe` field.
 
 ## Acceptance Criteria
 

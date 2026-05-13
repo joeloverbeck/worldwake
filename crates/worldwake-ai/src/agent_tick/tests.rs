@@ -8881,8 +8881,10 @@ fn completed_alternate_plan_records_repair_memory_entry() {
         &mut repair_memory,
         Some(AcceptedRepairProvenance {
             goal_key: goal,
-            repair_kind: RepairKind::AlternateTarget,
+            repair_kind: RepairKind::RebindTarget,
             substitute_target: Some(successful_place),
+            substitute_recipe: None,
+            records_repair_memory: true,
         }),
         &super::CompletedPlanSummary {
             goal_key: goal,
@@ -8925,8 +8927,9 @@ fn completed_alternate_plan_records_repair_memory_entry() {
             agent,
             goal_key: goal,
             step_index: 2,
-            repair_kind: RepairKind::AlternateTarget,
+            repair_kind: RepairKind::RebindTarget,
             substitute_target: Some(successful_place),
+            substitute_recipe: None,
         })
     );
 }
@@ -8945,8 +8948,10 @@ fn completed_alternate_merchant_plan_emits_without_recording_target_memory() {
         &mut repair_memory,
         Some(AcceptedRepairProvenance {
             goal_key: goal,
-            repair_kind: RepairKind::AlternateMerchant,
+            repair_kind: RepairKind::RebindTarget,
             substitute_target: Some(merchant),
+            substitute_recipe: None,
+            records_repair_memory: false,
         }),
         &super::CompletedPlanSummary {
             goal_key: goal,
@@ -8961,23 +8966,27 @@ fn completed_alternate_merchant_plan_emits_without_recording_target_memory() {
     .expect("merchant repairs should emit from accepted provenance");
 
     assert!(repair_memory.repairs.is_empty());
-    assert_eq!(payload.repair_kind, RepairKind::AlternateMerchant);
+    assert_eq!(payload.repair_kind, RepairKind::RebindTarget);
     assert_eq!(payload.substitute_target, Some(merchant));
+    assert_eq!(payload.substitute_recipe, None);
 }
 
 #[test]
-fn completed_alternate_recipe_plan_emits_without_substitute_target() {
+fn completed_alternate_recipe_plan_emits_with_substitute_recipe() {
     let goal = GoalKey::from(GoalKind::ProduceCommodity {
         recipe_id: RecipeId(4),
     });
+    let substitute_recipe = RecipeId(5);
     let mut repair_memory = RepairMemory::default();
 
     let payload = record_repair_memory_from_completed_plan(
         &mut repair_memory,
         Some(AcceptedRepairProvenance {
             goal_key: goal,
-            repair_kind: RepairKind::AlternateRecipe,
+            repair_kind: RepairKind::RebindTarget,
             substitute_target: None,
+            substitute_recipe: Some(substitute_recipe),
+            records_repair_memory: false,
         }),
         &super::CompletedPlanSummary {
             goal_key: goal,
@@ -8992,12 +9001,13 @@ fn completed_alternate_recipe_plan_emits_without_substitute_target() {
     .expect("recipe repairs should emit from accepted provenance");
 
     assert!(repair_memory.repairs.is_empty());
-    assert_eq!(payload.repair_kind, RepairKind::AlternateRecipe);
+    assert_eq!(payload.repair_kind, RepairKind::RebindTarget);
     assert_eq!(payload.substitute_target, None);
+    assert_eq!(payload.substitute_recipe, Some(substitute_recipe));
 }
 
 #[test]
-fn completed_alternate_route_plan_emits_without_substitute_target() {
+fn completed_replace_provider_plan_emits_without_substitute_target() {
     let goal = GoalKey::from(GoalKind::Sleep);
     let mut repair_memory = RepairMemory::default();
 
@@ -9005,8 +9015,10 @@ fn completed_alternate_route_plan_emits_without_substitute_target() {
         &mut repair_memory,
         Some(AcceptedRepairProvenance {
             goal_key: goal,
-            repair_kind: RepairKind::AlternateRoute,
+            repair_kind: RepairKind::ReplaceProvider,
             substitute_target: None,
+            substitute_recipe: None,
+            records_repair_memory: false,
         }),
         &super::CompletedPlanSummary {
             goal_key: goal,
@@ -9021,8 +9033,9 @@ fn completed_alternate_route_plan_emits_without_substitute_target() {
     .expect("route repairs should emit from accepted provenance");
 
     assert!(repair_memory.repairs.is_empty());
-    assert_eq!(payload.repair_kind, RepairKind::AlternateRoute);
+    assert_eq!(payload.repair_kind, RepairKind::ReplaceProvider);
     assert_eq!(payload.substitute_target, None);
+    assert_eq!(payload.substitute_recipe, None);
 }
 
 #[test]

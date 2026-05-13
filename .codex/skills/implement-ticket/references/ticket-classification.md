@@ -84,12 +84,14 @@ For this shape:
 8. Use that sweep to seed the real `Files to Touch` / closeout boundary before the first broadened verification run.
 9. If the changed type is embedded inside persisted runtime state or another enclosing saveable carrier, treat the ticket as a save-shape change and verify the enclosing persisted seam and version policy up front.
 10. Inspect semantic consumers, not only exhaustive matches. Sorting, filtering, goal emission, report routing, discrepancy classification, and similar consumers may need explicit exclusion or routing updates.
+    When several old variants collapse into one new public variant, identify every consumer that previously used the old variant name as branch provenance. If the new public payload shape cannot disambiguate all old branches, keep the event/report payload on the drafted public contract and add or preserve an internal producer/runtime discriminator for the lost branch semantics.
 11. If the staged runtime path depends on place, entity, claim, or other bound semantics carried through an existing runtime step/report record, inspect whether the current carrier stores that fact explicitly or only infers it from another field.
 12. If the inferred path would make the live binding dishonest, treat the carrier-field fix and constructor fallout as current-ticket scope before closeout.
 13. If the ticket lands a new read-only wrapper or view type, check trait/lint expectations for the full surface early, including iterator companion impls.
 14. If the ticket broadly flips consumer signatures from a raw collection to a wrapper/view type, sweep nearby and same-crate `#[cfg(test)]` modules for raw fixtures such as `vec![...]`, arrays, `&[]`, and `std::slice::from_ref`.
 15. If the ticket introduces a mirrored enum or record in one crate to represent a type owned by another crate, identify the nearest lawful proof seam that can see both sides and prove parity there.
 16. During closeout, rewrite any stale drafted `Files to Touch`, `Out of Scope`, or "no consumer/rendering change" prose when the consumer sweep or broadened verification proves a downstream observer, report, fixture, save/load, or renderer update was required.
+17. Before the final broad verification gate, scan the cited active spec and same-family active tickets for old variant names, old save-version baselines, and present-tense claims that the pre-migration shape is still current. Truth-sync only the wording that becomes false once the shared migration lands.
 
 ## Shared field/type migration quick path
 

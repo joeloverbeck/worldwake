@@ -75,6 +75,7 @@ For CLI smoke checks where the ticket drafts a Cargo command piped to a read-onl
 
 - Start by deciding whether the ticket is really implementation work, validation-suite work, golden/observer proof work, or shared-surface migration work.
 - For shared enum/payload variant tickets, first classify the owner enum/payload, any sibling event/tag or re-export surface that must stay in lockstep, and the likely exhaustive consumer families (observer/CLI/report/render/test fixtures). Treat the migration as more than an owner-file edit even when the first patch lands in one crate. When a ticket pairs an `EventTag` with a decision/event payload enum, sweep each carrier independently: tag membership may be non-exhaustive while `DecisionEventPayload` or report payload renderers still have exhaustive observer/bin/report matches such as `src/bin/observer.rs`.
+  When several old variants collapse into one new public variant, audit old-variant consumers that used the variant itself as a semantic discriminator. If the widened public payload cannot distinguish every old branch, preserve or add a private producer/runtime provenance discriminator instead of overloading the public event/report payload.
   For new `InstitutionalClaim` variants, load `references/reassessment-checks.md` and use its institutional-claim variant checklist before coding.
   For shared payload widening, event payloads, or cross-crate tag/payload conversions, use the compact preflight in `references/ticket-classification.md` and the event carrier-chain checks in `references/reassessment-checks.md` before accepting the drafted carrier or conversion site.
 - For internal diagnostic, trace-carrier, report, runtime, event, or payload carrier changes, load `references/reassessment-checks.md` and use its carrier-chain, constructor/consumer, typed-reference, and save-boundary checks before coding.
@@ -177,7 +178,7 @@ Detailed domain-specific reassessment case law lives in `references/reassessment
 
 ### 3. Handle mismatches explicitly
 
-Load `references/mismatch-handling.md` when reassessment exposes a contradiction, risky ticket/code divergence, or a user decision that requires 1-3-1.
+Load `references/mismatch-handling.md` when reassessment exposes a contradiction, risky ticket/code divergence, or a user decision that requires 1-3-1. Local focused-proof fallout may be fixed directly without loading it when the fix stays inside the already-authorized ticket boundary, does not change ownership, does not require a follow-up, and does not need a user decision.
 
 Before recommending one of the 1-3-1 options, run a `FOUNDATIONS` check over the choices. If the contradiction involves two possible canonical owners for the same fact, duplicate mutation/diff/transport paths, or a cache that could become truth, default the recommendation toward one canonical owner unless the spec proves the separate carrier is a real world artifact with its own lifecycle, observers, invalidators, and legal effects.
 

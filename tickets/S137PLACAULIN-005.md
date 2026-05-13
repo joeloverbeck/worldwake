@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `RepairMemory` shape, save-load, removal of `RepairKey`
-**Deps**: archive/tickets/S137PLACAULIN-001.md (BreachSignature), 003 (new RepairKind variants populated in RepairEntry), 004 (save-format baseline if it lands before this ticket)
+**Deps**: archive/tickets/S137PLACAULIN-001.md (BreachSignature), archive/tickets/S137PLACAULIN-003.md (new RepairKind variants populated in RepairEntry), 004 (save-format baseline if it lands before this ticket)
 
 ## Problem
 
@@ -15,7 +15,7 @@ S137 D7 migrates `RepairMemory.repairs` from `BTreeMap<RepairKey, RepairEntry>` 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
 1. `RepairMemory` is defined at `crates/worldwake-core/src/repair_memory.rs:19-22` as `BTreeMap<RepairKey, RepairEntry>` with `success_count: u32` on `RepairEntry`. `RepairKey { goal_key, alternate_target: EntityId }` at lines 5-9; `RepairEntry { repair_key, observed_tick, expires_tick, success_count }` at lines 11-17. Component registration at `crates/worldwake-core/src/component_schema.rs:784-802`. Existing `#[cfg(test)]` tests at lines 55-202 cover bincode roundtrip, `record`, `expire`, `enforce_capacity`. Three test fixtures use `RepairKey` — must be migrated to `BreachSignature` keys.
-2. Spec `specs/S137-plan-causal-links-and-repair.md` D7 specifies the new shape including `kind: RepairKind`, `succeeded: bool`, preserved `success_count: u32` field for FND-22A compatibility. `BreachSignature` landed in `archive/tickets/S137PLACAULIN-001.md`. New `RepairKind` variant set lands in ticket 003.
+2. Spec `specs/S137-plan-causal-links-and-repair.md` D7 specifies the new shape including `kind: RepairKind`, `succeeded: bool`, preserved `success_count: u32` field for FND-22A compatibility. `BreachSignature` landed in `archive/tickets/S137PLACAULIN-001.md`. New `RepairKind` variant set landed in `archive/tickets/S137PLACAULIN-003.md`.
 3. Shared boundary: the `RepairMemory` component state surface. Reads from `crates/worldwake-ai/src/agent_tick/planning.rs` and `crates/worldwake-ai/src/agent_tick/mod.rs` (record-write sites). After migration, `RepairKey` is removed entirely (FND-28) — every site referencing the type updates.
 4. **Save-format bump cascade**: `SAVE_FORMAT_VERSION` advances from the then-current S137 baseline after tickets 002/003/004. If those tickets land in numeric order, this ticket advances `82→83`. Pre-`83` `RepairMemory` byte streams cannot deserialize because the BTreeMap key type changes. Per the FND-28 single-truth invariant, no migration logic is written — the bump signals the format change.
 5. **Adjacent contradiction classification**: removing `RepairKey` requires updating every `RepairKey::` construction or pattern-match site. Grep `rg "RepairKey" crates/` workspace-wide before implementation to enumerate the blast radius. Per current grep, sites are mostly internal to `repair_memory.rs` plus the few `record()` callers in `agent_tick/`. Classified as a required consequence per Divergence Protocol — not deferred.
@@ -99,7 +99,7 @@ In `crates/worldwake-sim/src/save_load.rs:6`, bump `SAVE_FORMAT_VERSION` from th
 ## Out of Scope
 
 - The repair search reading `repairs.get(&signature)` to skip failed kinds — ticket 006.
-- New `RepairKind` variant set used in `RepairEntry.kind` — already landed in ticket 003.
+- New `RepairKind` variant set used in `RepairEntry.kind` — already landed in `archive/tickets/S137PLACAULIN-003.md`.
 - `BreachSignature` definition — already landed in `archive/tickets/S137PLACAULIN-001.md`.
 - Migration logic for prior-version byte streams — none written (FND-28: no backward compatibility); the bump rejects legacy streams.
 

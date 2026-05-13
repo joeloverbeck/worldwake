@@ -68,7 +68,7 @@ use worldwake_core::{
     OpportunityAnchor, OpportunityEntry, OpportunityExpectationKindTag, PendingEvent,
     PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
     PursuitInvalidationReasonTag, RecordRef, RepairAppliedPayload, RepairEntry, RepairKey,
-    RepairKind, RepairMemory, ReplanReason, ReplanTriggeredPayload, SourceAttributionOutcomeTag,
+    RepairMemory, ReplanReason, ReplanTriggeredPayload, SourceAttributionOutcomeTag,
     SourceExpectationFailurePayload, SourceKeyPayload, StatePredicate, Tick, VisibilitySpec,
     WitnessData, WorldTxn,
 };
@@ -2372,7 +2372,7 @@ fn record_repair_memory_from_completed_plan(
     if accepted_repair.goal_key != summary.goal_key {
         return None;
     }
-    if accepted_repair.repair_kind == RepairKind::AlternateTarget {
+    if accepted_repair.records_repair_memory {
         let alternate_target = accepted_repair.substitute_target?;
         let repair_key = RepairKey {
             goal_key: summary.goal_key,
@@ -2397,6 +2397,7 @@ fn record_repair_memory_from_completed_plan(
         step_index: summary.step_index,
         repair_kind: accepted_repair.repair_kind,
         substitute_target: accepted_repair.substitute_target,
+        substitute_recipe: accepted_repair.substitute_recipe,
     })
 }
 

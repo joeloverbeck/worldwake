@@ -67,6 +67,8 @@ pub struct AcceptedRepairProvenance {
     pub goal_key: GoalKey,
     pub repair_kind: RepairKind,
     pub substitute_target: Option<EntityId>,
+    pub substitute_recipe: Option<worldwake_core::RecipeId>,
+    pub records_repair_memory: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -652,8 +654,10 @@ mod tests {
                     purpose: CommodityPurpose::SelfConsume,
                     quantity: AcquisitionQuantity::single(),
                 }),
-                repair_kind: RepairKind::AlternateMerchant,
+                repair_kind: RepairKind::RebindTarget,
                 substitute_target: Some(entity(99)),
+                substitute_recipe: None,
+                records_repair_memory: false,
             }),
             dead_cleanup_done: false,
             exhaustion_cache: BTreeMap::from([(

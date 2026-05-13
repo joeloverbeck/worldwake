@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `PlanGuard` shape (consumed by planner emitter in ticket 006)
-**Deps**: archive/tickets/S137PLACAULIN-001.md (CausalLink), archive/tickets/S137PLACAULIN-002.md (causal_links_per_step_cap on CognitiveProfile), 003 (save-format baseline)
+**Deps**: archive/tickets/S137PLACAULIN-001.md (CausalLink), archive/tickets/S137PLACAULIN-002.md (causal_links_per_step_cap on CognitiveProfile), archive/tickets/S137PLACAULIN-003.md (save-format baseline)
 
 ## Problem
 
@@ -59,7 +59,7 @@ Add a `#[cfg(test)]` test `plan_guard_causal_links_default_to_empty_via_serde` a
 
 ### 4. SAVE_FORMAT_VERSION bump
 
-In `crates/worldwake-sim/src/save_load.rs:6`, bump `SAVE_FORMAT_VERSION` from the then-current S137 baseline. If ticket 003 has landed first, this is expected to be `81→82`.
+In `crates/worldwake-sim/src/save_load.rs:6`, bump `SAVE_FORMAT_VERSION` from the then-current S137 baseline. If `archive/tickets/S137PLACAULIN-003.md` has landed first, this is expected to be `81→82`.
 
 ## Files to Touch
 
