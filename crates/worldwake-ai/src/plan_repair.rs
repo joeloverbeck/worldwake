@@ -33,6 +33,7 @@ pub enum RepairOutcome {
     Repaired {
         kind: RepairKind,
         new_plan: Box<PlannedPlan>,
+        rejected: Vec<(RepairKind, RepairFailure)>,
     },
     Failed {
         tried: Vec<(RepairKind, RepairFailure)>,
@@ -93,6 +94,7 @@ pub fn attempt_repair_then_replan(
                     return RepairOutcome::Repaired {
                         kind,
                         new_plan: Box::new(new_plan),
+                        rejected: tried,
                     };
                 }
                 Err(failure) => tried.push((kind, failure)),
@@ -516,6 +518,7 @@ mod tests {
         let outcome = RepairOutcome::Repaired {
             kind: RepairKind::RebindTarget,
             new_plan: Box::new(plan.clone()),
+            rejected: Vec::new(),
         };
 
         assert_eq!(
@@ -523,6 +526,7 @@ mod tests {
             RepairOutcome::Repaired {
                 kind: RepairKind::RebindTarget,
                 new_plan: Box::new(plan),
+                rejected: Vec::new(),
             }
         );
     }
@@ -561,7 +565,7 @@ mod tests {
 
         let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
 
-        let RepairOutcome::Repaired { kind, new_plan } = outcome else {
+        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome else {
             panic!("rebind candidate should repair plan");
         };
         assert_eq!(kind, RepairKind::RebindTarget);
@@ -603,7 +607,7 @@ mod tests {
 
         let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
 
-        let RepairOutcome::Repaired { kind, new_plan } = outcome else {
+        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome else {
             panic!("suffix-sourced candidate should repair plan");
         };
         assert_eq!(kind, RepairKind::RebindTarget);
@@ -676,10 +680,22 @@ mod tests {
 
         let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
 
-        let RepairOutcome::Repaired { kind, new_plan } = outcome else {
+        let RepairOutcome::Repaired {
+            kind,
+            new_plan,
+            rejected,
+        } = outcome
+        else {
             panic!("route record provider should repair plan");
         };
         assert_eq!(kind, RepairKind::ReplaceProvider);
+        assert_eq!(
+            rejected,
+            vec![(
+                RepairKind::RebindTarget,
+                RepairFailure::NoSiblingTargetFound
+            )]
+        );
         assert_eq!(new_plan.steps.len(), 3);
         assert_eq!(new_plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
     }
@@ -694,7 +710,7 @@ mod tests {
 
         let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
 
-        let RepairOutcome::Repaired { kind, new_plan } = outcome else {
+        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome else {
             panic!("visible discrepancy should downgrade to a progress barrier");
         };
         assert_eq!(kind, RepairKind::DowngradeToProgressBarrier);
@@ -712,7 +728,7 @@ mod tests {
 
         let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
 
-        let RepairOutcome::Repaired { kind, new_plan } = outcome else {
+        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome else {
             panic!("abandon should be the final local outcome after earlier attempts fail");
         };
         assert_eq!(kind, RepairKind::Abandon);

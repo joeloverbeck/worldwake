@@ -7,9 +7,11 @@ use super::{
     decisive_evidence_from_discrepancy_entry, decisive_evidence_from_replan_reason,
     emit_decision_event, handle_recoverable_travel_step_blockage, runtime_belief_view,
 };
+use crate::RepairAttemptTrace;
 use crate::failure_handling::exact_target_belief_discrepancy;
 use crate::plan_repair::{
     PlanRepairContext, RepairOutcome, RepairPlanCandidate, attempt_repair_then_replan,
+    repair_budget,
 };
 use crate::plan_step_expectations::{
     expire_plan_step_expectations, persist_expectation_store_update,
@@ -52,6 +54,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
     learned_opportunity_memory: &LearnedOpportunityMemory,
     step: &PlannedStep,
     valid: bool,
+    mut repair_attempt_traces: Option<&mut Vec<RepairAttemptTrace>>,
 ) -> Result<(), TickInputError> {
     let active_assumptions = jc
         .as_ref()
@@ -128,11 +131,28 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                     )
                 {
                     match repair_outcome {
-                        RepairOutcome::Repaired { kind, new_plan } => {
+                        RepairOutcome::Repaired {
+                            kind,
+                            new_plan,
+                            rejected,
+                        } => {
                             let step_index = runtime
                                 .current_step_index
                                 .try_into()
                                 .expect("current step index exceeds u16");
+                            if let Some(traces) = &mut repair_attempt_traces {
+                                traces.push(RepairAttemptTrace {
+                                    breach: breach_signature_for_step(
+                                        goal_key,
+                                        step,
+                                        mismatch_detail,
+                                    ),
+                                    chosen_kind: Some(kind),
+                                    budget_consumed: repair_budget_consumed(&rejected, true),
+                                    rejected,
+                                    budget_total: repair_budget(ctx.cognitive),
+                                });
+                            }
                             apply_repaired_plan_and_emit(
                                 ctx.event_log,
                                 runtime,
@@ -148,6 +168,13 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                         RepairOutcome::Failed { tried } => {
                             let signature =
                                 breach_signature_for_step(goal_key, step, mismatch_detail);
+                            if let Some(traces) = &mut repair_attempt_traces {
+                                traces.push(repair_attempt_trace_from_failed(
+                                    signature,
+                                    &tried,
+                                    ctx.cognitive,
+                                ));
+                            }
                             record_failed_repair_attempts(
                                 repair_memory,
                                 signature,
@@ -547,6 +574,38 @@ fn record_failed_repair_attempts(
             success_count: 0,
         });
     }
+}
+
+fn repair_attempt_trace_from_failed(
+    breach: BreachSignature,
+    tried: &[(RepairKind, crate::RepairFailure)],
+    cognitive: &worldwake_core::CognitiveProfile,
+) -> RepairAttemptTrace {
+    RepairAttemptTrace {
+        breach,
+        chosen_kind: None,
+        rejected: tried.to_vec(),
+        budget_consumed: repair_budget_consumed(tried, false),
+        budget_total: repair_budget(cognitive),
+    }
+}
+
+fn repair_budget_consumed(
+    rejected: &[(RepairKind, crate::RepairFailure)],
+    includes_successful_attempt: bool,
+) -> u16 {
+    let failed_expansions = rejected
+        .iter()
+        .filter(|(_, failure)| {
+            !matches!(
+                failure,
+                crate::RepairFailure::RecentlyFailed | crate::RepairFailure::BudgetExhausted
+            )
+        })
+        .count();
+    u16::try_from(failed_expansions)
+        .unwrap_or(u16::MAX)
+        .saturating_add(u16::from(includes_successful_attempt))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1167,6 +1226,7 @@ mod tests {
     use super::{
         apply_repaired_plan_and_emit, attempt_local_repair_for_invalidated_step,
         breach_signature_for_step, populate_contention_event_refs, record_failed_repair_attempts,
+        repair_attempt_trace_from_failed, repair_budget_consumed,
     };
     use crate::RepairOutcome;
     use crate::{PlanGuard, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind};
@@ -1372,7 +1432,7 @@ mod tests {
             Some(repair_mismatch()),
         )
         .expect("causal-link invalidator should attempt localized repair");
-        let RepairOutcome::Repaired { kind, new_plan } = outcome else {
+        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome else {
             panic!(
                 "visible discrepancy with a committed prefix should repair to a progress barrier"
             );
@@ -1450,7 +1510,7 @@ mod tests {
             Some(repair_mismatch()),
         )
         .expect("causal-link invalidator should attempt localized repair");
-        let RepairOutcome::Repaired { kind, new_plan } = outcome else {
+        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome else {
             panic!("suffix candidate should repair the invalidated step");
         };
         assert_eq!(kind, RepairKind::RebindTarget);
@@ -1540,6 +1600,46 @@ mod tests {
         assert_eq!(entry.observed_tick, Tick(9));
         assert_eq!(entry.expires_tick, Tick(29));
         assert_eq!(entry.success_count, 0);
+    }
+
+    #[test]
+    fn failed_local_repair_attempt_trace_records_budget_and_rejections() {
+        let goal_key = sample_goal_key();
+        let signature = BreachSignature {
+            goal_key,
+            invalidator: InvalidatorTag::TargetMoved,
+            step_target: Some(entity(11)),
+        };
+        let tried = vec![
+            (
+                RepairKind::RebindTarget,
+                crate::RepairFailure::NoSiblingTargetFound,
+            ),
+            (
+                RepairKind::InsertVerification,
+                crate::RepairFailure::NoEpistemicSubstrate,
+            ),
+            (RepairKind::Abandon, crate::RepairFailure::BudgetExhausted),
+        ];
+        let cognitive = cognitive(12, Permille::new(500).unwrap());
+
+        let trace = repair_attempt_trace_from_failed(signature, &tried, &cognitive);
+
+        assert_eq!(trace.breach, signature);
+        assert_eq!(trace.chosen_kind, None);
+        assert_eq!(trace.rejected, tried);
+        assert_eq!(trace.budget_consumed, 2);
+        assert_eq!(trace.budget_total, 6);
+    }
+
+    #[test]
+    fn successful_local_repair_budget_consumed_includes_chosen_attempt() {
+        let rejected = vec![(
+            RepairKind::RebindTarget,
+            crate::RepairFailure::NoSiblingTargetFound,
+        )];
+
+        assert_eq!(repair_budget_consumed(&rejected, true), 2);
     }
 
     #[test]

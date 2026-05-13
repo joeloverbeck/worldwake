@@ -171,7 +171,7 @@ pub enum RepairKind {
 }
 
 pub enum RepairOutcome {
-    Repaired { kind: RepairKind, new_plan: Box<PlannedPlan> },
+    Repaired { kind: RepairKind, new_plan: Box<PlannedPlan>, rejected: Vec<(RepairKind, RepairFailure)> },
     Failed { tried: Vec<(RepairKind, RepairFailure)> },    // capped by repair_budget; ordered by RepairKind Ord
 }
 
@@ -192,7 +192,8 @@ In `crates/worldwake-ai/src/agent_tick/execution.rs:90-146`, replace the uncondi
 
 ```rust
 match attempt_repair_then_replan(&context) {
-    RepairOutcome::Repaired { kind, new_plan } => {
+    RepairOutcome::Repaired { kind, new_plan, rejected } => {
+        record_repair_attempts(kind, &rejected);
         emit_event(EventTag::RepairApplied, RepairAppliedPayload {
             agent, goal_key, step_index, repair_kind: kind,
             substitute_target, substitute_recipe,
@@ -287,7 +288,7 @@ Lives in `crates/worldwake-core/src/repair_memory.rs` adjacent to `RepairMemory`
 
 ### D10. `worldwake-ai::decision_trace` extension
 
-Add `RepairAttemptTrace` to `crates/worldwake-ai/src/decision_trace.rs` carrying the chosen `RepairKind`, the breach signature, the rejected `RepairKind` set with per-kind `RepairFailure` reason, and the budget consumed. Compose with existing `AgentDecisionTrace` per the `PortfolioSlotTrace`/`PlanAttemptTrace` precedent (lines ~80-110). Sink installation follows the existing `DecisionTraceSink` pattern.
+Add `RepairAttemptTrace` to `crates/worldwake-ai/src/decision_trace.rs` carrying the chosen `RepairKind`, the breach signature, the rejected `RepairKind` set with per-kind `RepairFailure` reason, and the budget consumed. Add `AgentDecisionTrace.repair_attempts` and populate it from the revalidation repair seam before the trace is recorded by the existing `DecisionTraceSink` pattern. Add `CausalLinkCapHit` and `AgentDecisionTrace.causal_link_cap_hits` so capped guard construction is visible when the final traced plan contains fewer causal links than required facts.
 
 ### D11. `CognitiveProfile` extension
 
@@ -385,7 +386,7 @@ Per CLAUDE.md's Authoritative-to-AI Impact Rule (D6 modifies revalidation routin
 
 ## Risks
 
-- **Causal-link enumeration cap.** `Vec<CausalLink>` capped by `causal_links_per_step_cap` may truncate links for complex plans. Mitigation: only load-bearing causal links are recorded (the precondition-supporting subset, not the full transitive closure). Ticket-001 audits which `RequiredFact` kinds genuinely require links. If the cap is hit, the planner emits a `DecisionTrace::CausalLinkCapHit` annotation so debuggers see the truncation; the surviving links are the most recent ones (BTreeMap-stable order).
+- **Causal-link enumeration cap.** `Vec<CausalLink>` capped by `causal_links_per_step_cap` may truncate links for complex plans. Mitigation: only load-bearing causal links are recorded (the precondition-supporting subset, not the full transitive closure). Ticket-001 audits which `RequiredFact` kinds genuinely require links. If the cap is hit, the decision trace records an `AgentDecisionTrace.causal_link_cap_hits` entry so debuggers see the truncation; the surviving links are the most recent ones (BTreeMap-stable order).
 - **Repair-memory pollution.** A class of breach that is structurally unrepairable could fill `repairs` and mask future repairs. Mitigation: per-`BreachSignature` keying (D9) bounds collisions; TTL via `CognitiveProfile.repair_memory_ticks` decays entries; `enforce_capacity` (existing `MemoryCapacityProfile` path) evicts oldest.
 - **Determinism under concurrent breaches.** Multiple guards can break in the same revalidation pass. Mitigation: repair attempts process breaches in `step_index` order; concurrent breaches at the same step process by `Invalidator` enum-discriminant order. Both orderings are deterministic given the `Ord` derive on `Invalidator` and the canonical step indexing.
 - **Migration churn under D8.** The 20 call sites span 6 files across 4 crates. Migration must land atomically in one PR to satisfy FND-28; partial migration leaves `RepairKind` in an inconsistent state. Ticket-decomposition should bundle D8 as a single ticket rather than splitting per call site.

@@ -5613,6 +5613,8 @@ mod tests {
             tick: Tick(tick),
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            repair_attempts: Vec::new(),
+            causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: Some(affordances),
                 dirty: DirtySet::default(),

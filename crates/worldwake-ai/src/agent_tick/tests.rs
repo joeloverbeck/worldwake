@@ -9,8 +9,8 @@ use super::planning::{
 };
 use super::{
     AgentTickDriver, AssumptionRefContext, advance_completed_step,
-    apply_step_materialization_bindings, committed_action_for_step, effective_goal_switch_margin,
-    emit_replan_triggered, handle_recoverable_travel_step_blockage,
+    apply_step_materialization_bindings, causal_link_cap_hits_from_plan, committed_action_for_step,
+    effective_goal_switch_margin, emit_replan_triggered, handle_recoverable_travel_step_blockage,
     invalidate_committed_source_after_reliability_failure, persist_blocked_memory,
     persist_discrepancy_memory, plan_and_validate_next_step_traced,
     record_learned_opportunities_from_read_phase, record_repair_memory_from_completed_plan,
@@ -36,24 +36,25 @@ use std::path::PathBuf;
 use worldwake_core::{
     AcquisitionQuantity, ActionDefId, AgentBeliefStore, BanditFactionPolicy,
     BeliefConfidencePolicy, BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory,
-    BlockerRecordedPayload, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef,
-    CognitiveProfile, CommodityKind, ContentionGrant, ContentionIntents, ContentionPolicy,
-    ContentionQueue, ControlSource, DeadAt, DecisionEventPayload, DemandMemory, DemandObservation,
-    DemandObservationReason, DeprivationExposure, Discrepancy, DiscrepancyClearing,
-    DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EmitterTag, EntityId, EntityKind,
-    EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExecutionBudget,
-    ExpectationBasis, ExpectationFailureCauseTag, ExpectationFailurePhaseTag, ExpectationId,
-    ExpectationKindTag, ExpectationMismatchPayload, ExpectationOutcome, ExpectationRecord,
-    ExpectationState, ExplorationProfile, FrameAssumption, FrameClearReason, FrameState,
-    GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload, GoalRejectionReason,
-    GoalSuppressedPayload, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
-    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain,
-    IntentionFrame, InvalidatorTag, KnownRecipes, LearnedOpportunityMemory, LoadUnits,
-    MemoryCapacityProfile, MerchandiseProfile, MetabolismProfile, MismatchDetail,
-    ObservationPredicate, OfficeData, OpportunityExpectationKindTag, PatrolProfile, PatrolRoute,
-    PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, PortfolioSlotWeights,
-    Quantity, QueuedContentionIntent, RecipeId, RecordData, RecordKind, RepairAppliedPayload,
-    RepairKind, RepairMemory, ResourceSource, Seed, SourceAttributionOutcomeTag,
+    BlockerRecordedPayload, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CausalLink,
+    CausalProvider, CauseRef, CognitiveProfile, CommodityKind, ContentionGrant, ContentionIntents,
+    ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DecisionEventPayload, DemandMemory,
+    DemandObservation, DemandObservationReason, DeprivationExposure, Discrepancy,
+    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EmitterTag,
+    EntityBeliefAspect, EntityId, EntityKind, EventLog, EventPayload, EventTag, EventView,
+    EvidenceKindTag, EvidenceSummary, ExecutionBudget, ExpectationBasis,
+    ExpectationFailureCauseTag, ExpectationFailurePhaseTag, ExpectationId, ExpectationKindTag,
+    ExpectationMismatchPayload, ExpectationOutcome, ExpectationRecord, ExpectationState,
+    ExplorationProfile, FrameAssumption, FrameClearReason, FrameState, GoalAbandonReason,
+    GoalAbandonedPayload, GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload,
+    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
+    InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
+    InvalidatorTag, KnownRecipes, LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile,
+    MerchandiseProfile, MetabolismProfile, MismatchDetail, ObservationPredicate, OfficeData,
+    OpportunityExpectationKindTag, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
+    PerceptionSource, Permille, Place, PlanningFact, PortfolioSlotWeights, Quantity,
+    QueuedContentionIntent, RecipeId, RecordData, RecordKind, RepairAppliedPayload, RepairKind,
+    RepairMemory, ResourceSource, Seed, SourceAttributionOutcomeTag,
     SourceExpectationFailurePayload, SourceKey, SourceKeyPayload, StatePredicate, SuccessionLaw,
     TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
     TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
@@ -1273,6 +1274,58 @@ fn entity(slot: u32) -> EntityId {
 
 fn pm(value: u16) -> Permille {
     Permille::new(value).unwrap()
+}
+
+#[test]
+fn causal_link_cap_hits_report_truncated_plan_guards() {
+    let target = entity(10);
+    let place = entity(11);
+    let required_fact = crate::RequiredFact::TargetPresent {
+        target,
+        at_place: place,
+    };
+    let step = PlannedStep {
+        def_id: ActionDefId(0),
+        targets: vec![PlanningEntityRef::Authoritative(target)],
+        target_place: Some(place),
+        payload_override: None,
+        op_kind: PlannerOpKind::Trade,
+        estimated_ticks: 1,
+        is_materialization_barrier: false,
+        expected_materializations: Vec::new(),
+        guard: Some(PlanGuard {
+            required_facts: vec![required_fact, required_fact],
+            min_confidence: Permille::new(500).unwrap(),
+            invalidators: Vec::new(),
+            causal_links: vec![CausalLink {
+                provider: CausalProvider::Observation {
+                    observed_entity: target,
+                    aspect: EntityBeliefAspect::Location,
+                },
+                fact: PlanningFact::TargetPresent {
+                    target,
+                    at_place: place,
+                },
+                consumer_step_index: 0,
+                source_tick: Tick(4),
+                confidence: Permille::new(1000).unwrap(),
+            }],
+        }),
+        expectations: Vec::new(),
+    };
+    let plan = PlannedPlan::new(
+        default_opportunity(GoalKey::from(GoalKind::Sleep)),
+        GoalKey::from(GoalKind::Sleep),
+        vec![step],
+        PlanTerminalKind::GoalSatisfied,
+    );
+
+    let hits = causal_link_cap_hits_from_plan(Some(&plan), 1);
+
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].plan_step_index, 0);
+    assert_eq!(hits[0].truncated_count, 1);
+    assert_eq!(hits[0].cap, 1);
 }
 
 fn harvest_apple_recipe() -> RecipeDefinition {
@@ -6169,6 +6222,7 @@ fn revalidation_guard_breach_emits_expectation_mismatch_before_enqueue() {
         &learned_opportunity_memory,
         &step,
         false,
+        None,
     )
     .expect("guard-breach start failure handling should succeed");
 

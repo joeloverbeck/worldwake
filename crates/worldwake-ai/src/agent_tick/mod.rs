@@ -36,10 +36,10 @@ use planning::{
 
 use crate::decision_trace::{
     ActionStartFailureSummary, AffordanceSummary, AffordanceTrace, AgentDecisionTrace,
-    ArtifactAxisSnapshot, CandidateTrace, DecisionOutcome, DecisionTraceSink, DiscrepancyTrace,
-    ExecutionFailureReason, ExecutionTrace, ExhaustionTraceEntry, FrameTransitionKind,
-    FrameTransitionTrace, InterruptTrace, PatrolRouteSnapshotTrace, PlanSearchTrace,
-    PlanningPipelineTrace, SelectionTrace,
+    ArtifactAxisSnapshot, CandidateTrace, CausalLinkCapHit, DecisionOutcome, DecisionTraceSink,
+    DiscrepancyTrace, ExecutionFailureReason, ExecutionTrace, ExhaustionTraceEntry,
+    FrameTransitionKind, FrameTransitionTrace, InterruptTrace, PatrolRouteSnapshotTrace,
+    PlanSearchTrace, PlanningPipelineTrace, SelectionTrace,
 };
 use crate::{
     AcceptedRepairProvenance, AgendaPhase, AgendaTickPolicy, AgentDecisionRuntime,
@@ -1272,6 +1272,7 @@ fn process_agent(
         .unwrap_or_default();
     let mut current_facility_intents = original_facility_intents.clone();
     let original_plan_goal = runtime.current_plan.as_ref().map(|plan| plan.goal);
+    let mut repair_attempt_traces = Vec::new();
     let active_action = active_action_for_agent(ctx, agent);
     let start_failures = ctx.scheduler.take_action_start_failures_for(agent);
     let mut frame_transitions: Option<Vec<FrameTransitionKind>> =
@@ -1359,6 +1360,8 @@ fn process_agent(
                 outcome: DecisionOutcome::Dead,
                 compiled_opportunities: Vec::new(),
                 opportunity_compiler_load: None,
+                repair_attempts: Vec::new(),
+                causal_link_cap_hits: Vec::new(),
             }));
         }
     }
@@ -1947,6 +1950,7 @@ fn process_agent(
                 &learned_opportunity_memory,
                 &step,
                 valid,
+                tracing.then_some(&mut repair_attempt_traces),
             );
 
             if let Err(ref _e) = exec_result
@@ -2319,6 +2323,10 @@ fn process_agent(
         &current_facility_intents,
     )?;
     let final_plan_for_assumption_refs = runtime.current_plan.clone();
+    let causal_link_cap_hits = causal_link_cap_hits_from_plan(
+        final_plan_for_assumption_refs.as_ref(),
+        cognitive.causal_links_per_step_cap,
+    );
     finalize_agent_tick(
         ctx.world,
         ctx.event_log,
@@ -2351,7 +2359,33 @@ fn process_agent(
         outcome,
         compiled_opportunities: read_result.opportunities,
         opportunity_compiler_load: Some(read_result.opportunity_compiler_load),
+        repair_attempts: repair_attempt_traces,
+        causal_link_cap_hits,
     }))
+}
+
+fn causal_link_cap_hits_from_plan(
+    plan: Option<&crate::PlannedPlan>,
+    causal_links_per_step_cap: u8,
+) -> Vec<CausalLinkCapHit> {
+    plan.map_or_else(Vec::new, |plan| {
+        plan.steps
+            .iter()
+            .enumerate()
+            .filter_map(|(index, step)| {
+                let guard = step.guard.as_ref()?;
+                let truncated_count = guard
+                    .required_facts
+                    .len()
+                    .saturating_sub(guard.causal_links.len());
+                (truncated_count > 0).then(|| CausalLinkCapHit {
+                    plan_step_index: u16::try_from(index).unwrap_or(u16::MAX),
+                    truncated_count: u8::try_from(truncated_count).unwrap_or(u8::MAX),
+                    cap: causal_links_per_step_cap,
+                })
+            })
+            .collect()
+    })
 }
 
 fn record_repair_memory_from_completed_plan(

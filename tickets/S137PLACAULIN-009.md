@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None (observer-only — read-only consumer of event log + decision trace)
-**Deps**: archive/tickets/S137PLACAULIN-003.md (RepairAppliedPayload.substitute_recipe), 008 (RepairAttemptTrace)
+**Deps**: archive/tickets/S137PLACAULIN-003.md (RepairAppliedPayload.substitute_recipe), archive/tickets/S137PLACAULIN-008.md (completed RepairAttemptTrace)
 
 ## Problem
 

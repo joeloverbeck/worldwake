@@ -251,6 +251,8 @@ mod tests {
             tick,
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            repair_attempts: Vec::new(),
+            causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Dead,
         }
     }
@@ -262,6 +264,8 @@ mod tests {
             tick,
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            repair_attempts: Vec::new(),
+            causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,
                 dirty: DirtySet::default(),

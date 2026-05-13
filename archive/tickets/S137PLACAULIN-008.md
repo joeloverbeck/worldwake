@@ -1,6 +1,6 @@
 # S137PLACAULIN-008: Decision-trace RepairAttemptTrace
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `decision_trace.rs` adds `RepairAttemptTrace` to `AgentDecisionTrace`
@@ -81,33 +81,71 @@ Update `DecisionTraceSink` consumers in the new `plan_repair` module (ticket 006
 - Golden tests asserting trace contents — ticket 010.
 - New event tags — `EventTag::RepairApplied` already exists.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests Passed
 
-1. `cargo test -p worldwake-ai decision_trace::repair_attempt_trace` — new focused tests for shape + roundtrip + sink integration.
-2. `cargo test -p worldwake-ai plan_repair` — existing ticket-006 tests still pass with the trace-emission seam added.
-3. Existing suite: `cargo test --workspace`.
+1. `cargo test -p worldwake-ai --lib repair_attempt_trace` passed focused repair trace shape, roundtrip, and failed-attempt accounting coverage.
+2. `cargo test -p worldwake-ai --lib causal_link_cap_hit` passed focused cap-hit shape and derived cap-hit coverage.
+3. `cargo test -p worldwake-ai --lib plan_repair` passed the existing ticket-006/011 repair module tests with the widened repaired-outcome shape.
+4. `cargo test --workspace` passed.
+5. `cargo clippy --workspace --all-targets -- -D warnings` passed.
 
 ### Invariants
 
-1. `RepairAttemptTrace.chosen_kind == Some(kind)` exactly when the trace was emitted from a `RepairOutcome::Repaired` outcome.
-2. `RepairAttemptTrace.rejected` lists attempts in deterministic `RepairKind` Ord order (matches ticket 006's invariant).
-3. `RepairAttemptTrace.budget_consumed ≤ budget_total`.
-4. `CausalLinkCapHit` is emitted exactly when the planner emitter truncates `PlanGuard.causal_links` at the cap.
+1. `RepairAttemptTrace.chosen_kind == Some(kind)` is emitted for `RepairOutcome::Repaired`, while failed repair traces use `None`.
+2. `RepairAttemptTrace.rejected` preserves the deterministic repair attempt order produced by `attempt_repair_then_replan`.
+3. `RepairAttemptTrace.budget_consumed <= budget_total`; focused tests cover failed and successful accounting.
+4. `CausalLinkCapHit` is reported when a traced plan step retained fewer `PlanGuard.causal_links` than its `required_facts` count.
 
-## Test Plan
+## Test Plan Result
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/decision_trace.rs` `#[cfg(test)]` — new tests:
+1. `crates/worldwake-ai/src/decision_trace.rs` `#[cfg(test)]`:
    - `repair_attempt_trace_roundtrips_through_bincode`
    - `causal_link_cap_hit_roundtrips_through_bincode`
-2. `crates/worldwake-ai/src/plan_repair.rs` — new test `repair_search_emits_attempt_trace_with_rejected_kinds`.
+2. `crates/worldwake-ai/src/plan_repair.rs`:
+   - `replace_provider_returns_repaired_plan_for_lawful_route_provider` now asserts prior rejected attempts are carried on `RepairOutcome::Repaired`.
+3. `crates/worldwake-ai/src/agent_tick/execution.rs`:
+   - `failed_local_repair_attempt_trace_records_budget_and_rejections`
+   - `successful_local_repair_budget_consumed_includes_chosen_attempt`
+4. `crates/worldwake-ai/src/agent_tick/tests.rs`:
+   - `causal_link_cap_hits_report_truncated_plan_guards`
 
 ### Commands
 
-1. `cargo test -p worldwake-ai decision_trace`
-2. `cargo test -p worldwake-ai plan_repair`
-3. `cargo test --workspace`
-4. `cargo clippy --workspace --all-targets -- -D warnings`
+1. `cargo test -p worldwake-ai --lib repair_attempt_trace`
+2. `cargo test -p worldwake-ai --lib causal_link_cap_hit`
+3. `cargo test -p worldwake-ai --lib plan_repair`
+4. `cargo test -p worldwake-ai --lib agent_tick::execution`
+5. `cargo test -p worldwake-ai`
+6. `cargo test --workspace`
+7. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-13.
+
+1. Added `RepairAttemptTrace` and `CausalLinkCapHit` to `crates/worldwake-ai/src/decision_trace.rs`, with `AgentDecisionTrace.repair_attempts` and `AgentDecisionTrace.causal_link_cap_hits` as the sink-visible carriage fields.
+2. Wired localized repair attempts in `agent_tick/execution.rs` into per-tick decision traces for both successful and failed repair outcomes. `RepairOutcome::Repaired` now carries prior rejected attempts so a successful trace can report the alternatives tried before the chosen kind.
+3. Added derived cap-hit reporting from the final traced plan by comparing each guarded step's `required_facts` with retained `causal_links`.
+4. Updated explicit `AgentDecisionTrace` literals in AI tests, golden harness helpers, observer tests, survival forensics, and visualizer trace buffers for the new trace fields.
+5. Truth-synced `specs/S137-plan-causal-links-and-repair.md` for the landed trace fields and `RepairOutcome::Repaired` shape. Updated `tickets/S137PLACAULIN-009.md` to cite this completed ticket by path.
+
+## Deviations
+
+1. `CausalLinkCapHit` is emitted as a derived `AgentDecisionTrace.causal_link_cap_hits` entry from the final traced plan, not as a separate planner event pipeline.
+2. Observer rendering remains out of scope and is still owned by `tickets/S137PLACAULIN-009.md`.
+
+## Verification Result
+
+1. Passed `cargo test -p worldwake-ai --lib repair_attempt_trace`.
+2. Passed `cargo test -p worldwake-ai --lib causal_link_cap_hit`.
+3. Passed `cargo test -p worldwake-ai --lib plan_repair`.
+4. Passed `cargo test -p worldwake-ai --lib agent_tick::execution`.
+5. Passed `cargo test -p worldwake-ai`.
+6. Passed `cargo test --workspace`.
+7. Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+8. Passed `python3 .codex/skills/implement-ticket/scripts/check_closeout.py tickets/S137PLACAULIN-008.md`.
+9. Passed `git diff --check`.

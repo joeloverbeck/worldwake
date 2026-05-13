@@ -12,7 +12,7 @@ use worldwake_core::{
     CommodityKind, EntityId, FrameAssumption, FrameClearReason, GoalKey, HypothesisKind,
     InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, MotiveSourceRef,
     OmissionReason, OpportunityAnchor, OpportunityKey, PatrolRoute, PerceptionSource, Permille,
-    PunishmentFineSelectionTrace, SuspensionReason, TellTopic, Tick,
+    PunishmentFineSelectionTrace, RepairKind, SuspensionReason, TellTopic, Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionStartFailureReason, BindingStrictness, ResolvedRequestTrace,
@@ -30,6 +30,7 @@ use crate::knowledge_path::{
     SelfKnowledgeProvenance,
 };
 use crate::opportunity_compiler::Opportunity;
+use crate::plan_repair::RepairFailure;
 use crate::planner_duration_contract::PlannerDurationDependency;
 use crate::planner_ops::{PlanTerminalKind, PlannerOpKind};
 use crate::ranking::RankedGoalComparison;
@@ -96,6 +97,26 @@ pub struct AgentDecisionTrace {
     pub outcome: DecisionOutcome,
     pub compiled_opportunities: Vec<Opportunity>,
     pub opportunity_compiler_load: Option<OpportunityCompilerLoad>,
+    pub repair_attempts: Vec<RepairAttemptTrace>,
+    pub causal_link_cap_hits: Vec<CausalLinkCapHit>,
+}
+
+/// Diagnostic record for one localized repair search at the revalidation seam.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RepairAttemptTrace {
+    pub breach: worldwake_core::BreachSignature,
+    pub chosen_kind: Option<RepairKind>,
+    pub rejected: Vec<(RepairKind, RepairFailure)>,
+    pub budget_consumed: u16,
+    pub budget_total: u16,
+}
+
+/// Diagnostic record emitted when causal-link construction hits the per-step cap.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CausalLinkCapHit {
+    pub plan_step_index: u16,
+    pub truncated_count: u8,
+    pub cap: u8,
 }
 
 /// What the decision pipeline produced for this agent this tick.
@@ -2560,6 +2581,47 @@ mod tests {
         }
     }
 
+    fn sample_breach_signature() -> worldwake_core::BreachSignature {
+        worldwake_core::BreachSignature {
+            goal_key: GoalKey::new(GoalKind::Sleep),
+            invalidator: worldwake_core::InvalidatorTag::TargetMoved,
+            step_target: Some(entity(9)),
+        }
+    }
+
+    #[test]
+    fn repair_attempt_trace_roundtrips_through_bincode() {
+        let trace = RepairAttemptTrace {
+            breach: sample_breach_signature(),
+            chosen_kind: Some(RepairKind::ReplaceProvider),
+            rejected: vec![(
+                RepairKind::RebindTarget,
+                RepairFailure::NoSiblingTargetFound,
+            )],
+            budget_consumed: 2,
+            budget_total: 5,
+        };
+
+        let bytes = bincode::serialize(&trace).unwrap();
+        let roundtrip: RepairAttemptTrace = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, trace);
+    }
+
+    #[test]
+    fn causal_link_cap_hit_roundtrips_through_bincode() {
+        let trace = CausalLinkCapHit {
+            plan_step_index: 4,
+            truncated_count: 3,
+            cap: 8,
+        };
+
+        let bytes = bincode::serialize(&trace).unwrap();
+        let roundtrip: CausalLinkCapHit = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, trace);
+    }
+
     #[test]
     fn ranked_goal_summary_default_has_empty_motive_source_contributions() {
         let summary = RankedGoalSummary::default();
@@ -2622,6 +2684,8 @@ mod tests {
             tick: Tick(8),
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            repair_attempts: Vec::new(),
+            causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,
                 dirty: crate::DirtySet::default(),
@@ -2710,6 +2774,8 @@ mod tests {
             tick,
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            repair_attempts: Vec::new(),
+            causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Dead,
         }
     }
@@ -2771,6 +2837,8 @@ mod tests {
             tick,
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            repair_attempts: Vec::new(),
+            causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,
                 dirty: crate::DirtySet::default(),
@@ -2829,6 +2897,8 @@ mod tests {
             tick: Tick(5),
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            repair_attempts: Vec::new(),
+            causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,
                 dirty: crate::DirtySet::default(),
@@ -5336,6 +5406,8 @@ mod tests {
             tick: Tick(5),
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            repair_attempts: Vec::new(),
+            causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,
                 dirty: crate::DirtySet::default(),
