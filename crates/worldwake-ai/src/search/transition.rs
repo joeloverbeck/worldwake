@@ -7,13 +7,13 @@ use crate::planner_duration_contract::PlannerDurationDependency;
 use crate::{
     GoalKindPlannerExt, GoalOffer, HypotheticalEffectSink, PlanTerminalKind, PlannedStep,
     PlannerOpKind, PlannerOpSemantics, PlanningEntityRef, build_plan_expectations,
-    build_plan_guard,
+    build_plan_guard_with_causal_links,
 };
 use heuristic::{
     combined_relevant_places_for_tactical, compute_heuristic, compute_landmark_heuristic,
 };
 use std::collections::BTreeMap;
-use worldwake_core::{ActionDefId, EntityKind, ExecutionBudget};
+use worldwake_core::{ActionDefId, CognitiveProfile, EntityKind, ExecutionBudget};
 use worldwake_sim::{
     ActionDefRegistry, EffectEvaluationContext, EffectMode, RecipeRegistry, TemporalBeliefView,
     apply_effects_with_context,
@@ -50,6 +50,7 @@ pub(super) fn build_successor<'snapshot>(
     node: &SearchNode<'snapshot>,
     candidate: &SearchCandidate,
     recipes: &RecipeRegistry,
+    cognitive: &CognitiveProfile,
     execution_budget: &ExecutionBudget,
     tactical_goal: Option<&TacticalGoal>,
     landmark_set: &LandmarkSet,
@@ -61,6 +62,7 @@ pub(super) fn build_successor<'snapshot>(
         node,
         candidate,
         recipes,
+        cognitive,
         execution_budget,
         tactical_goal,
         landmark_set,
@@ -78,6 +80,7 @@ pub(super) fn build_successor_detailed<'snapshot>(
     node: &SearchNode<'snapshot>,
     candidate: &SearchCandidate,
     recipes: &RecipeRegistry,
+    cognitive: &CognitiveProfile,
     execution_budget: &ExecutionBudget,
     tactical_goal: Option<&TacticalGoal>,
     landmark_set: &LandmarkSet,
@@ -195,7 +198,13 @@ pub(super) fn build_successor_detailed<'snapshot>(
         expectations: Vec::new(),
     };
     let adoption_tick = node.state.current_tick();
-    step.guard = build_plan_guard(def, &step, adoption_tick);
+    step.guard = build_plan_guard_with_causal_links(
+        def,
+        &step,
+        adoption_tick,
+        u16::try_from(node.steps.len()).unwrap_or(u16::MAX),
+        cognitive.causal_links_per_step_cap,
+    );
     step.expectations = build_plan_expectations(def, &step, adoption_tick);
     let terminal = terminal_kind(goal, &transition_state, &step, tactical_goal);
     if !semantics.may_appear_mid_plan && terminal.is_none() {

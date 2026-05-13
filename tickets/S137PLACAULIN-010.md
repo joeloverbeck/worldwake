@@ -4,11 +4,11 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: None — net-new test file + scenario fixtures
-**Deps**: 007 (revalidation routing), 008 (RepairAttemptTrace), 009 (observer rendering)
+**Deps**: tickets/S137PLACAULIN-011.md (successful localized repair handlers), tickets/S137PLACAULIN-007.md (revalidation routing), tickets/S137PLACAULIN-008.md (RepairAttemptTrace), tickets/S137PLACAULIN-009.md (observer rendering)
 
 ## Problem
 
-S137's Validation section requires five golden scenarios exercising the bounded localized repair path and a Phase 11 gate metric: `survival-baseline.ron` shows ≥30% reduction in `EventTag::ReplanTriggered` count compared to a pre-S137 baseline. Without these goldens, the spec's behavioral contract (repair runs before full replan; budget exhaustion falls through; repeat-failed repair surrenders; `DiscrepancyClearing` clearing resolves blockers structurally; merchant-moved breach rebinds to a sibling) is unverified.
+S137's Validation section requires five golden scenarios exercising the bounded localized repair path and a Phase 11 gate metric: `survival-baseline.ron` shows >=30% reduction in `EventTag::ReplanTriggered` count compared to a pre-S137 baseline. Without these goldens, the spec's behavioral contract (repair runs before full replan; budget exhaustion falls through; repeat-failed repair surrenders; `DiscrepancyClearing` clearing resolves blockers structurally; merchant-moved breach rebinds to a sibling) is unverified.
 
 ## Assumption Reassessment (2026-05-13)
 
@@ -19,7 +19,7 @@ S137's Validation section requires five golden scenarios exercising the bounded 
 3. Shared boundary: the golden test framework expects scenario RON + named assertions. Per `docs/golden-e2e-testing.md` (referenced by `tickets/README.md`), goldens map invariants to proof surfaces via action trace, decision trace, event-log delta, and authoritative world state — the same Verification Layers contract as ticket-level work.
 4. **Phase 11 gate metric — concrete delta math**: the metric is "≥30% reduction in `EventTag::ReplanTriggered` count on `survival-baseline.ron` over a 1440-tick replay." Pre-S137 baseline must be captured at the commit immediately before this ticket lands. The expected counter relationship: `ReplanTriggered_after / ReplanTriggered_before ≤ 0.7`, with `RepairApplied_after ≈ (ReplanTriggered_before − ReplanTriggered_after) ± 10%`. Implementer captures the baseline once at the start of the ticket (`git stash` the S137 changes, run the existing baseline, record the count, restore).
 5. **Live `GoalKind` under test**: scenarios primarily exercise `GoalKind::TravelTo` and `GoalKind::Trade` (merchant-moved breach), plus `GoalKind::ProduceCommodity` (recipe-driven rebind cases). The active operator surface: `PlannerOpKind::Travel`, `PlannerOpKind::Trade`, `PlannerOpKind::CraftRecipe`. All exist in current planner.
-6. **Coverage gap**: existing tests `classify_accepted_repair_*` (planning.rs:3354-3461) cover post-hoc classification only — they do not cover the pre-failure repair path. Missing surface is golden E2E coverage and runtime trace coverage. This ticket adds both via the new `golden_plan_repair.rs` file.
+6. **Coverage gap**: existing tests `classify_accepted_repair_*` (planning.rs:3354-3461) cover post-hoc classification only — they do not cover the pre-failure repair path. `S137PLACAULIN-006` covers the staged module and `S137PLACAULIN-011` covers successful localized strategy handlers; this ticket adds the golden E2E and runtime trace coverage after those surfaces are live.
 7. **Scenario isolation**: each of the 5 scenarios must isolate one repair-kind branch from lawful competing affordances. For scenario 2 (`InsertVerification`), exclude lawful direct-belief-acquisition paths so the planner doesn't bypass the stale-belief breach. For scenario 5 (budget exhaustion), set `repair_budget_fraction` low enough that all attempted kinds fail before any can succeed.
 8. **Cumulative arithmetic — Phase 11 gate**: the 30% reduction threshold is the contract. Validate survivability: if the actual reduction is between 20% and 30%, the gate fails — the ticket either tightens the repair search's coverage or refines the metric definition rather than weakening the threshold. If reduction is ≥30%, the gate passes; the absolute counter values are recorded in the golden assertion for reproducibility.
 

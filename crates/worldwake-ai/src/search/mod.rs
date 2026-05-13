@@ -799,6 +799,7 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
                 &node,
                 &candidate,
                 recipes,
+                cognitive,
                 execution_budget,
                 active_tactical_goal,
                 &landmark_set,

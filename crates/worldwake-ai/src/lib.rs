@@ -33,6 +33,7 @@ pub mod opportunity_expectation_failure;
 pub mod perf_telemetry;
 pub mod plan_guard;
 pub mod plan_guard_build;
+pub mod plan_repair;
 pub mod plan_revalidation;
 pub mod plan_selection;
 mod plan_step_expectations;
@@ -111,7 +112,12 @@ pub use opportunity_expectation_failure::{
     ExpectationFailureCause, ExpectationFailurePhase, OpportunityExpectationFailureIncident,
 };
 pub use plan_guard::{ExpectationKind, Invalidator, PlanExpectation, PlanGuard, RequiredFact};
-pub use plan_guard_build::{build_plan_expectations, build_plan_guard};
+pub use plan_guard_build::{
+    build_plan_expectations, build_plan_guard, build_plan_guard_with_causal_links,
+};
+pub use plan_repair::{
+    PlanRepairContext, RepairFailure, RepairOutcome, attempt_repair_then_replan,
+};
 pub use plan_revalidation::{
     RevalidationOutcome, classify_revalidation, is_pursuit_plan_invalid, revalidate_next_step,
 };

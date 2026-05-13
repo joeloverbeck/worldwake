@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `decision_trace.rs` adds `RepairAttemptTrace` to `AgentDecisionTrace`
-**Deps**: 006 (plan_repair module, RepairKind, RepairFailure)
+**Deps**: archive/tickets/S137PLACAULIN-006.md (plan_repair module, RepairKind, RepairFailure)
 
 ## Problem
 
@@ -14,7 +14,7 @@ S137 D10 adds `RepairAttemptTrace` to the decision trace surface so debuggers an
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. `crates/worldwake-ai/src/decision_trace.rs` defines ~30 existing trace types (`PortfolioTrace`, `PortfolioSlotTrace`, `AgentDecisionTrace`, `PlanAttemptTrace`, etc.). Test boundary at line 2515. No existing `RepairAttemptTrace`. `RepairKind` (new variants) and `RepairFailure` are defined in ticket 006 (`plan_repair` module).
+1. `crates/worldwake-ai/src/decision_trace.rs` defines ~30 existing trace types (`PortfolioTrace`, `PortfolioSlotTrace`, `AgentDecisionTrace`, `PlanAttemptTrace`, etc.). Test boundary at line 2515. No existing `RepairAttemptTrace`. `RepairKind` exists in core; `RepairFailure` exists in `crates/worldwake-ai/src/plan_repair.rs` from archive/tickets/S137PLACAULIN-006.md.
 2. Spec `specs/S137-plan-causal-links-and-repair.md` D10 specifies the trace shape: chosen `RepairKind`, breach signature, rejected `(RepairKind, RepairFailure)` pairs, budget consumed. Should compose with existing `AgentDecisionTrace` per the `PortfolioSlotTrace`/`PlanAttemptTrace` precedent.
 3. Shared boundary: the `DecisionTraceSink` surface (existing). Per `references/worldwake-validation-patterns.md` Dual-Use Read-Model Types and Read-Only Tooling Consumer patterns, trace types live in `worldwake-ai/src/` (not `tests/`) so the observer binary in `worldwake-cli` can consume them via existing public API.
 4. Decision-trace preference (precision rule #6): for AI reasoning, candidate absence, suppression, or planner behavior, prefer decision-trace assertions over weaker indirect evidence. `RepairAttemptTrace` is the canonical surface for "why this repair, not that one" — strictly stronger than indirect inference from `RepairAppliedPayload` alone.
@@ -51,9 +51,9 @@ Add a field on `AgentDecisionTrace` (around line 92) or a sibling collection:
 pub repair_attempts: Vec<RepairAttemptTrace>,
 ```
 
-### 2. Add `CausalLinkCapHit` annotation (declared in ticket 006 as TODO)
+### 2. Add `CausalLinkCapHit` annotation
 
-If ticket 006 declared `DecisionTrace::CausalLinkCapHit` as a referenced trace annotation for the planner emitter cap, define it here:
+Archive ticket 006 capped `PlanGuard.causal_links` silently at emit time. If this ticket keeps cap-hit traceability in scope, define the trace annotation here:
 
 ```rust
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

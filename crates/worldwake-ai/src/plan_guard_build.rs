@@ -1,7 +1,7 @@
 use crate::{ExpectationKind, PlanExpectation, PlanGuard, PlannedStep, RequiredFact};
 use worldwake_core::{
-    CommodityKind, EntityId, ExpectationKindTag, ObservationPredicate, Quantity, StatePredicate,
-    Tick,
+    CausalLink, CausalProvider, CommodityKind, EntityBeliefAspect, EntityId, ExpectationKindTag,
+    ObservationPredicate, Permille, PlanningFact, Quantity, StatePredicate, Tick,
 };
 use worldwake_sim::{
     ActionDef, ActionPayload, ClaimSource, EntitySource, ExpectationTemplateSpec,
@@ -119,6 +119,74 @@ fn build_required_fact(spec: &RequiredFactSpec, step: &PlannedStep) -> Option<Re
     }
 }
 
+fn planning_fact(required_fact: RequiredFact) -> PlanningFact {
+    match required_fact {
+        RequiredFact::TargetPresent { target, at_place } => {
+            PlanningFact::TargetPresent { target, at_place }
+        }
+        RequiredFact::CommodityAvailable {
+            place,
+            kind,
+            min_quantity,
+        } => PlanningFact::CommodityAvailable {
+            place,
+            kind,
+            min_quantity,
+        },
+        RequiredFact::RouteKnown { from, to } => PlanningFact::RouteKnown { from, to },
+        RequiredFact::ResourceAccess {
+            resource,
+            agent_holds_permission,
+        } => PlanningFact::ResourceAccess {
+            resource,
+            agent_holds_permission,
+        },
+    }
+}
+
+fn causal_provider(required_fact: RequiredFact) -> CausalProvider {
+    match required_fact {
+        RequiredFact::TargetPresent { target, .. } => CausalProvider::Observation {
+            observed_entity: target,
+            aspect: EntityBeliefAspect::Location,
+        },
+        RequiredFact::CommodityAvailable { place, kind, .. } => CausalProvider::Observation {
+            observed_entity: place,
+            aspect: EntityBeliefAspect::Inventory(kind),
+        },
+        RequiredFact::RouteKnown { to, .. } => CausalProvider::Belief {
+            claim_key: worldwake_core::BeliefClaimKey {
+                subject: to,
+                aspect: EntityBeliefAspect::Location,
+            },
+        },
+        RequiredFact::ResourceAccess { resource, .. } => CausalProvider::Observation {
+            observed_entity: resource,
+            aspect: EntityBeliefAspect::Location,
+        },
+    }
+}
+
+fn build_causal_links(
+    required_facts: &[RequiredFact],
+    consumer_step_index: u16,
+    source_tick: Tick,
+    cap: u8,
+) -> Vec<CausalLink> {
+    required_facts
+        .iter()
+        .take(usize::from(cap))
+        .copied()
+        .map(|required_fact| CausalLink {
+            provider: causal_provider(required_fact),
+            fact: planning_fact(required_fact),
+            consumer_step_index,
+            source_tick,
+            confidence: Permille::new_unchecked(1000),
+        })
+        .collect()
+}
+
 fn build_invalidator(
     spec: &InvalidatorSpec,
     step: &PlannedStep,
@@ -232,23 +300,40 @@ pub fn build_plan_guard(
     step: &PlannedStep,
     adoption_tick: Tick,
 ) -> Option<PlanGuard> {
+    build_plan_guard_with_causal_links(def, step, adoption_tick, 0, 0)
+}
+
+#[must_use]
+pub fn build_plan_guard_with_causal_links(
+    def: &ActionDef,
+    step: &PlannedStep,
+    adoption_tick: Tick,
+    consumer_step_index: u16,
+    causal_links_per_step_cap: u8,
+) -> Option<PlanGuard> {
     let GuardTemplateSpec {
         required_facts,
         min_confidence,
         invalidators,
     } = def.guard_template.as_ref()?;
 
+    let required_facts = required_facts
+        .iter()
+        .filter_map(|spec| build_required_fact(spec, step))
+        .collect::<Vec<_>>();
     Some(PlanGuard {
-        required_facts: required_facts
-            .iter()
-            .filter_map(|spec| build_required_fact(spec, step))
-            .collect(),
+        causal_links: build_causal_links(
+            &required_facts,
+            consumer_step_index,
+            adoption_tick,
+            causal_links_per_step_cap,
+        ),
+        required_facts,
         min_confidence: *min_confidence,
         invalidators: invalidators
             .iter()
             .filter_map(|spec| build_invalidator(spec, step, adoption_tick))
             .collect(),
-        causal_links: Vec::new(),
     })
 }
 
@@ -266,12 +351,12 @@ pub fn build_plan_expectations(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_plan_expectations, build_plan_guard};
+    use super::{build_plan_expectations, build_plan_guard, build_plan_guard_with_causal_links};
     use crate::{ExpectationKind, PlannedStep, PlannerOpKind, PlanningEntityRef, RequiredFact};
     use worldwake_core::{
-        ActionDefId, ActionDomain, BeliefClaimKey, BodyCostPerTick, CommodityKind,
-        EntityBeliefAspect, EntityId, EventTag, ExpectationKindTag, Permille, Quantity,
-        VisibilitySpec,
+        ActionDefId, ActionDomain, BeliefClaimKey, BodyCostPerTick, CausalProvider, CommodityKind,
+        EntityBeliefAspect, EntityId, EventTag, ExpectationKindTag, Permille, PlanningFact,
+        Quantity, VisibilitySpec,
     };
     use worldwake_sim::{
         ActionDef, ActionHandlerId, ActionPayload, Constraint, DurationExpr, GuardTemplateSpec,
@@ -353,6 +438,48 @@ mod tests {
             }]
         );
         assert_eq!(guard.min_confidence, Permille::new(500).unwrap());
+        assert!(guard.causal_links.is_empty());
+    }
+
+    #[test]
+    fn build_plan_guard_populates_capped_causal_links() {
+        let mut def = sample_action_def();
+        let step = sample_step();
+        def.guard_template = Some(GuardTemplateSpec {
+            required_facts: vec![
+                RequiredFactSpec::TargetPresent,
+                RequiredFactSpec::CommodityAvailable {
+                    min_quantity: Quantity(1),
+                },
+            ],
+            min_confidence: Permille::new(500).unwrap(),
+            invalidators: vec![],
+        });
+
+        let guard =
+            build_plan_guard_with_causal_links(&def, &step, worldwake_core::Tick(8), 3, 1).unwrap();
+
+        assert_eq!(guard.causal_links.len(), 1);
+        assert_eq!(
+            guard.causal_links[0].provider,
+            CausalProvider::Observation {
+                observed_entity: entity(10),
+                aspect: EntityBeliefAspect::Location,
+            }
+        );
+        assert_eq!(
+            guard.causal_links[0].fact,
+            PlanningFact::TargetPresent {
+                target: entity(10),
+                at_place: entity(12),
+            }
+        );
+        assert_eq!(guard.causal_links[0].consumer_step_index, 3);
+        assert_eq!(guard.causal_links[0].source_tick, worldwake_core::Tick(8));
+        assert_eq!(
+            guard.causal_links[0].confidence,
+            Permille::new(1000).unwrap()
+        );
     }
 
     #[test]

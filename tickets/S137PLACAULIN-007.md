@@ -4,17 +4,17 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `agent_tick/execution.rs` revalidation seam; payload revalidation for RebindTarget
-**Deps**: 006 (plan_repair module)
+**Deps**: archive/tickets/S137PLACAULIN-006.md (plan_repair module and causal-link emission), tickets/S137PLACAULIN-011.md (successful localized repair handlers)
 
 ## Problem
 
-S137 D6 inserts `attempt_repair_then_replan` into the agent-tick revalidation seam at `crates/worldwake-ai/src/agent_tick/execution.rs:90-146`. Today, an `Invalidator` breach falls straight through to `handle_current_step_failure`, which triggers full replan and emits `EventTag::ReplanTriggered`. After this ticket, breaches first attempt bounded localized repair; only if repair returns `Failed` does the agent fall through to the existing full-replan path. Without this routing change, ticket 006's repair module is unreachable from the live agent decision cycle.
+S137 D6 inserts `attempt_repair_then_replan` into the agent-tick revalidation seam at `crates/worldwake-ai/src/agent_tick/execution.rs:90-146`. Today, an `Invalidator` breach falls straight through to `handle_current_step_failure`, which triggers full replan and emits `EventTag::ReplanTriggered`. After this ticket, breaches first attempt bounded localized repair; only if repair returns `Failed` does the agent fall through to the existing full-replan path. Without this routing change, the ticket-006 repair module and ticket-011 successful handlers are unreachable from the live agent decision cycle.
 
 ## Assumption Reassessment (2026-05-13)
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. The revalidation seam is at `crates/worldwake-ai/src/agent_tick/execution.rs:90-146` inside `enqueue_valid_step_or_handle_failure`. `classify_revalidation` at line 90 returns `RevalidationOutcome::Valid` or `RevalidationOutcome::Invalidated { reason, expectation_kind, mismatch_detail }`. Today the `Invalidated` branch (lines 102-109) extracts the reason and falls straight through to `handle_current_step_failure` (lines 133-146), which builds a `ReplanTriggered` event. Test boundary at line 844 — runtime path. `attempt_repair_then_replan` is added by ticket 006.
+1. The revalidation seam is at `crates/worldwake-ai/src/agent_tick/execution.rs:90-146` inside `enqueue_valid_step_or_handle_failure`. `classify_revalidation` at line 90 returns `RevalidationOutcome::Valid` or `RevalidationOutcome::Invalidated { reason, expectation_kind, mismatch_detail }`. Today the `Invalidated` branch (lines 102-109) extracts the reason and falls straight through to `handle_current_step_failure` (lines 133-146), which builds a `ReplanTriggered` event. Test boundary at line 844 — runtime path. `attempt_repair_then_replan` was added by ticket 006 and should have successful non-S139 handlers after ticket 011.
 2. Spec `specs/S137-plan-causal-links-and-repair.md` D6 specifies the routing: invoke repair first; on `Repaired`, emit `EventTag::RepairApplied` with the chosen kind and replace the plan; on `Failed`, record attempts in `RepairMemory` and fall through to `handle_current_step_failure`.
 3. Shared boundary: the revalidation seam itself — the data contract between `classify_revalidation`'s output and the breach-handling code. The new repair attempt operates on the same `RevalidationOutcome::Invalidated` input shape; the change is which code path consumes it first.
 4. **Live `GoalKind` under test**: the revalidation seam is goal-agnostic — it fires for any plan step whose guard's `Invalidator` triggers. Existing goldens exercise `GoalKind::TravelTo`, `Trade`, `ProduceCommodity`, `Sleep`. The repair routing path applies uniformly across all goal families.
@@ -44,10 +44,17 @@ In `crates/worldwake-ai/src/agent_tick/execution.rs:102-146`, restructure the `I
 let (plan_invalidation_reason, expectation_kind, mismatch_detail) = match classification {
     RevalidationOutcome::Valid => (None, None, None),
     RevalidationOutcome::Invalidated { reason, expectation_kind, mismatch_detail } => {
-        let repair_outcome = attempt_repair_then_replan(
-            runtime, ctx.cognitive, repair_memory, discrepancy_memory,
-            /* … other context fields … */
-        );
+        let repair_context = PlanRepairContext {
+            failed_step,
+            broken_link,
+            breach_signature,
+            preserved_prefix,
+            reusable_suffix,
+            new_evidence,
+            discrepancy_entry,
+        };
+        let repair_outcome =
+            attempt_repair_then_replan(&repair_context, ctx.cognitive, repair_memory);
         match repair_outcome {
             RepairOutcome::Repaired { kind, new_plan } => {
                 emit_decision_event(
