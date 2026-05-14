@@ -13,7 +13,7 @@ S144's `PerformanceMetrics` needs deterministic logical cache hit/miss/invalidat
 ## Assumption Reassessment (2026-05-14)
 
 1. `PlanningSnapshot` owns two precomputed `DistanceMatrix` fields: `shortest_travel_ticks` and `perceived_travel_costs`. The matrix-backed accessors are `min_travel_ticks`, `min_travel_ticks_to_any`, and `min_perceived_travel_cost_to_any`; `direct_perceived_travel_cost` / `direct_perceived_travel_breakdown` compute a direct-edge breakdown from place adjacency and route-threat state, so they are not counted as matrix-cache lookups. Existing inline tests exercising this surface (`min_travel_ticks_self_is_zero`, `min_travel_ticks_direct_adjacent`, `snapshot_filter_excludes_items_for_travel_only_goal`) must continue to pass; the instrumentation is purely additive and changes no return values.
-2. S144 spec D8 (`specs/S144-aggregate-scenario-diagnostics.md`) specifies read-only `u64` logical counters on the snapshot caches surfaced through the decision trace, explicitly framed as a derived read-model addition (FND-27) with no planning-behavior change. `AgentDecisionTrace` (`decision_trace.rs:94`, derives `Clone, Debug`) already carries an analogous optional load carrier `opportunity_compiler_load: Option<OpportunityCompilerLoad>` (:99) -- the new counter carrier follows that precedent.
+2. S144 spec D8 (`archive/specs/S144-aggregate-scenario-diagnostics.md`) specifies read-only `u64` logical counters on the snapshot caches surfaced through the decision trace, explicitly framed as a derived read-model addition (FND-27) with no planning-behavior change. `AgentDecisionTrace` (`decision_trace.rs:94`, derives `Clone, Debug`) already carries an analogous optional load carrier `opportunity_compiler_load: Option<OpportunityCompilerLoad>` (:99) -- the new counter carrier follows that precedent.
 3. Mixed-layer data contract under audit: `AgentDecisionTrace` gains a new carrier field. `AgentDecisionTrace` has 23 construction sites across 7 files (`agent_tick/mod.rs`, `decision_trace.rs`, `survival_forensics.rs`, `bin/observer.rs`, `worldwake-visualizer/src/trace_buffers.rs`, `tests/golden_harness/timeline.rs`, `tests/golden_harness/survival_forensics_assertions.rs`); `AgentDecisionTrace` derives no `Default`, so every site must add the new field explicitly (as `None` for sites that produce no planning snapshot).
 4. Adjacent-contradiction classification (required consequence of D8, not a separate bug): `DistanceMatrix` is a *precomputed* matrix, not a populate-on-demand cache. The implemented mapping is: a matrix-backed accessor whose underlying lookup returns `Some(_)` increments `cache_hit_count`; `None` increments `cache_miss_count`; `cache_invalidation_count` is always `0` because the matrices are rebuilt with the snapshot rather than invalidated incrementally.
 
@@ -56,7 +56,7 @@ Added the new field to all live `AgentDecisionTrace` construction sites. Sites t
 - `crates/worldwake-ai/tests/golden_harness/survival_forensics_assertions.rs` (modify -- `AgentDecisionTrace` construction site)
 - `crates/worldwake-ai/tests/golden_opportunity_compiler.rs` (modify -- real agent-tick trace carrier assertion)
 - `crates/worldwake-ai/src/lib.rs` (modify -- public re-export of `SnapshotCacheCounters`)
-- `specs/S144-aggregate-scenario-diagnostics.md` (modify -- D8 mapping truth-sync)
+- `archive/specs/S144-aggregate-scenario-diagnostics.md` (modify -- D8 mapping truth-sync)
 
 ## Out of Scope
 

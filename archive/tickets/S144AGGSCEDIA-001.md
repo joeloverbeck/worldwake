@@ -13,7 +13,7 @@ S144's `ScenarioDiagnosticsReport` needed deterministic integer percentile distr
 ## Assumption Reassessment (2026-05-14)
 
 1. Before this ticket, `crates/worldwake-core/src/percentile.rs` did not exist; no `PercentileBucket` type existed anywhere in the workspace. This was a net-new type with no existing focused/unit, runtime trace, or golden/E2E coverage.
-2. S144 spec D2 (`specs/S144-aggregate-scenario-diagnostics.md`) specifies the exact struct shape: `n, min, p50, p95, p99, max, mean` (all `u64`) plus `from_sorted(&[u64]) -> Self`. `worldwake-core`'s dependency set is `serde, bincode, blake3`; the `Serialize`/`Deserialize` derives `PercentileBucket` needs are already available.
+2. S144 spec D2 (`archive/specs/S144-aggregate-scenario-diagnostics.md`) specifies the exact struct shape: `n, min, p50, p95, p99, max, mean` (all `u64`) plus `from_sorted(&[u64]) -> Self`. `worldwake-core`'s dependency set is `serde, bincode, blake3`; the `Serialize`/`Deserialize` derives `PercentileBucket` needs are already available.
 3. Shared abstraction boundary: `PercentileBucket` is consumed by `worldwake-ai`'s `scenario_diagnostics` module (ticket 004) as a struct field type. The data contract under audit is the `from_sorted` determinism guarantee — integer-only math, no floats, `mean = sum / n` integer division.
 
 ## Architecture Check

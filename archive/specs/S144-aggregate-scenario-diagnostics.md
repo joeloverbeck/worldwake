@@ -1,6 +1,6 @@
 # S144: Aggregate Scenario Diagnostics
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
@@ -12,7 +12,7 @@ This spec is also the prerequisite that Phase 12's other accepted proposals refe
 
 ## Phase and Status
 
-Phase 12: AI Architecture Evolution — Draft
+Phase 12: AI Architecture Evolution — Completed and archived
 
 ## Crates
 
@@ -314,3 +314,25 @@ Not applicable. S144's only authored parameters are CLI flags (`--diagnostics-to
 - JSON round-trip test.
 - Aggregator unit tests for each metric category (build small `&[AgentDecisionTrace]` fixtures, assert aggregator output).
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
+
+## Outcome
+
+Completed: 2026-05-14.
+
+S144 landed the aggregate scenario diagnostics surface as a read-only derived observer/tooling layer. The implementation added deterministic integer percentile support, public/serde-ready portfolio slot keys, logical planning-snapshot cache counters, the `ScenarioDiagnosticsReport` type tree, the pure `build_scenario_diagnostics` aggregator, observer Section 13 with text/JSON output and diagnostics flags, and a committed `survival-baseline.ron` diagnostics regression fixture.
+
+The completed ticket chain is archived as:
+- `archive/tickets/S144AGGSCEDIA-001.md`
+- `archive/tickets/S144AGGSCEDIA-002.md`
+- `archive/tickets/S144AGGSCEDIA-003.md`
+- `archive/tickets/S144AGGSCEDIA-004.md`
+- `archive/tickets/S144AGGSCEDIA-005.md`
+- `archive/tickets/S144AGGSCEDIA-006.md`
+- `archive/tickets/S144AGGSCEDIA-007.md`
+
+Deviations from the original plan: the first shipped report stayed strictly within existing traces and event tags. Contract bid/award/failure counts remain fold-rejected because the event log has no contract event tags. The golden proof shape was narrowed to the live deterministic JSON representation owned by the observer/fixture path instead of assuming payload-bearing enum maps could be emitted as raw JSON object keys.
+
+Verification recorded by the archived ticket chain:
+- Focused core, AI, and observer tests for `PercentileBucket`, `SlotKind` serde/public surface, cache counters, report type serde, aggregation metrics, observer Section 13, diagnostics CLI flags, and the deterministic survival-baseline fixture.
+- `crates/worldwake-ai/tests/golden_scenario_diagnostics.rs` covers deterministic report generation and the committed fixture.
+- Final broad gates in the S144 chain included `cargo test --workspace` and `cargo clippy --workspace --all-targets -- -D warnings`.

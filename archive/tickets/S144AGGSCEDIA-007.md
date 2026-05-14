@@ -13,7 +13,7 @@ Before this ticket, S144's deterministic report had no committed golden fixture.
 ## Assumption Reassessment (2026-05-14)
 
 1. `crates/worldwake-ai/tests/golden_scenario_diagnostics.rs` did not exist before this ticket. Golden tests follow the `crates/worldwake-ai/tests/golden_*.rs` naming convention, and `docs/golden-e2e-testing.md` requires generated inventory refreshes when adding golden files.
-2. S144 spec D9+D10 in `specs/S144-aggregate-scenario-diagnostics.md` called for deterministic `survival-baseline.ron` coverage, schema coverage, top-N overflow coverage, observer JSON round-trip coverage, and a committed `crates/worldwake-ai/tests/fixtures/expected-scenario-diagnostics.json` fixture.
+2. S144 spec D9+D10 in `archive/specs/S144-aggregate-scenario-diagnostics.md` called for deterministic `survival-baseline.ron` coverage, schema coverage, top-N overflow coverage, observer JSON round-trip coverage, and a committed `crates/worldwake-ai/tests/fixtures/expected-scenario-diagnostics.json` fixture.
 3. The observer's deterministic diagnostics JSON representation existed only inside the observer binary. The golden needed to exercise that same representation without copying private mirror structs, so this ticket extracted that JSON representation into `worldwake_cli::diagnostics_json` and kept the observer binary as a caller.
 4. The live `survival-baseline.ron` run has no repair attempts. The landed schema coverage therefore proves field presence, fixture stability, deterministic zero values, and populated fields that the live scenario actually exercises; it does not force non-empty repair-budget percentile buckets for a scenario that records zero repairs.
 

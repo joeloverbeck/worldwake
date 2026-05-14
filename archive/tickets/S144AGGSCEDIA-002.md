@@ -13,7 +13,7 @@ S144's `GoalPressureMetrics.candidates_emitted_by_slot` keys a `BTreeMap` on `Sl
 ## Assumption Reassessment (2026-05-14)
 
 1. Before implementation, `SlotKind` was defined at `crates/worldwake-ai/src/agent_tick/portfolio.rs` as `pub(crate) enum SlotKind { Survival, Commitment, Economic }` with derives `Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash` and no `Serialize`/`Deserialize`. Consumers were in-crate only: `portfolio.rs` itself and `decision_trace.rs` (`use crate::agent_tick::portfolio::SlotKind` and `slots: BTreeMap<SlotKind, PortfolioSlotTrace>`). No cross-crate consumers existed, so this was a visibility *widening*, not a rename, with no rename blast radius.
-2. S144 spec D3 (`specs/S144-aggregate-scenario-diagnostics.md`) specifies: promote `pub(crate)` → `pub`, re-export from `crates/worldwake-ai/src/lib.rs`, add `Serialize, Deserialize` derives. No variant or semantic change.
+2. S144 spec D3 (`archive/specs/S144-aggregate-scenario-diagnostics.md`) specifies: promote `pub(crate)` → `pub`, re-export from `crates/worldwake-ai/src/lib.rs`, add `Serialize, Deserialize` derives. No variant or semantic change.
 3. Shared abstraction boundary: `SlotKind` becomes a public type of `worldwake-ai`, consumed as a `BTreeMap` key in `scenario_diagnostics` (ticket 004). Data contract under audit: the variant set and `Ord` derive (BTreeMap key requirement) stay unchanged; only visibility and serde derives widen.
 
 ## Architecture Check
