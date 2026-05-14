@@ -164,10 +164,10 @@ Integer-only percentile computation over sorted slices; `mean` is `sum / n` inte
 
 ### D3: `SlotKind` visibility promotion + serde derives
 
-`SlotKind` already exists at `crates/worldwake-ai/src/agent_tick/portfolio.rs` (variants `Survival`, `Commitment`, `Economic`) but is declared `pub(crate)` and derives only `Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash`. Because `ScenarioDiagnosticsReport` (D1) is a `pub` type consumed by the `worldwake-cli` observer and must JSON-serialize (D7/D9/D10), `SlotKind`:
+`SlotKind` already exists at `crates/worldwake-ai/src/agent_tick/portfolio.rs` (variants `Survival`, `Commitment`, `Economic`). S144AGGSCEDIA-002 landed the D3 enabling change: it is now public and derives serde traits. Because `ScenarioDiagnosticsReport` (D1) is a `pub` type consumed by the `worldwake-cli` observer and must JSON-serialize (D7/D9/D10), `SlotKind`:
 
-- is promoted from `pub(crate)` to `pub` and re-exported from `crates/worldwake-ai/src/lib.rs`,
-- gains `Serialize, Deserialize` derives.
+- is public and re-exported from `crates/worldwake-ai/src/lib.rs`,
+- derives `Serialize, Deserialize`.
 
 No variant or semantic change. This is a pure visibility/derive widening so the aggregation key is nameable and serializable outside the `agent_tick` module.
 

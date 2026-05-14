@@ -3,12 +3,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{goal_model::AgendaEntry, ranking::OrderedRanked};
+use serde::{Deserialize, Serialize};
 use worldwake_core::{
     CommodityPurpose, Discrepancy, GoalKind, OpportunityKey, PortfolioSlotWeights,
 };
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub(crate) enum SlotKind {
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum SlotKind {
     Survival,
     Commitment,
     Economic,
@@ -234,6 +235,16 @@ mod tests {
         EntityId, GoalKey, GoalKind, NoticeTopic, OpportunityAnchor, OpportunityKey,
         PortfolioSlotWeights, Tick,
     };
+
+    #[test]
+    fn slot_kind_round_trips_through_serde() {
+        for slot in [SlotKind::Survival, SlotKind::Commitment, SlotKind::Economic] {
+            let bytes = bincode::serialize(&slot).expect("SlotKind should serialize");
+            let decoded: SlotKind =
+                bincode::deserialize(&bytes).expect("SlotKind should deserialize");
+            assert_eq!(decoded, slot);
+        }
+    }
 
     fn entity(slot: u32) -> EntityId {
         EntityId {

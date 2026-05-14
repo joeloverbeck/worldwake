@@ -57,6 +57,7 @@ pub use agenda_types::{
     AgendaEntry, AgendaEntryKey, AgendaOrigin, AgendaPhase, AgendaState, KillCondition,
     RevivalTrigger,
 };
+pub use agent_tick::portfolio::SlotKind;
 pub use agent_tick::{AgentTickDriver, FrameDebugSnapshot, FrameSwitchMarginSource};
 pub use candidate_generation::generate_candidates;
 pub use decision_runtime::{
