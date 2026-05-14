@@ -158,7 +158,7 @@ fn register_def(
             _ => vec![Constraint::ActorAlive],
         },
         targets: match name {
-            "eat" | "drink" => vec![TargetSpec::EntityDirectlyPossessedByActor {
+            "eat" | "drink" => vec![TargetSpec::EntityAtActorPlace {
                 kind: worldwake_core::EntityKind::ItemLot,
             }],
             "wash" => vec![TargetSpec::EntityAtActorPlace {
@@ -244,7 +244,7 @@ fn eat_preconditions() -> Vec<Precondition> {
             target_index: 0,
             kind: worldwake_core::EntityKind::ItemLot,
         },
-        Precondition::TargetDirectlyPossessedByActor(0),
+        Precondition::TargetActorControls(0),
         Precondition::TargetHasConsumableEffect {
             target_index: 0,
             effect: ConsumableEffect::Hunger,
@@ -260,7 +260,7 @@ fn drink_preconditions() -> Vec<Precondition> {
             target_index: 0,
             kind: worldwake_core::EntityKind::ItemLot,
         },
-        Precondition::TargetDirectlyPossessedByActor(0),
+        Precondition::TargetActorControls(0),
         Precondition::TargetHasConsumableEffect {
             target_index: 0,
             effect: ConsumableEffect::Thirst,
@@ -2104,7 +2104,7 @@ mod tests {
         );
     }
 
-    // --- Possession-requirement tests (S01PROOUTOWNCLA-010) ---
+    // --- Physical access / control tests (S01PROOUTOWNCLA-010) ---
 
     fn eat_def_id() -> ActionDefId {
         ActionDefId(0)
@@ -2117,7 +2117,7 @@ mod tests {
     }
 
     #[test]
-    fn eat_rejects_unpossessed_owned_ground_lot() {
+    fn eat_accepts_actor_owned_ground_lot() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let (actor, place) = setup_actor(&mut world);
         {
@@ -2132,8 +2132,8 @@ mod tests {
         let (defs, handlers) = setup_registries();
         let affordances = affordances_for(&world, actor, &defs, &handlers);
         assert!(
-            affordances.iter().all(|a| a.def_id != eat_def_id()),
-            "eat should not be offered for owned-but-unpossessed ground lot"
+            affordances.iter().any(|a| a.def_id == eat_def_id()),
+            "eat should be offered for actor-controlled ground lot"
         );
     }
 
@@ -2159,7 +2159,7 @@ mod tests {
     }
 
     #[test]
-    fn drink_rejects_unpossessed_owned_ground_lot() {
+    fn drink_accepts_actor_owned_ground_lot() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let (actor, place) = setup_actor(&mut world);
         {
@@ -2174,8 +2174,8 @@ mod tests {
         let (defs, handlers) = setup_registries();
         let affordances = affordances_for(&world, actor, &defs, &handlers);
         assert!(
-            affordances.iter().all(|a| a.def_id != drink_def_id()),
-            "drink should not be offered for owned-but-unpossessed ground lot"
+            affordances.iter().any(|a| a.def_id == drink_def_id()),
+            "drink should be offered for actor-controlled ground lot"
         );
     }
 

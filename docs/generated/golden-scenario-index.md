@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 177
-- Contributing golden test files: 41
-- Associated tests: 210
+- Scenario blocks: 178
+- Contributing golden test files: 42
+- Associated tests: 213
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -216,6 +216,20 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: the lifecycle credibility stage converts the record source into a Credibility::Refuted transition, and actionability closes from that same append-only transition.
 
 **Cross-system chain**: ArtifactCredibilityRefutation record event -> ArtifactTransition(Credibility::Refuted) -> ArtifactTransition(Actionability::Closed).
+
+### Scenario 420: Belief Wall Trap Suppresses Theft
+
+- Source: `golden_belief_wall_trap.rs:237`
+- Systems: Perception, AI, Crime
+- ActionDomains: Crime
+- Places: VillageSquare, OrchardFarm
+- Principles: 7, 14, 14A, 20
+
+**Setup**: An AI actor stands beside an authoritatively owned coin lot and a facility; the actor has direct local physical observations but no owner, holder, jurisdiction, or office-holder belief claims.
+
+**Proves**: FND-14A's co-location exception remains physical-only: local observation sees the chest/building, `BelievedAuthorityView` returns `Unknown` for social authority facts, and theft is absent from both candidate generation and the decision trace.
+
+**Cross-system chain**: bootstrap authoritative ownership -> local physical observation -> authority-belief absence -> theft candidate generation wall -> no committed steal.
 
 ### Scenario 393: Single-Slot Orchard Emits Arrival-Time Contention Payload
 
@@ -1025,7 +1039,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 398: Opportunity Compiler Profiles Legal Risk
 
-- Source: `golden_opportunity_compiler.rs:157`
+- Source: `golden_opportunity_compiler.rs:177`
 - Systems: AI, Perception, Trade
 - GoalKinds: AcquireCommodity
 - ActionDomains: AI
@@ -1039,7 +1053,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 399: Opportunity Compiler Trace Carriage
 
-- Source: `golden_opportunity_compiler.rs:203`
+- Source: `golden_opportunity_compiler.rs:223`
 - Systems: AI, Perception
 - GoalKinds: AcquireCommodity
 - ActionDomains: AI
@@ -1053,7 +1067,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 400: Opportunity Compiler Effect Index Miss
 
-- Source: `golden_opportunity_compiler.rs:240`
+- Source: `golden_opportunity_compiler.rs:260`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: AI
@@ -1067,7 +1081,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 401: Learned Opportunity Memory Damps Repeated Opportunity
 
-- Source: `golden_opportunity_compiler.rs:259`
+- Source: `golden_opportunity_compiler.rs:279`
 - Systems: AI, Memory
 - GoalKinds: AcquireCommodity
 - ActionDomains: AI
@@ -1081,7 +1095,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 402: Opportunity Compiler Default Replay Bound
 
-- Source: `golden_opportunity_compiler.rs:300`
+- Source: `golden_opportunity_compiler.rs:320`
 - Systems: AI, Replay
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: AI, Needs, Travel
@@ -1976,7 +1990,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 177: Survival Justice Proves Accusation Substrate
 
-- Source: `golden_survival_justice.rs:632`
+- Source: `golden_survival_justice.rs:633`
 - Systems: AI, Needs, Trade, Perception, Offices, Investigation
 - GoalKinds: StealItem, InvestigateViolation, Accuse
 - ActionDomains: Social, Trade, Needs
@@ -1991,7 +2005,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 178: Survival Justice Proves Search And Report Found
 
-- Source: `golden_survival_justice.rs:715`
+- Source: `golden_survival_justice.rs:716`
 - Systems: AI, Needs, Search, Reports, Perception, Offices
 - GoalKinds: SearchForMissing, ReportFound
 - ActionDomains: Social, Needs
@@ -2006,7 +2020,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 179: Survival Justice Proves Institutional Bounty Posted
 
-- Source: `golden_survival_justice.rs:771`
+- Source: `golden_survival_justice.rs:772`
 - Systems: AI, Needs, Offices, Investigation, Social Artifacts, Treasury
 - GoalKinds: Accuse, PunishAccused, PostBounty
 - ActionDomains: Social, Needs

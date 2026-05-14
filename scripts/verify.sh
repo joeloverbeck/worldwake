@@ -13,6 +13,9 @@ bash scripts/check_active_goal_removed.sh
 echo "[verify] bash scripts/check_no_artifact_state.sh"
 bash scripts/check_no_artifact_state.sh
 
+echo "[verify] bash scripts/check_no_debug_view_in_ai.sh"
+bash scripts/check_no_debug_view_in_ai.sh
+
 echo "[verify] cargo clippy --workspace"
 cargo clippy --workspace
 

@@ -37,6 +37,47 @@ pub struct BeliefValue<T> {
     pub status: BeliefStatus,
 }
 
+#[derive(Clone, Debug)]
+pub enum BeliefRead<T> {
+    Unknown,
+    Known(BeliefValue<T>),
+    Stale(BeliefValue<T>),
+}
+
+impl<T> BeliefRead<T> {
+    #[must_use]
+    pub fn known_certain(value: T, tick: Tick) -> Self {
+        Self::Known(BeliefValue {
+            value,
+            confidence: Permille::new(1000).unwrap(),
+            acquired_tick: tick,
+            claimed_event_tick: Some(tick),
+            status: BeliefStatus::Certain,
+        })
+    }
+
+    #[must_use]
+    pub fn known_or_stale_value(self) -> Option<T> {
+        match self {
+            Self::Known(value) | Self::Stale(value) => Some(value.value),
+            Self::Unknown => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ObservedRead<T> {
+    pub value: T,
+    pub observed_tick: Tick,
+    pub source: ObservationSource,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ObservationSource {
+    CoLocatedSameTick,
+    BeliefStoreSnapshot,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum BeliefStatus {
     Certain,
@@ -198,6 +239,17 @@ pub fn location_claim_value(claim: &EntityBeliefClaim) -> Option<Option<EntityId
 }
 
 #[doc(hidden)]
+pub fn entity_claim_value(
+    claim: &EntityBeliefClaim,
+    aspect: EntityBeliefAspect,
+) -> Option<Option<EntityId>> {
+    match (&claim.aspect, &claim.value) {
+        (claim_aspect, ClaimValue::Entity(entity)) if *claim_aspect == aspect => Some(*entity),
+        _ => None,
+    }
+}
+
+#[doc(hidden)]
 pub fn inventory_claim_value(claim: &EntityBeliefClaim, kind: CommodityKind) -> Option<Quantity> {
     match (&claim.aspect, &claim.value) {
         (EntityBeliefAspect::Inventory(claim_kind), ClaimValue::Quantity(quantity))
@@ -221,10 +273,6 @@ pub trait GoalSpatialBeliefView {
         let _ = (agent, place, kind);
         Vec::new()
     }
-    fn locally_observed_entities_at(&self, agent: EntityId, place: EntityId) -> Vec<EntityId> {
-        let _ = agent;
-        self.entities_at(place)
-    }
     fn route_experience(&self, agent: EntityId) -> Option<RouteExperience> {
         let _ = agent;
         None
@@ -247,7 +295,6 @@ pub trait GoalTemporalBeliefView {
 }
 
 pub trait GoalControlBeliefView {
-    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId>;
     fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
         let _ = (actor, entity);
         Vec::new()
@@ -267,7 +314,7 @@ pub trait GoalControlBeliefView {
 /// - queue and reservation helpers
 /// - duration estimation
 /// - broader affordance/runtime helpers used by snapshot/search code
-pub trait GoalBeliefView {
+pub trait GoalBeliefView: BelievedAuthorityView + LocalPhysicalObservationView {
     fn current_tick(&self) -> Tick {
         Tick(0)
     }
@@ -280,10 +327,6 @@ pub trait GoalBeliefView {
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind>;
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
     fn entities_at(&self, place: EntityId) -> Vec<EntityId>;
-    fn locally_observed_entities_at(&self, agent: EntityId, place: EntityId) -> Vec<EntityId> {
-        let _ = agent;
-        self.entities_at(place)
-    }
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         let _ = agent;
         Vec::new()
@@ -434,7 +477,6 @@ pub trait GoalBeliefView {
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile>;
     fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
-    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId>;
     fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
         let _ = (actor, entity);
         Vec::new()
@@ -688,13 +730,6 @@ pub trait GoalBeliefView {
         let _ = office;
         None
     }
-    fn believed_office_holder(
-        &self,
-        office: EntityId,
-    ) -> InstitutionalBeliefRead<Option<EntityId>> {
-        let _ = office;
-        InstitutionalBeliefRead::Unknown
-    }
     fn believed_force_controller(
         &self,
         office: EntityId,
@@ -777,13 +812,149 @@ pub trait GoalBeliefView {
 }
 
 pub trait ControlBeliefView {
-    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId>;
     fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
         let _ = (actor, entity);
         Vec::new()
     }
     fn can_control(&self, actor: EntityId, entity: EntityId) -> bool;
     fn has_control(&self, entity: EntityId) -> bool;
+}
+
+pub trait LocalPhysicalObservationView {
+    fn colocated_entities(&self, actor: EntityId) -> ObservedRead<Vec<EntityId>> {
+        let _ = actor;
+        ObservedRead {
+            value: Vec::new(),
+            observed_tick: Tick(0),
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+
+    fn observed_item_lot_quantity(&self, lot: EntityId) -> ObservedRead<Option<Quantity>> {
+        let _ = lot;
+        ObservedRead {
+            value: None,
+            observed_tick: Tick(0),
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+
+    fn observed_workstation_tag(&self, entity: EntityId) -> ObservedRead<Option<WorkstationTag>> {
+        let _ = entity;
+        ObservedRead {
+            value: None,
+            observed_tick: Tick(0),
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+
+    fn observed_resource_source(&self, entity: EntityId) -> ObservedRead<Option<ResourceSource>> {
+        let _ = entity;
+        ObservedRead {
+            value: None,
+            observed_tick: Tick(0),
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+
+    fn observed_container_contents(&self, container: EntityId) -> ObservedRead<Vec<EntityId>> {
+        let _ = container;
+        ObservedRead {
+            value: Vec::new(),
+            observed_tick: Tick(0),
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+
+    fn observed_entity_kind(&self, entity: EntityId) -> ObservedRead<Option<EntityKind>> {
+        let _ = entity;
+        ObservedRead {
+            value: None,
+            observed_tick: Tick(0),
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+}
+
+pub trait BelievedAuthorityView {
+    fn believed_owner_of(&self, entity: EntityId) -> BeliefRead<EntityId> {
+        let _ = entity;
+        BeliefRead::Unknown
+    }
+
+    fn believed_holder_of(&self, entity: EntityId) -> BeliefRead<EntityId> {
+        let _ = entity;
+        BeliefRead::Unknown
+    }
+
+    fn believed_access_right(
+        &self,
+        actor: EntityId,
+        target: EntityId,
+    ) -> BeliefRead<EffectiveRight> {
+        let _ = (actor, target);
+        BeliefRead::Unknown
+    }
+
+    fn believed_jurisdiction(&self, place: EntityId) -> BeliefRead<EntityId> {
+        let _ = place;
+        BeliefRead::Unknown
+    }
+
+    fn believed_office_holder(&self, office: EntityId) -> BeliefRead<Option<EntityId>> {
+        let _ = office;
+        BeliefRead::Unknown
+    }
+}
+
+/// Debug/observer access to authoritative world state.
+///
+/// `DebugWorldView` is deliberately outside the runtime belief-view trait
+/// composition. Planner-facing code may read through `RuntimeBeliefView`, but
+/// adding debug-world methods to that surface would pierce the FND-14A wall.
+///
+/// ```compile_fail
+/// use worldwake_core::EntityId;
+/// use worldwake_sim::{DebugWorldView, RuntimeBeliefView};
+///
+/// fn debug_read_from_runtime_view<T: RuntimeBeliefView + ?Sized>(
+///     view: &T,
+///     entity: EntityId,
+/// ) {
+///     let _ = view.world_owner_of(entity);
+/// }
+/// ```
+#[cfg(any(debug_assertions, test))]
+pub trait DebugWorldView {
+    fn world_entity_state(&self, entity: EntityId) -> worldwake_core::EntityState;
+    fn world_owner_of(&self, entity: EntityId) -> Option<EntityId>;
+    fn world_location_of(&self, entity: EntityId) -> Option<EntityId>;
+    fn world_inventory_of(&self, entity: EntityId) -> Vec<EntityId>;
+}
+
+#[cfg(any(debug_assertions, test))]
+impl DebugWorldView for &worldwake_core::World {
+    fn world_entity_state(&self, entity: EntityId) -> worldwake_core::EntityState {
+        worldwake_core::EntityState {
+            kind: self.entity_kind(entity),
+            place: self.effective_place(entity),
+            alive: self.is_alive(entity),
+            container: self.direct_container(entity),
+            possessor: self.possessor_of(entity),
+        }
+    }
+
+    fn world_owner_of(&self, entity: EntityId) -> Option<EntityId> {
+        self.owner_of(entity)
+    }
+
+    fn world_location_of(&self, entity: EntityId) -> Option<EntityId> {
+        self.effective_place(entity)
+    }
+
+    fn world_inventory_of(&self, entity: EntityId) -> Vec<EntityId> {
+        self.possessions_of(entity)
+    }
 }
 
 pub trait EntityBeliefView {
@@ -906,10 +1077,6 @@ pub trait SpatialBeliefView {
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
     fn is_in_transit(&self, entity: EntityId) -> bool;
     fn entities_at(&self, place: EntityId) -> Vec<EntityId>;
-    fn locally_observed_entities_at(&self, agent: EntityId, place: EntityId) -> Vec<EntityId> {
-        let _ = agent;
-        self.entities_at(place)
-    }
     fn adjacent_places(&self, place: EntityId) -> Vec<EntityId>;
     fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
         let _ = (place, tag);
@@ -1300,13 +1467,6 @@ pub trait PoliticalBeliefView {
         let _ = office;
         None
     }
-    fn believed_office_holder(
-        &self,
-        office: EntityId,
-    ) -> InstitutionalBeliefRead<Option<EntityId>> {
-        let _ = office;
-        InstitutionalBeliefRead::Unknown
-    }
     fn believed_force_controller(
         &self,
         office: EntityId,
@@ -1412,6 +1572,8 @@ pub trait RuntimeBeliefView:
     + SocialBeliefView
     + PoliticalBeliefView
     + FacilityBeliefView
+    + BelievedAuthorityView
+    + LocalPhysicalObservationView
 {
 }
 
@@ -1431,10 +1593,6 @@ impl<T: SpatialBeliefView + ?Sized> GoalSpatialBeliefView for T {
         kind: EntityKind,
     ) -> Vec<BeliefValue<EntityId>> {
         SpatialBeliefView::believed_entities_at(self, agent, place, kind)
-    }
-
-    fn locally_observed_entities_at(&self, agent: EntityId, place: EntityId) -> Vec<EntityId> {
-        SpatialBeliefView::locally_observed_entities_at(self, agent, place)
     }
 
     fn route_experience(&self, agent: EntityId) -> Option<RouteExperience> {
@@ -1461,10 +1619,6 @@ impl<T: TemporalBeliefView + ?Sized> GoalTemporalBeliefView for T {
 }
 
 impl<T: ControlBeliefView + ?Sized> GoalControlBeliefView for T {
-    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
-        ControlBeliefView::believed_owner_of(self, entity)
-    }
-
     fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
         ControlBeliefView::believed_rights(self, actor, entity)
     }
@@ -1487,6 +1641,8 @@ where
         + SocialBeliefView
         + PoliticalBeliefView
         + FacilityBeliefView
+        + BelievedAuthorityView
+        + LocalPhysicalObservationView
         + ?Sized,
 {
     fn current_tick(&self) -> worldwake_core::Tick {
@@ -1522,14 +1678,6 @@ where
 
     fn entities_at(&self, place: worldwake_core::EntityId) -> Vec<worldwake_core::EntityId> {
         GoalSpatialBeliefView::entities_at(self, place)
-    }
-
-    fn locally_observed_entities_at(
-        &self,
-        agent: worldwake_core::EntityId,
-        place: worldwake_core::EntityId,
-    ) -> Vec<worldwake_core::EntityId> {
-        GoalSpatialBeliefView::locally_observed_entities_at(self, agent, place)
     }
 
     fn direct_possessions(
@@ -1773,13 +1921,6 @@ where
         entity: worldwake_core::EntityId,
     ) -> Option<worldwake_core::EntityId> {
         InventoryBeliefView::direct_possessor(self, entity)
-    }
-
-    fn believed_owner_of(
-        &self,
-        entity: worldwake_core::EntityId,
-    ) -> Option<worldwake_core::EntityId> {
-        GoalControlBeliefView::believed_owner_of(self, entity)
     }
 
     fn believed_rights(
@@ -2280,13 +2421,6 @@ where
         PoliticalBeliefView::office_data(self, office)
     }
 
-    fn believed_office_holder(
-        &self,
-        office: worldwake_core::EntityId,
-    ) -> worldwake_core::InstitutionalBeliefRead<Option<worldwake_core::EntityId>> {
-        PoliticalBeliefView::believed_office_holder(self, office)
-    }
-
     fn believed_force_controller(
         &self,
         office: worldwake_core::EntityId,
@@ -2370,7 +2504,7 @@ where
     }
 }
 
-fn actor_lawful_reward_source_from_beliefs<V: GoalBeliefView + ?Sized>(
+fn actor_lawful_reward_source_from_beliefs<V: GoalBeliefView + BelievedAuthorityView + ?Sized>(
     view: &V,
     actor: EntityId,
     accusation: &BelievedInstitutionalClaim,
@@ -2397,7 +2531,7 @@ fn actor_lawful_reward_source_from_beliefs<V: GoalBeliefView + ?Sized>(
     }
     if !matches!(
         view.believed_office_holder(office),
-        InstitutionalBeliefRead::Certain(Some(holder)) if holder == actor
+        BeliefRead::Known(holder) | BeliefRead::Stale(holder) if holder.value == Some(actor)
     ) {
         return None;
     }
@@ -2608,7 +2742,10 @@ fn estimate_route_duration_from_beliefs(
 
 #[cfg(test)]
 mod tests {
-    use super::estimate_duration_from_beliefs;
+    use super::{
+        BeliefRead, BeliefStatus, BeliefValue, BelievedAuthorityView, LocalPhysicalObservationView,
+        ObservationSource, ObservedRead, estimate_duration_from_beliefs,
+    };
     use crate::{
         ActionPayload, CombatBeliefView, DurationExpr, EconomicBeliefView, EntityBeliefView,
         FacilityBeliefView, GoalBeliefView, GoalControlBeliefView, GoalSpatialBeliefView,
@@ -2654,6 +2791,8 @@ mod tests {
 
     struct StubGoalBeliefView;
 
+    impl LocalPhysicalObservationView for StubGoalBeliefView {}
+
     impl GoalSpatialBeliefView for StubGoalBeliefView {
         fn effective_place(&self, _entity: EntityId) -> Option<EntityId> {
             None
@@ -2672,10 +2811,6 @@ mod tests {
     }
 
     impl GoalControlBeliefView for StubGoalBeliefView {
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
             false
         }
@@ -2889,6 +3024,8 @@ mod tests {
     }
 
     impl crate::PoliticalBeliefView for StubGoalBeliefView {}
+
+    impl BelievedAuthorityView for StubGoalBeliefView {}
 
     impl FacilityBeliefView for StubGoalBeliefView {
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
@@ -4002,5 +4139,119 @@ mod tests {
             Some(super::BeliefStatus::Certain)
         );
         assert!(set.alternatives.is_empty());
+    }
+
+    #[test]
+    fn belief_read_encodes_unknown_known_and_stale() {
+        let value = BeliefValue {
+            value: EntityId {
+                slot: 7,
+                generation: 0,
+            },
+            confidence: Permille::new(900).unwrap(),
+            acquired_tick: Tick(12),
+            claimed_event_tick: Some(Tick(11)),
+            status: BeliefStatus::Probable,
+        };
+
+        assert!(matches!(
+            BeliefRead::<EntityId>::Unknown,
+            BeliefRead::Unknown
+        ));
+        match BeliefRead::Known(value) {
+            BeliefRead::Known(known) => {
+                assert_eq!(known.value.slot, 7);
+                assert_eq!(known.confidence, Permille::new(900).unwrap());
+                assert_eq!(known.acquired_tick, Tick(12));
+            }
+            BeliefRead::Unknown | BeliefRead::Stale(_) => panic!("expected known belief read"),
+        }
+        match BeliefRead::Stale(value) {
+            BeliefRead::Stale(stale) => {
+                assert_eq!(stale.value.slot, 7);
+                assert_eq!(stale.status, BeliefStatus::Probable);
+            }
+            BeliefRead::Unknown | BeliefRead::Known(_) => panic!("expected stale belief read"),
+        }
+    }
+
+    #[test]
+    fn observed_read_carries_tick_and_source() {
+        let observed = ObservedRead {
+            value: Quantity(4),
+            observed_tick: Tick(21),
+            source: ObservationSource::CoLocatedSameTick,
+        };
+
+        assert_eq!(observed.value, Quantity(4));
+        assert_eq!(observed.observed_tick, Tick(21));
+        assert_eq!(observed.source, ObservationSource::CoLocatedSameTick);
+        assert_ne!(
+            ObservationSource::CoLocatedSameTick,
+            ObservationSource::BeliefStoreSnapshot
+        );
+    }
+
+    #[test]
+    fn local_physical_observation_view_defaults_return_empty_same_tick_reads() {
+        struct EmptyObservationView;
+        impl LocalPhysicalObservationView for EmptyObservationView {}
+
+        let view = EmptyObservationView;
+        let actor = EntityId {
+            slot: 1,
+            generation: 0,
+        };
+        let subject = EntityId {
+            slot: 2,
+            generation: 0,
+        };
+
+        let colocated = view.colocated_entities(actor);
+        assert!(colocated.value.is_empty());
+        assert_eq!(colocated.observed_tick, Tick(0));
+        assert_eq!(colocated.source, ObservationSource::CoLocatedSameTick);
+        assert_eq!(view.observed_item_lot_quantity(subject).value, None);
+        assert_eq!(view.observed_workstation_tag(subject).value, None);
+        assert_eq!(view.observed_resource_source(subject).value, None);
+        assert!(view.observed_container_contents(subject).value.is_empty());
+        assert_eq!(view.observed_entity_kind(subject).value, None);
+    }
+
+    #[test]
+    fn believed_authority_view_defaults_return_unknown() {
+        struct EmptyAuthorityView;
+        impl BelievedAuthorityView for EmptyAuthorityView {}
+
+        let view = EmptyAuthorityView;
+        let actor = EntityId {
+            slot: 1,
+            generation: 0,
+        };
+        let subject = EntityId {
+            slot: 2,
+            generation: 0,
+        };
+
+        assert!(matches!(
+            view.believed_owner_of(subject),
+            BeliefRead::Unknown
+        ));
+        assert!(matches!(
+            view.believed_holder_of(subject),
+            BeliefRead::Unknown
+        ));
+        assert!(matches!(
+            view.believed_access_right(actor, subject),
+            BeliefRead::Unknown
+        ));
+        assert!(matches!(
+            view.believed_jurisdiction(subject),
+            BeliefRead::Unknown
+        ));
+        assert!(matches!(
+            view.believed_office_holder(subject),
+            BeliefRead::Unknown
+        ));
     }
 }

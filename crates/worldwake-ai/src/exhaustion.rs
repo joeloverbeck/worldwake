@@ -6,7 +6,7 @@ use worldwake_core::{
     GoalKind, HomeostaticNeedId, HomeostaticNeeds, Permille, Quantity, ThresholdBand,
     UniqueItemKind,
 };
-use worldwake_sim::{GoalBeliefView, RecipeRegistry};
+use worldwake_sim::{BeliefRead, GoalBeliefView, RecipeRegistry};
 
 /// Condition that would make a previously exhausted goal worth re-searching.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -498,9 +498,11 @@ fn capture_steal_target_snapshot(
     let direct_possessor = view.direct_possessor(target);
     let direct_container = view.direct_container(target);
     let access_state = match view.believed_owner_of(target) {
-        None => StealTargetAccessState::UnownedOrMissing,
-        Some(_) if view.can_control(agent, target) => StealTargetAccessState::LawfulControl,
-        Some(_) => StealTargetAccessState::Stealable,
+        BeliefRead::Unknown => StealTargetAccessState::UnownedOrMissing,
+        BeliefRead::Known(_) | BeliefRead::Stale(_) if view.can_control(agent, target) => {
+            StealTargetAccessState::LawfulControl
+        }
+        BeliefRead::Known(_) | BeliefRead::Stale(_) => StealTargetAccessState::Stealable,
     };
     let fits_carry_capacity = fits_target_load(view, agent, target);
 
@@ -578,10 +580,10 @@ mod tests {
         InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MerchandiseProfile,
         OfficeData, Permille, PunishmentKind, Quantity, RecipientKnowledgeStatus, RecordEntryId,
         ResourceSource, RevocationReason, TellMemoryKey, TellProfile, TellTopic,
-        TheftDispositionProfile, ThresholdBand, UniqueItemKind, ViolationDispositionProfile,
+        TheftDispositionProfile, ThresholdBand, Tick, UniqueItemKind, ViolationDispositionProfile,
         ViolationId, WorkstationTag, Wound, WoundCause, WoundId,
     };
-    use worldwake_sim::{GoalBeliefView, RecipeDefinition, RecipeRegistry};
+    use worldwake_sim::{BeliefRead, GoalBeliefView, RecipeDefinition, RecipeRegistry};
 
     #[derive(Default)]
     struct MockView {
@@ -602,6 +604,20 @@ mod tests {
         dead: Vec<EntityId>,
         beliefs: Vec<(EntityId, BelievedEntityState)>,
     }
+
+    impl worldwake_sim::BelievedAuthorityView for MockView {
+        fn believed_owner_of(&self, entity: EntityId) -> BeliefRead<EntityId> {
+            self.owners
+                .iter()
+                .find(|(subject, _)| *subject == entity)
+                .map(|(_, owner)| *owner)
+                .map_or(BeliefRead::Unknown, |owner| {
+                    BeliefRead::known_certain(owner, Tick(0))
+                })
+        }
+    }
+
+    impl worldwake_sim::LocalPhysicalObservationView for MockView {}
 
     impl GoalBeliefView for MockView {
         fn is_alive(&self, entity: EntityId) -> bool {
@@ -708,13 +724,6 @@ mod tests {
                 .iter()
                 .find(|(subject, _)| *subject == entity)
                 .map(|(_, possessor)| *possessor)
-        }
-
-        fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
-            self.owners
-                .iter()
-                .find(|(subject, _)| *subject == entity)
-                .map(|(_, owner)| *owner)
         }
 
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
@@ -888,13 +897,6 @@ mod tests {
 
         fn office_data(&self, _office: EntityId) -> Option<OfficeData> {
             None
-        }
-
-        fn believed_office_holder(
-            &self,
-            _office: EntityId,
-        ) -> InstitutionalBeliefRead<Option<EntityId>> {
-            InstitutionalBeliefRead::Unknown
         }
 
         fn believed_force_controller(

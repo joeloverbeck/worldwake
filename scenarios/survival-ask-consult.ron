@@ -479,6 +479,7 @@
     items: [
         (commodity: Apple, quantity: 20, location: "Witness Mira"),
         (commodity: Apple, quantity: 20, location: "Searcher Rowan"),
+        (commodity: Water, quantity: 10, location: "Searcher Rowan", container: false),
         (commodity: Apple, quantity: 20, location: "Claimant Ivo"),
     ],
     resource_sources: [

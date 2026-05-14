@@ -48,15 +48,17 @@ use worldwake_core::{
     CommunicationClass, DeprivationExposure, DiversificationProfile, DriveEscalationProfile,
     DriveThresholds, EntityId, ExpectationBasis, ExpectationOutcome, ExpectationRecord,
     ExpectationState, ExplorationMotivation, ExplorationProfile, GoalKey, GoalKind,
-    GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead,
-    InstitutionalClaim, InstitutionalKnowledgeSource, LearnedOpportunityMemory, MotiveSource,
-    MotiveSourceRef, MultiplierPermille, NoticeTopic, ObligationExecutionTracker,
-    ObligationSatiationProfile, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille,
-    PreferenceProfile, Quantity, ReliabilityRecord, RepairMemory, RightKind, SourceKey,
-    SubstitutePreferences, SurveyRecord, TellTopic, ThresholdBand, Tick, UtilityProfile,
-    ViolationKind, belief_confidence, escalation_multiplier, failure_ratio_permille,
+    GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InstitutionalClaim,
+    InstitutionalKnowledgeSource, LearnedOpportunityMemory, MotiveSource, MotiveSourceRef,
+    MultiplierPermille, NoticeTopic, ObligationExecutionTracker, ObligationSatiationProfile,
+    OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, PreferenceProfile, Quantity,
+    ReliabilityRecord, RepairMemory, RightKind, SourceKey, SubstitutePreferences, SurveyRecord,
+    TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence,
+    escalation_multiplier, failure_ratio_permille,
 };
-use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
+use worldwake_sim::{
+    BeliefRead, CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score,
+};
 
 const ASK_WITNESS_GAP_WEIGHT: Permille = Permille::new_unchecked(750);
 const ASK_WITNESS_STALENESS_NORMALIZATION_TICKS: u64 = 100;
@@ -1866,7 +1868,7 @@ fn post_bounty_motive(
     }
     if !matches!(
         context.view.believed_office_holder(office),
-        InstitutionalBeliefRead::Certain(Some(holder)) if holder == context.agent
+        BeliefRead::Known(holder) | BeliefRead::Stale(holder) if holder.value == Some(context.agent)
     ) {
         return 0;
     }
@@ -1975,10 +1977,13 @@ fn investigation_motive(candidate: &GoalOffer, context: &RankingContext<'_>) -> 
         return 0;
     };
     let base = u32::from(profile.investigation_motive_weight.value());
-    let owns_evidence = candidate
-        .evidence_entities
-        .iter()
-        .any(|&entity| context.view.believed_owner_of(entity) == Some(context.agent));
+    let owns_evidence = candidate.evidence_entities.iter().any(|&entity| {
+        context
+            .view
+            .believed_owner_of(entity)
+            .known_or_stale_value()
+            == Some(context.agent)
+    });
     let ownership_bonus = if owns_evidence {
         u32::from(profile.ownership_motive_bonus.value())
     } else {
@@ -2004,10 +2009,14 @@ fn patrol_motive(context: &RankingContext<'_>) -> u32 {
     let believed_vacancies = relevant_offices
         .iter()
         .filter(|office| {
-            matches!(
-                context.view.believed_office_holder(**office),
-                worldwake_core::InstitutionalBeliefRead::Certain(None)
-            )
+            context
+                .view
+                .office_data(**office)
+                .is_some_and(|data| data.vacancy_since.is_some())
+                && matches!(
+                    context.view.believed_office_holder(**office),
+                    BeliefRead::Known(holder) | BeliefRead::Stale(holder) if holder.value.is_none()
+                )
         })
         .count() as u32;
     let believed_contests = relevant_offices
@@ -3110,8 +3119,8 @@ mod tests {
         WashBasinState, WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
     };
     use worldwake_sim::{
-        ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
-        EconomicBeliefView, EntityBeliefView, ProfileBeliefView, RecipeDefinition,
+        ActionDuration, ActionPayload, BeliefRead, CombatBeliefView, ControlBeliefView,
+        DurationExpr, EconomicBeliefView, EntityBeliefView, ProfileBeliefView, RecipeDefinition,
         RuntimeBeliefView, SocialBeliefView, SpatialBeliefView, TemporalBeliefView,
         belief_view::{BeliefStatus, BeliefValue},
     };
@@ -3182,10 +3191,6 @@ mod tests {
     }
 
     impl ControlBeliefView for TestBeliefView {
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
             self.believed_rights
                 .get(&(actor, entity))
@@ -3199,6 +3204,24 @@ mod tests {
 
         fn has_control(&self, _entity: EntityId) -> bool {
             false
+        }
+    }
+
+    impl worldwake_sim::BelievedAuthorityView for TestBeliefView {
+        fn believed_office_holder(&self, office: EntityId) -> BeliefRead<Option<EntityId>> {
+            match self
+                .office_holder_beliefs
+                .get(&office)
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
+            {
+                InstitutionalBeliefRead::Certain(holder) => {
+                    BeliefRead::known_certain(holder, Tick(0))
+                }
+                InstitutionalBeliefRead::Conflicted(_) | InstitutionalBeliefRead::Unknown => {
+                    BeliefRead::Unknown
+                }
+            }
         }
     }
 
@@ -3370,6 +3393,29 @@ mod tests {
 
     impl RuntimeBeliefView for TestBeliefView {}
 
+    impl worldwake_sim::LocalPhysicalObservationView for TestBeliefView {
+        fn colocated_entities(
+            &self,
+            actor: EntityId,
+        ) -> worldwake_sim::ObservedRead<Vec<EntityId>> {
+            let value = self
+                .effective_place(actor)
+                .map(|place| {
+                    let mut entities = self.entities_at(place);
+                    entities.sort();
+                    entities.dedup();
+                    entities
+                })
+                .unwrap_or_default();
+
+            worldwake_sim::ObservedRead {
+                value,
+                observed_tick: Tick(0),
+                source: worldwake_sim::ObservationSource::CoLocatedSameTick,
+            }
+        }
+    }
+
     impl worldwake_sim::SocialBeliefView for TestBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
@@ -3475,15 +3521,6 @@ mod tests {
         }
         fn office_data(&self, office: EntityId) -> Option<OfficeData> {
             self.office_data.get(&office).cloned()
-        }
-        fn believed_office_holder(
-            &self,
-            office: EntityId,
-        ) -> InstitutionalBeliefRead<Option<EntityId>> {
-            self.office_holder_beliefs
-                .get(&office)
-                .cloned()
-                .unwrap_or(InstitutionalBeliefRead::Unknown)
         }
         fn believed_force_controller(
             &self,

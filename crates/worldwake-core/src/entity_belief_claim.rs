@@ -16,6 +16,8 @@ pub struct ClaimId(pub u64);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum EntityBeliefAspect {
     Location,
+    Owner,
+    Holder,
     Inventory(CommodityKind),
     Alive,
     Wounded,
@@ -33,6 +35,7 @@ pub enum EntityBeliefAspect {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ClaimValue {
     Place(Option<EntityId>),
+    Entity(Option<EntityId>),
     Quantity(Quantity),
     Bool(bool),
     Activity(Option<BelievedActivity>),

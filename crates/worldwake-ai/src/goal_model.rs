@@ -3694,10 +3694,6 @@ mod tests {
     }
 
     impl ControlBeliefView for TestBeliefView {
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
             actor == entity
                 || <Self as worldwake_sim::InventoryBeliefView>::direct_possessor(self, entity)
@@ -3707,6 +3703,27 @@ mod tests {
 
         fn has_control(&self, entity: EntityId) -> bool {
             self.kinds.get(&entity) == Some(&EntityKind::Agent)
+        }
+    }
+
+    impl worldwake_sim::BelievedAuthorityView for TestBeliefView {
+        fn believed_office_holder(
+            &self,
+            office: EntityId,
+        ) -> worldwake_sim::BeliefRead<Option<EntityId>> {
+            match self
+                .office_holder_beliefs
+                .get(&office)
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
+            {
+                InstitutionalBeliefRead::Certain(holder) => {
+                    worldwake_sim::BeliefRead::known_certain(holder, Tick(0))
+                }
+                InstitutionalBeliefRead::Conflicted(_) | InstitutionalBeliefRead::Unknown => {
+                    worldwake_sim::BeliefRead::Unknown
+                }
+            }
         }
     }
 
@@ -3818,6 +3835,7 @@ mod tests {
     }
 
     impl RuntimeBeliefView for TestBeliefView {}
+    impl worldwake_sim::LocalPhysicalObservationView for TestBeliefView {}
 
     impl worldwake_sim::SocialBeliefView for TestBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
@@ -3871,16 +3889,6 @@ mod tests {
 
         fn record_data(&self, record: EntityId) -> Option<worldwake_core::RecordData> {
             self.record_data.get(&record).cloned()
-        }
-
-        fn believed_office_holder(
-            &self,
-            office: EntityId,
-        ) -> InstitutionalBeliefRead<Option<EntityId>> {
-            self.office_holder_beliefs
-                .get(&office)
-                .cloned()
-                .unwrap_or(InstitutionalBeliefRead::Unknown)
         }
 
         fn office_data(&self, office: EntityId) -> Option<OfficeData> {

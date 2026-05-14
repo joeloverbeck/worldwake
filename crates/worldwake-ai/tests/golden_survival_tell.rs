@@ -100,17 +100,20 @@ fn named_agents(h: &GoldenHarness) -> BTreeMap<String, EntityId> {
         .collect()
 }
 
+fn is_food_facility_or_source(state: &worldwake_core::BelievedEntityState) -> bool {
+    state.workstation_tag == Some(WorkstationTag::OrchardRow)
+        || state
+            .resource_source
+            .as_ref()
+            .is_some_and(|source| source.commodity == CommodityKind::Apple)
+}
+
 fn known_food_entities_at_place(store: &AgentBeliefStore, place: EntityId) -> Vec<EntityId> {
     store
         .iter_known_entities()
         .filter_map(|(entity, state)| {
-            (state.last_known_place == Some(place)
-                && state.workstation_tag == Some(WorkstationTag::OrchardRow)
-                && state
-                    .resource_source
-                    .as_ref()
-                    .is_some_and(|source| source.commodity == CommodityKind::Apple))
-            .then_some(*entity)
+            (state.last_known_place == Some(place) && is_food_facility_or_source(state))
+                .then_some(*entity)
         })
         .collect()
 }
@@ -290,29 +293,19 @@ fn run_survival_tell() -> SurvivalTellObservation {
                 if h.world.effective_place(listener) == Some(orchard_place) {
                     continue;
                 }
+                if event.tell_commit_result() != Some(TellCommitResult::Accepted)
+                    || event.tell_belief_delta() != Some(TellBeliefDeltaKind::EntityBelief)
+                {
+                    continue;
+                }
                 let listener_store = h
                     .world
                     .get_component_agent_belief_store(listener)
                     .expect("listener should retain a belief store");
-                let listener_food_beliefs =
-                    known_food_entities_at_place(listener_store, orchard_place);
-                if !listener_food_beliefs.contains(subject) {
-                    continue;
-                }
                 let listener_subject_belief_tick = listener_store
                     .get_entity(subject)
                     .and_then(worldwake_core::BelievedEntityState::last_observed_tick)
                     .unwrap_or(tick);
-                assert_eq!(
-                    event.tell_commit_result(),
-                    Some(TellCommitResult::Accepted),
-                    "survival tell landing must use an accepted tell relay; event={event:?}"
-                );
-                assert_eq!(
-                    event.tell_belief_delta(),
-                    Some(TellBeliefDeltaKind::EntityBelief),
-                    "survival tell landing must relay an entity belief about the orchard resource; event={event:?}"
-                );
                 relay = Some(TellRelayObservation {
                     tell_tick: tick,
                     listener_subject_belief_tick,

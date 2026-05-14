@@ -33,10 +33,11 @@ pub(crate) fn assess_theft_deterrence(
     agent: EntityId,
 ) -> Option<TheftDeterrenceAssessment> {
     let profile = view.theft_disposition_profile(agent)?;
-    let place = view.effective_place(agent)?;
+    let _place = view.effective_place(agent)?;
 
     let witness_count = view
-        .locally_observed_entities_at(agent, place)
+        .colocated_entities(agent)
+        .value
         .into_iter()
         .filter(|entity| *entity != agent)
         .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Agent))

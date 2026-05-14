@@ -2176,12 +2176,12 @@ fn golden_consume_pipeline_rebinds_pick_up_after_remote_lot_change() {
     );
 
     for _ in 0..20 {
-        h.step_once();
         if h.world.effective_place(eater) == Some(VILLAGE_SQUARE)
             && h.agent_active_action_name(eater).is_none()
         {
             break;
         }
+        h.step_once();
     }
     assert_eq!(
         h.world.effective_place(eater),

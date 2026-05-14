@@ -181,6 +181,7 @@ mod tests {
         TradeAcceptance, TradeRejectionReason, apply_bundle_changes, build_current_holdings,
         evaluate_trade_bundle, snapshot,
     };
+    use crate::BeliefRead;
     use crate::{
         CombatBeliefView, ControlBeliefView, EconomicBeliefView, EntityBeliefView,
         ProfileBeliefView, RecipeDefinition, RuntimeBeliefView, SpatialBeliefView,
@@ -211,16 +212,18 @@ mod tests {
     }
 
     impl ControlBeliefView for StubBeliefView {
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
             false
         }
 
         fn has_control(&self, _entity: EntityId) -> bool {
             false
+        }
+    }
+
+    impl crate::BelievedAuthorityView for StubBeliefView {
+        fn believed_owner_of(&self, _entity: EntityId) -> BeliefRead<EntityId> {
+            BeliefRead::Unknown
         }
     }
 
@@ -314,6 +317,7 @@ mod tests {
     }
 
     impl RuntimeBeliefView for StubBeliefView {}
+    impl crate::LocalPhysicalObservationView for StubBeliefView {}
 
     impl crate::SocialBeliefView for StubBeliefView {
         fn known_entity_beliefs(&self, _agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {

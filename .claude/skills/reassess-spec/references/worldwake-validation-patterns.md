@@ -6,6 +6,8 @@ Project-specific patterns for reassess-spec. When a spec proposes one of the tri
 
 When any of the patterns below trigger, every named integration point must appear as an itemized deliverable (D-section) in the spec's `## Deliverables` section. Prose-only references in Summary, Design Goals, Cross-System Interactions, or FOUNDATIONS Alignment do not substitute. Flag the missing deliverable as a HIGH Issue with the pattern's integration-point list as the recommendation.
 
+**Pattern citation in findings**: When a Pattern Trigger below fires and shapes a finding's classification or recommendation, cite the pattern's name in the finding's title or evidence line (e.g., `[Pattern: Fabricated Migration]`, `[Pattern: New GoalKind Variant]`). This makes the audit trail reflect which trigger motivated the finding, and helps Step 8 summaries credit the pattern that drove the reassessment's conclusions. Apply this whether the finding is an Issue, Improvement, or Addition — the citation is about pattern application, not severity.
+
 ## New GoalKind Variant
 
 **Trigger**: Spec adds a variant to `GoalKind` in `crates/worldwake-core/src/goal.rs`.

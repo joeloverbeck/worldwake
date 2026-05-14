@@ -14,7 +14,7 @@ use worldwake_core::{
     TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WashBasinState,
     WorkstationTag, Wound,
 };
-use worldwake_sim::RuntimeBeliefView;
+use worldwake_sim::{BeliefRead, RuntimeBeliefView};
 
 use crate::PlannerOpKind;
 use crate::route_threat::perceived_direct_travel_cost_from_memory;
@@ -590,7 +590,20 @@ impl PlanningSnapshot {
                 .iter()
                 .copied()
                 .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Office))
-                .map(|office| (office, view.believed_office_holder(office)))
+                .map(|office| {
+                    (
+                        office,
+                        view.agent_belief_store(actor).map_or_else(
+                            || match view.believed_office_holder(office) {
+                                BeliefRead::Known(holder) | BeliefRead::Stale(holder) => {
+                                    InstitutionalBeliefRead::Certain(holder.value)
+                                }
+                                BeliefRead::Unknown => InstitutionalBeliefRead::Unknown,
+                            },
+                            |store| store.believed_office_holder(office),
+                        ),
+                    )
+                })
                 .collect(),
             actor_force_controller_beliefs: included_entities
                 .iter()
@@ -953,15 +966,30 @@ fn build_snapshot_entity(
         .or_else(|| view.effective_place(entity));
     let in_transit_state = view.in_transit_state(entity);
     let patrol_route = view.patrol_route(entity);
-    let direct_container = belief_backed
-        .is_none()
-        .then(|| view.direct_container(entity))
-        .flatten();
-    let direct_possessor = belief_backed
-        .is_none()
-        .then(|| view.direct_possessor(entity))
-        .flatten();
-    let owner = view.believed_owner_of(entity);
+    let co_located_with_actor = view
+        .effective_place(actor)
+        .zip(view.effective_place(entity))
+        .is_some_and(|(actor_place, entity_place)| actor_place == entity_place);
+    let direct_container = if belief_backed.is_none() || co_located_with_actor {
+        view.direct_container(entity)
+    } else {
+        None
+    };
+    let believed_holder = match view.believed_holder_of(entity) {
+        BeliefRead::Known(holder) | BeliefRead::Stale(holder) => Some(holder.value),
+        BeliefRead::Unknown => None,
+    };
+    let direct_possessor = if belief_backed.is_none() || co_located_with_actor {
+        view.direct_possessor(entity)
+    } else if believed_holder == Some(actor) {
+        None
+    } else {
+        believed_holder
+    };
+    let owner = match view.believed_owner_of(entity) {
+        BeliefRead::Known(owner) | BeliefRead::Stale(owner) => Some(owner.value),
+        BeliefRead::Unknown => None,
+    };
     let direct_possessions = view
         .direct_possessions(entity)
         .into_iter()
@@ -1429,16 +1457,33 @@ mod tests {
     }
 
     impl ControlBeliefView for StubBeliefView {
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
             actor == entity
         }
 
         fn has_control(&self, entity: EntityId) -> bool {
             self.kinds.get(&entity) == Some(&EntityKind::Agent)
+        }
+    }
+
+    impl worldwake_sim::BelievedAuthorityView for StubBeliefView {
+        fn believed_office_holder(
+            &self,
+            office: EntityId,
+        ) -> worldwake_sim::BeliefRead<Option<EntityId>> {
+            match self
+                .office_holder_beliefs
+                .get(&office)
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
+            {
+                InstitutionalBeliefRead::Certain(holder) => {
+                    worldwake_sim::BeliefRead::known_certain(holder, Tick(0))
+                }
+                InstitutionalBeliefRead::Conflicted(_) | InstitutionalBeliefRead::Unknown => {
+                    worldwake_sim::BeliefRead::Unknown
+                }
+            }
         }
     }
 
@@ -1565,6 +1610,7 @@ mod tests {
     }
 
     impl RuntimeBeliefView for StubBeliefView {}
+    impl worldwake_sim::LocalPhysicalObservationView for StubBeliefView {}
 
     impl worldwake_sim::SocialBeliefView for StubBeliefView {
         fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy {
@@ -1600,16 +1646,6 @@ mod tests {
     impl worldwake_sim::PoliticalBeliefView for StubBeliefView {
         fn office_data(&self, office: EntityId) -> Option<OfficeData> {
             self.office_data.get(&office).cloned()
-        }
-
-        fn believed_office_holder(
-            &self,
-            office: EntityId,
-        ) -> InstitutionalBeliefRead<Option<EntityId>> {
-            self.office_holder_beliefs
-                .get(&office)
-                .cloned()
-                .unwrap_or(InstitutionalBeliefRead::Unknown)
         }
 
         fn believed_support_declarations_for_office(

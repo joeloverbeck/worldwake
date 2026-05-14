@@ -475,16 +475,15 @@ mod tests {
     }
 
     impl GoalControlBeliefView for StubBeliefView {
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
             false
         }
     }
 
     impl GoalTemporalBeliefView for StubBeliefView {}
+
+    impl crate::BelievedAuthorityView for StubBeliefView {}
+    impl crate::LocalPhysicalObservationView for StubBeliefView {}
 
     impl EntityBeliefView for StubBeliefView {
         fn is_alive(&self, _entity: EntityId) -> bool {

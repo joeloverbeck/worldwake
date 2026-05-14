@@ -629,3 +629,97 @@ S136 (completed, archived)
 - [x] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [x] `cargo test --workspace` passing
 - [x] Golden E2E coverage for each new spec's core behavior
+
+---
+
+## Phase 12: AI Architecture Evolution Toward Hundreds-of-Goals Deliberation
+
+Derived from external AI architecture assessment (`reports/ai-architecture-improvements.md`, generated 2026-05-13 from `reports/goap-architecture-report.md` + `docs/FOUNDATIONS.md` only — ChatGPT-Pro lacked direct codebase access). The assessment post-dates ALL completed specs through Phase 11 (S134–S142). Of 18 distinct proposals (PR-1 through PR-18), 11 accepted (consolidated into 11 specs S143–S153), 2 rejected (PR-6 deferred to a post-Phase-7 institutional spec because it overlaps with already-drafted S60/S63/S66; PR-9 deferred — premature optimization without measured bottleneck, reassessed after S144 surfaces actual planning-cost pressure).
+
+Phase 12 is the next layer of the Belief-First Continual Planning arc: Phase 8 (Foundation — typed discrepancies, decision-history events, belief envelope, portfolio planning), Phase 9 (Structural — plan-step guards, agenda manager), Phase 11 (Architectural — canonical effect schemas, opportunity compiler, plan causal links and repair, motive sources, multi-axis artifact lifecycle, contention inspectability, epistemic sensing), Phase 12 (Evolutionary — typed plan terminals + partial plans, expanded goal schema and per-goal budgets, HTN method decomposition, portfolio slot expansion, BDI-shaped intentions, testimony reliability, cognitive archetypes, static FND-14A enforcement, aggregate diagnostics).
+
+Key triage decisions:
+- **Rejected as premature optimization**: PR-9 (incremental snapshots / multi-queue search) — the assessment's own Section 20 puts it dead last and mandates "diagnostics first"; reassess after S144 surfaces actual planning-cost bottlenecks.
+- **Defer to post-Phase-7 institutional work**: PR-6 (WorkOrder/Bid/ContractAward artifacts) overlaps with already-drafted S60 (Persistent Site Occupancy), S63 (Contested Evidence and Warrants), and S66 (Settlement Decline). Phase 11's parallel deferral of PR-23 (InstitutionalTask ledger) used the same rationale.
+- **Folded into accepted specs**: PR-1 (motive-backed BDI shell) → S148; PR-5 (typed plan terminals) → S149; PR-16 (stage-aware strategic budget) → S145; PR-17 (per-goal planning budgets) → S146; PR-18 (shared cache regression) → S145.
+- **Scope-down**: PR-8 (HabitMemory + RoutePreference) — RoutePreference shipped in S151; HabitMemory deferred until method-thrash pathology surfaces in S144 diagnostics. PR-12 (BlockerScope) — RouteSegment + Counterparty shipped in S150; Facility/LegalAuthority/ResourceAtPlace deferred. PR-15 (adversarial scenarios) — 4 highest-impact patterns shipped in S153; 4 deferred until substrate ready.
+
+Phase 12 runs independently of Phase 7's pending consequence-carrier specs (S60–S66) — no hard dependency in either direction. Most Phase 12 specs touch the AI planner substrate, the belief-view trait surface, the agenda manager, or observability layers; Phase 7 adds new ECS consequence carriers.
+
+### Dependency Graph
+
+```text
+S143 (archived)       S144 (independent)    S145 (independent)    S150 (independent)
+   │                                            │                     │
+   │                  ┌─────────────────────────┘                     │
+   │                  ▼                                               │
+   │               S146 (soft dep on S145; hard deps on archived S138/S141/S134)
+   │                  │
+   │                  ├── S147 (hard dep on S146)
+   │                  └── S148 (soft dep on S146; hard deps on archived S112/S115/S141)
+   │                          │
+   │                          └── S149 (soft dep on S148 for shared resume/abandon types)
+   │
+   └─── S151 (soft dep on S150 for RouteSegment)
+            │
+            └── S152 (soft deps on S146/S148/S151; modifies their profile types)
+
+S153 (hard deps on archived S143, S148, S150, S151)
+```
+
+### Active Execution Steps
+
+**Wave 1** (parallel, no Phase 12 deps):
+- **S143**: Static Belief-View Trait Separation — completed and archived at `archive/specs/S143-static-belief-view-trait-separation.md`; split `LocalPhysicalObservationView` vs `BelievedAuthorityView` vs `DebugWorldView`; FND-14A widening becomes a compile error.
+- **S144**: Aggregate Scenario Diagnostics — `ScenarioDiagnosticsReport` over existing traces, observer Section 13, `PercentileBucket` helper, JSON output; S144 backs all future tuning decisions.
+- **S145**: Planning Substrate Hardening — stage-aware strategic budget (`2 * stages * max_prerequisite_locations`), shared cache invariant regression suite, cache hit/miss/invalidation counters.
+- **S150**: Cross-Goal Blocker Scoping — typed `BlockerScope` enum with `Exact`/`RouteSegment`/`Counterparty` variants, per-scope TTL profile, decision-history surface, S144 aggregation.
+
+**Wave 2** (after Wave 1):
+- **S146**: Data-Driven Goal Schema and Per-Goal Planning Budgets — `GoalSchema` registry, `CandidateExtractor` migration of the 18+ `emit_*` functions, `GoalPlanningBudget` preset table (SELF_CARE/TRAVEL_PURCHASE/PRODUCTION/INVESTIGATION/BOUNTY_ESCORT), `AgentSchemaContextProfile` universal component.
+  - soft depends on S145 (uses `strategic_budget_for_stages` helper)
+- **S151**: Testimony Source Reliability and Route Preferences — `TestimonyReliability` keyed by `(EntityId, TopicScope)`, `RoutePreference` keyed by `RouteSegment`, `TestimonyTrustProfile` / `RoutePreferenceProfile` universal components, ranking damping and travel-cost integration.
+  - soft depends on S150 (`RouteSegment` newtype)
+  - HabitMemory portion of PR-8 deferred until S144 diagnostics surface method-thrash pathology
+
+**Wave 3** (parallel, after Wave 2):
+- **S147**: HTN Method Decomposition for Long Lawful Pursuits — `MethodSchema` registry; first-ship methods for `FulfillBounty` (Direct/Investigation/GroupHunt), `ProduceCommodity`, `RestockCommodity`, `InvestigateViolation` (Scene/Witness/Ledger), `EscortToSafety` (Home/Office); `MethodSelector` integration in strategic search; fallback to flat GOAP when no method applies.
+  - hard depends on S146 (`GoalSchema.methods` registry slot)
+- **S148**: Portfolio Slot Expansion and Motive-Backed Intentions — 7-slot taxonomy (Survival/ImmediateSafety/InjuryOrCare/ObligationDuty/EconomicMaintenance/SocialEpistemic/OpportunisticLocal); `OperatingMode` enum (Emergency/Normal/Idle); `PortfolioWeightsProfile` universal; extended `IntentionFrame` with `motive_refs`/`resume_conditions`/`abandon_conditions`/`explicit_claims`/`causal_links`; raises default `max_plans_normal` from 2 to 6.
+  - soft depends on S146 (`GoalSchema.motive_source_hints` for slot mapping)
+  - migrates S112's `Commitment`/`Economic` slot names into `ObligationDuty`/`EconomicMaintenance` without alias
+
+**Wave 4** (parallel, after Wave 3):
+- **S149**: Partial Plan Segments and Typed Plan Terminals — typed `PlanTerminalKind` (InformationBarrier/CoordinationBarrier/ResourceBarrier/JurisdictionBarrier/SafetyBarrier/SearchBudgetExhausted); first-class `PartialPlanSegment` storage on `AgendaEntry`; agenda-manager resume-from-prefix path; barrier → `Discrepancy` mapping; companion `AskWitness` synthesis on `InformationBarrier`.
+  - soft depends on S148 (shared `ResumeCondition`/`AbandonCondition` types)
+- **S152**: Cognitive Archetypes for Seeded Diversity — `CognitiveArchetype` enum (10 variants); `ArchetypeProfileTemplate` modifying existing universal profiles; `ArchetypeAssignmentPolicy` (`DefaultUniformFive`/`Uniform`/`Weighted`/`PerRole`/`Explicit`); `PersonalityAssigned` event at spawn with seeded RNG and resolved profile snapshot.
+  - soft depends on S146/S148/S151 (modifies profile types each introduces)
+
+**Wave 5** (final, after Wave 4):
+- **S153**: Golden Gaps — AI Architecture Scaling — three remaining scenarios: false rumor justice (regression for S151), office vacancy → patrol gap (regression for S148 portfolio breadth), scaled contention (regression for S150 cross-goal blockers). Belief-wall trap (regression for S143) is covered by S143STABELVIE-006; 4 PR-15 scenarios deferred (100-goal dense market, 20-agent contention, long production chain, boundary shock).
+  - hard depends on archived S143, S148, S150, S151
+
+### Phase 12 Gate
+
+- [ ] All 11 specs reassessed (`/reassess-spec`) and ticket-decomposed
+- [ ] Wave 1 specs implemented and passing golden E2E tests
+- [ ] Wave 2 specs implemented and passing golden E2E tests
+- [ ] Wave 3 specs implemented and passing golden E2E tests
+- [ ] Wave 4 specs implemented and passing golden E2E tests
+- [ ] Wave 5 implemented and passing golden E2E tests
+- [x] S143 trait separation archived: grep-CI blocks `DebugWorldView` imports from `worldwake-ai/src/`; compile-fail doctest keeps debug-world reads outside `RuntimeBeliefView`; belief-wall trap golden passes
+- [ ] S144 `ScenarioDiagnosticsReport` produces byte-stable output across reruns on `survival-baseline.ron`; observer Section 13 renders text + JSON formats
+- [ ] S145 strategic budget formula confirmed: 5-stage production chain completes under stage-aware budget where it timed out under the old `* 2` formula; cache invariant regression suite (3 tests) passes
+- [ ] S146 goal-schema registry covers every `GoalKindDiscriminant` variant (workspace-level coverage test); per-goal budget regression proves PRODUCTION-tier `BakeBread` depth 16 vs SELF_CARE-tier `Eat` depth 6
+- [ ] S147 HTN method goldens prove method selection + flat-GOAP fallback + method-failure → `Discrepancy::PartialExecutionDrift`
+- [ ] S148 7-slot portfolio golden proves slot occupancy under Normal/Emergency/Idle modes; default `max_plans_normal=6` replaces legacy `max_candidates_to_plan=2`
+- [ ] S149 typed-terminal goldens prove each of the 7 terminal kinds with concrete observability + resume conditions
+- [ ] S150 cross-goal blocker goldens prove `RouteSegment` and `Counterparty` blockers suppress multi-goal candidates and clear on observation
+- [ ] S151 testimony-reliability golden proves trust update from confirmation/refutation/contradiction; route-preference golden proves dangerous-traversal penalty plus decay
+- [ ] S152 archetype golden proves deterministic seeded assignment + 10-template behavioral diversification + `PersonalityAssigned` event replay
+- [ ] S153 remaining three golden scenarios all pass with byte-stable event log on fixed seeds; belief-wall trap is covered by S143STABELVIE-006
+- [ ] PR-9 (incremental snapshots / multi-queue search) reassessed against S144 diagnostics: actual planning-cost bottlenecks identified or proposal stays deferred
+- [ ] Canonical regression G (false rumor → wrongful accusation → correction) producible through S151 + S149 + S153/golden_false_rumor_justice end-to-end
+- [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
+- [ ] `cargo test --workspace` passing
+- [ ] Golden E2E coverage for each new spec's core behavior

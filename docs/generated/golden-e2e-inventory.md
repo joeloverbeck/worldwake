@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 44
-- Files contributing `golden_*` tests: 44
-- Total `golden_*` tests: 215
+- Golden test files: 45
+- Files contributing `golden_*` tests: 45
+- Total `golden_*` tests: 218
 
 ## Per-File Inventory
 
@@ -16,6 +16,7 @@ Do not hand-edit it.
 | `golden_activation_decay.rs` | 6 |
 | `golden_ai_decisions.rs` | 15 |
 | `golden_artifact_lifecycle.rs` | 5 |
+| `golden_belief_wall_trap.rs` | 3 |
 | `golden_contention_inspectability.rs` | 5 |
 | `golden_decision_history_events.rs` | 1 |
 | `golden_decision_payload.rs` | 4 |
@@ -92,6 +93,12 @@ Do not hand-edit it.
 - `expired_bounty_retains_posted_visibility_with_closed_actionability`
 - `suspended_legal_effect_restores_on_resolution_event`
 - `refuted_false_rumor_cascades_to_closed_actionability_via_credibility_handler`
+
+### `golden_belief_wall_trap.rs`
+
+- `golden_belief_wall_trap_suppresses_theft_without_authority_belief`
+- `golden_belief_wall_trap_replays_deterministically`
+- `explicit_owner_belief_is_the_theft_candidate_gate`
 
 ### `golden_contention_inspectability.rs`
 

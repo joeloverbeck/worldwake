@@ -1,10 +1,10 @@
 use crate::{
     ActionDef, ActionDefRegistry, ActionHandler, ActionHandlerRegistry, ActionPayload, Affordance,
-    BindingStrictness, Constraint, ConsumableEffect, FacilityBeliefView, Precondition,
+    BeliefRead, BindingStrictness, Constraint, ConsumableEffect, FacilityBeliefView, Precondition,
     RuntimeBeliefView, TargetSpec,
 };
 use std::collections::{BTreeMap, BTreeSet};
-use worldwake_core::{ActionDefId, ContentionStatus, EntityId, EntityKind};
+use worldwake_core::{ActionDefId, ContentionStatus, EntityId, EntityKind, RightKind};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StrictnessGate {
@@ -346,6 +346,15 @@ pub fn evaluate_precondition(
         Precondition::TargetDirectlyPossessedByActor(target_index) => targets
             .get(usize::from(target_index))
             .is_some_and(|target| view.direct_possessor(*target) == Some(actor)),
+        Precondition::TargetActorControls(target_index) => targets
+            .get(usize::from(target_index))
+            .is_some_and(|target| {
+                view.direct_possessor(*target) == Some(actor)
+                    || view
+                        .believed_rights(actor, *target)
+                        .iter()
+                        .any(|right| right.kind == RightKind::Ownership)
+            }),
         Precondition::TargetLacksProductionJob(target_index) => targets
             .get(usize::from(target_index))
             .is_some_and(|target| !view.has_production_job(*target)),
@@ -365,8 +374,8 @@ pub fn evaluate_precondition(
         Precondition::TargetUnownedOrActorControls(target_index) => targets
             .get(usize::from(target_index))
             .is_some_and(|target| match view.believed_owner_of(*target) {
-                None => true,
-                Some(_) => view.can_control(actor, *target),
+                BeliefRead::Unknown => true,
+                BeliefRead::Known(_) | BeliefRead::Stale(_) => view.can_control(actor, *target),
             }),
     }
 }
@@ -457,6 +466,7 @@ fn precondition_target_index(precondition: Precondition) -> Option<usize> {
         | Precondition::TargetNotInContainer(index)
         | Precondition::TargetUnpossessed(index)
         | Precondition::TargetDirectlyPossessedByActor(index)
+        | Precondition::TargetActorControls(index)
         | Precondition::TargetLacksProductionJob(index)
         | Precondition::TargetHasWounds(index)
         | Precondition::TargetUnownedOrActorControls(index) => Some(usize::from(index)),
@@ -628,6 +638,8 @@ mod tests {
         evaluate_precondition, get_affordances, get_affordances_for_defs,
         preconditions_not_implied_by_target_specs,
     };
+    use crate::BeliefRead;
+    use crate::belief_view::{BeliefStatus, BeliefValue};
     use crate::{
         ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, BindingStrictness,
@@ -686,10 +698,6 @@ mod tests {
     }
 
     impl crate::ControlBeliefView for StubBeliefView {
-        fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
-            self.believed_owners.get(&entity).copied()
-        }
-
         fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
             self.controllable
                 .get(&(actor, entity))
@@ -699,6 +707,22 @@ mod tests {
 
         fn has_control(&self, entity: EntityId) -> bool {
             self.control.get(&entity).copied().unwrap_or(false)
+        }
+    }
+
+    impl crate::BelievedAuthorityView for StubBeliefView {
+        fn believed_owner_of(&self, entity: EntityId) -> BeliefRead<EntityId> {
+            self.believed_owners
+                .get(&entity)
+                .copied()
+                .map(|owner| BeliefValue {
+                    value: owner,
+                    confidence: worldwake_core::Permille::new(1000).unwrap(),
+                    acquired_tick: Tick(0),
+                    claimed_event_tick: None,
+                    status: BeliefStatus::Certain,
+                })
+                .map_or(BeliefRead::Unknown, BeliefRead::Known)
         }
     }
 
@@ -823,6 +847,7 @@ mod tests {
     }
 
     impl crate::RuntimeBeliefView for StubBeliefView {}
+    impl crate::LocalPhysicalObservationView for StubBeliefView {}
 
     impl crate::SocialBeliefView for StubBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {

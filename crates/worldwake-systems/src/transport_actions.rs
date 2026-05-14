@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, BodyCostPerTick, ContentionGrant, ContentionPolicy, ContentionQueue, Discrepancy,
-    EntityId, EntityKind, EventTag, Quantity, VisibilitySpec, WorldTxn, load_of_entity,
-    load_per_unit,
+    EntityId, EntityKind, EventTag, Quantity, StockAssignmentKind, VisibilitySpec, WorldTxn,
+    load_of_entity, load_per_unit,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerRegistry,
@@ -559,6 +559,20 @@ fn validate_steal(
             "actor {actor} can lawfully control target {target}; use pick_up instead"
         )));
     }
+    if txn.get_component_item_lot(target).is_some_and(|lot| {
+        lot.commodity.spec().consumable_profile.is_some()
+            && !(txn.has_component_sale_listing(target)
+                && txn
+                    .get_component_stock_assignment(target)
+                    .is_some_and(|assignment| assignment.kind == StockAssignmentKind::Displayed)
+                && txn
+                    .get_component_merchandise_profile(owner)
+                    .is_some_and(|profile| profile.sale_kinds.contains(&lot.commodity)))
+    }) {
+        return Err(ActionError::PreconditionFailed(format!(
+            "consumable target {target} is not displayed sale stock"
+        )));
+    }
     if txn.get_component_theft_disposition_profile(actor).is_none() {
         return Err(ActionError::PreconditionFailed(format!(
             "actor {actor} lacks TheftDispositionProfile"
@@ -982,13 +996,13 @@ fn validate_pick_up_payload_override(
 #[cfg(test)]
 mod tests {
     use super::register_transport_actions;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
         AgentBeliefStore, CarryCapacity, CauseRef, CommodityKind, Container, ControlSource,
         DisturbanceKind, EventLog, EventView, EvidenceEntry, EvidenceEntryId, EvidenceKind,
-        LoadUnits, PerceptionSource, Place, Quantity, SaleListing, Seed, StockAssignment,
-        StockAssignmentKind, Tick, Topology, TravelEdge, TravelEdgeId, UniqueItemKind,
-        VisibilitySpec, WitnessData, World, WorldTxn, build_believed_entity_state,
+        LoadUnits, MerchandiseProfile, PerceptionSource, Place, Quantity, SaleListing, Seed,
+        StockAssignment, StockAssignmentKind, Tick, Topology, TravelEdge, TravelEdgeId,
+        UniqueItemKind, VisibilitySpec, WitnessData, World, WorldTxn, build_believed_entity_state,
         build_prototype_world, verify_live_lot_conservation,
     };
     use worldwake_sim::{
@@ -1100,6 +1114,40 @@ mod tests {
             (actor, lot)
         };
         (world, actor, lot, place, other_place)
+    }
+
+    fn stage_lot_as_displayed_sale_stock(
+        txn: &mut WorldTxn<'_>,
+        lot: EntityId,
+        owner: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> EntityId {
+        let (facility, _stock_container, display_container) = txn
+            .create_merchant_facility(place, owner, LoadUnits(200), Some(LoadUnits(100)))
+            .unwrap();
+        let display_container = display_container.expect("display container should exist");
+        txn.set_owner(lot, owner).unwrap();
+        txn.put_into_container(lot, display_container).unwrap();
+        txn.set_component_stock_assignment(
+            lot,
+            StockAssignment {
+                facility,
+                kind: StockAssignmentKind::Displayed,
+            },
+        )
+        .unwrap();
+        txn.set_component_sale_listing(lot, SaleListing { listed_at: Tick(2) })
+            .unwrap();
+        txn.set_component_merchandise_profile(
+            owner,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([commodity]),
+                home_facility: Some(facility),
+            },
+        )
+        .unwrap();
+        display_container
     }
 
     fn setup_registries() -> (
@@ -2275,7 +2323,7 @@ mod tests {
         let owner = {
             let mut txn = new_txn(&mut world, 2);
             let owner = txn.create_agent("Briar", ControlSource::Ai).unwrap();
-            txn.set_owner(lot, owner).unwrap();
+            stage_lot_as_displayed_sale_stock(&mut txn, lot, owner, place, CommodityKind::Bread);
             txn.set_component_theft_disposition_profile(
                 actor,
                 worldwake_core::TheftDispositionProfile {
@@ -2373,22 +2421,7 @@ mod tests {
         let owner = {
             let mut txn = new_txn(&mut world, 2);
             let owner = txn.create_agent("Briar", ControlSource::Ai).unwrap();
-            let (facility, _stock_container, display_container) = txn
-                .create_merchant_facility(place, owner, LoadUnits(200), Some(LoadUnits(100)))
-                .unwrap();
-            let display_container = display_container.expect("display container should exist");
-            txn.set_owner(lot, owner).unwrap();
-            txn.put_into_container(lot, display_container).unwrap();
-            txn.set_component_stock_assignment(
-                lot,
-                StockAssignment {
-                    facility,
-                    kind: StockAssignmentKind::Displayed,
-                },
-            )
-            .unwrap();
-            txn.set_component_sale_listing(lot, SaleListing { listed_at: Tick(2) })
-                .unwrap();
+            stage_lot_as_displayed_sale_stock(&mut txn, lot, owner, place, CommodityKind::Bread);
             txn.set_component_theft_disposition_profile(
                 actor,
                 worldwake_core::TheftDispositionProfile {
@@ -2472,12 +2505,13 @@ mod tests {
         let display_container = {
             let mut txn = new_txn(&mut world, 2);
             let owner = txn.create_agent("Briar", ControlSource::Ai).unwrap();
-            let (_facility, _stock_container, display_container) = txn
-                .create_merchant_facility(place, owner, LoadUnits(200), Some(LoadUnits(100)))
-                .unwrap();
-            let display_container = display_container.expect("display container should exist");
-            txn.set_owner(lot, owner).unwrap();
-            txn.put_into_container(lot, display_container).unwrap();
+            let display_container = stage_lot_as_displayed_sale_stock(
+                &mut txn,
+                lot,
+                owner,
+                place,
+                CommodityKind::Bread,
+            );
             txn.set_component_theft_disposition_profile(
                 actor,
                 worldwake_core::TheftDispositionProfile {

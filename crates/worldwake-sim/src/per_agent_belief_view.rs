@@ -1,9 +1,10 @@
 use crate::{
-    ActionDefRegistry, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload,
-    CombatBeliefView, ControlBeliefView, DurationExpr, EconomicBeliefView, EntityBeliefView,
-    FacilityBeliefView, InventoryBeliefView, PoliticalBeliefView, ProfileBeliefView,
-    RecipeDefinition, RecipeRegistry, RuntimeBeliefView, SocialBeliefView, SpatialBeliefView,
-    TemporalBeliefView, estimate_duration_from_beliefs,
+    ActionDefRegistry, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload, BeliefRead,
+    BelievedAuthorityView, CombatBeliefView, ControlBeliefView, DurationExpr, EconomicBeliefView,
+    EntityBeliefView, FacilityBeliefView, InventoryBeliefView, LocalPhysicalObservationView,
+    ObservationSource, ObservedRead, PoliticalBeliefView, ProfileBeliefView, RecipeDefinition,
+    RecipeRegistry, RuntimeBeliefView, SocialBeliefView, SpatialBeliefView, TemporalBeliefView,
+    estimate_duration_from_beliefs,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -12,19 +13,19 @@ use worldwake_core::{
     BelievedInstitutionalClaim, CarryCapacity, CognitiveProfile, CombatProfile,
     CommodityConsumableProfile, CommodityKind, CommodityValuationProfile, ContentionGrant,
     ControlSource, DemandObservation, DeprivationExposure, DisposalProfile, DiversificationProfile,
-    DriveEscalationProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind,
-    ExpectationStore, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
-    InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile,
-    LastHarvestTrace, LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance,
-    LatrineFullness, LawAbidingProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PerceptionProfile,
-    PerceptionSource, Permille, PlaceDirtiness, PlaceTag, PreferenceProfile, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordedViolation, ResourceExtractionQueues, ResourceSource,
-    RewardEncumbrance, RiskWeightProfile, RouteExperience, SleepQualityProfile, SocialObservation,
-    SourceReliability, StockStoragePolicy, SubstitutePreferences, SurveyMemory, TellMemoryKey,
-    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, UtilityProfile, WashBasinState, WorkstationTag, World, Wound,
-    danger_ratio_permille, is_incapacitated, load_of_entity,
+    DriveEscalationProfile, DriveThresholds, EffectiveRight, EntityBeliefAspect, EntityId,
+    EntityKind, ExpectationStore, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
+    JusticeDispositionProfile, LastHarvestTrace, LastProactiveExplorationTick, LastSeenMemory,
+    LastSeenProvenance, LatrineFullness, LawAbidingProfile, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
+    PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness, PlaceTag, PreferenceProfile,
+    Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation, ResourceExtractionQueues,
+    ResourceSource, RewardEncumbrance, RiskWeightProfile, RouteExperience, SleepQualityProfile,
+    SocialObservation, SourceReliability, StockStoragePolicy, SubstitutePreferences, SurveyMemory,
+    TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, UtilityProfile, WashBasinState, WorkstationTag, World,
+    Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -337,6 +338,40 @@ impl<'w> PerAgentBeliefView<'w> {
         entities
     }
 
+    fn believed_entity_authority_claim(
+        &self,
+        subject: EntityId,
+        aspect: EntityBeliefAspect,
+    ) -> BeliefRead<EntityId> {
+        let threshold = self.claim_confidence_threshold(self.agent);
+        let policy = self.belief_confidence_policy(self.agent);
+        let Some(best) = crate::belief_view::project_claims_into_belief_set(
+            self.belief_store
+                .get_entity_claims(&subject)
+                .into_iter()
+                .flatten()
+                .filter_map(|claim| {
+                    crate::belief_view::entity_claim_value(claim, aspect)
+                        .and_then(|entity| entity.map(|entity| (claim.clone(), entity)))
+                }),
+            self.current_tick,
+            threshold,
+            &policy,
+        )
+        .best
+        else {
+            return BeliefRead::Unknown;
+        };
+
+        match best.status {
+            crate::belief_view::BeliefStatus::Stale => BeliefRead::Stale(best),
+            crate::belief_view::BeliefStatus::Contradicted
+            | crate::belief_view::BeliefStatus::Disputed => BeliefRead::Unknown,
+            crate::belief_view::BeliefStatus::Certain
+            | crate::belief_view::BeliefStatus::Probable => BeliefRead::Known(best),
+        }
+    }
+
     /// Find the alive controller of `facility` who is co-located at `place`.
     ///
     /// Uses authoritative state for the facility's location (facilities are
@@ -380,21 +415,9 @@ fn adjusted_travel_ticks(
 }
 
 impl ControlBeliefView for PerAgentBeliefView<'_> {
-    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
-        // Ownership is a social fact (FND-14/FND-15). Co-location alone is
-        // insufficient — the observer must have an explicit belief entry,
-        // possess the entity, or be the entity itself. Reading authoritative
-        // owner data without a belief path would leak omniscient world state.
-        let accessible = entity == self.agent
-            || self.believed_entity(entity).is_some()
-            || self.world.possessor_of(entity) == Some(self.agent)
-            || self.world.owner_of(entity) == Some(self.agent);
-        accessible.then(|| self.world.owner_of(entity)).flatten()
-    }
-
     fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
         // Effective rights are a social/jurisdictional fact (FND-14/FND-15).
-        // Require the same explicit-belief gate as `believed_owner_of`.
+        // Require an explicit belief gate instead of co-location.
         let accessible = entity == self.agent
             || self.believed_entity(entity).is_some()
             || self.world.possessor_of(entity) == Some(self.agent)
@@ -406,6 +429,15 @@ impl ControlBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+        if self.world.owner_of(entity).is_none()
+            && self.world.effective_place(actor) == self.world.effective_place(entity)
+            && matches!(
+                self.world.entity_kind(entity),
+                Some(EntityKind::ItemLot | EntityKind::UniqueItem | EntityKind::Container)
+            )
+        {
+            return true;
+        }
         self.world.can_exercise_control(actor, entity).is_ok()
     }
 
@@ -413,6 +445,143 @@ impl ControlBeliefView for PerAgentBeliefView<'_> {
         self.world
             .get_component_agent_data(entity)
             .is_some_and(|agent_data| agent_data.control_source != ControlSource::None)
+    }
+}
+
+impl BelievedAuthorityView for PerAgentBeliefView<'_> {
+    fn believed_owner_of(&self, entity: EntityId) -> BeliefRead<EntityId> {
+        self.believed_entity_authority_claim(entity, EntityBeliefAspect::Owner)
+    }
+
+    fn believed_holder_of(&self, entity: EntityId) -> BeliefRead<EntityId> {
+        self.believed_entity_authority_claim(entity, EntityBeliefAspect::Holder)
+    }
+
+    fn believed_office_holder(&self, office: EntityId) -> BeliefRead<Option<EntityId>> {
+        let InstitutionalBeliefRead::Certain(holder) =
+            self.belief_store.believed_office_holder(office)
+        else {
+            return BeliefRead::Unknown;
+        };
+
+        let learned_tick = self
+            .belief_store
+            .institutional_beliefs
+            .get(&InstitutionalBeliefKey::OfficeHolderOf { office })
+            .into_iter()
+            .flatten()
+            .find_map(|belief| match belief.claim {
+                worldwake_core::InstitutionalClaim::OfficeHolder {
+                    office: claim_office,
+                    holder: claim_holder,
+                    effective_tick,
+                } if claim_office == office && claim_holder == holder => {
+                    Some((belief.learned_tick, effective_tick))
+                }
+                _ => None,
+            })
+            .unwrap_or((Tick(0), Tick(0)));
+
+        BeliefRead::Known(crate::belief_view::BeliefValue {
+            value: holder,
+            confidence: Permille::new(1000).unwrap(),
+            acquired_tick: learned_tick.0,
+            claimed_event_tick: Some(learned_tick.1),
+            status: crate::belief_view::BeliefStatus::Certain,
+        })
+    }
+}
+
+impl LocalPhysicalObservationView for PerAgentBeliefView<'_> {
+    fn colocated_entities(&self, actor: EntityId) -> ObservedRead<Vec<EntityId>> {
+        let value = if actor == self.agent {
+            self.world
+                .effective_place(actor)
+                .map(|place| {
+                    let mut entities = self.world.entities_effectively_at(place);
+                    entities.sort();
+                    entities.dedup();
+                    entities
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        ObservedRead {
+            value,
+            observed_tick: self.current_tick,
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+
+    fn observed_item_lot_quantity(&self, lot: EntityId) -> ObservedRead<Option<Quantity>> {
+        ObservedRead {
+            value: self
+                .has_authoritative_local_visibility(lot)
+                .then(|| {
+                    self.world
+                        .get_component_item_lot(lot)
+                        .map(|lot| lot.quantity)
+                })
+                .flatten(),
+            observed_tick: self.current_tick,
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+
+    fn observed_workstation_tag(&self, entity: EntityId) -> ObservedRead<Option<WorkstationTag>> {
+        ObservedRead {
+            value: self
+                .has_authoritative_local_visibility(entity)
+                .then(|| {
+                    self.world
+                        .get_component_workstation_marker(entity)
+                        .map(|marker| marker.0)
+                })
+                .flatten(),
+            observed_tick: self.current_tick,
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+
+    fn observed_resource_source(&self, entity: EntityId) -> ObservedRead<Option<ResourceSource>> {
+        ObservedRead {
+            value: self
+                .has_authoritative_local_visibility(entity)
+                .then(|| self.world.get_component_resource_source(entity).cloned())
+                .flatten(),
+            observed_tick: self.current_tick,
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+
+    fn observed_container_contents(&self, container: EntityId) -> ObservedRead<Vec<EntityId>> {
+        let value = if self.has_authoritative_local_visibility(container) {
+            let mut contents = self.world.direct_contents_of(container);
+            contents.sort();
+            contents.dedup();
+            contents
+        } else {
+            Vec::new()
+        };
+
+        ObservedRead {
+            value,
+            observed_tick: self.current_tick,
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+
+    fn observed_entity_kind(&self, entity: EntityId) -> ObservedRead<Option<EntityKind>> {
+        ObservedRead {
+            value: self
+                .has_authoritative_local_visibility(entity)
+                .then(|| self.world.entity_kind(entity))
+                .flatten(),
+            observed_tick: self.current_tick,
+            source: ObservationSource::CoLocatedSameTick,
+        }
     }
 }
 
@@ -774,17 +943,6 @@ impl SpatialBeliefView for PerAgentBeliefView<'_> {
                 (state.last_known_place == Some(place)).then_some(*entity)
             })
             .collect::<Vec<_>>();
-        entities.sort();
-        entities.dedup();
-        entities
-    }
-
-    fn locally_observed_entities_at(&self, agent: EntityId, place: EntityId) -> Vec<EntityId> {
-        if agent != self.agent || self.world.effective_place(agent) != Some(place) {
-            return self.entities_at(place);
-        }
-
-        let mut entities = self.world.entities_effectively_at(place);
         entities.sort();
         entities.dedup();
         entities
@@ -1411,13 +1569,6 @@ impl PoliticalBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
-    fn believed_office_holder(
-        &self,
-        office: EntityId,
-    ) -> InstitutionalBeliefRead<Option<EntityId>> {
-        self.belief_store.believed_office_holder(office)
-    }
-
     fn believed_force_controller(
         &self,
         office: EntityId,
@@ -1498,8 +1649,8 @@ impl PoliticalBeliefView for PerAgentBeliefView<'_> {
     ) -> Option<&RewardEncumbrance> {
         if actor != self.agent
             || !matches!(
-                self.believed_office_holder(office),
-                InstitutionalBeliefRead::Certain(Some(holder)) if holder == actor
+                BelievedAuthorityView::believed_office_holder(self, office),
+                BeliefRead::Known(value) | BeliefRead::Stale(value) if value.value == Some(actor)
             )
         {
             return None;
@@ -2025,10 +2176,12 @@ mod tests {
     use super::{PerAgentBeliefRuntime, PerAgentBeliefView};
     use crate::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
-        ActionInstanceId, ActionPayload, ActionStatus, CombatBeliefView, Constraint,
-        ControlBeliefView, DurationExpr, EconomicBeliefView, EntityBeliefView, FacilityBeliefView,
-        GoalBeliefView, Interruptibility, InventoryBeliefView, Precondition, ProfileBeliefView,
-        ReservationReq, RuntimeBeliefView, SpatialBeliefView, TargetSpec, TemporalBeliefView,
+        ActionInstanceId, ActionPayload, ActionStatus, BeliefRead, BelievedAuthorityView,
+        CombatBeliefView, Constraint, ControlBeliefView, DebugWorldView, DurationExpr,
+        EconomicBeliefView, EntityBeliefView, FacilityBeliefView, GoalBeliefView, Interruptibility,
+        InventoryBeliefView, LocalPhysicalObservationView, ObservationSource, Precondition,
+        ProfileBeliefView, ReservationReq, RuntimeBeliefView, SpatialBeliefView, TargetSpec,
+        TemporalBeliefView,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -2037,16 +2190,16 @@ mod tests {
         BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef, ClaimId,
         ClaimValue, CognitiveProfile, CombatProfile, CommodityKind, ControlSource, DisposalProfile,
         EdgeExperience, EffectiveRight, EntityBeliefAspect, EntityBeliefClaim, EntityId,
-        EntityKind, EventLog, ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState,
-        ExpectationStore, ExplorationProfile, FactionData, FactionPurpose, HarvestTraceEntry,
-        HomeostaticNeedId, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, LastHarvestTrace, LastSeenMemory, LastSeenProvenance,
-        LastSeenRecord, LawAbidingProfile, ObligationExecutionTracker, ObligationSatiationProfile,
-        OfficeData, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag,
-        PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind,
-        ResourceExtractionQueues, ResourceSource, RightKind, RiskWeightProfile, RouteExperience,
-        SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
-        TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
+        EntityKind, EntityState, EventLog, ExpectationBasis, ExpectationId, ExpectationRecord,
+        ExpectationState, ExpectationStore, ExplorationProfile, FactionData, FactionPurpose,
+        HarvestTraceEntry, HomeostaticNeedId, InstitutionalBeliefKey, InstitutionalBeliefRead,
+        InstitutionalClaim, InstitutionalKnowledgeSource, LastHarvestTrace, LastSeenMemory,
+        LastSeenProvenance, LastSeenRecord, LawAbidingProfile, ObligationExecutionTracker,
+        ObligationSatiationProfile, OfficeData, PerceptionProfile, PerceptionSource, Permille,
+        Place, PlaceTag, PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData,
+        RecordKind, ResourceExtractionQueues, ResourceSource, RightKind, RiskWeightProfile,
+        RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, Topology,
+        TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
         WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state,
         build_prototype_world,
         test_utils::{
@@ -4370,8 +4523,11 @@ mod tests {
             place
         );
         assert_eq!(
-            crate::PoliticalBeliefView::believed_office_holder(&view, office),
-            InstitutionalBeliefRead::Certain(Some(holder))
+            match BelievedAuthorityView::believed_office_holder(&view, office) {
+                BeliefRead::Known(value) | BeliefRead::Stale(value) => Some(value.value),
+                BeliefRead::Unknown => None,
+            },
+            Some(Some(holder))
         );
         assert_eq!(
             crate::PoliticalBeliefView::believed_membership(&view, faction, agent),
@@ -4388,7 +4544,7 @@ mod tests {
     }
 
     #[test]
-    fn believed_office_holder_reads_from_institutional_belief_store() {
+    fn believed_authority_office_holder_reads_from_institutional_belief_store() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
         let (agent, holder, office) = {
@@ -4420,13 +4576,16 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            crate::PoliticalBeliefView::believed_office_holder(&view, office),
-            InstitutionalBeliefRead::Certain(Some(holder))
+            match BelievedAuthorityView::believed_office_holder(&view, office) {
+                BeliefRead::Known(value) | BeliefRead::Stale(value) => Some(value.value),
+                BeliefRead::Unknown => None,
+            },
+            Some(Some(holder))
         );
     }
 
     #[test]
-    fn believed_office_holder_keeps_local_office_unknown_without_belief() {
+    fn believed_authority_office_holder_keeps_local_office_unknown_without_belief() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
         let (agent, _holder, office) = {
@@ -4445,14 +4604,14 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(
-            crate::PoliticalBeliefView::believed_office_holder(&view, office),
-            InstitutionalBeliefRead::Unknown
-        );
+        assert!(matches!(
+            BelievedAuthorityView::believed_office_holder(&view, office),
+            BeliefRead::Unknown
+        ));
     }
 
     #[test]
-    fn believed_office_holder_keeps_remote_office_unknown_without_belief() {
+    fn believed_authority_office_holder_keeps_remote_office_unknown_without_belief() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let (agent_place, office_place) = {
             let mut places = world.topology().place_ids();
@@ -4474,10 +4633,10 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(
-            crate::PoliticalBeliefView::believed_office_holder(&view, office),
-            InstitutionalBeliefRead::Unknown
-        );
+        assert!(matches!(
+            BelievedAuthorityView::believed_office_holder(&view, office),
+            BeliefRead::Unknown
+        ));
     }
 
     #[test]
@@ -4578,7 +4737,7 @@ mod tests {
     }
 
     #[test]
-    fn believed_owner_of_returns_owner_when_agent_knows_entity() {
+    fn believed_owner_of_ignores_authoritative_owner_without_explicit_claim() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
         let (agent, lot) = {
@@ -4596,14 +4755,14 @@ mod tests {
         beliefs.update_entity(lot, entity_belief(place, true, 3, 10));
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
-        assert_eq!(
-            ControlBeliefView::believed_owner_of(&view, lot),
-            Some(agent)
-        );
+        assert!(matches!(
+            BelievedAuthorityView::believed_owner_of(&view, lot),
+            BeliefRead::Unknown
+        ));
     }
 
     #[test]
-    fn believed_owner_of_returns_none_for_unowned_entity() {
+    fn believed_owner_of_returns_unknown_for_unowned_entity_without_explicit_claim() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
         let (agent, lot) = {
@@ -4621,11 +4780,14 @@ mod tests {
         beliefs.update_entity(lot, entity_belief(place, true, 3, 10));
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
-        assert_eq!(ControlBeliefView::believed_owner_of(&view, lot), None);
+        assert!(matches!(
+            BelievedAuthorityView::believed_owner_of(&view, lot),
+            BeliefRead::Unknown
+        ));
     }
 
     #[test]
-    fn believed_owner_of_returns_none_for_unknown_entity() {
+    fn believed_owner_of_returns_unknown_for_unknown_entity() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
         let (agent, lot) = {
@@ -4645,7 +4807,278 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
-        assert_eq!(ControlBeliefView::believed_owner_of(&view, lot), None);
+        assert!(matches!(
+            BelievedAuthorityView::believed_owner_of(&view, lot),
+            BeliefRead::Unknown
+        ));
+    }
+
+    #[test]
+    fn believed_authority_view_on_per_agent_view_starts_unknown() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, lot, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(CommodityKind::Bread, Quantity(3), place, Some(agent))
+                .unwrap();
+            let office = txn.create_entity(EntityKind::Office);
+            txn.set_ground_location(office, place).unwrap();
+            commit_txn(txn);
+            (agent, lot, office)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert!(matches!(
+            BelievedAuthorityView::believed_owner_of(&view, lot),
+            BeliefRead::Unknown
+        ));
+        assert!(matches!(
+            BelievedAuthorityView::believed_holder_of(&view, lot),
+            BeliefRead::Unknown
+        ));
+        assert!(matches!(
+            BelievedAuthorityView::believed_access_right(&view, agent, lot),
+            BeliefRead::Unknown
+        ));
+        assert!(matches!(
+            BelievedAuthorityView::believed_jurisdiction(&view, place),
+            BeliefRead::Unknown
+        ));
+        assert!(matches!(
+            BelievedAuthorityView::believed_office_holder(&view, office),
+            BeliefRead::Unknown
+        ));
+    }
+
+    #[test]
+    fn believed_authority_view_reads_explicit_owner_and_holder_claims() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, owner, holder, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let owner = txn.create_agent("Owner", ControlSource::Ai).unwrap();
+            let holder = txn.create_agent("Holder", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(owner, place).unwrap();
+            txn.set_ground_location(holder, place).unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(CommodityKind::Bread, Quantity(3), place, Some(owner))
+                .unwrap();
+            txn.set_possessor(lot, holder).unwrap();
+            commit_txn(txn);
+            (agent, owner, holder, lot)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.record_entity_claim(sample_claim(
+            1,
+            lot,
+            EntityBeliefAspect::Owner,
+            ClaimValue::Entity(Some(owner)),
+            4,
+            900,
+        ));
+        beliefs.record_entity_claim(sample_claim(
+            2,
+            lot,
+            EntityBeliefAspect::Holder,
+            ClaimValue::Entity(Some(holder)),
+            5,
+            900,
+        ));
+
+        let view = PerAgentBeliefView::new_at_tick(agent, Tick(6), &world, &beliefs);
+
+        match BelievedAuthorityView::believed_owner_of(&view, lot) {
+            BeliefRead::Known(value) => assert_eq!(value.value, owner),
+            other => panic!("expected known owner belief, got {other:?}"),
+        }
+        match BelievedAuthorityView::believed_holder_of(&view, lot) {
+            BeliefRead::Known(value) => assert_eq!(value.value, holder),
+            other => panic!("expected known holder belief, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn believed_authority_view_collapses_absent_and_conflicting_claims_to_unknown() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, first_owner, second_owner, lot, empty_lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let first_owner = txn.create_agent("Owner One", ControlSource::Ai).unwrap();
+            let second_owner = txn.create_agent("Owner Two", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(first_owner, place).unwrap();
+            txn.set_ground_location(second_owner, place).unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(
+                    CommodityKind::Bread,
+                    Quantity(3),
+                    place,
+                    Some(first_owner),
+                )
+                .unwrap();
+            let empty_lot = txn
+                .create_item_lot_with_owner(CommodityKind::Water, Quantity(1), place, None)
+                .unwrap();
+            commit_txn(txn);
+            (agent, first_owner, second_owner, lot, empty_lot)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.record_entity_claim(sample_claim(
+            1,
+            lot,
+            EntityBeliefAspect::Owner,
+            ClaimValue::Entity(Some(first_owner)),
+            4,
+            900,
+        ));
+        beliefs.record_entity_claim(EntityBeliefClaim {
+            claim_id: ClaimId(2),
+            subject: lot,
+            aspect: EntityBeliefAspect::Owner,
+            value: ClaimValue::Entity(Some(second_owner)),
+            source: PerceptionSource::Report {
+                from: second_owner,
+                chain_len: 1,
+            },
+            acquired_tick: Tick(5),
+            claimed_event_tick: Some(Tick(5)),
+            confidence: Permille::new(900).unwrap(),
+            refuted_at_tick: None,
+        });
+        beliefs.record_entity_claim(sample_claim(
+            3,
+            empty_lot,
+            EntityBeliefAspect::Owner,
+            ClaimValue::Entity(None),
+            5,
+            900,
+        ));
+
+        let view = PerAgentBeliefView::new_at_tick(agent, Tick(6), &world, &beliefs);
+
+        assert!(matches!(
+            BelievedAuthorityView::believed_owner_of(&view, lot),
+            BeliefRead::Unknown
+        ));
+        assert!(matches!(
+            BelievedAuthorityView::believed_owner_of(&view, empty_lot),
+            BeliefRead::Unknown
+        ));
+    }
+
+    #[test]
+    fn local_physical_observation_view_colocated_entities_matches_legacy_read() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let local_place = places[0];
+        let remote_place = places[1];
+        let (agent, local_lot, remote_agent) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, local_place).unwrap();
+            let local_lot = txn
+                .create_item_lot_with_owner(CommodityKind::Bread, Quantity(3), local_place, None)
+                .unwrap();
+            let remote_agent = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(remote_agent, remote_place).unwrap();
+            commit_txn(txn);
+            (agent, local_lot, remote_agent)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new_at_tick(agent, Tick(9), &world, &beliefs);
+        let observed = LocalPhysicalObservationView::colocated_entities(&view, agent);
+
+        assert!(observed.value.contains(&agent));
+        assert!(observed.value.contains(&local_lot));
+        assert!(!observed.value.contains(&remote_agent));
+        let mut expected = world.entities_effectively_at(local_place);
+        expected.sort();
+        expected.dedup();
+        assert_eq!(observed.value, expected);
+        assert_eq!(observed.observed_tick, Tick(9));
+        assert_eq!(observed.source, ObservationSource::CoLocatedSameTick);
+    }
+
+    #[test]
+    fn local_physical_observation_view_gates_subject_reads_by_colocation() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let local_place = places[0];
+        let remote_place = places[1];
+        let (agent, local_lot, remote_lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, local_place).unwrap();
+            let local_lot = txn
+                .create_item_lot_with_owner(CommodityKind::Bread, Quantity(3), local_place, None)
+                .unwrap();
+            let remote_lot = txn
+                .create_item_lot_with_owner(CommodityKind::Water, Quantity(5), remote_place, None)
+                .unwrap();
+            commit_txn(txn);
+            (agent, local_lot, remote_lot)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new_at_tick(agent, Tick(12), &world, &beliefs);
+
+        let local_quantity =
+            LocalPhysicalObservationView::observed_item_lot_quantity(&view, local_lot);
+        let remote_quantity =
+            LocalPhysicalObservationView::observed_item_lot_quantity(&view, remote_lot);
+        let local_kind = LocalPhysicalObservationView::observed_entity_kind(&view, local_lot);
+        let remote_kind = LocalPhysicalObservationView::observed_entity_kind(&view, remote_lot);
+
+        assert_eq!(local_quantity.value, Some(Quantity(3)));
+        assert_eq!(local_quantity.observed_tick, Tick(12));
+        assert_eq!(remote_quantity.value, None);
+        assert_eq!(local_kind.value, Some(EntityKind::ItemLot));
+        assert_eq!(remote_kind.value, None);
+    }
+
+    #[test]
+    fn debug_world_view_reports_authoritative_entity_state() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(CommodityKind::Bread, Quantity(3), place, Some(agent))
+                .unwrap();
+            commit_txn(txn);
+            (agent, lot)
+        };
+
+        let world_ref = &world;
+        assert_eq!(
+            DebugWorldView::world_entity_state(&world_ref, lot),
+            EntityState {
+                kind: Some(EntityKind::ItemLot),
+                place: Some(place),
+                alive: true,
+                container: None,
+                possessor: None,
+            }
+        );
+        assert_eq!(DebugWorldView::world_owner_of(&world_ref, lot), Some(agent));
+        assert_eq!(
+            DebugWorldView::world_location_of(&world_ref, lot),
+            Some(place)
+        );
+        assert!(DebugWorldView::world_inventory_of(&world_ref, agent).is_empty());
     }
 
     #[test]
@@ -4698,7 +5131,7 @@ mod tests {
     }
 
     #[test]
-    fn believed_owner_of_returns_owner_when_self_is_owner() {
+    fn believed_owner_of_does_not_use_self_ownership_as_belief() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
         let (agent, lot) = {
@@ -4712,14 +5145,14 @@ mod tests {
             (agent, lot)
         };
 
-        // Agent has NO belief entry, but is the owner — accessible via self-ownership check
+        // Agent has no explicit authority belief claim; live ownership is not a belief.
         let beliefs = AgentBeliefStore::new();
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
-        assert_eq!(
-            ControlBeliefView::believed_owner_of(&view, lot),
-            Some(agent)
-        );
+        assert!(matches!(
+            BelievedAuthorityView::believed_owner_of(&view, lot),
+            BeliefRead::Unknown
+        ));
     }
 
     #[test]

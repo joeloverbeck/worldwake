@@ -45,6 +45,7 @@ pub mod contention;
 pub mod contention_event;
 pub mod control;
 pub mod crime;
+pub mod debug_view;
 pub mod decision_event_payload;
 pub mod delta;
 pub mod discrepancy;
@@ -164,6 +165,7 @@ pub use crime::{
     JusticeDispositionProfile, PunishmentFineSelectionTrace, PunishmentFineStartFailureTrace,
     PunishmentFineTraceFacts, PunishmentKind, TheftDispositionProfile, TheftFacts,
 };
+pub use debug_view::EntityState;
 pub use decision_event_payload::{
     ActionInterruptReasonTag, BeliefRef, BeliefSnapshot, BeliefStatusTag, BlockerRecordedPayload,
     DecisionEventPayload, EmitterTag, EvidenceKindTag, EvidenceSummary, ExpectationFailureCauseTag,

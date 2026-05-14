@@ -29,13 +29,13 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
-    AcquisitionQuantity, ArtifactPostingContext, ArtifactPostingProfile, AskWitnessMemoryKey,
-    BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory, BountyTarget, BountyTerms,
-    CommodityKind, CommodityPurpose, Discrepancy, DiscrepancyClearing, DiscrepancyMemory,
-    DiversificationProfile, DriveThresholds, EligibilityRule, EmitterTag, EntityId, EntityKind,
-    EvidenceKindTag, EvidenceSummary, ExpectationBasis, ExpectationOutcome, ExpectationRecord,
-    ExpectationState, ExplorationMotivation, ExplorationProfile, GoalKey, GoalKind,
-    GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, HypothesisKind,
+    AcquisitionQuantity, AgentBeliefStore, ArtifactPostingContext, ArtifactPostingProfile,
+    AskWitnessMemoryKey, BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory,
+    BountyTarget, BountyTerms, CommodityKind, CommodityPurpose, Discrepancy, DiscrepancyClearing,
+    DiscrepancyMemory, DiversificationProfile, DriveThresholds, EligibilityRule, EmitterTag,
+    EntityId, EntityKind, EvidenceKindTag, EvidenceSummary, ExpectationBasis, ExpectationOutcome,
+    ExpectationRecord, ExpectationState, ExplorationMotivation, ExplorationProfile, GoalKey,
+    GoalKind, GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, HypothesisKind,
     InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
     InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor, OpportunityKey,
     PerceptionSource, Permille, PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace,
@@ -46,7 +46,7 @@ use worldwake_core::{
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
-    GoalBeliefView, RecipeDefinition, RecipeRegistry, TellTopicOmissionReason,
+    BeliefRead, GoalBeliefView, RecipeDefinition, RecipeRegistry, TellTopicOmissionReason,
     belief_view::BeliefStatus, listener_aware_tell_topic_selection,
 };
 use worldwake_systems::trade_actions::select_substitute_trade_candidate_for_view;
@@ -1121,7 +1121,7 @@ fn emit_bounty_posting_candidates(
         };
         if !matches!(
             ctx.view.believed_office_holder(office),
-            InstitutionalBeliefRead::Certain(Some(holder)) if holder == ctx.agent
+            BeliefRead::Known(holder) | BeliefRead::Stale(holder) if holder.value == Some(ctx.agent)
         ) {
             continue;
         }
@@ -1487,7 +1487,7 @@ fn known_authority_crime_registers(ctx: &GenerationContext<'_>) -> Vec<(EntityId
             record_data.record_kind == RecordKind::CrimeRegister
                 && matches!(
                     ctx.view.believed_office_holder(record_data.issuer),
-                    InstitutionalBeliefRead::Certain(Some(holder)) if holder == ctx.agent
+                    BeliefRead::Known(holder) | BeliefRead::Stale(holder) if holder.value == Some(ctx.agent)
                 )
         })
         .collect()
@@ -1597,7 +1597,7 @@ fn emit_punishment_candidate_for_case(
     };
     if !matches!(
         ctx.view.believed_office_holder(office),
-        InstitutionalBeliefRead::Certain(Some(holder)) if holder == ctx.agent
+        BeliefRead::Known(holder) | BeliefRead::Stale(holder) if holder.value == Some(ctx.agent)
     ) {
         return;
     }
@@ -2181,17 +2181,34 @@ fn political_office_evidence(
         return Err(PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant);
     }
 
-    match ctx.view.believed_office_holder(office) {
+    match office_holder_institutional_read(ctx, office) {
         InstitutionalBeliefRead::Certain(None) => Ok(Evidence::default()),
         InstitutionalBeliefRead::Certain(Some(_)) => {
             Err(PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant)
         }
-        InstitutionalBeliefRead::Unknown => known_consultable_office_register(ctx, office)
-            .ok_or(PoliticalCandidateOmissionReason::OfficeHolderBeliefUnknownNoConsultableRecord),
         InstitutionalBeliefRead::Conflicted(_) => {
             Err(PoliticalCandidateOmissionReason::OfficeHolderBeliefConflicted)
         }
+        InstitutionalBeliefRead::Unknown => known_consultable_office_register(ctx, office)
+            .ok_or(PoliticalCandidateOmissionReason::OfficeHolderBeliefUnknownNoConsultableRecord),
     }
+}
+
+fn office_holder_institutional_read(
+    ctx: &GenerationContext<'_>,
+    office: EntityId,
+) -> InstitutionalBeliefRead<Option<EntityId>> {
+    if let Some(store) = ctx.view.agent_belief_store(ctx.agent) {
+        return store.believed_office_holder(office);
+    }
+    let key = InstitutionalBeliefKey::OfficeHolderOf { office };
+    let claims = ctx.view.institutional_belief_claims(ctx.agent, key);
+    if claims.is_empty() {
+        return InstitutionalBeliefRead::Unknown;
+    }
+    let mut store = AgentBeliefStore::new();
+    store.institutional_beliefs.insert(key, claims);
+    store.believed_office_holder(office)
 }
 
 fn force_political_office_evidence(
@@ -3686,9 +3703,10 @@ fn emit_need_driven_candidates(
         .into_iter()
         .filter(|commodity| matches_need(*commodity))
     {
-        // Emit ConsumeOwnedCommodity only for directly possessed consumables.
-        // Owned-but-unpossessed stock still requires an explicit retrieval
-        // path before it can satisfy self-care.
+        // Emit ConsumeOwnedCommodity for immediately reachable consumables:
+        // directly possessed stock, or loose local stock the agent explicitly
+        // believes they own. Containerized/displayed stock still requires an
+        // explicit retrieval path before it can satisfy self-care.
         if let Some(evidence) =
             local_owned_commodity_evidence(ctx.view, ctx.agent, ctx.place, commodity)
         {
@@ -4338,7 +4356,7 @@ fn local_raid_targets(
     agent: EntityId,
     place: Option<EntityId>,
 ) -> Vec<EntityId> {
-    let Some(place) = place else {
+    let Some(_place) = place else {
         return Vec::new();
     };
 
@@ -4350,7 +4368,8 @@ fn local_raid_targets(
         return Vec::new();
     }
 
-    view.locally_observed_entities_at(agent, place)
+    view.colocated_entities(agent)
+        .value
         .into_iter()
         .filter(|target| *target != agent)
         .filter(|target| {
@@ -4902,7 +4921,7 @@ fn emit_theft_candidates(
         return;
     }
 
-    let locally_observed = ctx.view.locally_observed_entities_at(ctx.agent, place);
+    let locally_observed = ctx.view.colocated_entities(ctx.agent).value;
 
     let Some(carry_capacity) = ctx.view.carry_capacity(ctx.agent) else {
         return;
@@ -4921,11 +4940,20 @@ fn emit_theft_candidates(
         if ctx.view.entity_kind(item) != Some(EntityKind::ItemLot) {
             continue;
         }
-        let Some(owner) = ctx
-            .view
-            .believed_owner_of(item)
-            .or_else(|| ctx.view.seller_for_sale_lot(item))
-        else {
+        let Some(commodity) = ctx.view.item_lot_commodity(item) else {
+            continue;
+        };
+        let sale_seller = ctx.view.seller_for_sale_lot(item).filter(|seller| {
+            ctx.view
+                .merchandise_profile(*seller)
+                .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
+        });
+        let owner_belief = ctx.view.believed_owner_of(item).known_or_stale_value();
+        let is_consumable = commodity.spec().consumable_profile.is_some();
+        if is_consumable && sale_seller.is_none() {
+            continue;
+        }
+        let Some(owner) = owner_belief.or(sale_seller) else {
             continue;
         };
         if owner == ctx.agent || ctx.view.can_control(ctx.agent, item) {
@@ -5405,7 +5433,8 @@ fn emit_expectation_violation_candidates(
     let beliefs = ctx.view.known_entity_beliefs(ctx.agent);
     let observed_at_place: BTreeSet<EntityId> = ctx
         .view
-        .locally_observed_entities_at(ctx.agent, current_place)
+        .colocated_entities(ctx.agent)
+        .value
         .into_iter()
         .collect();
 
@@ -5442,7 +5471,11 @@ fn emit_expectation_violation_candidates(
         if believed_state.last_known_place == Some(current_place)
             && observed_at_place.contains(entity_id)
             && ctx.view.entity_kind(*entity_id) == Some(EntityKind::ItemLot)
-            && ctx.view.believed_owner_of(*entity_id) == Some(ctx.agent)
+            && ctx
+                .view
+                .believed_owner_of(*entity_id)
+                .known_or_stale_value()
+                == Some(ctx.agent)
             && ctx
                 .view
                 .direct_possessor(*entity_id)
@@ -5951,7 +5984,7 @@ fn place_has_direct_acquisition_support(
         .into_iter()
         .filter_map(|lot| view.seller_for_sale_lot(lot))
         .any(|seller| seller != agent)
-        || local_unpossessed_commodity_evidence(view, place, commodity).is_some()
+        || local_unpossessed_commodity_evidence(view, agent, place, commodity).is_some()
         || view
             .resource_sources_at(place, commodity)
             .into_iter()
@@ -6214,7 +6247,7 @@ fn acquisition_path_evidence_inner(
             }
         }
         if let Some(local_lots) =
-            local_unpossessed_commodity_evidence(view, candidate_place, commodity)
+            local_unpossessed_commodity_evidence(view, agent, candidate_place, commodity)
         {
             for lot in &local_lots.entities {
                 place_trace.contributor(CandidateEvidenceKind::LooseLot, candidate_place, *lot);
@@ -6308,7 +6341,8 @@ fn acquisition_path_evidence_at_place(
             place_trace.contributor(CandidateEvidenceKind::Seller, candidate_place, seller);
         }
     }
-    if let Some(local_lots) = local_unpossessed_commodity_evidence(view, candidate_place, commodity)
+    if let Some(local_lots) =
+        local_unpossessed_commodity_evidence(view, agent, candidate_place, commodity)
     {
         for lot in &local_lots.entities {
             place_trace.contributor(CandidateEvidenceKind::LooseLot, candidate_place, *lot);
@@ -6431,6 +6465,7 @@ fn min_travel_ticks_via_view(
 
 fn local_unpossessed_commodity_evidence(
     view: &dyn GoalBeliefView,
+    agent: EntityId,
     place: EntityId,
     commodity: CommodityKind,
 ) -> Option<Evidence> {
@@ -6443,6 +6478,17 @@ fn local_unpossessed_commodity_evidence(
             continue;
         }
         if view.direct_container(entity).is_some() || view.direct_possessor(entity).is_some() {
+            continue;
+        }
+        if view
+            .believed_owner_of(entity)
+            .known_or_stale_value()
+            .is_some_and(|owner| owner == agent)
+            || view
+                .believed_rights(agent, entity)
+                .iter()
+                .any(|right| right.kind == RightKind::Ownership)
+        {
             continue;
         }
         evidence.entities.insert(entity);
@@ -6738,7 +6784,18 @@ fn local_owned_commodity_evidence(
         if view.item_lot_commodity(entity) != Some(commodity) || !view.can_control(agent, entity) {
             continue;
         }
-        if view.direct_possessor(entity) != Some(agent) {
+        let directly_possessed = view.direct_possessor(entity) == Some(agent);
+        let loose_local_owned = view.direct_container(entity).is_none()
+            && view.seller_for_sale_lot(entity).is_none()
+            && (view
+                .believed_owner_of(entity)
+                .known_or_stale_value()
+                .is_some_and(|owner| owner == agent)
+                || view
+                    .believed_rights(agent, entity)
+                    .iter()
+                    .any(|right| right.kind == RightKind::Ownership));
+        if !directly_possessed && !loose_local_owned {
             continue;
         }
         evidence.entities.insert(entity);
@@ -6756,7 +6813,9 @@ fn any_local_need_relief(
         matches_need(commodity)
             && (local_controlled_commodity_exists(view, agent, place, commodity)
                 || place
-                    .and_then(|place| local_unpossessed_commodity_evidence(view, place, commodity))
+                    .and_then(|place| {
+                        local_unpossessed_commodity_evidence(view, agent, place, commodity)
+                    })
                     .is_some())
     })
 }
@@ -6867,9 +6926,9 @@ mod tests {
         WoundCause, WoundId,
     };
     use worldwake_sim::{
-        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
-        ProfileBeliefView, RecipeDefinition, RecipeRegistry, RuntimeBeliefView, SpatialBeliefView,
-        TellTopicOmissionReason, TemporalBeliefView,
+        ActionDuration, ActionPayload, BeliefRead, ControlBeliefView, DurationExpr,
+        EntityBeliefView, ProfileBeliefView, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
+        SpatialBeliefView, TellTopicOmissionReason, TemporalBeliefView,
     };
 
     #[test]
@@ -7141,10 +7200,6 @@ mod tests {
     }
 
     impl ControlBeliefView for TestBeliefView {
-        fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
-            self.believed_owners.get(&entity).copied()
-        }
-
         fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
             self.believed_rights
                 .get(&(actor, entity))
@@ -7158,6 +7213,33 @@ mod tests {
 
         fn has_control(&self, entity: EntityId) -> bool {
             self.controlled_entities.contains(&entity)
+        }
+    }
+
+    impl worldwake_sim::BelievedAuthorityView for TestBeliefView {
+        fn believed_owner_of(&self, entity: EntityId) -> BeliefRead<EntityId> {
+            self.believed_owners
+                .get(&entity)
+                .copied()
+                .map_or(BeliefRead::Unknown, |owner| {
+                    BeliefRead::known_certain(owner, Tick(0))
+                })
+        }
+
+        fn believed_office_holder(&self, office: EntityId) -> BeliefRead<Option<EntityId>> {
+            match self
+                .office_holder_beliefs
+                .get(&office)
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
+            {
+                InstitutionalBeliefRead::Certain(holder) => {
+                    BeliefRead::known_certain(holder, Tick(0))
+                }
+                InstitutionalBeliefRead::Conflicted(_) | InstitutionalBeliefRead::Unknown => {
+                    BeliefRead::Unknown
+                }
+            }
         }
     }
 
@@ -7351,6 +7433,29 @@ mod tests {
     }
 
     impl RuntimeBeliefView for TestBeliefView {}
+
+    impl worldwake_sim::LocalPhysicalObservationView for TestBeliefView {
+        fn colocated_entities(
+            &self,
+            actor: EntityId,
+        ) -> worldwake_sim::ObservedRead<Vec<EntityId>> {
+            let value = self
+                .effective_place(actor)
+                .map(|place| {
+                    let mut entities = self.entities_at(place);
+                    entities.sort();
+                    entities.dedup();
+                    entities
+                })
+                .unwrap_or_default();
+
+            worldwake_sim::ObservedRead {
+                value,
+                observed_tick: self.current_tick,
+                source: worldwake_sim::ObservationSource::CoLocatedSameTick,
+            }
+        }
+    }
 
     impl worldwake_sim::SocialBeliefView for TestBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
@@ -7587,16 +7692,6 @@ mod tests {
             self.office_data.get(&office).cloned()
         }
 
-        fn believed_office_holder(
-            &self,
-            office: EntityId,
-        ) -> InstitutionalBeliefRead<Option<EntityId>> {
-            self.office_holder_beliefs
-                .get(&office)
-                .cloned()
-                .unwrap_or(InstitutionalBeliefRead::Unknown)
-        }
-
         fn believed_force_controller(
             &self,
             office: EntityId,
@@ -7665,10 +7760,42 @@ mod tests {
             agent: EntityId,
             key: InstitutionalBeliefKey,
         ) -> Vec<BelievedInstitutionalClaim> {
-            self.institutional_claims
-                .get(&(agent, key))
-                .cloned()
-                .unwrap_or_default()
+            if let Some(claims) = self.institutional_claims.get(&(agent, key)) {
+                return claims.clone();
+            }
+            if let InstitutionalBeliefKey::OfficeHolderOf { office } = key
+                && let Some(read) = self.office_holder_beliefs.get(&office)
+            {
+                return match read {
+                    InstitutionalBeliefRead::Certain(holder) => {
+                        vec![BelievedInstitutionalClaim {
+                            claim: InstitutionalClaim::OfficeHolder {
+                                office,
+                                holder: *holder,
+                                effective_tick: Tick(0),
+                            },
+                            source: InstitutionalKnowledgeSource::WitnessedEvent,
+                            learned_tick: Tick(0),
+                            learned_at: self.effective_place(agent),
+                        }]
+                    }
+                    InstitutionalBeliefRead::Conflicted(values) => values
+                        .iter()
+                        .map(|holder| BelievedInstitutionalClaim {
+                            claim: InstitutionalClaim::OfficeHolder {
+                                office,
+                                holder: *holder,
+                                effective_tick: Tick(0),
+                            },
+                            source: InstitutionalKnowledgeSource::WitnessedEvent,
+                            learned_tick: Tick(0),
+                            learned_at: self.effective_place(agent),
+                        })
+                        .collect(),
+                    InstitutionalBeliefRead::Unknown => Vec::new(),
+                };
+            }
+            Vec::new()
         }
 
         fn violation_disposition_profile(
@@ -8906,6 +9033,23 @@ mod tests {
             .collect()
     }
 
+    fn mark_sale_stock(
+        view: &mut TestBeliefView,
+        item: EntityId,
+        seller: EntityId,
+        commodity: CommodityKind,
+    ) {
+        view.lot_commodities.insert(item, commodity);
+        view.lot_sellers.insert(item, seller);
+        view.merchandise_profiles.insert(
+            seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([commodity]),
+                home_facility: None,
+            },
+        );
+    }
+
     fn contains_political_omission(
         diagnostics: &CandidateGenerationDiagnostics,
         family: PoliticalGoalFamily,
@@ -9508,6 +9652,88 @@ mod tests {
                 }
             ),
             "owned stock that is staged in a container should not count as immediately consumable"
+        );
+    }
+
+    #[test]
+    fn loose_local_owned_food_emits_consume_goal_when_hungry() {
+        let agent = entity(1);
+        let place = entity(10);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(bread, place);
+        view.entities_at.insert(place, vec![agent, bread]);
+        view.homeostatic_needs.insert(agent, hunger(1000));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+        view.controllable.insert((agent, bread));
+        view.controlled_entities.insert(agent);
+        view.believed_owners.insert(bread, agent);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }
+        ));
+    }
+
+    #[test]
+    fn loose_local_food_without_owner_belief_does_not_emit_consume_owned_candidate() {
+        let agent = entity(1);
+        let place = entity(10);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(bread, place);
+        view.entities_at.insert(place, vec![agent, bread]);
+        view.homeostatic_needs.insert(agent, hunger(1000));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+        view.controllable.insert((agent, bread));
+        view.controlled_entities.insert(agent);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(
+            !contains_goal(
+                &candidates,
+                GoalKind::ConsumeOwnedCommodity {
+                    commodity: CommodityKind::Bread,
+                }
+            ),
+            "loose local stock must carry an explicit ownership belief before self-care treats it as owned"
         );
     }
 
@@ -13796,6 +14022,7 @@ mod tests {
             },
         );
         view.believed_owners.insert(item, owner);
+        mark_sale_stock(&mut view, item, owner, CommodityKind::Bread);
 
         let candidates = generate_candidates(
             &view,
@@ -13889,6 +14116,16 @@ mod tests {
         view.believed_owners.insert(possessed, owner);
         view.believed_owners.insert(contained, owner);
         view.believed_owners.insert(too_heavy, owner);
+        for item in [
+            valid_item,
+            self_owned,
+            controllable,
+            possessed,
+            contained,
+            too_heavy,
+        ] {
+            mark_sale_stock(&mut view, item, owner, CommodityKind::Bread);
+        }
         view.controllable.insert((agent, controllable));
         view.direct_possessors.insert(possessed, owner);
         view.direct_containers.insert(contained, entity(99));
@@ -13993,6 +14230,7 @@ mod tests {
             },
         );
         view.lot_sellers.insert(item, seller);
+        mark_sale_stock(&mut view, item, seller, CommodityKind::Bread);
 
         let candidates = generate_candidates(
             &view,
@@ -14043,6 +14281,7 @@ mod tests {
             },
         );
         view.believed_owners.insert(item, owner);
+        mark_sale_stock(&mut view, item, owner, CommodityKind::Bread);
         view.patrol_profiles
             .insert(local_guard, patrol_profile(400));
         view.patrol_routes.insert(
@@ -14125,6 +14364,7 @@ mod tests {
             },
         );
         view.believed_owners.insert(item, owner);
+        mark_sale_stock(&mut view, item, owner, CommodityKind::Bread);
         view.beliefs.insert(agent, vec![known_entity(item, place)]);
 
         let result = generate_candidates_with_travel_horizon(

@@ -603,6 +603,7 @@ pub(super) fn apply_commodity_relevance_filter_with_expansion_trace(
         let (keep, candidate_commodity) = commodity_filter_outcome(
             candidate,
             semantics.op_kind,
+            &goal.key.kind,
             state,
             registry,
             goal_commodity,
@@ -636,23 +637,77 @@ pub(super) fn apply_commodity_relevance_filter_with_expansion_trace(
 fn commodity_filter_outcome(
     candidate: &SearchCandidate,
     op_kind: PlannerOpKind,
+    goal_kind: &worldwake_core::GoalKind,
     state: &PlanningState<'_>,
     registry: &ActionDefRegistry,
     goal_commodity: worldwake_core::CommodityKind,
 ) -> (bool, Option<worldwake_core::CommodityKind>) {
     match op_kind {
-        PlannerOpKind::MoveCargo => match candidate
-            .authoritative_targets
-            .first()
-            .copied()
-            .and_then(|target| state.item_lot_commodity(target))
-        {
-            Some(candidate_commodity) => (
-                candidate_commodity == goal_commodity,
-                Some(candidate_commodity),
-            ),
-            None => (true, None),
-        },
+        PlannerOpKind::MoveCargo => {
+            if registry
+                .get(candidate.def_id)
+                .is_some_and(|def| def.name == "put_down")
+                && let Some(target) = candidate.authoritative_targets.first().copied()
+            {
+                let put_down_can_advance_goal = matches!(
+                    goal_kind,
+                    worldwake_core::GoalKind::ProduceCommodity { .. }
+                        | worldwake_core::GoalKind::SellCommodity { .. }
+                );
+                return if let Some(candidate_commodity) = state.item_lot_commodity(target) {
+                    (
+                        put_down_can_advance_goal && candidate_commodity == goal_commodity,
+                        Some(candidate_commodity),
+                    )
+                } else {
+                    let candidate_commodity =
+                        state.resource_source(target).map(|source| source.commodity);
+                    (
+                        put_down_can_advance_goal && candidate_commodity == Some(goal_commodity),
+                        candidate_commodity,
+                    )
+                };
+            }
+            if registry
+                .get(candidate.def_id)
+                .is_some_and(|def| def.name == "pick_up")
+                && let Some(target) = candidate.authoritative_targets.first().copied()
+            {
+                return match state.item_lot_commodity(target) {
+                    Some(candidate_commodity) => {
+                        let actor = PlanningEntityRef::Authoritative(state.snapshot().actor());
+                        let target_ref = PlanningEntityRef::Authoritative(target);
+                        let loose_ground_lot = state.direct_possessor(target).is_none()
+                            && state.direct_container(target).is_none();
+                        let colocated = state.effective_place_ref(actor)
+                            == state.effective_place_ref(target_ref);
+                        let lawful_pickup = state.can_control_ref(actor, target_ref);
+                        let already_holds_self_consume_stock =
+                            matches!(
+                                goal_kind,
+                                worldwake_core::GoalKind::AcquireCommodity {
+                                    purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                                    ..
+                                }
+                            ) && direct_possession_quantity(state, candidate_commodity) > 0;
+                        (
+                            loose_ground_lot
+                                && colocated
+                                && !state.has_sale_listing(target)
+                                && lawful_pickup
+                                && !already_holds_self_consume_stock
+                                && candidate_commodity == goal_commodity,
+                            Some(candidate_commodity),
+                        )
+                    }
+                    None => (
+                        false,
+                        state.resource_source(target).map(|source| source.commodity),
+                    ),
+                };
+            }
+            (true, None)
+        }
         PlannerOpKind::Trade => match candidate
             .payload_override
             .as_ref()
@@ -665,6 +720,25 @@ fn commodity_filter_outcome(
             ),
             None => (true, None),
         },
+        PlannerOpKind::StockManagement => {
+            let target = candidate.planning_targets.first().copied().or_else(|| {
+                candidate
+                    .authoritative_targets
+                    .first()
+                    .copied()
+                    .map(PlanningEntityRef::Authoritative)
+            });
+            let Some(target) = target else {
+                return (false, None);
+            };
+            match state.item_lot_commodity_ref(target) {
+                Some(candidate_commodity) => (
+                    candidate_commodity == goal_commodity,
+                    Some(candidate_commodity),
+                ),
+                None => (false, None),
+            }
+        }
         PlannerOpKind::QueueForFacilityUse => {
             let Some(intended_action) = candidate
                 .payload_override
@@ -732,6 +806,19 @@ fn payload_commodity_filter_outcome(
     }
 
     (true, None)
+}
+
+fn direct_possession_quantity(
+    state: &PlanningState<'_>,
+    commodity: worldwake_core::CommodityKind,
+) -> u32 {
+    let actor = PlanningEntityRef::Authoritative(state.snapshot().actor());
+    state
+        .direct_possessions_ref(actor)
+        .into_iter()
+        .filter(|entity| state.item_lot_commodity_ref(*entity) == Some(commodity))
+        .map(|entity| state.commodity_quantity_ref(entity, commodity).0)
+        .sum()
 }
 
 fn goal_synthesized_candidates(

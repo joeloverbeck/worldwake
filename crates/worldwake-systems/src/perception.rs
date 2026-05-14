@@ -1,14 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     AgentBeliefStore, BelievedActivity, BelievedInstitutionalClaim, CauseRef, CommodityKind,
-    ComponentDelta, ComponentKind, ComponentValue, EntityId, EntityKind, EventLog, EventPayload,
-    EventTag, EventView, EvidenceRef, GoalKind, HypothesisKind, InstitutionalBeliefKey,
-    InstitutionalClaim, InstitutionalKnowledgeSource, MismatchKind, NoticeTopic,
-    ObservationContext, ObservationOmission, OmissionReason, PendingEvent, PerceptionSource,
-    Permille, Quantity, RelationDelta, RelationValue, ReliabilityRecord, SocialObservation,
-    SocialObservationDetail, SocialObservationKind, SourceKey, SourceReliability, StateDelta,
-    SurveyRecord, TheftFacts, VisibilitySpec, WitnessData, World, WorldTxn,
-    build_believed_entity_state,
+    ComponentDelta, ComponentKind, ComponentValue, EntityBeliefAspect, EntityBeliefClaim, EntityId,
+    EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceRef, GoalKind, HypothesisKind,
+    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, MismatchKind,
+    NoticeTopic, ObservationContext, ObservationOmission, OmissionReason, PendingEvent,
+    PerceptionSource, Permille, Quantity, RelationDelta, RelationValue, ReliabilityRecord,
+    SocialObservation, SocialObservationDetail, SocialObservationKind, SourceKey,
+    SourceReliability, StateDelta, SurveyRecord, TheftFacts, VisibilitySpec, WitnessData, World,
+    WorldTxn, build_believed_entity_state,
 };
 use worldwake_core::{DecisionEventPayload, SurveyRecordedPayload};
 use worldwake_sim::{
@@ -26,6 +26,7 @@ struct DiscoveryContext {
 struct DirectLocalObservationBatch {
     place: EntityId,
     observed_snapshots: BTreeMap<EntityId, worldwake_core::BelievedEntityState>,
+    observed_holders: BTreeMap<EntityId, Option<EntityId>>,
     noticed_missing_subjects: BTreeSet<EntityId>,
     omitted_observations: Vec<ObservationOmission>,
 }
@@ -356,6 +357,9 @@ fn process_witness_event(
             .cloned()
             .unwrap_or_default()
     });
+    for ((subject, aspect), value) in authority_claims_for_event(record) {
+        record_direct_authority_claim(store, subject, aspect, value, record.tick());
+    }
 
     let mut traced_entities = Vec::new();
     for (entity, observed) in record.observed_entities() {
@@ -654,6 +658,7 @@ fn collect_direct_local_observation_batch(
     profile: &worldwake_core::PerceptionProfile,
 ) -> Option<DirectLocalObservationBatch> {
     let mut observed_snapshots = BTreeMap::new();
+    let mut observed_holders = BTreeMap::new();
     let mut prioritized_entities = colocated_entities
         .iter()
         .copied()
@@ -691,6 +696,12 @@ fn collect_direct_local_observation_batch(
         if let Some(snapshot) =
             build_believed_entity_state(world, entity, tick, PerceptionSource::DirectObservation)
         {
+            if matches!(
+                world.entity_kind(entity),
+                Some(EntityKind::ItemLot | EntityKind::UniqueItem | EntityKind::Container)
+            ) {
+                observed_holders.insert(entity, world.possessor_of(entity));
+            }
             observed_snapshots.insert(entity, snapshot);
         }
     }
@@ -730,6 +741,7 @@ fn collect_direct_local_observation_batch(
     Some(DirectLocalObservationBatch {
         place,
         observed_snapshots,
+        observed_holders,
         noticed_missing_subjects,
         omitted_observations,
     })
@@ -788,6 +800,15 @@ fn apply_direct_local_observation_batch(
                 institutional_source: InstitutionalKnowledgeSource::DirectObservation,
             },
         );
+        if let Some(holder) = batch.observed_holders.get(subject) {
+            record_direct_authority_claim(
+                store,
+                *subject,
+                EntityBeliefAspect::Holder,
+                *holder,
+                context.tick,
+            );
+        }
     }
 
     for subject in &batch.noticed_missing_subjects {
@@ -805,6 +826,65 @@ fn apply_direct_local_observation_batch(
     if !batch.observed_snapshots.is_empty() {
         store.prune_decayed_beliefs(profile, context.tick, &needs);
     }
+}
+
+fn record_direct_authority_claim(
+    store: &mut AgentBeliefStore,
+    subject: EntityId,
+    aspect: EntityBeliefAspect,
+    value: Option<EntityId>,
+    tick: worldwake_core::Tick,
+) {
+    store.record_entity_claim(EntityBeliefClaim {
+        claim_id: store.next_claim_id,
+        subject,
+        aspect,
+        value: worldwake_core::ClaimValue::Entity(value),
+        source: PerceptionSource::DirectObservation,
+        acquired_tick: tick,
+        claimed_event_tick: Some(tick),
+        confidence: Permille::new(1000).expect("1000 permille is valid"),
+        refuted_at_tick: None,
+    });
+}
+
+fn authority_claims_for_event(
+    record: &worldwake_core::EventRecord,
+) -> BTreeMap<(EntityId, EntityBeliefAspect), Option<EntityId>> {
+    let mut claims = BTreeMap::new();
+    for delta in record.state_deltas() {
+        let StateDelta::Relation(relation_delta) = delta else {
+            continue;
+        };
+        match relation_delta {
+            RelationDelta::Added {
+                relation: RelationValue::PossessedBy { entity, holder },
+                ..
+            } => {
+                claims.insert((*entity, EntityBeliefAspect::Holder), Some(*holder));
+            }
+            RelationDelta::Removed {
+                relation: RelationValue::PossessedBy { entity, .. },
+                ..
+            } => {
+                claims.insert((*entity, EntityBeliefAspect::Holder), None);
+            }
+            RelationDelta::Added {
+                relation: RelationValue::OwnedBy { entity, owner },
+                ..
+            } => {
+                claims.insert((*entity, EntityBeliefAspect::Owner), Some(*owner));
+            }
+            RelationDelta::Removed {
+                relation: RelationValue::OwnedBy { entity, .. },
+                ..
+            } => {
+                claims.insert((*entity, EntityBeliefAspect::Owner), None);
+            }
+            _ => {}
+        }
+    }
+    claims
 }
 
 fn record_observed_snapshot(

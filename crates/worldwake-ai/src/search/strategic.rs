@@ -7,7 +7,8 @@ use worldwake_core::{
     CommodityKind, EntityId, EntityKind, ExecutionBudget, GoalKind, OpportunityAnchor, Quantity,
 };
 use worldwake_sim::{
-    EconomicBeliefView, FacilityBeliefView, InventoryBeliefView, RecipeRegistry, SpatialBeliefView,
+    EconomicBeliefView, EntityBeliefView, FacilityBeliefView, InventoryBeliefView, RecipeRegistry,
+    SpatialBeliefView,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -75,7 +76,7 @@ pub(crate) fn plan(
     recipes: &RecipeRegistry,
 ) -> Option<StrategicPlan> {
     let state = PlanningState::new(snapshot);
-    if goal.key.kind.is_satisfied(&state) {
+    if root_goal_satisfaction_allowed(goal, &state) && goal.key.kind.is_satisfied(&state) {
         return Some(StrategicPlan { steps: Vec::new() });
     }
 
@@ -343,6 +344,30 @@ fn place_supports_commodity(
     })
 }
 
+fn root_goal_satisfaction_allowed(goal: &GoalOffer, state: &PlanningState<'_>) -> bool {
+    match &goal.key.kind {
+        GoalKind::AcquireCommodity {
+            purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            ..
+        } => false,
+        GoalKind::SellCommodity { commodity } => {
+            let actor = state.snapshot().actor();
+            let Some(place) = state.effective_place(actor) else {
+                return true;
+            };
+            !goal.evidence_entities.iter().any(|entity| {
+                state.entity_kind(*entity) == Some(EntityKind::ItemLot)
+                    && state.item_lot_commodity(*entity) == Some(*commodity)
+                    && state
+                        .local_controlled_lots_for(actor, place, *commodity)
+                        .contains(entity)
+                    && !state.has_sale_listing(*entity)
+            })
+        }
+        _ => true,
+    }
+}
+
 fn consume_current_place_prerequisites(
     current_place: EntityId,
     stages: &mut Vec<StrategicStage>,
@@ -508,10 +533,6 @@ mod tests {
     }
 
     impl ControlBeliefView for StubBeliefView {
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
             actor == entity
         }
@@ -520,6 +541,8 @@ mod tests {
             self.kinds.get(&entity) == Some(&EntityKind::Agent)
         }
     }
+
+    impl worldwake_sim::BelievedAuthorityView for StubBeliefView {}
 
     impl EntityBeliefView for StubBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
@@ -674,13 +697,6 @@ mod tests {
     impl PoliticalBeliefView for StubBeliefView {
         fn office_data(&self, _office: EntityId) -> Option<worldwake_core::OfficeData> {
             None
-        }
-
-        fn believed_office_holder(
-            &self,
-            _office: EntityId,
-        ) -> InstitutionalBeliefRead<Option<EntityId>> {
-            InstitutionalBeliefRead::Unknown
         }
 
         fn believed_support_declarations_for_office(
@@ -859,6 +875,7 @@ mod tests {
     }
 
     impl RuntimeBeliefView for StubBeliefView {}
+    impl worldwake_sim::LocalPhysicalObservationView for StubBeliefView {}
 
     fn entity(slot: u32) -> EntityId {
         EntityId {

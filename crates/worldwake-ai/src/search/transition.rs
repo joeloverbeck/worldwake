@@ -6,8 +6,8 @@ use crate::goal_model::{
 use crate::planner_duration_contract::PlannerDurationDependency;
 use crate::{
     GoalKindPlannerExt, GoalOffer, HypotheticalEffectSink, PlanTerminalKind, PlannedStep,
-    PlannerOpKind, PlannerOpSemantics, PlanningEntityRef, build_plan_expectations,
-    build_plan_guard_with_causal_links,
+    PlannerOpKind, PlannerOpSemantics, PlannerSyntheticCargo, PlanningEntityRef,
+    build_plan_expectations, build_plan_guard_with_causal_links,
 };
 use heuristic::{
     combined_relevant_places_for_tactical, compute_heuristic, compute_landmark_heuristic,
@@ -142,6 +142,39 @@ pub(super) fn build_successor_detailed<'snapshot>(
         payload_override.as_ref(),
     );
     let effective_payload = payload_override.as_ref().unwrap_or(&def.payload);
+    if semantics.synthetic_cargo == PlannerSyntheticCargo::PickUp
+        && candidate
+            .planning_targets
+            .first()
+            .copied()
+            .is_some_and(|target| {
+                node.state.direct_possessor_ref(target).is_some()
+                    || node.state.direct_container_ref(target).is_some()
+                    || match target {
+                        PlanningEntityRef::Authoritative(target) => !node.state.can_control_ref(
+                            PlanningEntityRef::Authoritative(node.state.snapshot().actor()),
+                            PlanningEntityRef::Authoritative(target),
+                        ),
+                        PlanningEntityRef::Hypothetical(_) => false,
+                    }
+            })
+    {
+        return Err(crate::decision_trace::RootCandidateSkipReason::HypotheticalTransitionFailed);
+    }
+    if semantics.synthetic_cargo == PlannerSyntheticCargo::PutDown
+        && candidate
+            .planning_targets
+            .first()
+            .copied()
+            .is_some_and(|target| {
+                node.state.direct_possessor_ref(target)
+                    != Some(PlanningEntityRef::Authoritative(
+                        node.state.snapshot().actor(),
+                    ))
+            })
+    {
+        return Err(crate::decision_trace::RootCandidateSkipReason::HypotheticalTransitionFailed);
+    }
     let duration = node
         .state
         .estimate_duration(

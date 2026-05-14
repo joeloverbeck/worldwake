@@ -94,16 +94,19 @@ When shared types, serialized carriers, or persisted components change, sweep th
 ## Trait surface checks
 
 - When extending a narrow trait or read surface, check for forwarding macros, blanket impls, paired runtime traits, or generated surfaces. Distinguish the canonical consumer boundary from implementation-detail mirrors.
+- For every new trait/read-surface method name, run a targeted symbol sweep before editing. Classify existing same-name trait methods, inherent methods, UFCS calls, and unqualified `self.method(...)` call sites; plan explicit trait qualification where a new blanket/default provider would make a previously unambiguous call ambiguous.
 - If a concrete type receives the target trait through a forwarding macro, treat the owned implementation boundary as potentially spanning the source trait, any paired runtime trait, and the macro site itself.
 - If the named facade trait is blanket-implemented from narrower subtraits, verify which subtrait actually owns the default method body or read contract. In that pattern, the real implementation boundary may be the owning subtrait plus the blanket forwarding impl rather than the facade trait alone.
 - When widening a shared trait, choose the narrowest ownership/borrowing form that preserves the canonical consumer path while minimizing snapshot and test-double fallout.
 - When a trait/read-surface method enforces belief locality or another actor-relative rule, verify the signature carries the actor/agent identity needed to enforce that rule. If the drafted signature only carries the subject or target while the contract says "known to the agent", correct the signature and dependent ticket/spec snippets before coding.
+- When a trait, wrapper, or debug-view ticket includes code-like accessor sketches, validate every named field, receiver, and accessor against live definitions before patching. If the live shape uses a different field form, lookup direction, or accessor name, update the active ticket/spec sketch during reassessment instead of leaving the stale form for compile fallout or final closeout cleanup.
 
 **Trait extraction sweep (for trait-split tickets):**
 - Run a workspace-wide fallout sweep before editing: search for the old impl boundary and any forwarding macros or trait-forwarding sites across all crates, tests, and golden helpers.
 - Prefer an all-target compile-only pass (`cargo test --workspace --no-run`) immediately after the first broad patch and before full test execution (see also `scope-extraction.md`, Type-change scope for all-targets guidance).
 - Before rewriting impl blocks or UFCS calls, write down the exact moved method set and the exact methods remaining on the old trait. Use that partition as the source of truth.
 - When splitting methods onto a new trait that provides non-panicking defaults, verify each production implementor still overrides every behaviorally required method. Add focused proof for any moved method whose default could silently preserve compilation while changing behavior.
+- Classify test doubles before adding empty default impls: pure stubs may lawfully return the default, but behavior-bearing fixtures that already model the moved method's source state must implement the real behavior so focused tests do not pass compilation while losing the contract under test.
 - After moving methods, sweep for: stale UFCS calls on the old trait, method-call sites requiring the new trait import, dot-call fallout (`view.moved_method(...)`), helper methods and test-local impl internals (`self.moved_method(...)`).
 - When blanket impls introduce a second lawful provider for an existing method name, sweep for ambiguity fallout requiring explicit trait qualification.
 - When a trait split touches large mock/adapter/test-stub impl blocks, prefer replacing the whole impl partition in one pass over patching methods incrementally.

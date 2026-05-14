@@ -452,7 +452,8 @@ fn pending_local_source_reliability_failures(
     };
     if source_key.entity != current_place
         && !view
-            .locally_observed_entities_at(agent, current_place)
+            .colocated_entities(agent)
+            .value
             .contains(&source_key.entity)
     {
         return vec![OpportunityExpectationFailureIncident {

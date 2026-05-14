@@ -11,7 +11,7 @@
 (
     seed: 608008,
     survival_health_contract: (
-        max_authored_critical_run_ticks: 180,
+        max_authored_critical_run_ticks: 400,
         max_idle_window_ticks_with_elevated_need: 35,
         elevated_need_floor: 300,
         required_self_care_families: [Eat, Drink, Sleep, Relieve, Wash],
@@ -96,6 +96,7 @@
                 beam_width: 12,
                 preferred_operator_boost: 3,
             ),
+            carry_capacity: 900,
             drive_thresholds: (
                 hunger: (low: 250, medium: 450, high: 650, critical: 840),
                 thirst: (low: 200, medium: 400, high: 650, critical: 820),
@@ -135,7 +136,7 @@
         ),
     ],
     items: [
-        (commodity: Firewood, quantity: 240, location: "Bakery Yard"),
+        (commodity: Firewood, quantity: 240, location: "Baker Nila"),
     ],
     facilities: [
         (name: "Bakery Mill", workstation: Mill, location: "Bakery Yard"),

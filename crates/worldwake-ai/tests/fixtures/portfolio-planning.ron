@@ -7,7 +7,7 @@
 // Authored world shape:
 // - Camp Workshop is the agent's only place and contains the lawful economic
 //   opportunity:
-//   - `Bake Bread` via `Camp Mill` + local `Firewood`
+//   - `Bake Bread` via `Camp Mill` + Planner-carried `Firewood`
 //
 // The scenario itself does not author persisted belief state or prior
 // commitment. The golden harness seeds those explicit proof
@@ -75,6 +75,6 @@
         (name: "Camp Mill", workstation: Mill, location: "Camp Workshop"),
     ],
     items: [
-        (commodity: Firewood, quantity: 1, location: "Camp Workshop"),
+        (commodity: Firewood, quantity: 1, location: "Planner"),
     ],
 )

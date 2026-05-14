@@ -12,6 +12,7 @@
         required_self_care_families: [Eat, Drink, Sleep, Relieve, Wash],
         critical_run_limits: (
             hunger: 320,
+            thirst: 400,
             dirtiness: 760,
         ),
     ),

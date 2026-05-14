@@ -77,6 +77,7 @@ pub enum Precondition {
     TargetNotInContainer(u8),
     TargetUnpossessed(u8),
     TargetDirectlyPossessedByActor(u8),
+    TargetActorControls(u8),
     TargetLacksProductionJob(u8),
     TargetHasConsumableEffect {
         target_index: u8,

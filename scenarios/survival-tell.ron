@@ -21,6 +21,8 @@
         elevated_need_floor: 300,
         required_self_care_families: [Eat, Drink, Sleep, Relieve, Wash],
         critical_run_limits: (
+            hunger: 800,
+            thirst: 330,
             dirtiness: 700,
         ),
     ),

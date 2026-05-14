@@ -1044,10 +1044,6 @@ mod tests {
     }
 
     impl ControlBeliefView for MockView {
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
             false
         }
@@ -1056,6 +1052,8 @@ mod tests {
             false
         }
     }
+
+    impl worldwake_sim::BelievedAuthorityView for MockView {}
 
     impl EntityBeliefView for MockView {
         fn is_alive(&self, entity: EntityId) -> bool {
@@ -1321,4 +1319,5 @@ mod tests {
     }
 
     impl RuntimeBeliefView for MockView {}
+    impl worldwake_sim::LocalPhysicalObservationView for MockView {}
 }
