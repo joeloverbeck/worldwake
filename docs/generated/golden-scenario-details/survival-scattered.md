@@ -7,7 +7,7 @@ Scenarios: 6
 
 ### Scenario 153: Scattered Survival Keeps All Agents Alive For 1440 Ticks
 
-- Source: `golden_survival_scattered.rs:324`
+- Source: `golden_survival_scattered.rs:340`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -25,7 +25,7 @@ Scenarios: 6
 
 ### Scenario 154: Scattered Survival Exercises All Five Self-Care Action Families
 
-- Source: `golden_survival_scattered.rs:366`
+- Source: `golden_survival_scattered.rs:385`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -43,7 +43,7 @@ Scenarios: 6
 
 ### Scenario 155: Isolated Agent Reaches A Food Source From Ravine Shelter
 
-- Source: `golden_survival_scattered.rs:400`
+- Source: `golden_survival_scattered.rs:419`
 - Systems: AI, Exploration, Perception, Travel
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs
@@ -61,7 +61,7 @@ Scenarios: 6
 
 ### Scenario 156: Scattered Survival Avoids Budget Exhaustion On Survival Goals
 
-- Source: `golden_survival_scattered.rs:432`
+- Source: `golden_survival_scattered.rs:451`
 - Systems: AI, Search, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: Needs, Travel, Production
@@ -79,7 +79,7 @@ Scenarios: 6
 
 ### Scenario 157: Scattered Survival Has No Stuck Idle Windows With Elevated Needs
 
-- Source: `golden_survival_scattered.rs:466`
+- Source: `golden_survival_scattered.rs:485`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -97,7 +97,7 @@ Scenarios: 6
 
 ### Scenario 168: Seeded Target-Location Belief Decays To Stale Without Refresh
 
-- Source: `golden_survival_scattered.rs:499`
+- Source: `golden_survival_scattered.rs:518`
 - Systems: Perception, Belief Envelope
 - GoalKinds: none (envelope-surfacing proof only)
 - ActionDomains: none

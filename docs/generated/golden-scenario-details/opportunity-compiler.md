@@ -41,7 +41,7 @@ Scenarios: 5
 
 ### Scenario 400: Opportunity Compiler Effect Index Miss
 
-- Source: `golden_opportunity_compiler.rs:260`
+- Source: `golden_opportunity_compiler.rs:264`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: AI
@@ -58,7 +58,7 @@ Scenarios: 5
 
 ### Scenario 401: Learned Opportunity Memory Damps Repeated Opportunity
 
-- Source: `golden_opportunity_compiler.rs:279`
+- Source: `golden_opportunity_compiler.rs:283`
 - Systems: AI, Memory
 - GoalKinds: AcquireCommodity
 - ActionDomains: AI
@@ -75,7 +75,7 @@ Scenarios: 5
 
 ### Scenario 402: Opportunity Compiler Default Replay Bound
 
-- Source: `golden_opportunity_compiler.rs:320`
+- Source: `golden_opportunity_compiler.rs:324`
 - Systems: AI, Replay
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: AI, Needs, Travel

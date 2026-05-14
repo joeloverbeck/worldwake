@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 45
-- Files contributing `golden_*` tests: 45
-- Total `golden_*` tests: 218
+- Golden test files: 46
+- Files contributing `golden_*` tests: 46
+- Total `golden_*` tests: 220
 
 ## Per-File Inventory
 
@@ -37,6 +37,7 @@ Do not hand-edit it.
 | `golden_planner_pathology.rs` | 3 |
 | `golden_portfolio_planning.rs` | 1 |
 | `golden_quantity_aware_acquisition.rs` | 5 |
+| `golden_scenario_diagnostics.rs` | 2 |
 | `golden_simulation_gaps.rs` | 5 |
 | `golden_sleep_episode.rs` | 6 |
 | `golden_source_composite.rs` | 6 |
@@ -268,6 +269,11 @@ Do not hand-edit it.
 - `golden_partial_success_emits_partial_quantity`
 - `golden_s126_long_horizon_scales_desired_target`
 - `golden_scenario_e_queue_abandonment_promotes_next_actor`
+
+### `golden_scenario_diagnostics.rs`
+
+- `golden_scenario_diagnostics_survival_baseline_fixture_is_stable`
+- `golden_scenario_diagnostics_survival_baseline_replays_deterministically`
 
 ### `golden_simulation_gaps.rs`
 

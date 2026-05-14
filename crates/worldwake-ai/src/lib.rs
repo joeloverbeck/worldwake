@@ -45,6 +45,7 @@ pub mod pressure;
 pub mod pursuit_belief;
 pub mod ranking;
 mod route_threat;
+pub mod scenario_diagnostics;
 pub mod search;
 mod shared_collections;
 pub mod side_benefit;
@@ -57,6 +58,7 @@ pub use agenda_types::{
     AgendaEntry, AgendaEntryKey, AgendaOrigin, AgendaPhase, AgendaState, KillCondition,
     RevivalTrigger,
 };
+pub use agent_tick::portfolio::SlotKind;
 pub use agent_tick::{AgentTickDriver, FrameDebugSnapshot, FrameSwitchMarginSource};
 pub use candidate_generation::generate_candidates;
 pub use decision_runtime::{
@@ -84,8 +86,8 @@ pub use decision_trace::{
     RootOperatorOmissionReason, RootOperatorOmissionTrace, SameGoalPlanningStopReason,
     SameGoalPlanningTrace, SelectedPlanReplacementKind, SelectedPlanReplacementTrace,
     SelectedPlanSearchProvenance, SelectedPlanSource, SelectedPlanTrace, SelectionTrace,
-    SnapshotContinuationOutcome, SnapshotContinuationTrace, SocialCandidateOmission,
-    TravelPruningTrace, TravelSuccessorTrace, ViolationDetectionOmission,
+    SnapshotCacheCounters, SnapshotContinuationOutcome, SnapshotContinuationTrace,
+    SocialCandidateOmission, TravelPruningTrace, TravelSuccessorTrace, ViolationDetectionOmission,
     ViolationDetectionOmissionReason,
 };
 pub use dirty_set::DirtySet;
@@ -144,6 +146,9 @@ pub use pursuit_belief::{PursuitTargetBelief, pursuit_target_belief};
 pub use ranking::{
     RankedGoalComparison, RankedGoalComparisonDimension, RankingOutcome, build_decision_context,
     rank_candidates,
+};
+pub use scenario_diagnostics::{
+    CandidateSuppressionCategory, ScenarioDiagnosticsReport, build_scenario_diagnostics,
 };
 pub use search::{PlanSearchResult, search_plan};
 pub use side_benefit::{PlanValue, SideBenefit, build_plan_value, detect_side_benefits};

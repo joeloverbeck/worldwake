@@ -84,6 +84,7 @@ pub mod obligation;
 pub mod observation_context;
 pub mod offices;
 pub mod patrol;
+pub mod percentile;
 pub mod place_dirtiness;
 pub mod plan_step_guards;
 pub mod production;
@@ -250,6 +251,7 @@ pub use offices::{
     EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
 };
 pub use patrol::{PatrolProfile, PatrolRoute};
+pub use percentile::PercentileBucket;
 pub use place_dirtiness::{LatrineFullness, PlaceDirtiness, WashBasinState};
 pub use plan_step_guards::{
     ExpectationKindTag, InvalidatorTag, MismatchDetail, ObservationPredicate, StatePredicate,

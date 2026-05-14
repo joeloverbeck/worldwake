@@ -7,7 +7,7 @@ Scenarios: 5
 
 ### Scenario 148: Survival Baseline Keeps All Agents Alive For 1440 Ticks
 
-- Source: `golden_survival_baseline.rs:300`
+- Source: `golden_survival_baseline.rs:316`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -25,7 +25,7 @@ Scenarios: 5
 
 ### Scenario 149: Survival Baseline Exercises All Five Self-Care Action Families
 
-- Source: `golden_survival_baseline.rs:339`
+- Source: `golden_survival_baseline.rs:358`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -43,7 +43,7 @@ Scenarios: 5
 
 ### Scenario 150: Survival Baseline Explorer Discovers Fertile Fields Orchard
 
-- Source: `golden_survival_baseline.rs:372`
+- Source: `golden_survival_baseline.rs:391`
 - Systems: AI, Exploration, Perception, Production
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production, Needs
@@ -61,7 +61,7 @@ Scenarios: 5
 
 ### Scenario 151: Survival Baseline Avoids Budget Exhaustion On Survival Goals
 
-- Source: `golden_survival_baseline.rs:407`
+- Source: `golden_survival_baseline.rs:426`
 - Systems: AI, Search, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: Needs, Travel, Production
@@ -79,7 +79,7 @@ Scenarios: 5
 
 ### Scenario 152: Survival Baseline Has No Stuck Idle Windows With Elevated Needs
 
-- Source: `golden_survival_baseline.rs:438`
+- Source: `golden_survival_baseline.rs:457`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production

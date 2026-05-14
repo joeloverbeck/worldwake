@@ -255,6 +255,10 @@ fn agent_tick_trace_carries_compiled_opportunities_and_load() {
             .compiled_count,
         1
     );
+    assert!(
+        trace.snapshot_cache_counters.is_some(),
+        "planning snapshot cache counters should be surfaced on the public trace"
+    );
 }
 
 // Scenario 400: Opportunity Compiler Effect Index Miss

@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::num::NonZeroU32;
@@ -16,8 +17,8 @@ use worldwake_core::{
 };
 use worldwake_sim::{BeliefRead, RuntimeBeliefView};
 
-use crate::PlannerOpKind;
 use crate::route_threat::perceived_direct_travel_cost_from_memory;
+use crate::{PlannerOpKind, SnapshotCacheCounters};
 
 type SupportBeliefRead = InstitutionalBeliefRead<Option<EntityId>>;
 type ForceControllerBeliefRead = InstitutionalBeliefRead<(Option<EntityId>, bool)>;
@@ -464,6 +465,8 @@ pub struct PlanningSnapshot {
     /// the number of places in the snapshot (typically 10-20, so < 8000 ops).
     shortest_travel_ticks: DistanceMatrix,
     perceived_travel_costs: DistanceMatrix,
+    cache_hit_count: Cell<u64>,
+    cache_miss_count: Cell<u64>,
 }
 
 impl PlanningSnapshot {
@@ -665,6 +668,8 @@ impl PlanningSnapshot {
                 .collect(),
             shortest_travel_ticks,
             perceived_travel_costs,
+            cache_hit_count: Cell::new(0),
+            cache_miss_count: Cell::new(0),
         }
     }
 
@@ -718,6 +723,8 @@ impl PlanningSnapshot {
             actor_bandit_establishment_ticks: BTreeMap::new(),
             shortest_travel_ticks,
             perceived_travel_costs,
+            cache_hit_count: Cell::new(0),
+            cache_miss_count: Cell::new(0),
         }
     }
 
@@ -812,7 +819,7 @@ impl PlanningSnapshot {
         if from == to {
             return Some(0);
         }
-        self.shortest_travel_ticks.get(from, to)
+        self.record_cache_access(self.shortest_travel_ticks.get(from, to))
     }
 
     /// Minimum travel ticks from `from` to the nearest place in `destinations`.
@@ -829,7 +836,9 @@ impl PlanningSnapshot {
         }
         destinations
             .iter()
-            .filter_map(|dest| self.shortest_travel_ticks.get(from, *dest))
+            .filter_map(|dest| {
+                self.record_cache_access(self.shortest_travel_ticks.get(from, *dest))
+            })
             .min()
     }
 
@@ -844,7 +853,9 @@ impl PlanningSnapshot {
         }
         destinations
             .iter()
-            .filter_map(|dest| self.perceived_travel_costs.get(from, *dest))
+            .filter_map(|dest| {
+                self.record_cache_access(self.perceived_travel_costs.get(from, *dest))
+            })
             .min()
     }
 
@@ -881,6 +892,26 @@ impl PlanningSnapshot {
             penalty_ticks,
             perceived_cost: base_ticks.saturating_add(penalty_ticks),
         })
+    }
+
+    #[must_use]
+    pub fn snapshot_cache_counters(&self) -> SnapshotCacheCounters {
+        SnapshotCacheCounters {
+            cache_hit_count: self.cache_hit_count.get(),
+            cache_miss_count: self.cache_miss_count.get(),
+            cache_invalidation_count: 0,
+        }
+    }
+
+    fn record_cache_access(&self, result: Option<u32>) -> Option<u32> {
+        if result.is_some() {
+            self.cache_hit_count
+                .set(self.cache_hit_count.get().saturating_add(1));
+        } else {
+            self.cache_miss_count
+                .set(self.cache_miss_count.get().saturating_add(1));
+        }
+        result
     }
 }
 
@@ -2994,6 +3025,40 @@ mod tests {
         let snapshot = build_chain_snapshot();
         let place_a = entity(10);
         assert_eq!(snapshot.min_travel_ticks_to_any(place_a, &[]), None);
+    }
+
+    #[test]
+    fn snapshot_cache_counters_record_matrix_hits_and_misses() {
+        let snapshot = build_chain_snapshot();
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let place_c = entity(12);
+        let unknown = entity(99);
+
+        assert_eq!(
+            snapshot.snapshot_cache_counters(),
+            crate::SnapshotCacheCounters::default()
+        );
+        assert_eq!(snapshot.min_travel_ticks(place_a, place_b), Some(3));
+        assert_eq!(snapshot.min_travel_ticks(place_a, unknown), None);
+        assert_eq!(
+            snapshot.min_travel_ticks_to_any(place_a, &[unknown, place_c]),
+            Some(8)
+        );
+        assert_eq!(
+            snapshot.min_perceived_travel_cost_to_any(place_a, &[place_b]),
+            Some(3)
+        );
+        assert_eq!(snapshot.min_travel_ticks(place_a, place_a), Some(0));
+
+        assert_eq!(
+            snapshot.snapshot_cache_counters(),
+            crate::SnapshotCacheCounters {
+                cache_hit_count: 3,
+                cache_miss_count: 2,
+                cache_invalidation_count: 0,
+            }
+        );
     }
 
     #[test]

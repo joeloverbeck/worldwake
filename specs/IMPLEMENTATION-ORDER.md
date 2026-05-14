@@ -5,6 +5,9 @@
 Phases 1–6 (E01–E22, FND-01, FND-02, S01–S58) completed.
 See `archive/` for detailed completion records.
 
+Completed Phase 12 specs:
+- `S144: Aggregate Scenario Diagnostics` — archived at [archive/specs/S144-aggregate-scenario-diagnostics.md](/home/joeloverbeck/projects/worldwake/archive/specs/S144-aggregate-scenario-diagnostics.md). Landed deterministic aggregate scenario diagnostics over existing traces and the event log, `PercentileBucket`, planning-snapshot cache counters, observer Section 13 text/JSON rendering, diagnostics CLI flags, and the committed `survival-baseline.ron` diagnostics fixture.
+
 Completed Phase 7 specs:
 - `S59: Expectation and Obligation Substrate` — archived at [archive/specs/S59-expectation-obligation-substrate.md](/home/joeloverbeck/projects/worldwake/archive/specs/S59-expectation-obligation-substrate.md). Time-bounded expectations, overdue detection, search/rescue actions, last-seen propagation. Golden coverage: Scenarios 120–125 in `golden_expectation.rs`.
 - `S69: Goal Dispatch Consolidation` — completed in-place (adjunct infrastructure spec).
@@ -649,7 +652,7 @@ Phase 12 runs independently of Phase 7's pending consequence-carrier specs (S60�
 ### Dependency Graph
 
 ```text
-S143 (archived)       S144 (independent)    S145 (independent)    S150 (independent)
+S143 (archived)       S144 (archived)       S145 (independent)    S150 (independent)
    │                                            │                     │
    │                  ┌─────────────────────────┘                     │
    │                  ▼                                               │
@@ -671,7 +674,7 @@ S153 (hard deps on archived S143, S148, S150, S151)
 
 **Wave 1** (parallel, no Phase 12 deps):
 - **S143**: Static Belief-View Trait Separation — completed and archived at `archive/specs/S143-static-belief-view-trait-separation.md`; split `LocalPhysicalObservationView` vs `BelievedAuthorityView` vs `DebugWorldView`; FND-14A widening becomes a compile error.
-- **S144**: Aggregate Scenario Diagnostics — `ScenarioDiagnosticsReport` over existing traces, observer Section 13, `PercentileBucket` helper, JSON output; S144 backs all future tuning decisions.
+- **S144**: ✅ COMPLETED — Aggregate Scenario Diagnostics — archived at [archive/specs/S144-aggregate-scenario-diagnostics.md](/home/joeloverbeck/projects/worldwake/archive/specs/S144-aggregate-scenario-diagnostics.md). Landed `ScenarioDiagnosticsReport` over existing traces, observer Section 13 text/JSON output, `PercentileBucket`, diagnostics flags, and the committed survival-baseline diagnostics fixture; S144 now backs future tuning decisions.
 - **S145**: Planning Substrate Hardening — stage-aware strategic budget (`2 * stages * max_prerequisite_locations`), shared cache invariant regression suite, cache hit/miss/invalidation counters.
 - **S150**: Cross-Goal Blocker Scoping — typed `BlockerScope` enum with `Exact`/`RouteSegment`/`Counterparty` variants, per-scope TTL profile, decision-history surface, S144 aggregation.
 
@@ -708,7 +711,7 @@ S153 (hard deps on archived S143, S148, S150, S151)
 - [ ] Wave 4 specs implemented and passing golden E2E tests
 - [ ] Wave 5 implemented and passing golden E2E tests
 - [x] S143 trait separation archived: grep-CI blocks `DebugWorldView` imports from `worldwake-ai/src/`; compile-fail doctest keeps debug-world reads outside `RuntimeBeliefView`; belief-wall trap golden passes
-- [ ] S144 `ScenarioDiagnosticsReport` produces byte-stable output across reruns on `survival-baseline.ron`; observer Section 13 renders text + JSON formats
+- [x] S144 archived: `ScenarioDiagnosticsReport` produces byte-stable output across reruns on `survival-baseline.ron`; observer Section 13 renders text + JSON formats
 - [ ] S145 strategic budget formula confirmed: 5-stage production chain completes under stage-aware budget where it timed out under the old `* 2` formula; cache invariant regression suite (3 tests) passes
 - [ ] S146 goal-schema registry covers every `GoalKindDiscriminant` variant (workspace-level coverage test); per-goal budget regression proves PRODUCTION-tier `BakeBread` depth 16 vs SELF_CARE-tier `Eat` depth 6
 - [ ] S147 HTN method goldens prove method selection + flat-GOAP fallback + method-failure → `Discrepancy::PartialExecutionDrift`
