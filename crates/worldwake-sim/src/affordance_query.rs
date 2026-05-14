@@ -4,7 +4,7 @@ use crate::{
     RuntimeBeliefView, TargetSpec,
 };
 use std::collections::{BTreeMap, BTreeSet};
-use worldwake_core::{ActionDefId, ContentionStatus, EntityId, EntityKind};
+use worldwake_core::{ActionDefId, ContentionStatus, EntityId, EntityKind, RightKind};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StrictnessGate {
@@ -346,6 +346,15 @@ pub fn evaluate_precondition(
         Precondition::TargetDirectlyPossessedByActor(target_index) => targets
             .get(usize::from(target_index))
             .is_some_and(|target| view.direct_possessor(*target) == Some(actor)),
+        Precondition::TargetActorControls(target_index) => targets
+            .get(usize::from(target_index))
+            .is_some_and(|target| {
+                view.direct_possessor(*target) == Some(actor)
+                    || view
+                        .believed_rights(actor, *target)
+                        .iter()
+                        .any(|right| right.kind == RightKind::Ownership)
+            }),
         Precondition::TargetLacksProductionJob(target_index) => targets
             .get(usize::from(target_index))
             .is_some_and(|target| !view.has_production_job(*target)),
@@ -457,6 +466,7 @@ fn precondition_target_index(precondition: Precondition) -> Option<usize> {
         | Precondition::TargetNotInContainer(index)
         | Precondition::TargetUnpossessed(index)
         | Precondition::TargetDirectlyPossessedByActor(index)
+        | Precondition::TargetActorControls(index)
         | Precondition::TargetLacksProductionJob(index)
         | Precondition::TargetHasWounds(index)
         | Precondition::TargetUnownedOrActorControls(index) => Some(usize::from(index)),

@@ -1096,6 +1096,23 @@ impl<'snapshot> PlanningState<'snapshot> {
         if self.direct_possessor_ref(entity) == Some(actor) {
             return true;
         }
+        if let PlanningEntityRef::Authoritative(entity_id) = entity
+            && let Some(snapshot) = self.snapshot.entities.get(&entity_id)
+            && snapshot.control.owner.is_none()
+            && snapshot.inventory.direct_possessor.is_none()
+            && snapshot.inventory.direct_container.is_none()
+            && matches!(
+                snapshot.entity.kind,
+                Some(
+                    worldwake_core::EntityKind::ItemLot
+                        | worldwake_core::EntityKind::UniqueItem
+                        | worldwake_core::EntityKind::Container
+                )
+            )
+            && self.effective_place_ref(actor) == self.effective_place_ref(entity)
+        {
+            return true;
+        }
         match entity {
             PlanningEntityRef::Authoritative(entity) => self
                 .snapshot

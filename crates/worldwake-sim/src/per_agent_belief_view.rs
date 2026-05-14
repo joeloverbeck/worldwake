@@ -430,6 +430,7 @@ impl ControlBeliefView for PerAgentBeliefView<'_> {
 
     fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
         if self.world.owner_of(entity).is_none()
+            && self.world.effective_place(actor) == self.world.effective_place(entity)
             && matches!(
                 self.world.entity_kind(entity),
                 Some(EntityKind::ItemLot | EntityKind::UniqueItem | EntityKind::Container)

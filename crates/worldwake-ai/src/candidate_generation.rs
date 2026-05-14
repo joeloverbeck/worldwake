@@ -4940,25 +4940,20 @@ fn emit_theft_candidates(
         if ctx.view.entity_kind(item) != Some(EntityKind::ItemLot) {
             continue;
         }
-        let Some(seller) = ctx.view.seller_for_sale_lot(item) else {
-            continue;
-        };
         let Some(commodity) = ctx.view.item_lot_commodity(item) else {
             continue;
         };
-        if !ctx
-            .view
-            .merchandise_profile(seller)
-            .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
-        {
+        let sale_seller = ctx.view.seller_for_sale_lot(item).filter(|seller| {
+            ctx.view
+                .merchandise_profile(*seller)
+                .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
+        });
+        let owner_belief = ctx.view.believed_owner_of(item).known_or_stale_value();
+        let is_consumable = commodity.spec().consumable_profile.is_some();
+        if is_consumable && sale_seller.is_none() {
             continue;
         }
-        let Some(owner) = ctx
-            .view
-            .believed_owner_of(item)
-            .known_or_stale_value()
-            .or(Some(seller))
-        else {
+        let Some(owner) = owner_belief.or(sale_seller) else {
             continue;
         };
         if owner == ctx.agent || ctx.view.can_control(ctx.agent, item) {
@@ -5989,7 +5984,7 @@ fn place_has_direct_acquisition_support(
         .into_iter()
         .filter_map(|lot| view.seller_for_sale_lot(lot))
         .any(|seller| seller != agent)
-        || local_unpossessed_commodity_evidence(view, place, commodity).is_some()
+        || local_unpossessed_commodity_evidence(view, agent, place, commodity).is_some()
         || view
             .resource_sources_at(place, commodity)
             .into_iter()
@@ -6252,7 +6247,7 @@ fn acquisition_path_evidence_inner(
             }
         }
         if let Some(local_lots) =
-            local_unpossessed_commodity_evidence(view, candidate_place, commodity)
+            local_unpossessed_commodity_evidence(view, agent, candidate_place, commodity)
         {
             for lot in &local_lots.entities {
                 place_trace.contributor(CandidateEvidenceKind::LooseLot, candidate_place, *lot);
@@ -6346,7 +6341,8 @@ fn acquisition_path_evidence_at_place(
             place_trace.contributor(CandidateEvidenceKind::Seller, candidate_place, seller);
         }
     }
-    if let Some(local_lots) = local_unpossessed_commodity_evidence(view, candidate_place, commodity)
+    if let Some(local_lots) =
+        local_unpossessed_commodity_evidence(view, agent, candidate_place, commodity)
     {
         for lot in &local_lots.entities {
             place_trace.contributor(CandidateEvidenceKind::LooseLot, candidate_place, *lot);
@@ -6469,6 +6465,7 @@ fn min_travel_ticks_via_view(
 
 fn local_unpossessed_commodity_evidence(
     view: &dyn GoalBeliefView,
+    agent: EntityId,
     place: EntityId,
     commodity: CommodityKind,
 ) -> Option<Evidence> {
@@ -6481,6 +6478,17 @@ fn local_unpossessed_commodity_evidence(
             continue;
         }
         if view.direct_container(entity).is_some() || view.direct_possessor(entity).is_some() {
+            continue;
+        }
+        if view
+            .believed_owner_of(entity)
+            .known_or_stale_value()
+            .is_some_and(|owner| owner == agent)
+            || view
+                .believed_rights(agent, entity)
+                .iter()
+                .any(|right| right.kind == RightKind::Ownership)
+        {
             continue;
         }
         evidence.entities.insert(entity);
@@ -6779,10 +6787,14 @@ fn local_owned_commodity_evidence(
         let directly_possessed = view.direct_possessor(entity) == Some(agent);
         let loose_local_owned = view.direct_container(entity).is_none()
             && view.seller_for_sale_lot(entity).is_none()
-            && view
+            && (view
                 .believed_owner_of(entity)
                 .known_or_stale_value()
-                .is_some_and(|owner| owner == agent);
+                .is_some_and(|owner| owner == agent)
+                || view
+                    .believed_rights(agent, entity)
+                    .iter()
+                    .any(|right| right.kind == RightKind::Ownership));
         if !directly_possessed && !loose_local_owned {
             continue;
         }
@@ -6801,7 +6813,9 @@ fn any_local_need_relief(
         matches_need(commodity)
             && (local_controlled_commodity_exists(view, agent, place, commodity)
                 || place
-                    .and_then(|place| local_unpossessed_commodity_evidence(view, place, commodity))
+                    .and_then(|place| {
+                        local_unpossessed_commodity_evidence(view, agent, place, commodity)
+                    })
                     .is_some())
     })
 }

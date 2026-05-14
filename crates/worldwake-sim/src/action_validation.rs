@@ -119,6 +119,9 @@ pub(crate) fn evaluate_precondition_authoritatively(
         Precondition::TargetDirectlyPossessedByActor(target_index) => targets
             .get(usize::from(target_index))
             .is_some_and(|target| world.possessor_of(*target) == Some(actor)),
+        Precondition::TargetActorControls(target_index) => targets
+            .get(usize::from(target_index))
+            .is_some_and(|target| world.can_exercise_control(actor, *target).is_ok()),
         Precondition::TargetLacksProductionJob(target_index) => targets
             .get(usize::from(target_index))
             .is_some_and(|target| !world.has_component_production_job(*target)),
