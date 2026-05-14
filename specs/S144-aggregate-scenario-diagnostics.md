@@ -259,9 +259,9 @@ The rule stands: if a metric requires emitting a new event tag, S144 fold-reject
 
 `crates/worldwake-ai/tests/golden_scenario_diagnostics.rs` (new) covers:
 - Determinism: same scenario, same seed → identical report.
-- Schema coverage: every `ScenarioDiagnosticsReport` field is populated for a known scenario (`survival-baseline.ron`).
-- Top-N coverage: `--diagnostics-top-n 3` produces 3 entries plus "...others" summary.
-- JSON format: parses back to identical structure.
+- Schema coverage: every `ScenarioDiagnosticsReport` field is present and deterministic for a known scenario (`survival-baseline.ron`), including deterministic zero values for fields that the live scenario does not exercise.
+- Top-N coverage: the raw diagnostics report contains more than three candidate groups, so the observer top-N renderer has overflow data available. Direct observer text rendering remains covered by the observer-focused tests.
+- JSON format: the observer JSON representation parses back to an identical structure.
 
 ### D10: Survival-baseline diagnostics regression fixture
 

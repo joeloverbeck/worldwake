@@ -39,6 +39,8 @@ The clippy command must match CI exactly: `--all-targets` includes test/bench/ex
 
 Run the narrowest command that verifies your change first, then expand to broader workspace checks when warranted.
 
+Heavy workspace, golden, and all-target builds can make `target/debug/deps` and `target/debug/incremental` very large. See `docs/cargo-artifact-hygiene.md` for disk-use checks, `./scripts/verify-space-conscious.sh`, and cleanup discipline before running repeated broad gates on small WSL2/VM disks.
+
 ### Pre-PR Verification
 
 Before committing work for a PR push, run `./scripts/verify.sh`. It runs — in order — `cargo fmt --all -- --check`, `cargo test --workspace`, `cargo clippy --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings`. These are the exact gates CI enforces; passing them locally means CI will pass.
@@ -46,6 +48,8 @@ Before committing work for a PR push, run `./scripts/verify.sh`. It runs — in 
 **Prevent fmt drift by running `cargo fmt --all` during development**, not just at PR time. `verify.sh` runs `cargo fmt --all -- --check`, which *reports* drift but doesn't fix it — by the time you hit it, the drift may span multiple files and cross multiple commits. Run `cargo fmt --all` after any significant edit and before committing, so drift never accumulates.
 
 Still run the narrowest check first (e.g., `cargo test -p worldwake-ai --test golden_foo`) while iterating. Only run `./scripts/verify.sh` when preparing to push or open a PR.
+
+On WSL2, VMs, or other space-constrained disks, use `./scripts/verify-space-conscious.sh` for local broad verification. It runs the same gates as `verify.sh` with incremental compilation disabled and reduced debug info to avoid excessive `target/` growth.
 
 ## Architecture
 

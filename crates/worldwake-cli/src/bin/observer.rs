@@ -8,7 +8,6 @@
 //! simulation state and traces without modifying world meaning.
 
 use clap::{Parser, ValueEnum};
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as FmtWrite;
 use std::path::PathBuf;
@@ -20,11 +19,11 @@ use worldwake_ai::opportunity_compiler::{
     BelievedLegalStatus, ClaimTopic, EffectFactKey, Opportunity, RiskFact,
 };
 use worldwake_ai::{
-    ActionTraceSnapshot, AgendaEntry, AgendaState, AgentTickDriver, CandidateSuppressionCategory,
-    CriticalWindowReport, ExhaustionSummary, KillCondition, LocalSurvivalStateSummary,
-    RevivalTrigger, ScenarioDiagnosticsReport, SurvivalForensicExtractor,
-    build_scenario_diagnostics,
+    ActionTraceSnapshot, AgendaEntry, AgendaState, AgentTickDriver, CriticalWindowReport,
+    ExhaustionSummary, KillCondition, LocalSurvivalStateSummary, RevivalTrigger,
+    ScenarioDiagnosticsReport, SurvivalForensicExtractor, build_scenario_diagnostics,
 };
+use worldwake_cli::diagnostics_json::scenario_diagnostics_report_to_json_pretty;
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, spawn_scenario_ignoring_lints};
 use worldwake_core::{
@@ -3536,192 +3535,6 @@ fn claimant_outcome_label(outcome: worldwake_core::ClaimantOutcome) -> String {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-struct DiagnosticsMapEntry<K> {
-    key: K,
-    count: u64,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-struct ScenarioDiagnosticsJson {
-    tick_range: (Tick, Tick),
-    goal_pressure: GoalPressureDiagnosticsJson,
-    planning: PlanningDiagnosticsJson,
-    revalidation_repair: RevalidationRepairDiagnosticsJson,
-    belief: worldwake_ai::scenario_diagnostics::BeliefMetrics,
-    coordination: worldwake_ai::scenario_diagnostics::CoordinationMetrics,
-    performance: worldwake_ai::scenario_diagnostics::PerformanceMetrics,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-struct GoalPressureDiagnosticsJson {
-    candidates_emitted_by_kind: Vec<DiagnosticsMapEntry<worldwake_core::GoalKind>>,
-    candidates_emitted_by_slot: Vec<DiagnosticsMapEntry<worldwake_ai::SlotKind>>,
-    candidates_suppressed_by_category: Vec<DiagnosticsMapEntry<CandidateSuppressionCategory>>,
-    top_k_not_planned: Vec<DiagnosticsMapEntry<worldwake_core::GoalKind>>,
-    active_intention_continuation_rate: worldwake_core::Permille,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-struct PlanningDiagnosticsJson {
-    plan_attempts: u64,
-    plan_attempts_by_kind: Vec<DiagnosticsMapEntry<worldwake_core::GoalKind>>,
-    budget_exhaustion_count: u64,
-    budget_exhaustion_rate: worldwake_core::Permille,
-    frontier_exhaustion_count: u64,
-    frontier_exhaustion_rate: worldwake_core::Permille,
-    beam_truncation_ratio: worldwake_core::Permille,
-    plan_depth: worldwake_core::PercentileBucket,
-    terminal_kind_distribution: Vec<DiagnosticsMapEntry<worldwake_ai::PlanTerminalKind>>,
-    heuristic_helpful_action_hit_rate: worldwake_core::Permille,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-struct RevalidationRepairDiagnosticsJson {
-    invalidation_reasons: Vec<DiagnosticsMapEntry<worldwake_core::Discrepancy>>,
-    repair_attempts: u64,
-    repair_succeeded: u64,
-    repair_failed: u64,
-    repair_success_rate: worldwake_core::Permille,
-    repair_budget_consumed: worldwake_core::PercentileBucket,
-    full_replan_count: u64,
-}
-
-fn diagnostics_map_entries<K: Copy + Ord>(map: &BTreeMap<K, u64>) -> Vec<DiagnosticsMapEntry<K>> {
-    map.iter()
-        .map(|(key, count)| DiagnosticsMapEntry {
-            key: *key,
-            count: *count,
-        })
-        .collect()
-}
-
-fn diagnostics_map_from_entries<K: Ord>(entries: Vec<DiagnosticsMapEntry<K>>) -> BTreeMap<K, u64> {
-    entries
-        .into_iter()
-        .map(|entry| (entry.key, entry.count))
-        .collect()
-}
-
-impl From<&ScenarioDiagnosticsReport> for ScenarioDiagnosticsJson {
-    fn from(report: &ScenarioDiagnosticsReport) -> Self {
-        Self {
-            tick_range: report.tick_range,
-            goal_pressure: GoalPressureDiagnosticsJson {
-                candidates_emitted_by_kind: diagnostics_map_entries(
-                    &report.goal_pressure.candidates_emitted_by_kind,
-                ),
-                candidates_emitted_by_slot: diagnostics_map_entries(
-                    &report.goal_pressure.candidates_emitted_by_slot,
-                ),
-                candidates_suppressed_by_category: diagnostics_map_entries(
-                    &report.goal_pressure.candidates_suppressed_by_category,
-                ),
-                top_k_not_planned: diagnostics_map_entries(&report.goal_pressure.top_k_not_planned),
-                active_intention_continuation_rate: report
-                    .goal_pressure
-                    .active_intention_continuation_rate,
-            },
-            planning: PlanningDiagnosticsJson {
-                plan_attempts: report.planning.plan_attempts,
-                plan_attempts_by_kind: diagnostics_map_entries(
-                    &report.planning.plan_attempts_by_kind,
-                ),
-                budget_exhaustion_count: report.planning.budget_exhaustion_count,
-                budget_exhaustion_rate: report.planning.budget_exhaustion_rate,
-                frontier_exhaustion_count: report.planning.frontier_exhaustion_count,
-                frontier_exhaustion_rate: report.planning.frontier_exhaustion_rate,
-                beam_truncation_ratio: report.planning.beam_truncation_ratio,
-                plan_depth: report.planning.plan_depth.clone(),
-                terminal_kind_distribution: diagnostics_map_entries(
-                    &report.planning.terminal_kind_distribution,
-                ),
-                heuristic_helpful_action_hit_rate: report
-                    .planning
-                    .heuristic_helpful_action_hit_rate,
-            },
-            revalidation_repair: RevalidationRepairDiagnosticsJson {
-                invalidation_reasons: diagnostics_map_entries(
-                    &report.revalidation_repair.invalidation_reasons,
-                ),
-                repair_attempts: report.revalidation_repair.repair_attempts,
-                repair_succeeded: report.revalidation_repair.repair_succeeded,
-                repair_failed: report.revalidation_repair.repair_failed,
-                repair_success_rate: report.revalidation_repair.repair_success_rate,
-                repair_budget_consumed: report.revalidation_repair.repair_budget_consumed.clone(),
-                full_replan_count: report.revalidation_repair.full_replan_count,
-            },
-            belief: report.belief.clone(),
-            coordination: report.coordination.clone(),
-            performance: report.performance.clone(),
-        }
-    }
-}
-
-impl From<ScenarioDiagnosticsJson> for ScenarioDiagnosticsReport {
-    fn from(report: ScenarioDiagnosticsJson) -> Self {
-        Self {
-            tick_range: report.tick_range,
-            goal_pressure: worldwake_ai::scenario_diagnostics::GoalPressureMetrics {
-                candidates_emitted_by_kind: diagnostics_map_from_entries(
-                    report.goal_pressure.candidates_emitted_by_kind,
-                ),
-                candidates_emitted_by_slot: diagnostics_map_from_entries(
-                    report.goal_pressure.candidates_emitted_by_slot,
-                ),
-                candidates_suppressed_by_category: diagnostics_map_from_entries(
-                    report.goal_pressure.candidates_suppressed_by_category,
-                ),
-                top_k_not_planned: diagnostics_map_from_entries(
-                    report.goal_pressure.top_k_not_planned,
-                ),
-                active_intention_continuation_rate: report
-                    .goal_pressure
-                    .active_intention_continuation_rate,
-            },
-            planning: worldwake_ai::scenario_diagnostics::PlanningMetrics {
-                plan_attempts: report.planning.plan_attempts,
-                plan_attempts_by_kind: diagnostics_map_from_entries(
-                    report.planning.plan_attempts_by_kind,
-                ),
-                budget_exhaustion_count: report.planning.budget_exhaustion_count,
-                budget_exhaustion_rate: report.planning.budget_exhaustion_rate,
-                frontier_exhaustion_count: report.planning.frontier_exhaustion_count,
-                frontier_exhaustion_rate: report.planning.frontier_exhaustion_rate,
-                beam_truncation_ratio: report.planning.beam_truncation_ratio,
-                plan_depth: report.planning.plan_depth,
-                terminal_kind_distribution: diagnostics_map_from_entries(
-                    report.planning.terminal_kind_distribution,
-                ),
-                heuristic_helpful_action_hit_rate: report
-                    .planning
-                    .heuristic_helpful_action_hit_rate,
-            },
-            revalidation_repair: worldwake_ai::scenario_diagnostics::RevalidationRepairMetrics {
-                invalidation_reasons: diagnostics_map_from_entries(
-                    report.revalidation_repair.invalidation_reasons,
-                ),
-                repair_attempts: report.revalidation_repair.repair_attempts,
-                repair_succeeded: report.revalidation_repair.repair_succeeded,
-                repair_failed: report.revalidation_repair.repair_failed,
-                repair_success_rate: report.revalidation_repair.repair_success_rate,
-                repair_budget_consumed: report.revalidation_repair.repair_budget_consumed,
-                full_replan_count: report.revalidation_repair.full_replan_count,
-            },
-            belief: report.belief,
-            coordination: report.coordination,
-            performance: report.performance,
-        }
-    }
-}
-
-#[cfg(test)]
-fn scenario_diagnostics_report_from_json(
-    json: &str,
-) -> serde_json::Result<ScenarioDiagnosticsReport> {
-    serde_json::from_str::<ScenarioDiagnosticsJson>(json).map(ScenarioDiagnosticsReport::from)
-}
-
 fn render_scenario_diagnostics_section(
     report: &ScenarioDiagnosticsReport,
     options: &DiagnosticsRenderOptions,
@@ -3729,8 +3542,8 @@ fn render_scenario_diagnostics_section(
 ) -> std::fmt::Result {
     match options.format {
         DiagnosticsFormat::Json => {
-            let json = ScenarioDiagnosticsJson::from(report);
-            let encoded = serde_json::to_string_pretty(&json).map_err(|_| std::fmt::Error)?;
+            let encoded =
+                scenario_diagnostics_report_to_json_pretty(report).map_err(|_| std::fmt::Error)?;
             writeln!(out, "{encoded}")
         }
         DiagnosticsFormat::Text => render_scenario_diagnostics_text(report, options, out),
@@ -5572,8 +5385,7 @@ mod tests {
         render_artifact_lifecycle_section, render_contention_section,
         render_decision_history_section, render_maintenance_rates_table,
         render_opportunity_compiler_section, render_recipe_usage_table,
-        render_scenario_diagnostics_section, scenario_diagnostics_report_from_json,
-        unknown_location_entity_groups,
+        render_scenario_diagnostics_section, unknown_location_entity_groups,
     };
     use crate::ObserverCli;
     use clap::Parser;
@@ -5596,6 +5408,7 @@ mod tests {
         GoalPriorityClass, KillCondition, LocalSurvivalStateSummary, RepairFailure, RevivalTrigger,
         ScenarioDiagnosticsReport, SelectedPlanSource,
     };
+    use worldwake_cli::diagnostics_json::scenario_diagnostics_report_from_json;
     use worldwake_core::PerceptionSource;
     use worldwake_core::{
         AcquisitionQuantity, ActionDefId, ActionDomain, AffordanceKey, AgentBeliefStore,
