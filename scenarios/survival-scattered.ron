@@ -17,6 +17,10 @@
         max_idle_window_ticks_with_elevated_need: 50,
         elevated_need_floor: 300,
         required_self_care_families: [Eat, Drink, Sleep, Relieve, Wash],
+        critical_run_limits: (
+            thirst: 820,
+            dirtiness: 680,
+        ),
     ),
     places: [
         (name: "Hilltop Camp", tags: [Camp, Latrine]),

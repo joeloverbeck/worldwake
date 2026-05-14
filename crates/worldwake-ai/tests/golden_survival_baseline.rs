@@ -78,6 +78,22 @@ fn named_agents(h: &GoldenHarness) -> BTreeMap<String, EntityId> {
         .collect()
 }
 
+fn contract_run_limit_overrides(
+    limits: Option<&worldwake_cli::scenario::types::SurvivalCriticalRunLimitsDef>,
+) -> SurvivalCriticalRunLimitOverrides {
+    let Some(limits) = limits else {
+        return SurvivalCriticalRunLimitOverrides::default();
+    };
+
+    SurvivalCriticalRunLimitOverrides {
+        hunger: limits.hunger,
+        thirst: limits.thirst,
+        fatigue: limits.fatigue,
+        bladder: limits.bladder,
+        dirtiness: limits.dirtiness,
+    }
+}
+
 fn is_survival_goal(goal: &GoalKind) -> bool {
     matches!(
         goal,
@@ -320,14 +336,17 @@ fn run_survival_baseline() -> SurvivalBaselineObservation {
 #[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn all_agents_survive_1440_ticks() {
     let observation = run_survival_baseline();
+    let run_limit_overrides =
+        contract_run_limit_overrides(observation.contract.critical_run_limits.as_ref());
 
     for (agent_name, agent) in &observation.agents {
         assert!(
             agent.alive,
             "{agent_name} should still be alive at tick {SURVIVAL_TICKS}"
         );
-        assert_authored_critical_runs(
+        assert_authored_critical_runs_with_overrides(
             observation.contract.max_authored_critical_run_ticks,
+            run_limit_overrides,
             agent_name,
             &agent.critical_thresholds,
             &agent.critical_need_runs,

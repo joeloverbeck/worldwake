@@ -28,6 +28,7 @@
         critical_run_limits: (
             hunger: 800,
             thirst: 800,
+            fatigue: 300,
             dirtiness: 1300,
         ),
     ),

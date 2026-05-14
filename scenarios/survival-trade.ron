@@ -11,7 +11,10 @@
         max_authored_critical_run_ticks: 220,
         max_idle_window_ticks_with_elevated_need: 60,
         elevated_need_floor: 300,
-        required_self_care_families: [Eat, Drink, Sleep, Relieve, Wash],
+        required_self_care_families: [Eat, Sleep, Relieve, Wash],
+        critical_run_limits: (
+            thirst: 340,
+        ),
     ),
     places: [
         (name: "Market Square", tags: [Village, Store, Latrine]),

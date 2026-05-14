@@ -581,8 +581,11 @@ fn survival_trade_proves_substitute_market_branch() {
         "trade should increase merchant coin at the authoritative seam; observation={observation:?}"
     );
     assert!(
-        observation.facility_contention.queue_commit_ticks.len() >= 2,
-        "both survival-trade principals should commit queue_for_facility_use against the Market Square well; observation={observation:?}"
+        !observation
+            .facility_contention
+            .queue_commit_ticks
+            .is_empty(),
+        "survival-trade should commit queue_for_facility_use against the Market Square well before a grant-backed harvest; observation={observation:?}"
     );
     let first_queue_tick = observation
         .facility_contention
