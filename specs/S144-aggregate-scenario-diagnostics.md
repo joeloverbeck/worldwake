@@ -224,12 +224,12 @@ This is a **net-new** aggregation-key enum living in the `scenario_diagnostics` 
 // crates/worldwake-cli/src/bin/observer.rs
 fn render_scenario_diagnostics_section(
     report: &ScenarioDiagnosticsReport,
-    format: DiagnosticsFormat,
+    options: &DiagnosticsRenderOptions,
     out: &mut impl Write,
 ) -> io::Result<()>;
 ```
 
-Section 13 is the next available section number (the observer currently renders through Section 12, Contention). Default text format renders tables. JSON format emits the report through a deterministic JSON representation owned by the observer renderer; it must not rely on raw JSON object keys for payload-bearing enum maps. The renderer follows the existing `render_*_section` naming pattern from observer.rs.
+Section 13 is the next available section number after Section 12, Contention. Default text format renders tables. JSON format emits the report through a deterministic JSON representation owned by the observer renderer; it must not rely on raw JSON object keys for payload-bearing enum maps. The renderer follows the existing `render_*_section` naming pattern from observer.rs. The landed renderer uses a local `DiagnosticsRenderOptions` carrier so one call carries format, percentile-column selection, and top-N caps together.
 
 ### D7: CLI flags
 

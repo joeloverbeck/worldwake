@@ -7,7 +7,8 @@
 //! This is a **tooling boundary** (FOUNDATIONS Principle 28): it reads
 //! simulation state and traces without modifying world meaning.
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as FmtWrite;
 use std::path::PathBuf;
@@ -19,9 +20,10 @@ use worldwake_ai::opportunity_compiler::{
     BelievedLegalStatus, ClaimTopic, EffectFactKey, Opportunity, RiskFact,
 };
 use worldwake_ai::{
-    ActionTraceSnapshot, AgendaEntry, AgendaState, AgentTickDriver, CriticalWindowReport,
-    ExhaustionSummary, KillCondition, LocalSurvivalStateSummary, RevivalTrigger,
-    SurvivalForensicExtractor,
+    ActionTraceSnapshot, AgendaEntry, AgendaState, AgentTickDriver, CandidateSuppressionCategory,
+    CriticalWindowReport, ExhaustionSummary, KillCondition, LocalSurvivalStateSummary,
+    RevivalTrigger, ScenarioDiagnosticsReport, SurvivalForensicExtractor,
+    build_scenario_diagnostics,
 };
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, spawn_scenario_ignoring_lints};
@@ -62,9 +64,44 @@ struct ObserverCli {
     /// Number of highest-claimant contention events to render in Section 12
     #[arg(long)]
     contention_top_n: Option<usize>,
+    /// Section 13 scenario diagnostics output format
+    #[arg(long, value_enum, default_value_t = DiagnosticsFormat::Text)]
+    diagnostics_format: DiagnosticsFormat,
+    /// Percentile columns to render in Section 13 text tables
+    #[arg(long, value_delimiter = ',', default_value = "50,95,99")]
+    diagnostics_percentiles: Vec<u8>,
+    /// Maximum entries to render per Section 13 histogram/table
+    #[arg(long)]
+    diagnostics_top_n: Option<usize>,
+    /// Suppress Section 13 scenario diagnostics
+    #[arg(long)]
+    no_diagnostics: bool,
     /// Bypass scenario lint failures for ad-hoc debugging.
     #[arg(long)]
     ignore_lints: bool,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+enum DiagnosticsFormat {
+    Text,
+    Json,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DiagnosticsRenderOptions {
+    format: DiagnosticsFormat,
+    percentiles: Vec<u8>,
+    top_n: Option<usize>,
+}
+
+impl Default for DiagnosticsRenderOptions {
+    fn default() -> Self {
+        Self {
+            format: DiagnosticsFormat::Text,
+            percentiles: vec![50, 95, 99],
+            top_n: None,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3499,6 +3536,555 @@ fn claimant_outcome_label(outcome: worldwake_core::ClaimantOutcome) -> String {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+struct DiagnosticsMapEntry<K> {
+    key: K,
+    count: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+struct ScenarioDiagnosticsJson {
+    tick_range: (Tick, Tick),
+    goal_pressure: GoalPressureDiagnosticsJson,
+    planning: PlanningDiagnosticsJson,
+    revalidation_repair: RevalidationRepairDiagnosticsJson,
+    belief: worldwake_ai::scenario_diagnostics::BeliefMetrics,
+    coordination: worldwake_ai::scenario_diagnostics::CoordinationMetrics,
+    performance: worldwake_ai::scenario_diagnostics::PerformanceMetrics,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+struct GoalPressureDiagnosticsJson {
+    candidates_emitted_by_kind: Vec<DiagnosticsMapEntry<worldwake_core::GoalKind>>,
+    candidates_emitted_by_slot: Vec<DiagnosticsMapEntry<worldwake_ai::SlotKind>>,
+    candidates_suppressed_by_category: Vec<DiagnosticsMapEntry<CandidateSuppressionCategory>>,
+    top_k_not_planned: Vec<DiagnosticsMapEntry<worldwake_core::GoalKind>>,
+    active_intention_continuation_rate: worldwake_core::Permille,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+struct PlanningDiagnosticsJson {
+    plan_attempts: u64,
+    plan_attempts_by_kind: Vec<DiagnosticsMapEntry<worldwake_core::GoalKind>>,
+    budget_exhaustion_count: u64,
+    budget_exhaustion_rate: worldwake_core::Permille,
+    frontier_exhaustion_count: u64,
+    frontier_exhaustion_rate: worldwake_core::Permille,
+    beam_truncation_ratio: worldwake_core::Permille,
+    plan_depth: worldwake_core::PercentileBucket,
+    terminal_kind_distribution: Vec<DiagnosticsMapEntry<worldwake_ai::PlanTerminalKind>>,
+    heuristic_helpful_action_hit_rate: worldwake_core::Permille,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+struct RevalidationRepairDiagnosticsJson {
+    invalidation_reasons: Vec<DiagnosticsMapEntry<worldwake_core::Discrepancy>>,
+    repair_attempts: u64,
+    repair_succeeded: u64,
+    repair_failed: u64,
+    repair_success_rate: worldwake_core::Permille,
+    repair_budget_consumed: worldwake_core::PercentileBucket,
+    full_replan_count: u64,
+}
+
+fn diagnostics_map_entries<K: Copy + Ord>(map: &BTreeMap<K, u64>) -> Vec<DiagnosticsMapEntry<K>> {
+    map.iter()
+        .map(|(key, count)| DiagnosticsMapEntry {
+            key: *key,
+            count: *count,
+        })
+        .collect()
+}
+
+fn diagnostics_map_from_entries<K: Ord>(entries: Vec<DiagnosticsMapEntry<K>>) -> BTreeMap<K, u64> {
+    entries
+        .into_iter()
+        .map(|entry| (entry.key, entry.count))
+        .collect()
+}
+
+impl From<&ScenarioDiagnosticsReport> for ScenarioDiagnosticsJson {
+    fn from(report: &ScenarioDiagnosticsReport) -> Self {
+        Self {
+            tick_range: report.tick_range,
+            goal_pressure: GoalPressureDiagnosticsJson {
+                candidates_emitted_by_kind: diagnostics_map_entries(
+                    &report.goal_pressure.candidates_emitted_by_kind,
+                ),
+                candidates_emitted_by_slot: diagnostics_map_entries(
+                    &report.goal_pressure.candidates_emitted_by_slot,
+                ),
+                candidates_suppressed_by_category: diagnostics_map_entries(
+                    &report.goal_pressure.candidates_suppressed_by_category,
+                ),
+                top_k_not_planned: diagnostics_map_entries(&report.goal_pressure.top_k_not_planned),
+                active_intention_continuation_rate: report
+                    .goal_pressure
+                    .active_intention_continuation_rate,
+            },
+            planning: PlanningDiagnosticsJson {
+                plan_attempts: report.planning.plan_attempts,
+                plan_attempts_by_kind: diagnostics_map_entries(
+                    &report.planning.plan_attempts_by_kind,
+                ),
+                budget_exhaustion_count: report.planning.budget_exhaustion_count,
+                budget_exhaustion_rate: report.planning.budget_exhaustion_rate,
+                frontier_exhaustion_count: report.planning.frontier_exhaustion_count,
+                frontier_exhaustion_rate: report.planning.frontier_exhaustion_rate,
+                beam_truncation_ratio: report.planning.beam_truncation_ratio,
+                plan_depth: report.planning.plan_depth.clone(),
+                terminal_kind_distribution: diagnostics_map_entries(
+                    &report.planning.terminal_kind_distribution,
+                ),
+                heuristic_helpful_action_hit_rate: report
+                    .planning
+                    .heuristic_helpful_action_hit_rate,
+            },
+            revalidation_repair: RevalidationRepairDiagnosticsJson {
+                invalidation_reasons: diagnostics_map_entries(
+                    &report.revalidation_repair.invalidation_reasons,
+                ),
+                repair_attempts: report.revalidation_repair.repair_attempts,
+                repair_succeeded: report.revalidation_repair.repair_succeeded,
+                repair_failed: report.revalidation_repair.repair_failed,
+                repair_success_rate: report.revalidation_repair.repair_success_rate,
+                repair_budget_consumed: report.revalidation_repair.repair_budget_consumed.clone(),
+                full_replan_count: report.revalidation_repair.full_replan_count,
+            },
+            belief: report.belief.clone(),
+            coordination: report.coordination.clone(),
+            performance: report.performance.clone(),
+        }
+    }
+}
+
+impl From<ScenarioDiagnosticsJson> for ScenarioDiagnosticsReport {
+    fn from(report: ScenarioDiagnosticsJson) -> Self {
+        Self {
+            tick_range: report.tick_range,
+            goal_pressure: worldwake_ai::scenario_diagnostics::GoalPressureMetrics {
+                candidates_emitted_by_kind: diagnostics_map_from_entries(
+                    report.goal_pressure.candidates_emitted_by_kind,
+                ),
+                candidates_emitted_by_slot: diagnostics_map_from_entries(
+                    report.goal_pressure.candidates_emitted_by_slot,
+                ),
+                candidates_suppressed_by_category: diagnostics_map_from_entries(
+                    report.goal_pressure.candidates_suppressed_by_category,
+                ),
+                top_k_not_planned: diagnostics_map_from_entries(
+                    report.goal_pressure.top_k_not_planned,
+                ),
+                active_intention_continuation_rate: report
+                    .goal_pressure
+                    .active_intention_continuation_rate,
+            },
+            planning: worldwake_ai::scenario_diagnostics::PlanningMetrics {
+                plan_attempts: report.planning.plan_attempts,
+                plan_attempts_by_kind: diagnostics_map_from_entries(
+                    report.planning.plan_attempts_by_kind,
+                ),
+                budget_exhaustion_count: report.planning.budget_exhaustion_count,
+                budget_exhaustion_rate: report.planning.budget_exhaustion_rate,
+                frontier_exhaustion_count: report.planning.frontier_exhaustion_count,
+                frontier_exhaustion_rate: report.planning.frontier_exhaustion_rate,
+                beam_truncation_ratio: report.planning.beam_truncation_ratio,
+                plan_depth: report.planning.plan_depth,
+                terminal_kind_distribution: diagnostics_map_from_entries(
+                    report.planning.terminal_kind_distribution,
+                ),
+                heuristic_helpful_action_hit_rate: report
+                    .planning
+                    .heuristic_helpful_action_hit_rate,
+            },
+            revalidation_repair: worldwake_ai::scenario_diagnostics::RevalidationRepairMetrics {
+                invalidation_reasons: diagnostics_map_from_entries(
+                    report.revalidation_repair.invalidation_reasons,
+                ),
+                repair_attempts: report.revalidation_repair.repair_attempts,
+                repair_succeeded: report.revalidation_repair.repair_succeeded,
+                repair_failed: report.revalidation_repair.repair_failed,
+                repair_success_rate: report.revalidation_repair.repair_success_rate,
+                repair_budget_consumed: report.revalidation_repair.repair_budget_consumed,
+                full_replan_count: report.revalidation_repair.full_replan_count,
+            },
+            belief: report.belief,
+            coordination: report.coordination,
+            performance: report.performance,
+        }
+    }
+}
+
+#[cfg(test)]
+fn scenario_diagnostics_report_from_json(
+    json: &str,
+) -> serde_json::Result<ScenarioDiagnosticsReport> {
+    serde_json::from_str::<ScenarioDiagnosticsJson>(json).map(ScenarioDiagnosticsReport::from)
+}
+
+fn render_scenario_diagnostics_section(
+    report: &ScenarioDiagnosticsReport,
+    options: &DiagnosticsRenderOptions,
+    out: &mut impl FmtWrite,
+) -> std::fmt::Result {
+    match options.format {
+        DiagnosticsFormat::Json => {
+            let json = ScenarioDiagnosticsJson::from(report);
+            let encoded = serde_json::to_string_pretty(&json).map_err(|_| std::fmt::Error)?;
+            writeln!(out, "{encoded}")
+        }
+        DiagnosticsFormat::Text => render_scenario_diagnostics_text(report, options, out),
+    }
+}
+
+fn render_scenario_diagnostics_text(
+    report: &ScenarioDiagnosticsReport,
+    options: &DiagnosticsRenderOptions,
+    out: &mut impl FmtWrite,
+) -> std::fmt::Result {
+    writeln!(out, "## Section 13 — Scenario Diagnostics\n")?;
+    writeln!(
+        out,
+        "- **Tick range**: {}–{}",
+        report.tick_range.0.0, report.tick_range.1.0
+    )?;
+    writeln!(out)?;
+
+    writeln!(out, "### Goal Pressure\n")?;
+    render_metric_map(
+        out,
+        "Candidates emitted by goal kind",
+        &report.goal_pressure.candidates_emitted_by_kind,
+        options.top_n,
+    )?;
+    render_metric_map(
+        out,
+        "Candidates emitted by portfolio slot",
+        &report.goal_pressure.candidates_emitted_by_slot,
+        options.top_n,
+    )?;
+    render_metric_map(
+        out,
+        "Candidates suppressed by category",
+        &report.goal_pressure.candidates_suppressed_by_category,
+        options.top_n,
+    )?;
+    render_metric_map(
+        out,
+        "Top-K candidates not planned",
+        &report.goal_pressure.top_k_not_planned,
+        options.top_n,
+    )?;
+    writeln!(
+        out,
+        "- **Active intention continuation rate**: {}‰\n",
+        report
+            .goal_pressure
+            .active_intention_continuation_rate
+            .value()
+    )?;
+
+    writeln!(out, "### Planning\n")?;
+    writeln!(
+        out,
+        "- **Plan attempts**: {}",
+        report.planning.plan_attempts
+    )?;
+    writeln!(
+        out,
+        "- **Budget exhaustion**: {} ({}‰)",
+        report.planning.budget_exhaustion_count,
+        report.planning.budget_exhaustion_rate.value()
+    )?;
+    writeln!(
+        out,
+        "- **Frontier exhaustion**: {} ({}‰)",
+        report.planning.frontier_exhaustion_count,
+        report.planning.frontier_exhaustion_rate.value()
+    )?;
+    writeln!(
+        out,
+        "- **Beam truncation ratio**: {}‰",
+        report.planning.beam_truncation_ratio.value()
+    )?;
+    writeln!(
+        out,
+        "- **Heuristic helpful-action hit rate**: {}‰\n",
+        report.planning.heuristic_helpful_action_hit_rate.value()
+    )?;
+    render_metric_map(
+        out,
+        "Plan attempts by goal kind",
+        &report.planning.plan_attempts_by_kind,
+        options.top_n,
+    )?;
+    render_metric_map(
+        out,
+        "Terminal kind distribution",
+        &report.planning.terminal_kind_distribution,
+        options.top_n,
+    )?;
+    render_percentile_bucket(out, "Plan depth", &report.planning.plan_depth, options)?;
+
+    writeln!(out, "### Revalidation and Repair\n")?;
+    writeln!(
+        out,
+        "- **Repair attempts**: {}",
+        report.revalidation_repair.repair_attempts
+    )?;
+    writeln!(
+        out,
+        "- **Repair succeeded**: {}",
+        report.revalidation_repair.repair_succeeded
+    )?;
+    writeln!(
+        out,
+        "- **Repair failed**: {}",
+        report.revalidation_repair.repair_failed
+    )?;
+    writeln!(
+        out,
+        "- **Repair success rate**: {}‰",
+        report.revalidation_repair.repair_success_rate.value()
+    )?;
+    writeln!(
+        out,
+        "- **Full replans**: {}\n",
+        report.revalidation_repair.full_replan_count
+    )?;
+    render_metric_map(
+        out,
+        "Invalidation reasons",
+        &report.revalidation_repair.invalidation_reasons,
+        options.top_n,
+    )?;
+    render_percentile_bucket(
+        out,
+        "Repair budget consumed",
+        &report.revalidation_repair.repair_budget_consumed,
+        options,
+    )?;
+
+    writeln!(out, "### Belief\n")?;
+    writeln!(
+        out,
+        "- **Stale belief actions**: {}",
+        report.belief.stale_belief_actions
+    )?;
+    writeln!(
+        out,
+        "- **Contradicted belief actions**: {}",
+        report.belief.contradicted_belief_actions
+    )?;
+    writeln!(
+        out,
+        "- **Source reliability changes**: {}",
+        report.belief.source_reliability_changes
+    )?;
+    writeln!(
+        out,
+        "- **False rumor propagation**: {}\n",
+        report.belief.false_rumor_propagation_count
+    )?;
+    render_percentile_bucket(
+        out,
+        "Correction latency",
+        &report.belief.correction_latency,
+        options,
+    )?;
+
+    writeln!(out, "### Coordination\n")?;
+    writeln!(
+        out,
+        "- **Reservation conflicts**: {}",
+        report.coordination.reservation_conflict_count
+    )?;
+    writeln!(
+        out,
+        "- **Abandoned grants**: {}",
+        report.coordination.abandoned_grant_count
+    )?;
+    writeln!(
+        out,
+        "- **Dead claimant cleanups**: {}\n",
+        report.coordination.dead_claimant_cleanup_count
+    )?;
+    render_percentile_bucket(
+        out,
+        "Queue wait ticks",
+        &report.coordination.queue_wait_ticks,
+        options,
+    )?;
+
+    writeln!(out, "### Performance\n")?;
+    writeln!(
+        out,
+        "- **Cache hits**: {}",
+        report.performance.cache_hit_count
+    )?;
+    writeln!(
+        out,
+        "- **Cache misses**: {}",
+        report.performance.cache_miss_count
+    )?;
+    writeln!(
+        out,
+        "- **Cache invalidations**: {}\n",
+        report.performance.cache_invalidation_count
+    )?;
+    render_percentile_bucket(
+        out,
+        "Opportunity compiled count",
+        &report.performance.opportunity_compiled_count,
+        options,
+    )?;
+    render_percentile_bucket(
+        out,
+        "Opportunity salience floored",
+        &report.performance.opportunity_salience_floored,
+        options,
+    )?;
+    render_percentile_bucket(
+        out,
+        "Opportunity learned-memory damped",
+        &report.performance.opportunity_learned_memory_damped,
+        options,
+    )?;
+    render_percentile_bucket(
+        out,
+        "Opportunity cap truncated",
+        &report.performance.opportunity_cap_truncated,
+        options,
+    )?;
+    render_percentile_bucket(
+        out,
+        "Search expansions",
+        &report.performance.search_expansions,
+        options,
+    )?;
+
+    Ok(())
+}
+
+fn render_metric_map<K: std::fmt::Debug + Ord>(
+    out: &mut impl FmtWrite,
+    title: &str,
+    map: &BTreeMap<K, u64>,
+    top_n: Option<usize>,
+) -> std::fmt::Result {
+    writeln!(out, "#### {title}\n")?;
+    if map.is_empty() {
+        writeln!(out, "No entries.\n")?;
+        return Ok(());
+    }
+
+    writeln!(out, "| Key | Count |")?;
+    writeln!(out, "|-----|-------|")?;
+    let mut entries = map.iter().collect::<Vec<_>>();
+    entries.sort_by(|(left_key, left_count), (right_key, right_count)| {
+        right_count
+            .cmp(left_count)
+            .then_with(|| format!("{left_key:?}").cmp(&format!("{right_key:?}")))
+    });
+
+    let shown = top_n.unwrap_or(entries.len()).min(entries.len());
+    for (key, count) in entries.iter().take(shown) {
+        writeln!(out, "| `{key:?}` | {count} |")?;
+    }
+    if shown < entries.len() {
+        let remaining = entries.len() - shown;
+        let remaining_count: u64 = entries[shown..].iter().map(|(_, count)| **count).sum();
+        writeln!(out, "| ...others ({remaining}) | {remaining_count} |")?;
+    }
+    writeln!(out)
+}
+
+fn render_percentile_bucket(
+    out: &mut impl FmtWrite,
+    title: &str,
+    bucket: &worldwake_core::PercentileBucket,
+    options: &DiagnosticsRenderOptions,
+) -> std::fmt::Result {
+    let mut headers = vec!["n", "min"];
+    for percentile in selected_percentiles(&options.percentiles) {
+        headers.push(percentile.header());
+    }
+    headers.extend(["max", "mean"]);
+    writeln!(out, "#### {title}\n")?;
+    writeln!(out, "| {} |", headers.join(" | "))?;
+    writeln!(
+        out,
+        "|{}|",
+        headers.iter().map(|_| "---").collect::<Vec<_>>().join("|")
+    )?;
+
+    let mut values = vec![bucket.n, bucket.min];
+    for percentile in selected_percentiles(&options.percentiles) {
+        values.push(percentile.value(bucket));
+    }
+    values.extend([bucket.max, bucket.mean]);
+    writeln!(
+        out,
+        "| {} |\n",
+        values
+            .iter()
+            .map(u64::to_string)
+            .collect::<Vec<_>>()
+            .join(" | ")
+    )
+}
+
+#[derive(Copy, Clone)]
+enum DiagnosticsPercentile {
+    P50,
+    P95,
+    P99,
+}
+
+impl DiagnosticsPercentile {
+    fn header(self) -> &'static str {
+        match self {
+            Self::P50 => "p50",
+            Self::P95 => "p95",
+            Self::P99 => "p99",
+        }
+    }
+
+    fn value(self, bucket: &worldwake_core::PercentileBucket) -> u64 {
+        match self {
+            Self::P50 => bucket.p50,
+            Self::P95 => bucket.p95,
+            Self::P99 => bucket.p99,
+        }
+    }
+}
+
+fn selected_percentiles(values: &[u8]) -> Vec<DiagnosticsPercentile> {
+    let mut selected = Vec::new();
+    for value in values {
+        let percentile = match value {
+            50 => DiagnosticsPercentile::P50,
+            95 => DiagnosticsPercentile::P95,
+            99 => DiagnosticsPercentile::P99,
+            _ => continue,
+        };
+        if !selected
+            .iter()
+            .any(|existing: &DiagnosticsPercentile| existing.header() == percentile.header())
+        {
+            selected.push(percentile);
+        }
+    }
+    if selected.is_empty() {
+        selected.extend([
+            DiagnosticsPercentile::P50,
+            DiagnosticsPercentile::P95,
+            DiagnosticsPercentile::P99,
+        ]);
+    }
+    selected
+}
+
 fn render_contention_section(
     out: &mut String,
     world: &worldwake_core::World,
@@ -3589,6 +4175,8 @@ fn format_report(
     total_critical_window_count: usize,
     top_omissions: usize,
     contention_top_n: Option<usize>,
+    scenario_diagnostics_report: Option<&ScenarioDiagnosticsReport>,
+    diagnostics_options: &DiagnosticsRenderOptions,
 ) -> String {
     let mut out = String::new();
 
@@ -4462,6 +5050,9 @@ fn format_report(
 
     render_artifact_lifecycle_section(&mut out, world, event_log);
     render_contention_section(&mut out, world, event_log, action_defs, contention_top_n);
+    if let Some(report) = scenario_diagnostics_report {
+        render_scenario_diagnostics_section(report, diagnostics_options, &mut out).unwrap();
+    }
 
     out
 }
@@ -4890,6 +5481,34 @@ fn main() {
     .cloned()
     .collect::<Vec<_>>();
 
+    let scenario_diagnostics_report = if cli.no_diagnostics {
+        None
+    } else {
+        let decision_traces = driver
+            .trace_sink()
+            .map_or_else(Vec::new, |sink| sink.traces().to_vec());
+        let mut plan_traces = Vec::new();
+        let mut repair_traces = Vec::new();
+        for trace in &decision_traces {
+            if let DecisionOutcome::Planning(planning) = &trace.outcome {
+                plan_traces.extend(planning.planning.attempts.iter().cloned());
+            }
+            repair_traces.extend(trace.repair_attempts.iter().cloned());
+        }
+        Some(build_scenario_diagnostics(
+            &decision_traces,
+            &plan_traces,
+            &repair_traces,
+            sim.event_log(),
+            (Tick(0), Tick(cli.ticks.saturating_sub(1))),
+        ))
+    };
+    let diagnostics_options = DiagnosticsRenderOptions {
+        format: cli.diagnostics_format,
+        percentiles: cli.diagnostics_percentiles.clone(),
+        top_n: cli.diagnostics_top_n,
+    };
+
     let scenario_path_str = cli.scenario.display().to_string();
     let report = format_report(
         &scenario_path_str,
@@ -4912,6 +5531,8 @@ fn main() {
         all_critical_window_reports.len(),
         cli.top_omissions,
         cli.contention_top_n,
+        scenario_diagnostics_report.as_ref(),
+        &diagnostics_options,
     );
 
     // Ensure parent directory exists
@@ -4938,9 +5559,10 @@ fn main() {
 mod tests {
     use super::{
         ANOMALY_ROLLING_WINDOW_TICKS, AgentStats, Anomaly, AnomalyKind, BehavioralTransition,
-        NeedsSample, PlanAttemptTrace, PlanSearchOutcome, affordance_change_snapshots,
-        behavioral_transitions, committed_travel_ticks, compute_maintenance_rates,
-        death_summary_line, decision_payload_summary, detect_acute_need_spike, detect_anomalies,
+        DiagnosticsFormat, DiagnosticsRenderOptions, NeedsSample, PlanAttemptTrace,
+        PlanSearchOutcome, affordance_change_snapshots, behavioral_transitions,
+        committed_travel_ticks, compute_maintenance_rates, death_summary_line,
+        decision_payload_summary, detect_acute_need_spike, detect_anomalies,
         detect_geographic_convergence, detect_maintenance_starvation, detect_recipe_monoculture,
         failed_plan_breakdown, failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
         failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
@@ -4950,6 +5572,7 @@ mod tests {
         render_artifact_lifecycle_section, render_contention_section,
         render_decision_history_section, render_maintenance_rates_table,
         render_opportunity_compiler_section, render_recipe_usage_table,
+        render_scenario_diagnostics_section, scenario_diagnostics_report_from_json,
         unknown_location_entity_groups,
     };
     use crate::ObserverCli;
@@ -4968,10 +5591,10 @@ mod tests {
     };
     use worldwake_ai::{
         ActiveActionSummary, AgendaEntry, AgendaEntrySnapshot, AgendaOrigin, AgendaPhase,
-        AgentDecisionRuntime, AgentTickDriver, BlockerSummary, CriticalWindowFrame,
-        CriticalWindowReport, DirtySet, ExhaustionSummary, GoalOffer, GoalPriorityClass,
-        KillCondition, LocalSurvivalStateSummary, RepairFailure, RevivalTrigger,
-        SelectedPlanSource,
+        AgentDecisionRuntime, AgentTickDriver, BlockerSummary, CandidateSuppressionCategory,
+        CriticalWindowFrame, CriticalWindowReport, DirtySet, ExhaustionSummary, GoalOffer,
+        GoalPriorityClass, KillCondition, LocalSurvivalStateSummary, RepairFailure, RevivalTrigger,
+        ScenarioDiagnosticsReport, SelectedPlanSource,
     };
     use worldwake_core::PerceptionSource;
     use worldwake_core::{
@@ -4987,7 +5610,7 @@ mod tests {
         GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
         HomeostaticNeedId, InvalidatorTag, KnownRecipes, MetabolismProfile, Name,
         ObservationOmission, ObservationRef, OmissionReason, OpportunityAnchor, PendingEvent,
-        Permille, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
+        PercentileBucket, Permille, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
         PlanInvalidationReason, PrototypePlace, Quantity, RankedGoalComparisonDimensionTag,
         RecipeId, RecordRef, ResourceSource, SaliencePolicy, SleepEpisodeEndedPayload,
         SleepEpisodeStartedPayload, SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition,
@@ -6488,6 +7111,8 @@ mod tests {
             0,
             5,
             None,
+            None,
+            &DiagnosticsRenderOptions::default(),
         );
 
         assert!(
@@ -6568,6 +7193,8 @@ mod tests {
             0,
             5,
             None,
+            None,
+            &DiagnosticsRenderOptions::default(),
         );
 
         assert!(report.contains("**Agenda state**: committed=Sleep, pending=1, suspended=1"));
@@ -6585,6 +7212,10 @@ mod tests {
         let default_cli = ObserverCli::parse_from(["worldwake-observer", "scenario.ron"]);
         assert_eq!(default_cli.top_omissions, 5);
         assert_eq!(default_cli.contention_top_n, None);
+        assert_eq!(default_cli.diagnostics_format, DiagnosticsFormat::Text);
+        assert_eq!(default_cli.diagnostics_percentiles, vec![50, 95, 99]);
+        assert_eq!(default_cli.diagnostics_top_n, None);
+        assert!(!default_cli.no_diagnostics);
 
         let override_cli =
             ObserverCli::parse_from(["worldwake-observer", "scenario.ron", "--top-omissions", "3"]);
@@ -6597,6 +7228,221 @@ mod tests {
             "2",
         ]);
         assert_eq!(contention_cli.contention_top_n, Some(2));
+
+        let diagnostics_cli = ObserverCli::parse_from([
+            "worldwake-observer",
+            "scenario.ron",
+            "--diagnostics-format",
+            "json",
+            "--diagnostics-percentiles",
+            "50,99",
+            "--diagnostics-top-n",
+            "4",
+            "--no-diagnostics",
+        ]);
+        assert_eq!(diagnostics_cli.diagnostics_format, DiagnosticsFormat::Json);
+        assert_eq!(diagnostics_cli.diagnostics_percentiles, vec![50, 99]);
+        assert_eq!(diagnostics_cli.diagnostics_top_n, Some(4));
+        assert!(diagnostics_cli.no_diagnostics);
+    }
+
+    fn sample_scenario_diagnostics_report() -> ScenarioDiagnosticsReport {
+        ScenarioDiagnosticsReport {
+            tick_range: (Tick(0), Tick(9)),
+            goal_pressure: worldwake_ai::scenario_diagnostics::GoalPressureMetrics {
+                candidates_emitted_by_kind: BTreeMap::from([
+                    (
+                        GoalKind::AcquireCommodity {
+                            commodity: CommodityKind::Water,
+                            purpose: CommodityPurpose::SelfConsume,
+                            quantity: AcquisitionQuantity::single(),
+                        },
+                        6,
+                    ),
+                    (GoalKind::Sleep, 4),
+                    (GoalKind::Wash, 2),
+                ]),
+                candidates_emitted_by_slot: BTreeMap::from([
+                    (worldwake_ai::SlotKind::Survival, 7),
+                    (worldwake_ai::SlotKind::Economic, 1),
+                ]),
+                candidates_suppressed_by_category: BTreeMap::from([
+                    (
+                        CandidateSuppressionCategory::RejectedFeasibilityProbeFailed,
+                        5,
+                    ),
+                    (CandidateSuppressionCategory::OmittedSocial, 2),
+                ]),
+                top_k_not_planned: BTreeMap::from([
+                    (GoalKind::Sleep, 3),
+                    (GoalKind::Wash, 2),
+                    (GoalKind::Relieve, 1),
+                ]),
+                active_intention_continuation_rate: Permille::new_unchecked(250),
+            },
+            planning: worldwake_ai::scenario_diagnostics::PlanningMetrics {
+                plan_attempts: 8,
+                plan_attempts_by_kind: BTreeMap::from([
+                    (GoalKind::Sleep, 5),
+                    (GoalKind::Wash, 2),
+                    (GoalKind::Relieve, 1),
+                ]),
+                budget_exhaustion_count: 1,
+                budget_exhaustion_rate: Permille::new_unchecked(125),
+                frontier_exhaustion_count: 2,
+                frontier_exhaustion_rate: Permille::new_unchecked(250),
+                beam_truncation_ratio: Permille::new_unchecked(333),
+                plan_depth: PercentileBucket::from_sorted(&[1, 2, 4, 8]),
+                terminal_kind_distribution: BTreeMap::from([
+                    (worldwake_ai::PlanTerminalKind::GoalSatisfied, 4),
+                    (worldwake_ai::PlanTerminalKind::ProgressBarrier, 2),
+                ]),
+                heuristic_helpful_action_hit_rate: Permille::new_unchecked(750),
+            },
+            revalidation_repair: worldwake_ai::scenario_diagnostics::RevalidationRepairMetrics {
+                invalidation_reasons: BTreeMap::from([
+                    (
+                        worldwake_core::Discrepancy::NeedHorizonExceeded {
+                            need: HomeostaticNeedId::Thirst,
+                            projected_breach_tick: Tick(12),
+                        },
+                        2,
+                    ),
+                    (worldwake_core::Discrepancy::BeliefStale, 1),
+                ]),
+                repair_attempts: 3,
+                repair_succeeded: 2,
+                repair_failed: 1,
+                repair_success_rate: Permille::new_unchecked(666),
+                repair_budget_consumed: PercentileBucket::from_sorted(&[1, 2, 5]),
+                full_replan_count: 1,
+            },
+            belief: worldwake_ai::scenario_diagnostics::BeliefMetrics {
+                stale_belief_actions: 1,
+                contradicted_belief_actions: 1,
+                source_reliability_changes: 2,
+                false_rumor_propagation_count: 0,
+                correction_latency: PercentileBucket::from_sorted(&[2, 6]),
+            },
+            coordination: worldwake_ai::scenario_diagnostics::CoordinationMetrics {
+                queue_wait_ticks: PercentileBucket::from_sorted(&[0, 3, 7]),
+                reservation_conflict_count: 2,
+                abandoned_grant_count: 1,
+                dead_claimant_cleanup_count: 1,
+            },
+            performance: worldwake_ai::scenario_diagnostics::PerformanceMetrics {
+                opportunity_compiled_count: PercentileBucket::from_sorted(&[8, 12]),
+                opportunity_salience_floored: PercentileBucket::from_sorted(&[1, 2]),
+                opportunity_learned_memory_damped: PercentileBucket::from_sorted(&[0, 1]),
+                opportunity_cap_truncated: PercentileBucket::from_sorted(&[0, 3]),
+                search_expansions: PercentileBucket::from_sorted(&[4, 6, 10]),
+                cache_hit_count: 11,
+                cache_miss_count: 4,
+                cache_invalidation_count: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn render_scenario_diagnostics_section_text_renders_section_13_and_top_n() {
+        let report = sample_scenario_diagnostics_report();
+        let mut out = String::new();
+
+        render_scenario_diagnostics_section(
+            &report,
+            &DiagnosticsRenderOptions {
+                top_n: Some(2),
+                ..DiagnosticsRenderOptions::default()
+            },
+            &mut out,
+        )
+        .unwrap();
+
+        assert!(out.contains("## Section 13 \u{2014} Scenario Diagnostics"));
+        assert!(out.contains("#### Candidates emitted by goal kind"));
+        assert!(out.contains("| ...others (1) | 2 |"));
+        assert!(out.contains("| n | min | p50 | p95 | p99 | max | mean |"));
+    }
+
+    #[test]
+    fn render_scenario_diagnostics_section_json_round_trips_payload_map_keys() {
+        let report = sample_scenario_diagnostics_report();
+        let mut out = String::new();
+
+        render_scenario_diagnostics_section(
+            &report,
+            &DiagnosticsRenderOptions {
+                format: DiagnosticsFormat::Json,
+                ..DiagnosticsRenderOptions::default()
+            },
+            &mut out,
+        )
+        .unwrap();
+
+        let decoded = scenario_diagnostics_report_from_json(&out).unwrap();
+        assert_eq!(decoded, report);
+        assert!(out.contains("\"candidates_emitted_by_kind\""));
+        assert!(out.contains("\"NeedHorizonExceeded\""));
+    }
+
+    #[test]
+    fn format_report_includes_or_suppresses_section_13_from_report_option() {
+        let world = World::new(build_prototype_world()).expect("world");
+        let registry = RecipeRegistry::new();
+        let agent = entity(1);
+        let diagnostics = sample_scenario_diagnostics_report();
+
+        let with_diagnostics = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Guard Theron".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &ActionDefRegistry::new(),
+            &registry,
+            &world,
+            &AgentTickDriver::new(),
+            &[],
+            false,
+            &[],
+            0,
+            5,
+            None,
+            Some(&diagnostics),
+            &DiagnosticsRenderOptions::default(),
+        );
+        let without_diagnostics = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Guard Theron".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &ActionDefRegistry::new(),
+            &registry,
+            &world,
+            &AgentTickDriver::new(),
+            &[],
+            false,
+            &[],
+            0,
+            5,
+            None,
+            None,
+            &DiagnosticsRenderOptions::default(),
+        );
+
+        assert!(with_diagnostics.contains("## Section 13 \u{2014} Scenario Diagnostics"));
+        assert!(!without_diagnostics.contains("## Section 13 \u{2014} Scenario Diagnostics"));
     }
 
     #[test]
@@ -6627,6 +7473,8 @@ mod tests {
             0,
             5,
             None,
+            None,
+            &DiagnosticsRenderOptions::default(),
         );
 
         assert!(report.contains("#### Top observation omissions"));
@@ -6663,6 +7511,8 @@ mod tests {
             0,
             5,
             None,
+            None,
+            &DiagnosticsRenderOptions::default(),
         );
 
         assert!(report.contains("\u{2014} (no omissions recorded)"));
@@ -6696,6 +7546,8 @@ mod tests {
             0,
             3,
             None,
+            None,
+            &DiagnosticsRenderOptions::default(),
         );
 
         assert_eq!(report.matches("/ OverBudget / tick").count(), 3);
@@ -6737,6 +7589,8 @@ mod tests {
             0,
             5,
             None,
+            None,
+            &DiagnosticsRenderOptions::default(),
         );
 
         let first = report
@@ -7338,6 +8192,8 @@ mod tests {
             1,
             5,
             None,
+            None,
+            &DiagnosticsRenderOptions::default(),
         );
 
         assert!(report.contains("## Section 10 — Critical Window Forensics"));
@@ -7379,6 +8235,8 @@ mod tests {
             0,
             5,
             None,
+            None,
+            &DiagnosticsRenderOptions::default(),
         );
 
         assert!(report.contains("## Section 10 — Critical Window Forensics"));
@@ -7411,6 +8269,8 @@ mod tests {
             0,
             5,
             None,
+            None,
+            &DiagnosticsRenderOptions::default(),
         );
 
         assert!(!report.contains("## Section 10 — Critical Window Forensics"));
@@ -7443,6 +8303,8 @@ mod tests {
             1,
             5,
             None,
+            None,
+            &DiagnosticsRenderOptions::default(),
         );
 
         let section_8 = report
@@ -7480,6 +8342,8 @@ mod tests {
             1,
             5,
             None,
+            None,
+            &DiagnosticsRenderOptions::default(),
         );
 
         let section_10 = report

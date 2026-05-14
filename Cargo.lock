@@ -4044,6 +4044,7 @@ dependencies = [
  "ron",
  "rustyline",
  "serde",
+ "serde_json",
  "tempfile",
  "worldwake-ai",
  "worldwake-core",
