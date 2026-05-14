@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — observer binary tooling only (new render section + CLI flags)
-**Deps**: archive/tickets/S144AGGSCEDIA-004.md, S144AGGSCEDIA-005
+**Deps**: archive/tickets/S144AGGSCEDIA-004.md, archive/tickets/S144AGGSCEDIA-005.md
 
 ## Problem
 

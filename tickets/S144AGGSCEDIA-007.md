@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — test infrastructure and committed fixture
-**Deps**: S144AGGSCEDIA-005, S144AGGSCEDIA-006
+**Deps**: archive/tickets/S144AGGSCEDIA-005.md, tickets/S144AGGSCEDIA-006.md
 
 ## Problem
 

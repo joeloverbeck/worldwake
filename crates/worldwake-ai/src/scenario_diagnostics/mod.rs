@@ -4,6 +4,10 @@ use worldwake_core::{Discrepancy, GoalKind, PercentileBucket, Permille, Tick};
 
 use crate::{PlanTerminalKind, SlotKind};
 
+pub mod aggregator;
+
+pub use aggregator::build_scenario_diagnostics;
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ScenarioDiagnosticsReport {
     pub tick_range: (Tick, Tick),
