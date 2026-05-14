@@ -20,6 +20,7 @@ Grep for each type. Confirm existence and current shape (fields, members). Check
 - **Design table exhaustiveness**: If the spec includes a lookup table or mapping indexed by an enum (e.g., priority-per-EntityKind, handling-per-GoalKind), verify the table covers all current enum variants. Missing variants will require either explicit entries or a documented catch-all default.
 - **Hash functions**: If acceptance criteria reference hash functions, verify they exist and check input inclusion/exclusion.
 - **Field additions to non-ECS structs** (belief-layer, snapshot types): Check serde derives, `#[serde(default)]`, Default impl impact, and whether derivation/construction functions (e.g., `derive_entity_summary()`) can populate the new field from their inputs. If a derivation function reconstructs from a data source lacking the new field, flag the propagation gap as an Issue.
+- **Aggregation-key fidelity**: When the spec uses a type as a `BTreeMap`/histogram/distribution key, verify the type's variants are payload-free. If it has payload-bearing variants, keying on the full type fragments the histogram by payload value — flag that the spec must specify discriminant-grouping or introduce a discriminant key type. This applies even when the key type itself is a clean rename of a fictional spec name (e.g., `DiscrepancyKind` → real `Discrepancy`): the rename is trivial, but the payload-bearing-variant wrinkle is not, and it surfaces at Step 7 if not caught here.
 
 ## 3.3 Functions and Methods
 
