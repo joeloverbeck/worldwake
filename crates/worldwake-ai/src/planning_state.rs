@@ -991,9 +991,13 @@ impl<'snapshot> PlanningState<'snapshot> {
 
     #[must_use]
     pub fn direct_possessions_ref(&self, holder: PlanningEntityRef) -> Vec<PlanningEntityRef> {
+        let holder_place = self.effective_place_ref(holder);
         self.all_entity_refs()
             .into_iter()
-            .filter(|entity| self.direct_possessor_ref(*entity) == Some(holder))
+            .filter(|entity| {
+                self.direct_possessor_ref(*entity) == Some(holder)
+                    && self.effective_place_ref(*entity) == holder_place
+            })
             .collect()
     }
 

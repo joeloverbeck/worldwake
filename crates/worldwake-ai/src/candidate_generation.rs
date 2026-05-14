@@ -3703,9 +3703,10 @@ fn emit_need_driven_candidates(
         .into_iter()
         .filter(|commodity| matches_need(*commodity))
     {
-        // Emit ConsumeOwnedCommodity only for directly possessed consumables.
-        // Owned-but-unpossessed stock still requires an explicit retrieval
-        // path before it can satisfy self-care.
+        // Emit ConsumeOwnedCommodity for immediately reachable consumables:
+        // directly possessed stock, or loose local stock the agent explicitly
+        // believes they own. Containerized/displayed stock still requires an
+        // explicit retrieval path before it can satisfy self-care.
         if let Some(evidence) =
             local_owned_commodity_evidence(ctx.view, ctx.agent, ctx.place, commodity)
         {
@@ -4939,11 +4940,24 @@ fn emit_theft_candidates(
         if ctx.view.entity_kind(item) != Some(EntityKind::ItemLot) {
             continue;
         }
+        let Some(seller) = ctx.view.seller_for_sale_lot(item) else {
+            continue;
+        };
+        let Some(commodity) = ctx.view.item_lot_commodity(item) else {
+            continue;
+        };
+        if !ctx
+            .view
+            .merchandise_profile(seller)
+            .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
+        {
+            continue;
+        }
         let Some(owner) = ctx
             .view
             .believed_owner_of(item)
             .known_or_stale_value()
-            .or_else(|| ctx.view.seller_for_sale_lot(item))
+            .or(Some(seller))
         else {
             continue;
         };
@@ -6762,7 +6776,14 @@ fn local_owned_commodity_evidence(
         if view.item_lot_commodity(entity) != Some(commodity) || !view.can_control(agent, entity) {
             continue;
         }
-        if view.direct_possessor(entity) != Some(agent) {
+        let directly_possessed = view.direct_possessor(entity) == Some(agent);
+        let loose_local_owned = view.direct_container(entity).is_none()
+            && view.seller_for_sale_lot(entity).is_none()
+            && view
+                .believed_owner_of(entity)
+                .known_or_stale_value()
+                .is_some_and(|owner| owner == agent);
+        if !directly_possessed && !loose_local_owned {
             continue;
         }
         evidence.entities.insert(entity);
@@ -8998,6 +9019,23 @@ mod tests {
             .collect()
     }
 
+    fn mark_sale_stock(
+        view: &mut TestBeliefView,
+        item: EntityId,
+        seller: EntityId,
+        commodity: CommodityKind,
+    ) {
+        view.lot_commodities.insert(item, commodity);
+        view.lot_sellers.insert(item, seller);
+        view.merchandise_profiles.insert(
+            seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([commodity]),
+                home_facility: None,
+            },
+        );
+    }
+
     fn contains_political_omission(
         diagnostics: &CandidateGenerationDiagnostics,
         family: PoliticalGoalFamily,
@@ -9600,6 +9638,88 @@ mod tests {
                 }
             ),
             "owned stock that is staged in a container should not count as immediately consumable"
+        );
+    }
+
+    #[test]
+    fn loose_local_owned_food_emits_consume_goal_when_hungry() {
+        let agent = entity(1);
+        let place = entity(10);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(bread, place);
+        view.entities_at.insert(place, vec![agent, bread]);
+        view.homeostatic_needs.insert(agent, hunger(1000));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+        view.controllable.insert((agent, bread));
+        view.controlled_entities.insert(agent);
+        view.believed_owners.insert(bread, agent);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }
+        ));
+    }
+
+    #[test]
+    fn loose_local_food_without_owner_belief_does_not_emit_consume_owned_candidate() {
+        let agent = entity(1);
+        let place = entity(10);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(bread, place);
+        view.entities_at.insert(place, vec![agent, bread]);
+        view.homeostatic_needs.insert(agent, hunger(1000));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+        view.controllable.insert((agent, bread));
+        view.controlled_entities.insert(agent);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(
+            !contains_goal(
+                &candidates,
+                GoalKind::ConsumeOwnedCommodity {
+                    commodity: CommodityKind::Bread,
+                }
+            ),
+            "loose local stock must carry an explicit ownership belief before self-care treats it as owned"
         );
     }
 
@@ -13888,6 +14008,7 @@ mod tests {
             },
         );
         view.believed_owners.insert(item, owner);
+        mark_sale_stock(&mut view, item, owner, CommodityKind::Bread);
 
         let candidates = generate_candidates(
             &view,
@@ -13981,6 +14102,16 @@ mod tests {
         view.believed_owners.insert(possessed, owner);
         view.believed_owners.insert(contained, owner);
         view.believed_owners.insert(too_heavy, owner);
+        for item in [
+            valid_item,
+            self_owned,
+            controllable,
+            possessed,
+            contained,
+            too_heavy,
+        ] {
+            mark_sale_stock(&mut view, item, owner, CommodityKind::Bread);
+        }
         view.controllable.insert((agent, controllable));
         view.direct_possessors.insert(possessed, owner);
         view.direct_containers.insert(contained, entity(99));
@@ -14085,6 +14216,7 @@ mod tests {
             },
         );
         view.lot_sellers.insert(item, seller);
+        mark_sale_stock(&mut view, item, seller, CommodityKind::Bread);
 
         let candidates = generate_candidates(
             &view,
@@ -14135,6 +14267,7 @@ mod tests {
             },
         );
         view.believed_owners.insert(item, owner);
+        mark_sale_stock(&mut view, item, owner, CommodityKind::Bread);
         view.patrol_profiles
             .insert(local_guard, patrol_profile(400));
         view.patrol_routes.insert(
@@ -14217,6 +14350,7 @@ mod tests {
             },
         );
         view.believed_owners.insert(item, owner);
+        mark_sale_stock(&mut view, item, owner, CommodityKind::Bread);
         view.beliefs.insert(agent, vec![known_entity(item, place)]);
 
         let result = generate_candidates_with_travel_horizon(

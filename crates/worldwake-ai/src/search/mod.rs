@@ -41,12 +41,12 @@ use std::collections::BTreeMap;
 use transition::build_successor;
 use transition::build_successor_detailed;
 use worldwake_core::{
-    ActionDefId, BlockerMemory, CognitiveProfile, CommodityKind, ExecutionBudget, OpportunityKey,
-    Tick,
+    ActionDefId, BlockerMemory, CognitiveProfile, CommodityKind, EntityKind, ExecutionBudget,
+    OpportunityKey, Tick,
 };
 use worldwake_sim::{
-    ActionDefRegistry, ActionHandlerRegistry, InventoryBeliefView, RecipeRegistry,
-    SpatialBeliefView, get_affordances_for_defs,
+    ActionDefRegistry, ActionHandlerRegistry, EconomicBeliefView, EntityBeliefView,
+    InventoryBeliefView, RecipeRegistry, SpatialBeliefView, get_affordances_for_defs,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -615,7 +615,9 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
     let mut best_barrier: Option<PlannedPlan> = None;
 
     while let Some(node) = frontier.pop() {
-        if goal.key.kind.is_satisfied(&node.state) {
+        if root_goal_satisfaction_allowed(goal, &node.state)
+            && goal.key.kind.is_satisfied(&node.state)
+        {
             return PlanSearchResult::Found(
                 PlannedPlan::new(
                     opportunity,
@@ -1069,6 +1071,30 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
     }
     PlanSearchResult::FrontierExhausted {
         expansions_used: expansions,
+    }
+}
+
+fn root_goal_satisfaction_allowed(goal: &GoalOffer, state: &PlanningState<'_>) -> bool {
+    match &goal.key.kind {
+        worldwake_core::GoalKind::AcquireCommodity {
+            purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            ..
+        } => false,
+        worldwake_core::GoalKind::SellCommodity { commodity } => {
+            let actor = state.snapshot().actor();
+            let Some(place) = state.effective_place(actor) else {
+                return true;
+            };
+            !goal.evidence_entities.iter().any(|entity| {
+                state.entity_kind(*entity) == Some(EntityKind::ItemLot)
+                    && state.item_lot_commodity(*entity) == Some(*commodity)
+                    && state
+                        .local_controlled_lots_for(actor, place, *commodity)
+                        .contains(entity)
+                    && !state.has_sale_listing(*entity)
+            })
+        }
+        _ => true,
     }
 }
 

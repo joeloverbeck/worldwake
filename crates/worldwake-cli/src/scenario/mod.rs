@@ -12,17 +12,18 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    ArtifactActionability, ArtifactCredibility, ArtifactExistence, ArtifactHeader, ArtifactKind,
-    ArtifactLegalEffect, ArtifactVisibility, BanditCamp, BanditFactionPolicy,
-    BelievedInstitutionalClaim, BountyTarget, BountyTerms, CarryCapacity, CauseRef, Container,
-    ContentionQueue, ControlSource, DeprivationExposure, EligibilityRule, EntityId, EntityKind,
-    EventLog, ExpectationBasis, ExpectationOutcome, ExpectationRecord, ExpectationState,
-    ExpectationStore, ExplorationProfile, InstitutionalBeliefKey, InstitutionalClaim,
-    InstitutionalKnowledgeSource, KnownRecipes, LastProactiveExplorationTick, LastSeenMemory,
-    LastSeenProvenance, LastSeenRecord, LatrineFullness, LoadUnits, MerchandiseProfile, Name,
-    NoticeContent, NoticeTopic, OfficeData, OfficeForceProfile, OfficeForceState, PatrolRoute,
-    Place, PlaceDirtiness, ProductionOutputOwner, ProductionOutputOwnershipPolicy, RecordData,
-    RecordKind, ResourceExtractionQueues, ResourceSource, RewardSource, Seed, SleepQualityProfile,
+    AgentBeliefStore, ArtifactActionability, ArtifactCredibility, ArtifactExistence,
+    ArtifactHeader, ArtifactKind, ArtifactLegalEffect, ArtifactVisibility, BanditCamp,
+    BanditFactionPolicy, BelievedInstitutionalClaim, BountyTarget, BountyTerms, CarryCapacity,
+    CauseRef, ClaimId, ClaimValue, Container, ContentionQueue, ControlSource, DeprivationExposure,
+    EligibilityRule, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EventLog,
+    ExpectationBasis, ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore,
+    ExplorationProfile, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+    KnownRecipes, LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
+    LatrineFullness, LoadUnits, MerchandiseProfile, Name, NoticeContent, NoticeTopic, OfficeData,
+    OfficeForceProfile, OfficeForceState, PatrolRoute, PerceptionSource, Permille, Place,
+    PlaceDirtiness, ProductionOutputOwner, ProductionOutputOwnershipPolicy, RecordData, RecordKind,
+    ResourceExtractionQueues, ResourceSource, RewardSource, Seed, SleepQualityProfile,
     SocialObservation, SocialObservationDetail, SurveyMemory, Tick, Topology, TravelEdge,
     TravelEdgeId, VisibilitySpec, WashBasinState, WitnessData, WorkstationMarker, World, WorldTxn,
     default_commodity_decay_map, hash_world, load_per_unit,
@@ -1381,6 +1382,42 @@ fn social_observations_from_def(
         .collect()
 }
 
+fn record_initial_item_authority_belief(
+    store: &mut AgentBeliefStore,
+    subject: EntityId,
+    aspect: EntityBeliefAspect,
+    value: Option<EntityId>,
+) {
+    let claim_id = store.next_claim_id;
+    store.next_claim_id = ClaimId(claim_id.0.saturating_add(1));
+    store.record_entity_claim(EntityBeliefClaim {
+        claim_id,
+        subject,
+        aspect,
+        value: ClaimValue::Entity(value),
+        source: PerceptionSource::DirectObservation,
+        acquired_tick: Tick(0),
+        claimed_event_tick: Some(Tick(0)),
+        confidence: Permille::new(1000).expect("1000 permille is valid"),
+        refuted_at_tick: None,
+    });
+}
+
+fn seed_initial_agent_item_authority_beliefs(
+    txn: &mut WorldTxn<'_>,
+    agent: EntityId,
+    item: EntityId,
+) -> Result<(), ScenarioError> {
+    let mut store = txn
+        .get_component_agent_belief_store(agent)
+        .cloned()
+        .unwrap_or_default();
+    record_initial_item_authority_belief(&mut store, item, EntityBeliefAspect::Owner, Some(agent));
+    record_initial_item_authority_belief(&mut store, item, EntityBeliefAspect::Holder, Some(agent));
+    txn.set_component_agent_belief_store(agent, store)?;
+    Ok(())
+}
+
 /// Spawn a single item lot at a place or on an agent.
 fn spawn_item(
     txn: &mut WorldTxn<'_>,
@@ -1409,6 +1446,7 @@ fn spawn_item(
         txn.set_ground_location(item_id, *agent_place)?;
         txn.set_owner(item_id, location_id)?;
         txn.set_possessor(item_id, location_id)?;
+        seed_initial_agent_item_authority_beliefs(txn, location_id, item_id)?;
     }
 
     Ok(())
@@ -1496,6 +1534,7 @@ mod tests {
         TheftDispositionProfile, ThresholdBand, TradeCategory, ViolationDispositionProfile,
         WashBasinState, WorkstationTag, default_commodity_decay_map,
     };
+    use worldwake_sim::{BeliefRead, BelievedAuthorityView, PerAgentBeliefView};
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
         AgentDef {
@@ -2734,6 +2773,19 @@ mod tests {
         assert_eq!(lot.commodity, CommodityKind::Sword);
         assert_eq!(lot.quantity, Quantity(1));
         assert_eq!(world.owner_of(sword_id), Some(warrior));
+
+        let store = world
+            .get_component_agent_belief_store(warrior)
+            .expect("spawned agent should retain item authority beliefs");
+        let view = PerAgentBeliefView::new(warrior, world, store);
+        assert!(matches!(
+            view.believed_owner_of(sword_id),
+            BeliefRead::Known(owner) if owner.value == warrior
+        ));
+        assert!(matches!(
+            view.believed_holder_of(sword_id),
+            BeliefRead::Known(holder) if holder.value == warrior
+        ));
     }
 
     #[test]

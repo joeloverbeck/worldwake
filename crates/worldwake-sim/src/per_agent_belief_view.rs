@@ -429,6 +429,14 @@ impl ControlBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+        if self.world.owner_of(entity).is_none()
+            && matches!(
+                self.world.entity_kind(entity),
+                Some(EntityKind::ItemLot | EntityKind::UniqueItem | EntityKind::Container)
+            )
+        {
+            return true;
+        }
         self.world.can_exercise_control(actor, entity).is_ok()
     }
 

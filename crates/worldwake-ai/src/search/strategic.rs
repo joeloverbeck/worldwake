@@ -7,7 +7,8 @@ use worldwake_core::{
     CommodityKind, EntityId, EntityKind, ExecutionBudget, GoalKind, OpportunityAnchor, Quantity,
 };
 use worldwake_sim::{
-    EconomicBeliefView, FacilityBeliefView, InventoryBeliefView, RecipeRegistry, SpatialBeliefView,
+    EconomicBeliefView, EntityBeliefView, FacilityBeliefView, InventoryBeliefView, RecipeRegistry,
+    SpatialBeliefView,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -75,7 +76,7 @@ pub(crate) fn plan(
     recipes: &RecipeRegistry,
 ) -> Option<StrategicPlan> {
     let state = PlanningState::new(snapshot);
-    if goal.key.kind.is_satisfied(&state) {
+    if root_goal_satisfaction_allowed(goal, &state) && goal.key.kind.is_satisfied(&state) {
         return Some(StrategicPlan { steps: Vec::new() });
     }
 
@@ -341,6 +342,30 @@ fn place_supports_commodity(
                 && state.direct_possessor(entity).is_none()
                 && state.direct_container(entity).is_none())
     })
+}
+
+fn root_goal_satisfaction_allowed(goal: &GoalOffer, state: &PlanningState<'_>) -> bool {
+    match &goal.key.kind {
+        GoalKind::AcquireCommodity {
+            purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            ..
+        } => false,
+        GoalKind::SellCommodity { commodity } => {
+            let actor = state.snapshot().actor();
+            let Some(place) = state.effective_place(actor) else {
+                return true;
+            };
+            !goal.evidence_entities.iter().any(|entity| {
+                state.entity_kind(*entity) == Some(EntityKind::ItemLot)
+                    && state.item_lot_commodity(*entity) == Some(*commodity)
+                    && state
+                        .local_controlled_lots_for(actor, place, *commodity)
+                        .contains(entity)
+                    && !state.has_sale_listing(*entity)
+            })
+        }
+        _ => true,
+    }
 }
 
 fn consume_current_place_prerequisites(

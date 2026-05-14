@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, BodyCostPerTick, ContentionGrant, ContentionPolicy, ContentionQueue, Discrepancy,
-    EntityId, EntityKind, EventTag, Quantity, VisibilitySpec, WorldTxn, load_of_entity,
-    load_per_unit,
+    EntityId, EntityKind, EventTag, Quantity, StockAssignmentKind, VisibilitySpec, WorldTxn,
+    load_of_entity, load_per_unit,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerRegistry,
@@ -557,6 +557,20 @@ fn validate_steal(
     if txn.can_exercise_control(actor, target).is_ok() {
         return Err(ActionError::PreconditionFailed(format!(
             "actor {actor} can lawfully control target {target}; use pick_up instead"
+        )));
+    }
+    if txn.get_component_item_lot(target).is_some_and(|lot| {
+        lot.commodity.spec().consumable_profile.is_some()
+            && !(txn.has_component_sale_listing(target)
+                && txn
+                    .get_component_stock_assignment(target)
+                    .is_some_and(|assignment| assignment.kind == StockAssignmentKind::Displayed)
+                && txn
+                    .get_component_merchandise_profile(owner)
+                    .is_some_and(|profile| profile.sale_kinds.contains(&lot.commodity)))
+    }) {
+        return Err(ActionError::PreconditionFailed(format!(
+            "consumable target {target} is not displayed sale stock"
         )));
     }
     if txn.get_component_theft_disposition_profile(actor).is_none() {

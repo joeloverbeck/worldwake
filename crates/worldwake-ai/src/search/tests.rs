@@ -2593,6 +2593,8 @@ fn search_returns_pick_up_goal_satisfaction_for_local_unpossessed_food_lot() {
     view.carry_capacities.insert(actor, LoadUnits(4));
     view.entity_loads.insert(actor, LoadUnits(0));
     view.entity_loads.insert(bread, LoadUnits(1));
+    view.owners.insert(bread, actor);
+    view.controllable.insert((actor, bread));
     view.needs.insert(
         actor,
         HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
@@ -2772,6 +2774,10 @@ fn place_anchored_acquire_search_does_not_retarget_sibling_place_lot() {
         .insert(home_apple, CommodityKind::Apple);
     view.lot_commodities
         .insert(orchard_apple, CommodityKind::Apple);
+    view.owners.insert(home_apple, actor);
+    view.owners.insert(orchard_apple, actor);
+    view.controllable.insert((actor, home_apple));
+    view.controllable.insert((actor, orchard_apple));
     view.consumable_profiles.insert(
         home_apple,
         CommodityKind::Apple.spec().consumable_profile.unwrap(),
@@ -2983,6 +2989,8 @@ fn search_returns_pick_up_goal_satisfaction_for_local_commodity_lot() {
         .insert((medicine, CommodityKind::Medicine), Quantity(1));
     view.carry_capacities.insert(actor, LoadUnits(2));
     view.entity_loads.insert(actor, LoadUnits(0));
+    view.owners.insert(medicine, actor);
+    view.controllable.insert((actor, medicine));
 
     let (registry, handlers) = build_registry();
     let goal = GoalOffer {
@@ -3049,6 +3057,8 @@ fn search_returns_partial_pick_up_goal_satisfaction_for_local_food_lot() {
     view.carry_capacities.insert(actor, LoadUnits(1));
     view.entity_loads.insert(actor, LoadUnits(0));
     view.entity_loads.insert(apples, LoadUnits(2));
+    view.owners.insert(apples, actor);
+    view.controllable.insert((actor, apples));
     view.needs.insert(
         actor,
         HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
@@ -4168,6 +4178,43 @@ fn build_successor_uses_transition_metadata_for_partial_pickup() {
     assert_eq!(
         step.expected_materializations[0].tag,
         worldwake_sim::MaterializationTag::SplitOffLot
+    );
+}
+
+#[test]
+fn build_successor_rejects_pick_up_of_possessed_lot() {
+    let (mut node, _actor, _place, lot, registry, _handlers) =
+        pickup_node(CommodityKind::Water, Quantity(3), LoadUnits(4));
+    let holder = entity(99);
+    node.state = node
+        .state
+        .move_lot_to_holder(lot, holder, CommodityKind::Water, Quantity(3));
+    let semantics_table = build_semantics_table(&registry);
+    let goal = acquire_goal(CommodityKind::Water);
+    let pick_up = registry.iter().find(|def| def.name == "pick_up").unwrap();
+
+    let candidate = SearchCandidate {
+        def_id: pick_up.id,
+        authoritative_targets: vec![lot],
+        planning_targets: vec![PlanningEntityRef::Authoritative(lot)],
+        payload_override: None,
+        planner_only: false,
+        trace_index: None,
+        expansion_trace_index: None,
+    };
+
+    assert!(
+        build_successor(
+            &goal,
+            &semantics_table,
+            &registry,
+            &node,
+            &candidate,
+            &RecipeRegistry::new(),
+            &ProfileFixture::default(),
+        )
+        .is_none(),
+        "search must not simulate pick_up for a lot already possessed by another entity"
     );
 }
 
@@ -6797,6 +6844,8 @@ fn search_prefers_longer_low_threat_route_over_shorter_dangerous_route() {
         ],
     );
     view.lot_commodities.insert(bread, CommodityKind::Bread);
+    view.owners.insert(bread, actor);
+    view.controllable.insert((actor, bread));
     view.commodity_quantities
         .insert((bread, CommodityKind::Bread), Quantity(1));
     view.carry_capacities.insert(actor, LoadUnits(10));
@@ -9829,6 +9878,8 @@ fn search_local_acquire_goal_remains_direct_without_prerequisite_stage() {
         .insert(actor, sample_trade_disposition_profile());
     // Ground bread lot at market.
     view.lot_commodities.insert(bread, CommodityKind::Bread);
+    view.owners.insert(bread, actor);
+    view.controllable.insert((actor, bread));
     view.commodity_quantities
         .insert((bread, CommodityKind::Bread), Quantity(1));
     // Needs/thresholds for the acquire goal context.
@@ -11976,27 +12027,56 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
     let place = entity(10);
     let bread_lot = entity(20);
     let waste_lot = entity(21);
+    let possessed_bread_lot = entity(22);
     let workshop = entity(30);
     let seller = entity(40);
+    let resource_source = entity(50);
 
     let mut view = TestBeliefView::default();
-    view.alive
-        .extend([actor, place, bread_lot, waste_lot, workshop, seller]);
+    view.alive.extend([
+        actor,
+        place,
+        bread_lot,
+        waste_lot,
+        possessed_bread_lot,
+        workshop,
+        seller,
+        resource_source,
+    ]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(place, EntityKind::Place);
     view.kinds.insert(bread_lot, EntityKind::ItemLot);
     view.kinds.insert(waste_lot, EntityKind::ItemLot);
+    view.kinds.insert(possessed_bread_lot, EntityKind::ItemLot);
     view.kinds.insert(workshop, EntityKind::Place);
     view.kinds.insert(seller, EntityKind::Agent);
+    view.kinds.insert(resource_source, EntityKind::Facility);
     view.effective_places.insert(actor, place);
     view.effective_places.insert(bread_lot, place);
     view.effective_places.insert(waste_lot, place);
+    view.effective_places.insert(possessed_bread_lot, place);
     view.effective_places.insert(workshop, place);
     view.effective_places.insert(seller, place);
-    view.entities_at
-        .insert(place, vec![actor, bread_lot, waste_lot, workshop, seller]);
+    view.effective_places.insert(resource_source, place);
+    view.entities_at.insert(
+        place,
+        vec![
+            actor,
+            bread_lot,
+            waste_lot,
+            possessed_bread_lot,
+            workshop,
+            seller,
+            resource_source,
+        ],
+    );
     view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
     view.lot_commodities.insert(waste_lot, CommodityKind::Waste);
+    view.lot_commodities
+        .insert(possessed_bread_lot, CommodityKind::Bread);
+    view.owners.insert(bread_lot, actor);
+    view.controllable.insert((actor, bread_lot));
+    view.direct_possessors.insert(possessed_bread_lot, seller);
     let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::AcquireCommodity {
@@ -12084,6 +12164,17 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
             expansion_trace_index: None,
         },
         SearchCandidate {
+            def_id: move_cargo_id,
+            authoritative_targets: vec![possessed_bread_lot],
+            planning_targets: vec![PlanningEntityRef::Authoritative(possessed_bread_lot)],
+            payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+                quantity: Quantity(1),
+            })),
+            planner_only: false,
+            trace_index: Some(2),
+            expansion_trace_index: None,
+        },
+        SearchCandidate {
             def_id: trade_id,
             authoritative_targets: vec![seller],
             planning_targets: vec![PlanningEntityRef::Authoritative(seller)],
@@ -12095,7 +12186,7 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
                 requested_quantity: Quantity(1),
             })),
             planner_only: false,
-            trace_index: Some(2),
+            trace_index: Some(3),
             expansion_trace_index: None,
         },
         SearchCandidate {
@@ -12110,7 +12201,7 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
                 requested_quantity: Quantity(1),
             })),
             planner_only: false,
-            trace_index: Some(3),
+            trace_index: Some(4),
             expansion_trace_index: None,
         },
         SearchCandidate {
@@ -12119,7 +12210,18 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
             planning_targets: vec![PlanningEntityRef::Authoritative(workshop)],
             payload_override: None,
             planner_only: false,
-            trace_index: Some(4),
+            trace_index: Some(5),
+            expansion_trace_index: None,
+        },
+        SearchCandidate {
+            def_id: move_cargo_id,
+            authoritative_targets: vec![resource_source],
+            planning_targets: vec![PlanningEntityRef::Authoritative(resource_source)],
+            payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+                quantity: Quantity(1),
+            })),
+            planner_only: false,
+            trace_index: Some(6),
             expansion_trace_index: None,
         },
     ];
@@ -12150,7 +12252,19 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
             .iter()
             .map(|candidate| candidate.trace_index)
             .collect::<Vec<_>>(),
-        vec![Some(0), Some(2)]
+        vec![Some(0), Some(3)]
+    );
+    assert!(
+        candidates
+            .iter()
+            .all(|candidate| candidate.authoritative_targets != vec![resource_source]),
+        "pick_up/MoveCargo cannot use a resource-source facility as cargo for a commodity goal"
+    );
+    assert!(
+        candidates
+            .iter()
+            .all(|candidate| candidate.authoritative_targets != vec![possessed_bread_lot]),
+        "pick_up/MoveCargo cannot use a possessed item lot as ground cargo for a commodity goal"
     );
     assert_eq!(
         root_candidates[1].outcome,
@@ -12162,10 +12276,10 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
         )
     );
     assert_eq!(
-        root_candidates[3].outcome,
+        root_candidates[2].outcome,
         crate::decision_trace::RootCandidateOutcome::Filtered(
             crate::decision_trace::RootCandidateFilterReason::CommodityIrrelevant {
-                candidate_commodity: Some(CommodityKind::Waste),
+                candidate_commodity: Some(CommodityKind::Bread),
                 goal_commodity: CommodityKind::Bread,
             },
         )
@@ -12174,7 +12288,25 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
         root_candidates[4].outcome,
         crate::decision_trace::RootCandidateOutcome::Filtered(
             crate::decision_trace::RootCandidateFilterReason::CommodityIrrelevant {
+                candidate_commodity: Some(CommodityKind::Waste),
+                goal_commodity: CommodityKind::Bread,
+            },
+        )
+    );
+    assert_eq!(
+        root_candidates[5].outcome,
+        crate::decision_trace::RootCandidateOutcome::Filtered(
+            crate::decision_trace::RootCandidateFilterReason::CommodityIrrelevant {
                 candidate_commodity: Some(CommodityKind::Apple),
+                goal_commodity: CommodityKind::Bread,
+            },
+        )
+    );
+    assert_eq!(
+        root_candidates[6].outcome,
+        crate::decision_trace::RootCandidateOutcome::Filtered(
+            crate::decision_trace::RootCandidateFilterReason::CommodityIrrelevant {
+                candidate_commodity: None,
                 goal_commodity: CommodityKind::Bread,
             },
         )
@@ -12199,6 +12331,8 @@ fn commodity_relevance_filter_keeps_travel_unknown_and_queue_for_matching_craft(
     view.effective_places.insert(mill, place);
     view.entities_at
         .insert(place, vec![actor, unknown_lot, mill]);
+    view.owners.insert(unknown_lot, actor);
+    view.controllable.insert((actor, unknown_lot));
 
     let mut recipes = RecipeRegistry::new();
     let recipe_id = recipes.register(RecipeDefinition {
@@ -12306,7 +12440,7 @@ fn commodity_relevance_filter_keeps_travel_unknown_and_queue_for_matching_craft(
         None,
     );
 
-    assert_eq!(candidates.len(), 3);
+    assert_eq!(candidates.len(), 2);
 }
 
 #[test]
@@ -12403,6 +12537,10 @@ fn commodity_relevance_filter_uses_active_prerequisite_commodity_for_produce_goa
     view.lot_commodities
         .insert(firewood_lot, CommodityKind::Firewood);
     view.lot_commodities.insert(waste_lot, CommodityKind::Waste);
+    view.owners.insert(firewood_lot, actor);
+    view.owners.insert(waste_lot, actor);
+    view.controllable.insert((actor, firewood_lot));
+    view.controllable.insert((actor, waste_lot));
 
     let mut recipes = RecipeRegistry::new();
     let recipe_id = recipes.register(RecipeDefinition {
@@ -12746,8 +12884,7 @@ fn search_produce_commodity_uses_two_phase_pick_up_before_craft() {
         &goal.evidence_places,
         ProfileFixture::default().snapshot_travel_horizon,
     );
-
-    let plan = search_plan(
+    let result = search_plan(
         &snapshot,
         &goal,
         &fixture.semantics,
@@ -12759,9 +12896,10 @@ fn search_produce_commodity_uses_two_phase_pick_up_before_craft() {
         Tick(1),
         None,
         None,
-    )
-    .into_plan()
-    .expect("two-phase search should find a remote production plan");
+    );
+    let plan = result
+        .into_plan()
+        .expect("two-phase search should find a remote production plan");
 
     let ops = plan
         .steps

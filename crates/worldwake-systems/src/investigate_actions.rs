@@ -1,8 +1,9 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
     ActionDefId, BodyCostPerTick, CommodityKind, Discrepancy, EntityId, EntityKind, EventTag,
-    PerceptionSource, RecordedViolation, SocialObservation, SocialObservationDetail, TheftFacts,
-    ViolationId, ViolationKind, VisibilitySpec, World, WorldTxn, build_believed_entity_state,
+    PerceptionSource, Quantity, RecordedViolation, SocialObservation, SocialObservationDetail,
+    TheftFacts, ViolationId, ViolationKind, VisibilitySpec, World, WorldTxn,
+    build_believed_entity_state,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
@@ -252,10 +253,27 @@ fn apply_investigate_commit(
         })
         .max_by_key(|(observed_tick, _, _)| *observed_tick)
         .map(|(_, theft, suspect)| (theft, suspect));
+    let suspected_holder = match belief.believed_holder_of(subject) {
+        BeliefRead::Known(holder) | BeliefRead::Stale(holder) if holder.value != instance.actor => {
+            Some(holder.value)
+        }
+        BeliefRead::Known(_) | BeliefRead::Stale(_) | BeliefRead::Unknown => None,
+    };
     let suspected_theft = if owner_is_investigating_actor {
+        let theft = theft_facts_for_subject(txn, instance.actor, subject, place)?;
         Some((
-            theft_facts_for_subject(txn, subject, place)?,
-            subjective_theft.and_then(|(_, suspect)| suspect),
+            theft,
+            subjective_theft
+                .and_then(|(_, suspect)| suspect)
+                .or(suspected_holder)
+                .or_else(|| {
+                    suspect_with_matching_local_commodity(
+                        txn,
+                        instance.actor,
+                        place,
+                        theft.commodity,
+                    )
+                }),
         ))
     } else {
         subjective_theft
@@ -363,20 +381,57 @@ fn apply_investigate_commit(
 
 fn theft_facts_for_subject(
     txn: &WorldTxn<'_>,
+    actor: EntityId,
     subject: EntityId,
     place: EntityId,
 ) -> Result<TheftFacts, ActionError> {
-    let lot = txn.get_component_item_lot(subject).ok_or_else(|| {
-        ActionError::PreconditionFailed(format!(
-            "missing theft subject {subject} is not a live item lot at investigation commit"
-        ))
-    })?;
+    let (commodity, quantity) = if let Some(lot) = txn.get_component_item_lot(subject) {
+        (lot.commodity, lot.quantity)
+    } else {
+        let store = txn.get_component_agent_belief_store(actor).ok_or_else(|| {
+            ActionError::InternalError(format!("live agent {actor} lacks AgentBeliefStore"))
+        })?;
+        let Some(snapshot) = store.get_entity(&subject) else {
+            return Err(ActionError::PreconditionFailed(format!(
+                "missing theft subject {subject} is not a live item lot at investigation commit"
+            )));
+        };
+        if snapshot.believed_kind != Some(EntityKind::ItemLot) {
+            return Err(ActionError::PreconditionFailed(format!(
+                "missing theft subject {subject} is not a believed item lot at investigation commit"
+            )));
+        }
+        snapshot
+            .last_known_inventory
+            .iter()
+            .find(|(_, quantity)| **quantity > Quantity(0))
+            .map(|(commodity, quantity)| (*commodity, *quantity))
+            .ok_or_else(|| {
+                ActionError::PreconditionFailed(format!(
+                    "missing theft subject {subject} has no remembered lot quantity at investigation commit"
+                ))
+            })?
+    };
     Ok(TheftFacts {
         missing_entity: subject,
         expected_place: place,
-        commodity: lot.commodity,
-        quantity: lot.quantity,
+        commodity,
+        quantity,
     })
+}
+
+fn suspect_with_matching_local_commodity(
+    txn: &WorldTxn<'_>,
+    actor: EntityId,
+    place: EntityId,
+    commodity: CommodityKind,
+) -> Option<EntityId> {
+    txn.entities_effectively_at(place)
+        .into_iter()
+        .filter(|entity| *entity != actor)
+        .filter(|entity| txn.entity_kind(*entity) == Some(EntityKind::Agent))
+        .filter(|entity| txn.controlled_commodity_quantity(*entity, commodity) > Quantity(0))
+        .min()
 }
 
 #[allow(clippy::unnecessary_wraps)]

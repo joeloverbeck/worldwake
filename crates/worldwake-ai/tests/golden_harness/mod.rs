@@ -265,10 +265,38 @@ pub fn agent_has_non_failed_action_or_active(
     tick: Tick,
 ) -> bool {
     harness.agent_has_active_action(agent)
+        || agent_has_contention_claim(harness, agent)
         || action_sink
             .events_for_at(agent, tick)
             .iter()
             .any(|event| !matches!(event.kind, ActionTraceKind::StartFailed { .. }))
+}
+
+fn agent_has_contention_claim(harness: &GoldenHarness, agent: EntityId) -> bool {
+    harness.world.entities().any(|entity| {
+        harness
+            .world
+            .get_component_contention_queue(entity)
+            .is_some_and(|queue| {
+                queue
+                    .granted
+                    .as_ref()
+                    .is_some_and(|grant| grant.actor == agent)
+                    || queue.waiting.values().any(|waiter| waiter.actor == agent)
+            })
+            || harness
+                .world
+                .get_component_resource_extraction_queues(entity)
+                .is_some_and(|queues| {
+                    queues.queues.iter().any(|queue| {
+                        queue
+                            .granted
+                            .as_ref()
+                            .is_some_and(|grant| grant.actor == agent)
+                            || queue.waiting.values().any(|waiter| waiter.actor == agent)
+                    })
+                })
+    })
 }
 
 /// Village Square — central hub, slot 0.

@@ -966,14 +966,26 @@ fn build_snapshot_entity(
         .or_else(|| view.effective_place(entity));
     let in_transit_state = view.in_transit_state(entity);
     let patrol_route = view.patrol_route(entity);
-    let direct_container = belief_backed
-        .is_none()
-        .then(|| view.direct_container(entity))
-        .flatten();
-    let direct_possessor = belief_backed
-        .is_none()
-        .then(|| view.direct_possessor(entity))
-        .flatten();
+    let co_located_with_actor = view
+        .effective_place(actor)
+        .zip(view.effective_place(entity))
+        .is_some_and(|(actor_place, entity_place)| actor_place == entity_place);
+    let direct_container = if belief_backed.is_none() || co_located_with_actor {
+        view.direct_container(entity)
+    } else {
+        None
+    };
+    let believed_holder = match view.believed_holder_of(entity) {
+        BeliefRead::Known(holder) | BeliefRead::Stale(holder) => Some(holder.value),
+        BeliefRead::Unknown => None,
+    };
+    let direct_possessor = if belief_backed.is_none() || co_located_with_actor {
+        view.direct_possessor(entity)
+    } else if believed_holder == Some(actor) {
+        None
+    } else {
+        believed_holder
+    };
     let owner = match view.believed_owner_of(entity) {
         BeliefRead::Known(owner) | BeliefRead::Stale(owner) => Some(owner.value),
         BeliefRead::Unknown => None,
