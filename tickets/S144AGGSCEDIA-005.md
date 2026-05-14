@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: S144AGGSCEDIA-003, S144AGGSCEDIA-004
+**Deps**: archive/tickets/S144AGGSCEDIA-003.md, S144AGGSCEDIA-004
 
 ## Problem
 

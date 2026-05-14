@@ -97,8 +97,34 @@ pub struct AgentDecisionTrace {
     pub outcome: DecisionOutcome,
     pub compiled_opportunities: Vec<Opportunity>,
     pub opportunity_compiler_load: Option<OpportunityCompilerLoad>,
+    pub snapshot_cache_counters: Option<SnapshotCacheCounters>,
     pub repair_attempts: Vec<RepairAttemptTrace>,
     pub causal_link_cap_hits: Vec<CausalLinkCapHit>,
+}
+
+/// Logical read counters for `PlanningSnapshot` precomputed caches.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SnapshotCacheCounters {
+    pub cache_hit_count: u64,
+    pub cache_miss_count: u64,
+    pub cache_invalidation_count: u64,
+}
+
+impl SnapshotCacheCounters {
+    #[must_use]
+    pub fn is_empty(self) -> bool {
+        self.cache_hit_count == 0
+            && self.cache_miss_count == 0
+            && self.cache_invalidation_count == 0
+    }
+
+    pub fn add_assign(&mut self, other: Self) {
+        self.cache_hit_count = self.cache_hit_count.saturating_add(other.cache_hit_count);
+        self.cache_miss_count = self.cache_miss_count.saturating_add(other.cache_miss_count);
+        self.cache_invalidation_count = self
+            .cache_invalidation_count
+            .saturating_add(other.cache_invalidation_count);
+    }
 }
 
 /// Diagnostic record for one localized repair search at the revalidation seam.
@@ -1389,6 +1415,7 @@ impl PlanningPipelineTrace {
 pub struct DecisionTraceSink {
     traces: Vec<AgentDecisionTrace>,
     opportunity_compiler_loads: BTreeMap<(EntityId, Tick), OpportunityCompilerLoad>,
+    snapshot_cache_counters: BTreeMap<(EntityId, Tick), SnapshotCacheCounters>,
 }
 
 impl DecisionTraceSink {
@@ -1396,6 +1423,7 @@ impl DecisionTraceSink {
         Self {
             traces: Vec::new(),
             opportunity_compiler_loads: BTreeMap::new(),
+            snapshot_cache_counters: BTreeMap::new(),
         }
     }
 
@@ -1403,6 +1431,10 @@ impl DecisionTraceSink {
         if let Some(load) = trace.opportunity_compiler_load {
             self.opportunity_compiler_loads
                 .insert((trace.agent, trace.tick), load);
+        }
+        if let Some(counters) = trace.snapshot_cache_counters {
+            self.snapshot_cache_counters
+                .insert((trace.agent, trace.tick), counters);
         }
         self.traces.push(trace);
     }
@@ -1422,6 +1454,23 @@ impl DecisionTraceSink {
         tick: Tick,
     ) -> Option<&OpportunityCompilerLoad> {
         self.opportunity_compiler_loads.get(&(agent, tick))
+    }
+
+    pub fn record_snapshot_cache_counters(
+        &mut self,
+        agent: EntityId,
+        tick: Tick,
+        counters: SnapshotCacheCounters,
+    ) {
+        self.snapshot_cache_counters.insert((agent, tick), counters);
+    }
+
+    pub fn snapshot_cache_counters(
+        &self,
+        agent: EntityId,
+        tick: Tick,
+    ) -> Option<&SnapshotCacheCounters> {
+        self.snapshot_cache_counters.get(&(agent, tick))
     }
 
     pub fn traces(&self) -> &[AgentDecisionTrace] {
@@ -1464,6 +1513,7 @@ impl DecisionTraceSink {
     pub fn clear(&mut self) {
         self.traces.clear();
         self.opportunity_compiler_loads.clear();
+        self.snapshot_cache_counters.clear();
     }
 
     /// Print a human-readable summary for one agent across all recorded ticks.
@@ -2684,6 +2734,7 @@ mod tests {
             tick: Tick(8),
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            snapshot_cache_counters: None,
             repair_attempts: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
@@ -2774,6 +2825,7 @@ mod tests {
             tick,
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            snapshot_cache_counters: None,
             repair_attempts: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Dead,
@@ -2837,6 +2889,7 @@ mod tests {
             tick,
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            snapshot_cache_counters: None,
             repair_attempts: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
@@ -2897,6 +2950,7 @@ mod tests {
             tick: Tick(5),
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            snapshot_cache_counters: None,
             repair_attempts: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
@@ -3001,6 +3055,24 @@ mod tests {
         sink.record(trace);
 
         assert_eq!(sink.opportunity_compiler_load(agent, tick), Some(&load));
+    }
+
+    #[test]
+    fn sink_records_snapshot_cache_counters_by_agent_tick() {
+        let mut sink = DecisionTraceSink::new();
+        let agent = entity(0);
+        let tick = Tick(4);
+        let counters = SnapshotCacheCounters {
+            cache_hit_count: 5,
+            cache_miss_count: 2,
+            cache_invalidation_count: 0,
+        };
+        let mut trace = dead_trace(agent, tick);
+        trace.snapshot_cache_counters = Some(counters);
+
+        sink.record(trace);
+
+        assert_eq!(sink.snapshot_cache_counters(agent, tick), Some(&counters));
     }
 
     #[test]
@@ -5406,6 +5478,7 @@ mod tests {
             tick: Tick(5),
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            snapshot_cache_counters: None,
             repair_attempts: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {

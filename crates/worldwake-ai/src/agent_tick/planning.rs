@@ -7,8 +7,9 @@ use crate::decision_trace::{
     PlanSearchTrace, PlannedStepSummary, PortfolioSlotTrace, PortfolioTrace, RankedGoalSummary,
     SameGoalPlanningStopReason, SameGoalPlanningTrace, SelectedPlanReplacementKind,
     SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
-    SelectedPlanTrace, SelectionTrace, SideBenefitTrace, SnapshotContinuationOutcome,
-    SnapshotContinuationTrace, StrategicStepTrace, TargetBeliefPresence,
+    SelectedPlanTrace, SelectionTrace, SideBenefitTrace, SnapshotCacheCounters,
+    SnapshotContinuationOutcome, SnapshotContinuationTrace, StrategicStepTrace,
+    TargetBeliefPresence,
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
 use crate::feasibility_probe;
@@ -86,6 +87,7 @@ type PlanningStepTraceResult = (
     Option<PlanSearchTrace>,
     Option<SelectionTrace>,
     Option<PortfolioTrace>,
+    Option<SnapshotCacheCounters>,
     BTreeSet<worldwake_core::HomeostaticNeedId>,
 );
 
@@ -95,6 +97,7 @@ pub(super) struct CandidatePlanningPass {
     plausible_slots: Vec<SlotKind>,
     search_order: Vec<OpportunityKey>,
     plans: Vec<CandidatePlanSearch>,
+    snapshot_cache_counters: Option<SnapshotCacheCounters>,
 }
 
 impl CandidatePlanningPass {
@@ -604,6 +607,7 @@ pub(super) fn build_candidate_plans_with_sources(
             plausible_slots,
             search_order,
             plans: Vec::new(),
+            snapshot_cache_counters: None,
         };
     }
 
@@ -621,6 +625,8 @@ pub(super) fn build_candidate_plans_with_sources(
         })
         .collect::<BTreeMap<_, _>>();
     let mut results = Vec::with_capacity(search_order.len().min(candidate_cap));
+    let mut snapshot_cache_counters = SnapshotCacheCounters::default();
+    let mut snapshot_count = 0usize;
     let mut continue_same_goal_after_found = None;
     for opportunity in search_order.iter().take(candidate_cap) {
         let ranked = admitted_by_opportunity
@@ -731,6 +737,8 @@ pub(super) fn build_candidate_plans_with_sources(
             | PlanSearchResult::BudgetExhausted { .. }
             | PlanSearchResult::FrontierExhausted { .. } => None,
         };
+        snapshot_cache_counters.add_assign(snapshot.snapshot_cache_counters());
+        snapshot_count += 1;
         results.push(CandidatePlanSearch {
             opportunity,
             result,
@@ -748,6 +756,7 @@ pub(super) fn build_candidate_plans_with_sources(
         plausible_slots,
         search_order,
         plans: results,
+        snapshot_cache_counters: (snapshot_count > 0).then_some(snapshot_cache_counters),
     }
 }
 
@@ -1993,7 +2002,7 @@ fn plan_and_validate_next_step_with_opportunity_index(
 
 /// Wrapper around `plan_and_validate_next_step` that also captures trace data.
 ///
-/// Returns `(next_step, valid, plan_continued, plan_search_trace, selection_trace, pending_tracker_increments)`.
+/// Returns `(next_step, valid, plan_continued, trace surfaces, pending_tracker_increments)`.
 #[cfg(test)]
 #[allow(
     clippy::too_many_arguments,
@@ -2113,7 +2122,7 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
             recipe_registry,
             opportunity_index,
         );
-        return (step, valid, false, None, None, None, BTreeSet::new());
+        return (step, valid, false, None, None, None, None, BTreeSet::new());
     }
 
     // Traced path: inline the logic to capture intermediate results.
@@ -2133,6 +2142,7 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
     };
     let mut plan_continued = false;
     let mut pending_tracker_increments = BTreeSet::new();
+    let mut snapshot_cache_counters = None;
 
     let should_plan = !runtime.dirty.is_empty() || has_pending_budget_retry(runtime, tick);
     if should_plan {
@@ -2187,6 +2197,7 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
                         Some(plan_search_trace),
                         Some(selection_trace),
                         None,
+                        None,
                         BTreeSet::new(),
                     );
                 }
@@ -2235,6 +2246,7 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
             candidate_sources,
             opportunity_index,
         );
+        snapshot_cache_counters = plans.snapshot_cache_counters;
         portfolio_trace = Some(plans.portfolio_trace());
 
         pending_tracker_increments = record_exhausted_goals(
@@ -2498,6 +2510,7 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
         Some(plan_search_trace),
         Some(selection_trace),
         portfolio_trace,
+        snapshot_cache_counters,
         pending_tracker_increments,
     )
 }
@@ -4188,6 +4201,7 @@ mod tests {
                 },
                 PlanSearchResult::FrontierExhausted { expansions_used: 1 },
             )],
+            snapshot_cache_counters: None,
         };
 
         let trace = pass.portfolio_trace();
@@ -5590,7 +5604,7 @@ mod tests {
         let mut facility_intents = worldwake_core::ContentionIntents::default();
 
         let mut event_log = EventLog::new();
-        let (_, _, _, plan_search_trace, _, _, _) = super::plan_and_validate_next_step_traced(
+        let (_, _, _, plan_search_trace, _, _, _, _) = super::plan_and_validate_next_step_traced(
             &mut world,
             &mut event_log,
             &scheduler,
