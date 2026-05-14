@@ -4029,6 +4029,7 @@ dependencies = [
  "blake3",
  "ron",
  "serde",
+ "serde_json",
  "worldwake-cli",
  "worldwake-core",
  "worldwake-sim",

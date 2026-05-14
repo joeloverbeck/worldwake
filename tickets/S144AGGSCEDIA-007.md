@@ -13,7 +13,7 @@ S144's deterministic report needs a regression guard. Without a golden test and 
 ## Assumption Reassessment (2026-05-14)
 
 1. `crates/worldwake-ai/tests/golden_scenario_diagnostics.rs` does not exist; `crates/worldwake-ai/tests/fixtures/` exists (currently holds `portfolio-planning.ron`). Golden tests follow the `crates/worldwake-ai/tests/golden_*.rs` naming convention. This is net-new golden/E2E coverage; it depends on `build_scenario_diagnostics` (ticket 005) and the observer JSON/top-N surfaces (ticket 006).
-2. S144 spec D9+D10 (`specs/S144-aggregate-scenario-diagnostics.md`) specify four golden checks (determinism, schema coverage on `survival-baseline.ron`, top-N coverage, JSON round-trip) plus a committed `crates/worldwake-ai/tests/fixtures/expected-scenario-diagnostics.json` fixture at the project's standard seed. `scenarios/survival-baseline.ron` exists (seed 104004, 1440-tick observer run). `scripts/golden_inventory.py` regenerates the golden inventory docs — adding a new `golden_*.rs` file requires running `python3 scripts/golden_inventory.py --write --check-docs`.
+2. S144 spec D9+D10 (`specs/S144-aggregate-scenario-diagnostics.md`) specify four golden checks (determinism, schema coverage on `survival-baseline.ron`, top-N coverage, JSON round-trip through the observer representation) plus a committed `crates/worldwake-ai/tests/fixtures/expected-scenario-diagnostics.json` fixture at the project's standard seed. `scenarios/survival-baseline.ron` exists (seed 104004, 1440-tick observer run). `scripts/golden_inventory.py` regenerates the golden inventory docs — adding a new `golden_*.rs` file requires running `python3 scripts/golden_inventory.py --write --check-docs`.
 3. Mixed-layer shared boundary under audit: this ticket exercises the `build_scenario_diagnostics` contract (ticket 005) and the observer rendering/CLI contract (ticket 006). The fixture and the golden test are inseparable — the test asserts the aggregator output against the committed fixture, so they land together.
 
 ## Architecture Check
@@ -25,14 +25,14 @@ S144's deterministic report needs a regression guard. Without a golden test and 
 
 1. Determinism (same scenario + seed → identical report) -> golden test re-running the full pipeline.
 2. Schema coverage (every `ScenarioDiagnosticsReport` field populated for `survival-baseline.ron`) -> golden assertion against the committed fixture.
-3. JSON round-trip + top-N coverage -> golden assertions exercising the observer surfaces from ticket 006.
+3. JSON round-trip through the observer representation + top-N coverage -> golden assertions exercising the observer surfaces from ticket 006.
 4. Test-only ticket: the proof surface is golden/E2E coverage over `survival-baseline.ron`; there is no production decision/action/event layer because the ticket adds no engine code.
 
 ## What to Change
 
 ### 1. New golden test file
 
-Create `crates/worldwake-ai/tests/golden_scenario_diagnostics.rs` covering: determinism (same scenario + seed → identical report), schema coverage (every field populated for `survival-baseline.ron`), top-N coverage (`--diagnostics-top-n 3` → 3 entries + "...others"), JSON round-trip (parses back to identical structure).
+Create `crates/worldwake-ai/tests/golden_scenario_diagnostics.rs` covering: determinism (same scenario + seed → identical report), schema coverage (every field populated for `survival-baseline.ron`), top-N coverage (`--diagnostics-top-n 3` → 3 entries + "...others"), JSON round-trip through the observer representation (parses back to identical structure).
 
 ### 2. Committed regression fixture
 
@@ -62,7 +62,7 @@ Run `python3 scripts/golden_inventory.py --write --check-docs` and commit the up
 1. `golden_scenario_diagnostics` — determinism: two runs of the same scenario + seed produce an identical report.
 2. `golden_scenario_diagnostics` — schema coverage: every `ScenarioDiagnosticsReport` field is populated for `survival-baseline.ron`.
 3. `golden_scenario_diagnostics` — top-N: `--diagnostics-top-n 3` produces 3 entries plus "...others".
-4. `golden_scenario_diagnostics` — JSON round-trip: serialized output parses back to an identical structure and matches the committed fixture.
+4. `golden_scenario_diagnostics` — JSON round-trip: observer JSON output parses back to an identical structure and matches the committed fixture.
 5. Existing suite: `cargo test -p worldwake-ai`
 
 ### Invariants
@@ -74,7 +74,7 @@ Run `python3 scripts/golden_inventory.py --write --check-docs` and commit the up
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/tests/golden_scenario_diagnostics.rs` — the four S144 D9 checks (determinism, schema coverage, top-N, JSON round-trip).
+1. `crates/worldwake-ai/tests/golden_scenario_diagnostics.rs` — the four S144 D9 checks (determinism, schema coverage, top-N, observer JSON round-trip).
 
 ### Commands
 

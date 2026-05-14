@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: archive/tickets/S144AGGSCEDIA-003.md, S144AGGSCEDIA-004
+**Deps**: archive/tickets/S144AGGSCEDIA-003.md, archive/tickets/S144AGGSCEDIA-004.md
 
 ## Problem
 
@@ -71,7 +71,7 @@ Add `pub mod aggregator;` to `scenario_diagnostics/mod.rs` and re-export `build_
 ### Invariants
 
 1. The aggregator is pure — no I/O, no mutation of any input, no global-state reads (FND-26, FND-29A).
-2. Output determinism — identical inputs always yield a byte-identical report (CLAUDE.md Determinism invariant).
+2. Output determinism — identical inputs always yield a byte-identical report (AGENTS.md determinism invariant).
 3. No new event tags and no engine coupling are introduced.
 
 ## Test Plan

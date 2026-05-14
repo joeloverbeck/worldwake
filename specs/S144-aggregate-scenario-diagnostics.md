@@ -32,7 +32,7 @@ Phase 12: AI Architecture Evolution — Draft
 ## Design Goals
 
 1. **Aggregate-only, never authoritative.** `ScenarioDiagnosticsReport` is a derived view over append-only traces + event log. Deleting it and recomputing produces an identical report.
-2. **Deterministic — logical counts only, no wall-clock.** Same seed, same scenario, same final tick → byte-identical report. Every metric the report carries is a deterministic logical quantity (counts, depths, expansion totals, tick-delta distributions). Wall-clock timings (`std::time::Duration`, nanosecond elapsed) are forbidden in the report — they would break determinism, the D9 golden, and the D10 committed fixture, and they violate CLAUDE.md's "no wall-clock time" invariant. The pre-existing `perf_telemetry.rs` early/late wall-clock timing infrastructure is *not* consumed by S144.
+2. **Deterministic — logical counts only, no wall-clock.** Same seed, same scenario, same final tick → byte-identical report. Every metric the report carries is a deterministic logical quantity (counts, depths, expansion totals, tick-delta distributions). Wall-clock timings (`std::time::Duration`, nanosecond elapsed) are forbidden in the report — they would break determinism, the D9 golden, and the D10 committed fixture, and they violate AGENTS.md's no wall-clock/determinism invariant. The pre-existing `perf_telemetry.rs` early/late wall-clock timing infrastructure is *not* consumed by S144.
 3. **No new engine coupling.** No new `SystemFn`, no new event tags, no new ECS components. The aggregator reads existing surfaces only; D8 adds only read-only logical counters to data structures the AI crate already owns.
 4. **Useful for tuning before tuning happens.** Specifically: per-goal-kind plan-attempt budget exhaustion ratio, frontier-exhaustion rate, p95 plan depth, repair attempted-vs-succeeded ratio, candidate-suppression counts by category.
 5. **Anomaly detectors retained.** The existing 9 detectors keep their format; S144 adds a parallel "metrics" channel of rolled-up histograms and distributions.
@@ -131,7 +131,7 @@ pub struct PerformanceMetrics {
 }
 ```
 
-`Permille` for all ratios; `PercentileBucket` for distributions. No floats. The whole tree must derive `Serialize`/`Deserialize` (D7 JSON output, D9 round-trip, D10 fixture), so every key and value type must be serde-ready: `GoalKind` (`crates/worldwake-core/src/goal.rs:62` — derives `Copy, Ord, Hash, Serialize, Deserialize`), `PlanTerminalKind` (`crates/worldwake-ai/src/planner_ops.rs` — serde-ready), `Discrepancy` (`crates/worldwake-core/src/discrepancy.rs:9` — serde-ready), `Permille`, `PercentileBucket`, `SlotKind` (made serde-ready by D3), and `CandidateSuppressionCategory` (D5).
+`Permille` for all ratios; `PercentileBucket` for distributions. No floats. The whole tree must derive `Serialize`/`Deserialize` (D7 JSON output, D9 round-trip, D10 fixture), so every key and value type must be serde-ready: `GoalKind` (`crates/worldwake-core/src/goal.rs:62` — derives `Copy, Ord, Hash, Serialize, Deserialize`), `PlanTerminalKind` (`crates/worldwake-ai/src/planner_ops.rs` — serde-ready), `Discrepancy` (`crates/worldwake-core/src/discrepancy.rs:9` — serde-ready), `Permille`, `PercentileBucket`, `SlotKind` (made serde-ready by D3), and `CandidateSuppressionCategory` (D5). The type tree is format-agnostic serde data; observer/fixture JSON must use a deterministic representation that handles payload-bearing map keys instead of assuming every `BTreeMap<GoalKind, _>` or `BTreeMap<Discrepancy, _>` key can be emitted as a raw JSON object key.
 
 Type-reference notes:
 
@@ -229,7 +229,7 @@ fn render_scenario_diagnostics_section(
 ) -> io::Result<()>;
 ```
 
-Section 13 is the next available section number (the observer currently renders through Section 12, Contention). Default text format renders tables. JSON format emits the full report verbatim. The renderer follows the existing `render_*_section` naming pattern from observer.rs.
+Section 13 is the next available section number (the observer currently renders through Section 12, Contention). Default text format renders tables. JSON format emits the report through a deterministic JSON representation owned by the observer renderer; it must not rely on raw JSON object keys for payload-bearing enum maps. The renderer follows the existing `render_*_section` naming pattern from observer.rs.
 
 ### D7: CLI flags
 
