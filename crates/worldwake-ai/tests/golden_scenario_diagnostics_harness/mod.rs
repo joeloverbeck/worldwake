@@ -1,5 +1,7 @@
 //! Golden regression coverage for aggregate scenario diagnostics.
+#![allow(dead_code)]
 
+#[path = "../golden_harness/mod.rs"]
 mod golden_harness;
 
 use std::{path::PathBuf, sync::OnceLock};
@@ -18,7 +20,8 @@ use worldwake_cli::{
 use worldwake_core::Tick;
 
 const SURVIVAL_TICKS: u64 = 1440;
-const EXPECTED_DIAGNOSTICS_JSON: &str = include_str!("fixtures/expected-scenario-diagnostics.json");
+const EXPECTED_DIAGNOSTICS_JSON: &str =
+    include_str!("../fixtures/expected-scenario-diagnostics.json");
 static SURVIVAL_BASELINE_DIAGNOSTICS: OnceLock<ScenarioDiagnosticsReport> = OnceLock::new();
 
 fn scenario_path() -> PathBuf {
@@ -91,12 +94,7 @@ fn assert_top_n_fixture_has_overflow(report: &ScenarioDiagnosticsReport) {
     );
 }
 
-// Scenario 421: Survival-baseline diagnostics fixture
-// Setup: Runs scenarios/survival-baseline.ron for 1440 ticks with decision tracing enabled.
-// Proves: Aggregate scenario diagnostics are deterministic, schema-covered, observer-JSON round-trippable, and fixture-stable.
-// Chain: Scenario spawn -> AI decision traces -> scenario diagnostics aggregation -> observer JSON representation.
-#[test]
-fn golden_scenario_diagnostics_survival_baseline_fixture_is_stable() {
+pub fn assert_survival_baseline_fixture_is_stable() {
     let report = survival_baseline_diagnostics();
 
     assert_schema_covered(report);
@@ -115,8 +113,7 @@ fn golden_scenario_diagnostics_survival_baseline_fixture_is_stable() {
     );
 }
 
-#[test]
-fn golden_scenario_diagnostics_survival_baseline_replays_deterministically() {
+pub fn assert_survival_baseline_replays_deterministically() {
     let first = survival_baseline_diagnostics();
     let second = run_survival_baseline_diagnostics();
     assert_eq!(*first, second, "diagnostics report should be deterministic");

@@ -1,0 +1,45 @@
+# Family-per-matrix-workflow convention: add diagnostics cases to the matrix
+# below; keep 1440-tick traced diagnostics runs out of default cargo test.
+name: Golden Scenario Diagnostics
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+concurrency:
+  group: golden-scenario-diagnostics-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scenario:
+    name: golden-scenario-diagnostics / ${{ matrix.scenario }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: fixture
+            test_target: golden_scenario_diagnostics_fixture
+          - scenario: replay
+            test_target: golden_scenario_diagnostics_replay
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.0
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: golden-scenario-diagnostics-${{ matrix.scenario }}
+
+      - name: Run ${{ matrix.test_target }}
+        run: cargo test --release -p worldwake-ai --test ${{ matrix.test_target }} -- --ignored --test-threads=1

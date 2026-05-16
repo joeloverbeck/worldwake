@@ -79,7 +79,7 @@ Use the least disruptive cleanup that solves the space problem:
 3. Put especially heavy temporary verification in a disposable target directory:
 
    ```bash
-   CARGO_TARGET_DIR=/tmp/worldwake-target cargo test -p worldwake-ai --test golden_scenario_diagnostics
+   CARGO_TARGET_DIR=/tmp/worldwake-target cargo test -p worldwake-ai --test golden_scenario_diagnostics_fixture -- --ignored --test-threads=1
    rm -rf /tmp/worldwake-target
    ```
 

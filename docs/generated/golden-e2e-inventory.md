@@ -5,8 +5,8 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 46
-- Files contributing `golden_*` tests: 46
+- Golden test files: 48
+- Files contributing `golden_*` tests: 48
 - Total `golden_*` tests: 220
 
 ## Per-File Inventory
@@ -34,10 +34,12 @@ Do not hand-edit it.
 | `golden_perception_omission.rs` | 3 |
 | `golden_place_dirtiness.rs` | 9 |
 | `golden_plan_repair.rs` | 7 |
-| `golden_planner_pathology.rs` | 3 |
+| `golden_planner_pathology.rs` | 2 |
+| `golden_planner_pathology_degenerate.rs` | 1 |
 | `golden_portfolio_planning.rs` | 1 |
 | `golden_quantity_aware_acquisition.rs` | 5 |
-| `golden_scenario_diagnostics.rs` | 2 |
+| `golden_scenario_diagnostics_fixture.rs` | 1 |
+| `golden_scenario_diagnostics_replay.rs` | 1 |
 | `golden_simulation_gaps.rs` | 5 |
 | `golden_sleep_episode.rs` | 6 |
 | `golden_source_composite.rs` | 6 |
@@ -255,8 +257,11 @@ Do not hand-edit it.
 ### `golden_planner_pathology.rs`
 
 - `cross_location_water_acquisition_succeeds_without_budget_exhaustion`
-- `degenerate_zero_step_loop_blocks_actionable_goals`
 - `obligation_satiation_allows_survival_needs_to_override_posting`
+
+### `golden_planner_pathology_degenerate.rs`
+
+- `degenerate_zero_step_loop_blocks_actionable_goals`
 
 ### `golden_portfolio_planning.rs`
 
@@ -270,9 +275,12 @@ Do not hand-edit it.
 - `golden_s126_long_horizon_scales_desired_target`
 - `golden_scenario_e_queue_abandonment_promotes_next_actor`
 
-### `golden_scenario_diagnostics.rs`
+### `golden_scenario_diagnostics_fixture.rs`
 
 - `golden_scenario_diagnostics_survival_baseline_fixture_is_stable`
+
+### `golden_scenario_diagnostics_replay.rs`
+
 - `golden_scenario_diagnostics_survival_baseline_replays_deterministically`
 
 ### `golden_simulation_gaps.rs`
