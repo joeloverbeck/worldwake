@@ -1,6 +1,6 @@
 # S145PLASUBHAR-004: Cache compound-order regression tests + module doc
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — module-level doc comment on `planning_state.rs` (D5 subsumed); no runtime behavior change
@@ -23,18 +23,18 @@
 1. Co-locating the doc comment (D5) with the enforcing test (D3) creates a single review surface for the cache invariant — a future reader who modifies `PlanningState` sees both the documented contract and the test that fails if the contract is violated. This is FND-29 (debuggability) at the architecture-comment layer rather than the trace layer.
 2. The compound-order test exercises the cross-product of the six invalidating mutators with their inverse-order pairings, rather than testing each mutator in isolation. This catches order-dependent caching bugs that single-mutator tests cannot — for example, a future cache that memoizes by mutator-call-order rather than by resulting substrate state would pass the existing `:4179` / `:4210` tests but fail the new compound-order test.
 
-## Verification Layers
+## Verified Layers
 
 1. Cache compound-order invariance → focused unit test `cache_results_are_order_independent_across_sibling_branches` in `planning_state.rs` `#[cfg(test)]` module — asserts `entities_at` and `effective_place_ref` results are equal across both mutation orderings.
 2. Cache invalidation counter increments correctly across mutators → focused unit test `cache_invalidation_count_increments_on_each_mutation` — asserts `invalidations` counter advances by exactly 1 per invalidating mutator and does NOT advance for `set_quantity_ref`.
 3. Documented invariant surface → module-level doc comment readable via `cargo doc -p worldwake-ai --no-deps --open` (no runtime proof surface; documentation correctness is reviewed at merge time).
 4. Single-layer ticket (focused unit tests + documentation); no action-trace, event-log, or decision-trace surface is relevant because these tests exercise planner-internal substrate that does not mutate world state. Verification Layer 6 single-layer rationale applies.
 
-## What to Change
+## Landed Changes
 
-### 1. Add compound-order regression test (D3)
+### 1. Compound-order regression test (D3)
 
-In `crates/worldwake-ai/src/planning_state.rs` `#[cfg(test)]` module, add:
+In `crates/worldwake-ai/src/planning_state.rs` `#[cfg(test)]` module, this ticket added:
 
 ```rust
 #[test]
@@ -54,11 +54,11 @@ fn cache_results_are_order_independent_across_sibling_branches() {
 }
 ```
 
-The test must use mutator pairs drawn from the full set (`move_lot_ref_to_holder`, `move_lot_ref_to_ground`, `move_entity_ref`, `set_possessor_ref`, `set_container_ref`, `mark_removed_ref`).
+The landed test applies all six invalidating mutators to distinct authoritative entities in forward and reverse order, primes cache reads before branch mutation, and compares `entities_at` plus `effective_place_ref` results across both branches.
 
-### 2. Add cache-counter-invariant test (D3.5)
+### 2. Cache-counter-invariant test (D3.5)
 
-In the same `#[cfg(test)]` module, add (depends on ticket 003's `PlanningStateCacheCounters`):
+In the same `#[cfg(test)]` module, this ticket added:
 
 ```rust
 #[test]
@@ -74,9 +74,9 @@ fn cache_invalidation_count_increments_on_each_mutation() {
 }
 ```
 
-### 3. Add module-level doc comment (D5)
+### 3. Module-level doc comment (D5)
 
-At the top of `crates/worldwake-ai/src/planning_state.rs`, before the existing `use` declarations, add a module doc comment:
+At the top of `crates/worldwake-ai/src/planning_state.rs`, before the existing `use` declarations, this ticket added a module doc comment:
 
 ```rust
 //! Planning-state branch evaluation substrate for the GOAP planner.
@@ -107,7 +107,7 @@ At the top of `crates/worldwake-ai/src/planning_state.rs`, before the existing `
 //! Derived Summaries Are Caches, Never Truth).
 ```
 
-## Files to Touch
+## Landed Files
 
 - `crates/worldwake-ai/src/planning_state.rs` (modify — add 2 new tests in `#[cfg(test)]` module + module-level doc comment)
 
@@ -117,30 +117,46 @@ At the top of `crates/worldwake-ai/src/planning_state.rs`, before the existing `
 - No new mutator added to `PlanningState` — the six existing invalidating mutators and one no-op mutator are exercised as-is.
 - No introduction of new public API surface — both tests and the doc comment are scope-limited to the module.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests That Passed
 
-1. New `cache_results_are_order_independent_across_sibling_branches` passes against the current cache implementation.
-2. New `cache_invalidation_count_increments_on_each_mutation` passes — counter advances by 1 per invalidating mutator and stays unchanged for `set_quantity_ref`.
-3. Existing `entities_at_cache_is_invalidated_when_holder_moves_across_branches` and `effective_place_cache_is_invalidated_when_holder_moves_across_branches` continue to pass unchanged.
-4. Existing suite: `cargo test --workspace`.
+1. `cache_results_are_order_independent_across_sibling_branches` passed against the landed cache implementation.
+2. `cache_invalidation_count_increments_on_each_mutation` passed — counter advances by 1 per invalidating mutator and stays unchanged for `set_quantity_ref`.
+3. Existing `entities_at_cache_is_invalidated_when_holder_moves_across_branches` and `effective_place_cache_is_invalidated_when_holder_moves_across_branches` passed unchanged through the `planning_state` module run.
+4. Existing suite passed through `cargo test --workspace` and `scripts/verify.sh`.
 
 ### Invariants
 
 1. `cache_results_are_order_independent_across_sibling_branches` is a permanent regression: any future cache implementation that introduces order-dependence in `entities_at_cache` or `effective_place_cache` outputs must cause this test to fail.
 2. The doc comment's mutator list matches the actual six invalidating mutators in `planning_state.rs`. If a future change adds a seventh invalidating mutator (or removes one), the doc comment must be updated in the same change.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
 1. `crates/worldwake-ai/src/planning_state.rs` (modify, `#[cfg(test)]` module) — `cache_results_are_order_independent_across_sibling_branches` (compound-order D3 coverage).
 2. `crates/worldwake-ai/src/planning_state.rs` (modify, `#[cfg(test)]` module) — `cache_invalidation_count_increments_on_each_mutation` (D3.5 counter coverage; depends on ticket 003's `PlanningStateCacheCounters`).
 
-### Commands
+### Passed Commands
 
 1. `cargo test -p worldwake-ai planning_state::tests::cache_results_are_order_independent_across_sibling_branches`
 2. `cargo test -p worldwake-ai planning_state::tests::cache_invalidation_count_increments_on_each_mutation`
 3. `cargo test -p worldwake-ai planning_state`
 4. `scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-05-16.
+
+- Added the `PlanningState` module-level cache invariant comment describing the memoized `entities_at_cache` and `effective_place_cache`, the six invalidating mutators, the `set_quantity_ref` no-op control, and the requirement that derived cache state never become source of truth.
+- Added `cache_results_are_order_independent_across_sibling_branches`, which primes cache reads, applies all six invalidating mutators to distinct authoritative entities in forward and reverse order on sibling branches, and asserts equal `entities_at` plus `effective_place_ref` outputs.
+- Added `cache_invalidation_count_increments_on_each_mutation`, which proves each invalidating mutator advances `PlanningStateCacheCounters.invalidations` by exactly one and `set_quantity_ref` does not.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib planning_state::tests::cache_results_are_order_independent_across_sibling_branches -- --exact`
+- Passed `cargo test -p worldwake-ai --lib planning_state::tests::cache_invalidation_count_increments_on_each_mutation -- --exact`
+- Passed `cargo test -p worldwake-ai --lib planning_state`
+- Passed `cargo test --workspace`
+- Passed `scripts/verify.sh`

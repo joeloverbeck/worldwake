@@ -1,3 +1,29 @@
+//! Planning-state branch evaluation substrate for the GOAP planner.
+//!
+//! # Cache invariant
+//!
+//! `PlanningState` carries two pure-function memoization caches:
+//! `entities_at_cache` and `effective_place_cache`. These caches are
+//! memoization only; they cache pure functions of `PlanningState`'s mutable
+//! substrate: place overrides, possessor overrides, container overrides, and
+//! the removed-entity set.
+//!
+//! Any mutation that could change a cached function's output must call
+//! `invalidate_entities_at_cache` before the read path can observe stale data.
+//! The six mutators that currently invalidate are `move_lot_ref_to_holder`,
+//! `move_lot_ref_to_ground`, `move_entity_ref`, `set_possessor_ref`,
+//! `set_container_ref`, and `mark_removed_ref`. `set_quantity_ref`
+//! deliberately does not invalidate because commodity quantity does not affect
+//! entity placement.
+//!
+//! Sibling search branches that mutate state in different orders must produce
+//! equal cache outputs. The compound-order regression test
+//! `cache_results_are_order_independent_across_sibling_branches` enforces this
+//! invariant across the full mutator surface.
+//!
+//! The cache must never be promoted to source of truth; derived summaries are
+//! caches, never truth.
+
 use crate::PlanningStateCacheCounters;
 use crate::planning_snapshot::PlanningSnapshot;
 use crate::shared_collections::{SharedMap, SharedSet};
@@ -3235,6 +3261,196 @@ mod tests {
         (view, actor, town, field, bread)
     }
 
+    #[derive(Copy, Clone)]
+    enum CacheMutation {
+        MoveLotToHolder {
+            lot: PlanningEntityRef,
+            holder: PlanningEntityRef,
+            commodity: CommodityKind,
+        },
+        MoveLotToGround {
+            lot: PlanningEntityRef,
+            place: EntityId,
+            commodity: CommodityKind,
+        },
+        MoveEntity {
+            entity: PlanningEntityRef,
+            destination: EntityId,
+        },
+        SetPossessor {
+            entity: PlanningEntityRef,
+            holder: PlanningEntityRef,
+        },
+        SetContainer {
+            entity: PlanningEntityRef,
+            container: PlanningEntityRef,
+        },
+        MarkRemoved {
+            entity: PlanningEntityRef,
+        },
+        SetQuantity {
+            entity: PlanningEntityRef,
+            commodity: CommodityKind,
+        },
+    }
+
+    impl CacheMutation {
+        fn apply(self, state: PlanningState<'_>) -> PlanningState<'_> {
+            match self {
+                Self::MoveLotToHolder {
+                    lot,
+                    holder,
+                    commodity,
+                } => state.move_lot_ref_to_holder(lot, holder, commodity, Quantity(1)),
+                Self::MoveLotToGround {
+                    lot,
+                    place,
+                    commodity,
+                } => state.move_lot_ref_to_ground(lot, place, commodity, Quantity(1)),
+                Self::MoveEntity {
+                    entity,
+                    destination,
+                } => state.move_entity_ref(entity, destination),
+                Self::SetPossessor { entity, holder } => state.set_possessor_ref(entity, holder),
+                Self::SetContainer { entity, container } => {
+                    state.set_container_ref(entity, container)
+                }
+                Self::MarkRemoved { entity } => state.mark_removed_ref(entity),
+                Self::SetQuantity { entity, commodity } => {
+                    state.set_quantity_ref(entity, commodity, Quantity(7))
+                }
+            }
+        }
+    }
+
+    struct CacheMutationFixture {
+        view: StubBeliefView,
+        actor: EntityId,
+        town: EntityId,
+        field: EntityId,
+        refs_to_query: Vec<PlanningEntityRef>,
+        mutations: Vec<CacheMutation>,
+        quantity_control: CacheMutation,
+    }
+
+    fn cache_mutation_fixture() -> CacheMutationFixture {
+        let (mut view, actor, town, field, bread) = test_view();
+        let move_to_holder_lot = entity(21);
+        let move_to_ground_lot = entity(22);
+        let moved_entity = entity(23);
+        let possessed_entity = entity(24);
+        let contained_entity = entity(25);
+        let removed_entity = entity(26);
+        let container = entity(27);
+
+        for (entity, kind, place, commodity) in [
+            (
+                move_to_holder_lot,
+                EntityKind::ItemLot,
+                town,
+                Some(CommodityKind::Apple),
+            ),
+            (
+                move_to_ground_lot,
+                EntityKind::ItemLot,
+                town,
+                Some(CommodityKind::Water),
+            ),
+            (
+                moved_entity,
+                EntityKind::ItemLot,
+                town,
+                Some(CommodityKind::Bread),
+            ),
+            (
+                possessed_entity,
+                EntityKind::ItemLot,
+                field,
+                Some(CommodityKind::Apple),
+            ),
+            (
+                contained_entity,
+                EntityKind::ItemLot,
+                field,
+                Some(CommodityKind::Water),
+            ),
+            (
+                removed_entity,
+                EntityKind::ItemLot,
+                field,
+                Some(CommodityKind::Bread),
+            ),
+            (container, EntityKind::Container, town, None),
+        ] {
+            view.alive.insert(entity, true);
+            view.kinds.insert(entity, kind);
+            view.effective_places.insert(entity, place);
+            view.entities_at.entry(place).or_default().push(entity);
+            if let Some(commodity) = commodity {
+                view.item_lot_commodities.insert(entity, commodity);
+                view.commodity_quantities
+                    .insert((entity, commodity), Quantity(1));
+                view.entity_loads.insert(entity, LoadUnits(1));
+            }
+        }
+
+        let actor_ref = PlanningEntityRef::Authoritative(actor);
+        let refs_to_query = [
+            actor,
+            bread,
+            move_to_holder_lot,
+            move_to_ground_lot,
+            moved_entity,
+            possessed_entity,
+            contained_entity,
+            removed_entity,
+            container,
+        ]
+        .into_iter()
+        .map(PlanningEntityRef::Authoritative)
+        .collect::<Vec<_>>();
+        let mutations = vec![
+            CacheMutation::MoveLotToHolder {
+                lot: PlanningEntityRef::Authoritative(move_to_holder_lot),
+                holder: actor_ref,
+                commodity: CommodityKind::Apple,
+            },
+            CacheMutation::MoveLotToGround {
+                lot: PlanningEntityRef::Authoritative(move_to_ground_lot),
+                place: field,
+                commodity: CommodityKind::Water,
+            },
+            CacheMutation::MoveEntity {
+                entity: PlanningEntityRef::Authoritative(moved_entity),
+                destination: field,
+            },
+            CacheMutation::SetPossessor {
+                entity: PlanningEntityRef::Authoritative(possessed_entity),
+                holder: actor_ref,
+            },
+            CacheMutation::SetContainer {
+                entity: PlanningEntityRef::Authoritative(contained_entity),
+                container: PlanningEntityRef::Authoritative(container),
+            },
+            CacheMutation::MarkRemoved {
+                entity: PlanningEntityRef::Authoritative(removed_entity),
+            },
+        ];
+
+        CacheMutationFixture {
+            view,
+            actor,
+            town,
+            field,
+            refs_to_query,
+            mutations,
+            quantity_control: CacheMutation::SetQuantity {
+                entity: PlanningEntityRef::Authoritative(move_to_holder_lot),
+                commodity: CommodityKind::Apple,
+            },
+        }
+    }
+
     #[test]
     fn planning_state_implements_goal_and_runtime_surfaces() {
         fn assert_goal<T: GoalBeliefView>() {}
@@ -4247,6 +4463,88 @@ mod tests {
 
         assert_eq!(base.effective_place_ref(cargo_ref), Some(town));
         assert_eq!(moved.effective_place_ref(cargo_ref), Some(field));
+    }
+
+    #[test]
+    fn cache_results_are_order_independent_across_sibling_branches() {
+        let fixture = cache_mutation_fixture();
+        let snapshot = build_planning_snapshot(
+            &fixture.view,
+            fixture.actor,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            1,
+        );
+        let base = PlanningState::new(&snapshot);
+
+        for place in [fixture.town, fixture.field] {
+            let _ = SpatialBeliefView::entities_at(&base, place);
+        }
+        for entity in &fixture.refs_to_query {
+            let _ = base.effective_place_ref(*entity);
+        }
+
+        let forward = fixture
+            .mutations
+            .iter()
+            .copied()
+            .fold(base.clone(), |state, mutation| mutation.apply(state));
+        let reverse = fixture
+            .mutations
+            .iter()
+            .rev()
+            .copied()
+            .fold(base, |state, mutation| mutation.apply(state));
+
+        for place in [fixture.town, fixture.field] {
+            assert_eq!(
+                SpatialBeliefView::entities_at(&forward, place),
+                SpatialBeliefView::entities_at(&reverse, place),
+                "entities_at diverged for {place:?}"
+            );
+        }
+        for entity in &fixture.refs_to_query {
+            assert_eq!(
+                forward.effective_place_ref(*entity),
+                reverse.effective_place_ref(*entity),
+                "effective_place_ref diverged for {entity:?}"
+            );
+        }
+
+        assert_eq!(
+            SpatialBeliefView::entities_at(&forward, fixture.field),
+            vec![entity(22), entity(23)]
+        );
+        assert_eq!(
+            forward.effective_place_ref(PlanningEntityRef::Authoritative(entity(26))),
+            None
+        );
+    }
+
+    #[test]
+    fn cache_invalidation_count_increments_on_each_mutation() {
+        let fixture = cache_mutation_fixture();
+        let snapshot = build_planning_snapshot(
+            &fixture.view,
+            fixture.actor,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            1,
+        );
+
+        for mutation in fixture.mutations {
+            let state = PlanningState::new(&snapshot);
+            let before = state.cache_counters().invalidations;
+            let state = mutation.apply(state);
+
+            assert_eq!(state.cache_counters().invalidations, before + 1);
+        }
+
+        let state = PlanningState::new(&snapshot);
+        let before = state.cache_counters().invalidations;
+        let state = fixture.quantity_control.apply(state);
+
+        assert_eq!(state.cache_counters().invalidations, before);
     }
 
     #[test]
