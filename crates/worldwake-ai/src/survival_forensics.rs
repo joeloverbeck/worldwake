@@ -787,6 +787,7 @@ mod tests {
                             steps: Vec::new(),
                             terminal_kind: crate::PlanTerminalKind::GoalSatisfied,
                         },
+                        strategic_budget: None,
                         strategic_plan: None,
                         tactical_goal: None,
                         landmarks_extracted: 0,

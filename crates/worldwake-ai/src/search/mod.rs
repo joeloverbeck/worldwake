@@ -52,6 +52,7 @@ use worldwake_sim::{
 #[derive(Clone, Debug, Default)]
 pub(crate) struct SearchTraceMetadata {
     pub(crate) strategic_plan: Option<strategic::StrategicPlan>,
+    pub(crate) strategic_budget: Option<crate::decision_trace::StrategicBudgetTrace>,
     pub(crate) tactical_goal: Option<String>,
     pub(crate) landmarks_extracted: u16,
     pub(crate) landmark_orderings: u16,
@@ -584,15 +585,21 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
     // Pre-compute goal-relevant action defs once — invariant across expansions.
     let relevant_defs = candidates::relevant_action_defs(goal, semantics_table);
 
-    let strategic_plan = strategic::plan(snapshot, goal, execution_budget, recipes);
+    let strategic_result =
+        strategic::plan_with_budget_trace(snapshot, goal, execution_budget, recipes);
     let mut trace_state = SearchTraceMetadata {
-        strategic_plan: strategic_plan
+        strategic_plan: strategic_result
+            .plan
             .as_ref()
             .filter(|plan| !plan.steps.is_empty())
             .cloned(),
+        strategic_budget: strategic_result.budget_trace,
         ..SearchTraceMetadata::default()
     };
-    let first_strategic_step = strategic_plan.as_ref().and_then(|plan| plan.steps.first());
+    let first_strategic_step = strategic_result
+        .plan
+        .as_ref()
+        .and_then(|plan| plan.steps.first());
     let tactical_goal = TacticalGoal::from_strategic_step(goal, first_strategic_step, snapshot);
     trace_state.tactical_goal = tactical_goal.as_ref().map(|tg| format!("{tg:?}"));
     if should_fail_fast_for_missing_tactical_goal(first_strategic_step, tactical_goal.as_ref()) {

@@ -1,6 +1,9 @@
 #![allow(dead_code)]
 
-use crate::{GoalKindPlannerExt, GoalOffer, PlanningSnapshot, PlanningState};
+use crate::{
+    GoalKindPlannerExt, GoalOffer, PlanningSnapshot, PlanningState,
+    decision_trace::StrategicBudgetTrace,
+};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use worldwake_core::{
@@ -14,6 +17,12 @@ use worldwake_sim::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct StrategicPlan {
     pub steps: Vec<StrategicStep>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct StrategicSearchResult {
+    pub plan: Option<StrategicPlan>,
+    pub budget_trace: Option<StrategicBudgetTrace>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -75,13 +84,31 @@ pub(crate) fn plan(
     execution_budget: &ExecutionBudget,
     recipes: &RecipeRegistry,
 ) -> Option<StrategicPlan> {
+    plan_with_budget_trace(snapshot, goal, execution_budget, recipes).plan
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+pub(crate) fn plan_with_budget_trace(
+    snapshot: &PlanningSnapshot,
+    goal: &GoalOffer,
+    execution_budget: &ExecutionBudget,
+    recipes: &RecipeRegistry,
+) -> StrategicSearchResult {
     let state = PlanningState::new(snapshot);
     if root_goal_satisfaction_allowed(goal, &state) && goal.key.kind.is_satisfied(&state) {
-        return Some(StrategicPlan { steps: Vec::new() });
+        return StrategicSearchResult {
+            plan: Some(StrategicPlan { steps: Vec::new() }),
+            budget_trace: None,
+        };
     }
 
     let actor = snapshot.actor();
-    let actor_place = state.effective_place(actor)?;
+    let Some(actor_place) = state.effective_place(actor) else {
+        return StrategicSearchResult {
+            plan: None,
+            budget_trace: None,
+        };
+    };
     let goal_places = goal_places(goal, &state, recipes);
     let missing_commodities = missing_commodities(goal, &state, recipes, actor_place, &goal_places);
     let query_commodity = social_query_commodity(goal, &missing_commodities, recipes);
@@ -97,17 +124,27 @@ pub(crate) fn plan(
 
     if stages.is_empty() {
         if goal_places.contains(&actor_place) {
-            return Some(StrategicPlan { steps: Vec::new() });
+            return StrategicSearchResult {
+                plan: Some(StrategicPlan { steps: Vec::new() }),
+                budget_trace: None,
+            };
         }
-        return exploration_plan(snapshot, actor_place, &goal.key.kind)
+        let plan = exploration_plan(snapshot, actor_place, &goal.key.kind)
             .or_else(|| social_query_plan(snapshot, actor_place, query_commodity));
+        return StrategicSearchResult {
+            plan,
+            budget_trace: None,
+        };
     }
 
     let mut local_steps = Vec::new();
     consume_current_place_prerequisites(actor_place, &mut stages, &mut local_steps);
 
     if stages.is_empty() || matches_local_goal_stage(&stages, actor_place) {
-        return Some(StrategicPlan { steps: local_steps });
+        return StrategicSearchResult {
+            plan: Some(StrategicPlan { steps: local_steps }),
+            budget_trace: None,
+        };
     }
 
     let search_budget = execution_budget.strategic_budget_for_stages(stages.len());
@@ -123,7 +160,15 @@ pub(crate) fn plan(
 
     while let Some(node) = frontier.pop() {
         if node.stage_index >= stages.len() {
-            return Some(StrategicPlan { steps: node.steps });
+            return StrategicSearchResult {
+                plan: Some(StrategicPlan { steps: node.steps }),
+                budget_trace: Some(strategic_budget_trace(
+                    stages.len(),
+                    search_budget,
+                    expansions,
+                    false,
+                )),
+            };
         }
         if expansions >= search_budget {
             break;
@@ -161,7 +206,29 @@ pub(crate) fn plan(
         }
     }
 
-    None
+    StrategicSearchResult {
+        plan: None,
+        budget_trace: Some(strategic_budget_trace(
+            stages.len(),
+            search_budget,
+            expansions,
+            expansions >= search_budget,
+        )),
+    }
+}
+
+fn strategic_budget_trace(
+    stages_count: usize,
+    budget_total: usize,
+    budget_used: usize,
+    exhausted: bool,
+) -> StrategicBudgetTrace {
+    StrategicBudgetTrace {
+        stages_count: u16::try_from(stages_count).unwrap_or(u16::MAX),
+        budget_total: u32::try_from(budget_total).unwrap_or(u32::MAX),
+        budget_used: u32::try_from(budget_used).unwrap_or(u32::MAX),
+        exhausted,
+    }
 }
 
 fn goal_places(
@@ -1234,6 +1301,60 @@ mod tests {
         };
 
         assert!(plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).is_none());
+    }
+
+    #[test]
+    fn strategic_budget_trace_records_successful_stage_search() {
+        let actor = entity(1);
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let mut view = StubBeliefView::default();
+        register_agent(&mut view, actor, place_a);
+        connect(&mut view, place_a, place_b, 4);
+
+        let snapshot = snapshot(&view, actor, 1);
+        let goal = crate::GoalOffer {
+            key: worldwake_core::GoalKey::from(GoalKind::Patrol { place: place_b }),
+            anchor: OpportunityAnchor::Place(place_b),
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::from([place_b]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
+            acquisition_quantity: None,
+        };
+
+        let result =
+            super::plan_with_budget_trace(&snapshot, &goal, &base_budget(), &RecipeRegistry::new());
+
+        assert_eq!(result.plan.expect("strategic plan").steps.len(), 1);
+        assert_eq!(
+            result.budget_trace,
+            Some(crate::decision_trace::StrategicBudgetTrace {
+                stages_count: 1,
+                budget_total: 6,
+                budget_used: 1,
+                exhausted: false,
+            })
+        );
+    }
+
+    #[test]
+    fn strategic_budget_trace_marks_budget_exhaustion() {
+        let trace = super::strategic_budget_trace(5, 30, 30, true);
+
+        assert_eq!(
+            trace,
+            crate::decision_trace::StrategicBudgetTrace {
+                stages_count: 5,
+                budget_total: 30,
+                budget_used: 30,
+                exhausted: true,
+            }
+        );
     }
 
     #[test]

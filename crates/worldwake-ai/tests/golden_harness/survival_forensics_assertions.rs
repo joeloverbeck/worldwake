@@ -235,6 +235,7 @@ pub fn synthetic_planning_trace(
                     goal: selected_goal,
                     opportunity_anchor: OpportunityAnchor::None,
                     outcome: attempt_outcome,
+                    strategic_budget: None,
                     strategic_plan: None,
                     tactical_goal: None,
                     landmarks_extracted: 0,

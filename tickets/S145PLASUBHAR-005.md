@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: No (golden test only; tests the formula change shipped by ticket 001)
-**Deps**: archive/tickets/S145PLASUBHAR-001.md
+**Deps**: archive/tickets/S145PLASUBHAR-001.md, archive/tickets/S145PLASUBHAR-002.md
 
 ## Problem
 
@@ -22,13 +22,13 @@ S145 D1 (ticket 001) changes the strategic budget formula from `usize::max(1, ma
 ## Architecture Check
 
 1. The golden's primary assertion is on the strategic planner's *capability* (5-stage chains complete) rather than on a specific plan content. This keeps the golden robust to legitimate future planner improvements (e.g., alternative stage orderings, ranking adjustments) that change the specific plan steps but preserve completion.
-2. Per the P12-type performance-regression-guard pattern (CLAUDE.md FND-12 and `/spec-to-tickets` constraint), the golden also includes a metric threshold: the strategic search expansions used (`PlanAttemptTrace.strategic_budget.budget_used` from ticket 002, when available) or equivalent deterministic counter must remain at or below the formula-derived budget total. This catches regressions where a future change reverts the formula to the per-stage-unaware shape but the completion assertion still passes by accident.
+2. Per the P12-type performance-regression-guard pattern (CLAUDE.md FND-12 and `/spec-to-tickets` constraint), the golden also includes a metric threshold: the strategic search expansions used (`PlanAttemptTrace.strategic_budget.budget_used` from archived ticket 002) must remain at or below the formula-derived budget total. This catches regressions where a future change reverts the formula to the per-stage-unaware shape but the completion assertion still passes by accident.
 
 ## Verification Layers
 
 1. Strategic planner completes a 5-stage chain → assert `PlanSearchResult::Found` with `steps.len() >= 5` (or equivalent: terminal kind, plan depth) at the golden's outer-result surface.
 2. Strategic budget is consumed proportionally to stage count → assert recorded `budget_used <= budget_total` where `budget_total == ExecutionBudget::strategic_budget_for_stages(stages_count)` from ticket 001. Performance-regression guard.
-3. Decision trace surface: if ticket 002's `StrategicBudgetTrace` is available at test-write time (i.e., 002 has already merged), assert `strategic_budget` is `Some` with `exhausted: false` on the test agent's `PlanAttemptTrace`. If ticket 002 has not yet merged, omit this assertion and rely on the outer plan-result surface only — the golden remains the strongest available proof surface for the formula change (per `docs/precision-rules.md` Rule 15, the immediate proof at the strongest available lower layer is sufficient).
+3. Decision trace surface: archived ticket 002 provides `StrategicBudgetTrace`, so assert `strategic_budget` is `Some` with `exhausted: false` on the test agent's `PlanAttemptTrace`.
 4. The golden does not need an action-trace or event-log layer because the contract under test is planning-layer (strategic search) only; no authoritative world state mutates as part of the proof.
 
 ## What to Change
@@ -57,9 +57,8 @@ fn five_stage_production_chain_completes_under_stage_aware_budget() {
     //    covering all 5 stages.
     // 4. Performance-regression guard: assert recorded expansions used
     //    <= strategic_budget_for_stages(5) == 30 (under default execution
-    //    budget). If StrategicBudgetTrace from ticket 002 is available,
-    //    assert strategic_budget.exhausted == false on the agent's
-    //    PlanAttemptTrace.
+    //    budget) and assert strategic_budget.exhausted == false on the
+    //    agent's PlanAttemptTrace.
 }
 ```
 
@@ -78,7 +77,7 @@ The Cargo integration-test convention is that any `*.rs` file in `tests/` is aut
 ## Out of Scope
 
 - No change to the strategic search budget formula — that is ticket 001.
-- No change to `StrategicBudgetTrace` surface — that is ticket 002. This golden adapts to whichever surface is available at test-write time.
+- No change to `StrategicBudgetTrace` surface — that is archived ticket 002. This golden consumes the trace surface as a proof input.
 - No deeper-than-5-stage scenarios — S145's narrative cites "PR-2 typical production chain (8 stages)" as an aspirational target, but the spec's Test Plan only requires the 5-stage proof.
 - No tactical-side budget validation — strategic phase is the contract under test.
 

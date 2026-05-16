@@ -1122,6 +1122,9 @@ pub struct PlanAttemptTrace {
     pub goal: GoalKey,
     pub opportunity_anchor: OpportunityAnchor,
     pub outcome: PlanSearchOutcome,
+    /// Strategic-search budget provenance, when this attempt entered the
+    /// stage-budgeted strategic expansion loop.
+    pub strategic_budget: Option<StrategicBudgetTrace>,
     /// Strategic itinerary produced for this search attempt, when the planner
     /// entered the two-phase path and the itinerary had concrete steps.
     pub strategic_plan: Option<Vec<StrategicStepTrace>>,
@@ -1137,6 +1140,14 @@ pub struct PlanAttemptTrace {
     pub binding_rejections: Vec<BindingRejection>,
     /// Per-expansion summaries. Empty when tracing is disabled.
     pub expansion_summaries: Vec<SearchExpansionSummary>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StrategicBudgetTrace {
+    pub stages_count: u16,
+    pub budget_total: u32,
+    pub budget_used: u32,
+    pub exhausted: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -4450,6 +4461,7 @@ mod tests {
                     goal: GoalKey::new(GoalKind::Sleep),
                     opportunity_anchor: OpportunityAnchor::Place(entity(42)),
                     outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 2 },
+                    strategic_budget: None,
                     target_belief_presence: TargetBeliefPresence::NotApplicable,
                     strategic_plan: None,
                     tactical_goal: None,
@@ -4884,6 +4896,7 @@ mod tests {
                     goal: GoalKey::new(GoalKind::ClaimOffice { office: entity(4) }),
                     opportunity_anchor: OpportunityAnchor::None,
                     outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 1 },
+                    strategic_budget: None,
                     strategic_plan: Some(vec![StrategicStepTrace {
                         destination: entity(8),
                         sub_goal: "AcquirePrerequisite(Firewood)".to_string(),
@@ -5073,6 +5086,7 @@ mod tests {
             goal: GoalKey::new(GoalKind::Sleep),
             opportunity_anchor: OpportunityAnchor::Place(entity(9)),
             outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 5 },
+            strategic_budget: None,
             strategic_plan: None,
             tactical_goal: None,
             landmarks_extracted: 0,

@@ -2552,6 +2552,7 @@ pub(super) fn plan_search_result_to_trace(
         goal,
         opportunity_anchor,
         outcome,
+        strategic_budget: trace_metadata.strategic_budget.clone(),
         strategic_plan: trace_metadata.strategic_plan.as_ref().map(|plan| {
             plan.steps
                 .iter()
@@ -4508,6 +4509,12 @@ mod tests {
                         estimated_travel_ticks: 4,
                     }],
                 }),
+                strategic_budget: Some(crate::decision_trace::StrategicBudgetTrace {
+                    stages_count: 1,
+                    budget_total: 6,
+                    budget_used: 2,
+                    exhausted: false,
+                }),
                 tactical_goal: Some(
                     "AcquirePrerequisite { commodity: Firewood, destination: EntityId(55) }"
                         .to_string(),
@@ -4521,6 +4528,13 @@ mod tests {
 
         assert_eq!(trace.landmarks_extracted, 3);
         assert_eq!(trace.landmark_orderings, 2);
+        assert_eq!(
+            trace
+                .strategic_budget
+                .as_ref()
+                .map(|budget| budget.budget_used),
+            Some(2)
+        );
         assert_eq!(
             trace.tactical_goal.as_deref(),
             Some("AcquirePrerequisite { commodity: Firewood, destination: EntityId(55) }")

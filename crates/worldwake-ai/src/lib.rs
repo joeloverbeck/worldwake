@@ -87,8 +87,8 @@ pub use decision_trace::{
     SameGoalPlanningTrace, SelectedPlanReplacementKind, SelectedPlanReplacementTrace,
     SelectedPlanSearchProvenance, SelectedPlanSource, SelectedPlanTrace, SelectionTrace,
     SnapshotCacheCounters, SnapshotContinuationOutcome, SnapshotContinuationTrace,
-    SocialCandidateOmission, TravelPruningTrace, TravelSuccessorTrace, ViolationDetectionOmission,
-    ViolationDetectionOmissionReason,
+    SocialCandidateOmission, StrategicBudgetTrace, TravelPruningTrace, TravelSuccessorTrace,
+    ViolationDetectionOmission, ViolationDetectionOmissionReason,
 };
 pub use dirty_set::DirtySet;
 pub use effect_schema_index::EffectSchemaIndex;
