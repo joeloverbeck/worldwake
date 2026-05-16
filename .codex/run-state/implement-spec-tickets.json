@@ -5,13 +5,12 @@
   "starting_branch": "main",
   "current_branch": "implemented-S145-planning-substrate-hardening",
   "base_head": "3785b368fffafd900d6f4a72ad385646aad16a80",
-  "last_ticket": "archive/tickets/S145PLASUBHAR-002.md",
+  "last_ticket": "archive/tickets/S145PLASUBHAR-003.md",
   "last_result": "completed_archived",
-  "last_work_commit": "75055e041941e69651f1715d8353390b6a4b267d",
+  "last_work_commit": "89a56112bdd901dce8b565eb0add735141f1d5a0",
   "last_state_commit": "self",
-  "next_target": "tickets/S145PLASUBHAR-003.md",
+  "next_target": "tickets/S145PLASUBHAR-004.md",
   "queue": [
-    "tickets/S145PLASUBHAR-003.md",
     "tickets/S145PLASUBHAR-004.md",
     "tickets/S145PLASUBHAR-005.md"
   ],
