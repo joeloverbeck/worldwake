@@ -22,7 +22,7 @@ Before this ticket, S144 had shipped `SnapshotCacheCounters` at `crates/worldwak
 ## Architecture Check
 
 1. The per-cache breakdown (5 fields instead of S144's 3 flat fields) is intentional: `entities_at` and `effective_place` answer different planner queries and may have different hit ratios — collapsing them would lose diagnostic signal. The `SnapshotCacheCounters` shape (3 flat fields) is correct for the matrix-cache surface where the cache type is uniform, but `PlanningState` caches are heterogeneous in query semantics.
-2. The `PerformanceMetrics` extension is strictly additive: the existing `cache_hit_count` / `cache_miss_count` / `cache_invalidation_count` fields continue to report only `SnapshotCacheCounters`; new `planning_state_cache_*` fields report only `PlanningStateCacheCounters`. Per FND-28, no dual-truth — each field has exactly one authoritative source. S144's already-archived spec is not retroactively modified; the additive extension is documented as an S145 deliverable in `specs/S145-planning-substrate-hardening.md` D4.
+2. The `PerformanceMetrics` extension is strictly additive: the existing `cache_hit_count` / `cache_miss_count` / `cache_invalidation_count` fields continue to report only `SnapshotCacheCounters`; new `planning_state_cache_*` fields report only `PlanningStateCacheCounters`. Per FND-28, no dual-truth — each field has exactly one authoritative source. S144's already-archived spec is not retroactively modified; the additive extension is documented as an S145 deliverable in `archive/specs/S145-planning-substrate-hardening.md` D4.
 
 ## Verified Layers
 

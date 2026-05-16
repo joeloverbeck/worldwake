@@ -82,7 +82,7 @@ Added `strategic_budget_for_stages_scales_with_stage_count` in the existing `#[c
 - No new `BudgetExhausted` typed terminal for strategic search — per S145 Non-Goals, strategic search continues to return `Option<StrategicPlan>`. That is S149's typed-plan-terminal scope.
 - No change to `beam_width`, `max_node_expansions`, or `max_plan_depth` defaults — S146 owns those.
 - No `StrategicBudgetTrace` instrumentation here — that is S145PLASUBHAR-002.
-- No golden coverage for the 5-stage scaling behavior — that is S145PLASUBHAR-005.
+- No golden coverage for the 5-stage scaling behavior — that is now covered by `archive/tickets/S145PLASUBHAR-005.md`.
 
 ## Acceptance Result
 

@@ -652,7 +652,7 @@ Phase 12 runs independently of Phase 7's pending consequence-carrier specs (S60�
 ### Dependency Graph
 
 ```text
-S143 (archived)       S144 (archived)       S145 (independent)    S150 (independent)
+S143 (archived)       S144 (archived)       S145 (archived)       S150 (independent)
    │                                            │                     │
    │                  ┌─────────────────────────┘                     │
    │                  ▼                                               │
@@ -675,12 +675,12 @@ S153 (hard deps on archived S143, S148, S150, S151)
 **Wave 1** (parallel, no Phase 12 deps):
 - **S143**: Static Belief-View Trait Separation — completed and archived at `archive/specs/S143-static-belief-view-trait-separation.md`; split `LocalPhysicalObservationView` vs `BelievedAuthorityView` vs `DebugWorldView`; FND-14A widening becomes a compile error.
 - **S144**: ✅ COMPLETED — Aggregate Scenario Diagnostics — archived at [archive/specs/S144-aggregate-scenario-diagnostics.md](/home/joeloverbeck/projects/worldwake/archive/specs/S144-aggregate-scenario-diagnostics.md). Landed `ScenarioDiagnosticsReport` over existing traces, observer Section 13 text/JSON output, `PercentileBucket`, diagnostics flags, and the committed survival-baseline diagnostics fixture; S144 now backs future tuning decisions.
-- **S145**: Planning Substrate Hardening — stage-aware strategic budget (`2 * stages * max_prerequisite_locations`), shared cache invariant regression suite, cache hit/miss/invalidation counters.
+- **S145**: ✅ COMPLETED — Planning Substrate Hardening — archived at `archive/specs/S145-planning-substrate-hardening.md`; landed stage-aware strategic budget (`2 * stages * max_prerequisite_locations`), shared cache invariant regression suite, cache hit/miss/invalidation counters, and five-stage strategic-budget golden provenance.
 - **S150**: Cross-Goal Blocker Scoping — typed `BlockerScope` enum with `Exact`/`RouteSegment`/`Counterparty` variants, per-scope TTL profile, decision-history surface, S144 aggregation.
 
 **Wave 2** (after Wave 1):
 - **S146**: Data-Driven Goal Schema and Per-Goal Planning Budgets — `GoalSchema` registry, `CandidateExtractor` migration of the 18+ `emit_*` functions, `GoalPlanningBudget` preset table (SELF_CARE/TRAVEL_PURCHASE/PRODUCTION/INVESTIGATION/BOUNTY_ESCORT), `AgentSchemaContextProfile` universal component.
-  - soft depends on S145 (uses `strategic_budget_for_stages` helper)
+  - soft depends on archived S145 (uses `strategic_budget_for_stages` helper)
 - **S151**: Testimony Source Reliability and Route Preferences — `TestimonyReliability` keyed by `(EntityId, TopicScope)`, `RoutePreference` keyed by `RouteSegment`, `TestimonyTrustProfile` / `RoutePreferenceProfile` universal components, ranking damping and travel-cost integration.
   - soft depends on S150 (`RouteSegment` newtype)
   - HabitMemory portion of PR-8 deferred until S144 diagnostics surface method-thrash pathology
@@ -712,7 +712,7 @@ S153 (hard deps on archived S143, S148, S150, S151)
 - [ ] Wave 5 implemented and passing golden E2E tests
 - [x] S143 trait separation archived: grep-CI blocks `DebugWorldView` imports from `worldwake-ai/src/`; compile-fail doctest keeps debug-world reads outside `RuntimeBeliefView`; belief-wall trap golden passes
 - [x] S144 archived: `ScenarioDiagnosticsReport` produces byte-stable output across reruns on `survival-baseline.ron`; observer Section 13 renders text + JSON formats
-- [ ] S145 strategic budget formula confirmed: 5-stage production chain completes under stage-aware budget where it timed out under the old `* 2` formula; cache invariant regression suite (3 tests) passes
+- [x] S145 archived: 5-stage production chain records complete strategic itinerary and non-exhausted stage-aware budget provenance; cache invariant regression suite (3 tests) passes
 - [ ] S146 goal-schema registry covers every `GoalKindDiscriminant` variant (workspace-level coverage test); per-goal budget regression proves PRODUCTION-tier `BakeBread` depth 16 vs SELF_CARE-tier `Eat` depth 6
 - [ ] S147 HTN method goldens prove method selection + flat-GOAP fallback + method-failure → `Discrepancy::PartialExecutionDrift`
 - [ ] S148 7-slot portfolio golden proves slot occupancy under Normal/Emergency/Idle modes; default `max_plans_normal=6` replaces legacy `max_candidates_to_plan=2`

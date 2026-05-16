@@ -1,12 +1,12 @@
 # S145: Planning Substrate Hardening
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
 The external assessment in `reports/ai-architecture-improvements.md` flags two narrow planner-substrate concerns that the rest of the assessment's larger architectural proposals depend on:
 
-1. **Strategic search budget collapses on long acquisition chains** (PR-16): Before `S145PLASUBHAR-001` landed, the formula lived in the private helper `strategic_search_budget` at `crates/worldwake-ai/src/search/strategic.rs`, which returned `usize::max(1, usize::from(execution_budget.max_prerequisite_locations()) * 2)`. With the default `max_prerequisite_locations = 3` (set in `impl Default for ExecutionBudget`), every strategic search got 6 expansions regardless of how many stages the goal decomposed into. A 5-stage production chain got the same budget as a 1-stage hunger goal, which meant longer chains could exhaust the strategic budget at the first wave of permutations and never reach the deeper stage permutations. `S145PLASUBHAR-001` moved the formula to `ExecutionBudget::strategic_budget_for_stages`; `S145PLASUBHAR-002` added per-attempt `StrategicBudgetTrace` provenance while the typed-terminal work remains deferred to S149.
+1. **Strategic search budget collapses on long acquisition chains** (PR-16): Before `S145PLASUBHAR-001` landed, the formula lived in the private helper `strategic_search_budget` at `crates/worldwake-ai/src/search/strategic.rs`, which returned `usize::max(1, usize::from(execution_budget.max_prerequisite_locations()) * 2)`. With the default `max_prerequisite_locations = 3` (set in `impl Default for ExecutionBudget`), every strategic search got 6 expansions regardless of how many stages the goal decomposed into. A 5-stage production chain got the same strategic-stage budget as a 1-stage hunger goal, which meant longer chains could exhaust the strategic budget at the first wave of permutations and never produce a complete strategic itinerary. `S145PLASUBHAR-001` moved the formula to `ExecutionBudget::strategic_budget_for_stages`; `S145PLASUBHAR-002` added per-attempt `StrategicBudgetTrace` provenance while the typed-terminal work remains deferred to S149.
 
 2. **Shared planning caches lack a compound-order regression** (PR-18): `crates/worldwake-ai/src/planning_state.rs:71-72` uses `Rc<RefCell<BTreeMap<...>>>` for `entities_at_cache` and `effective_place_cache`. The invalidation function `invalidate_entities_at_cache` at lines 106–109 is called from six mutators across the move/possession/container/removal axes (`move_lot_ref_to_holder:407`, `move_lot_ref_to_ground:434`, `move_entity_ref:571`, `set_possessor_ref:583`, `set_container_ref:596`, `mark_removed_ref:618`). Existing tests at `planning_state.rs:4179` and `:4210` already cover *single-mutation* cross-clone independence. What is missing is a *compound-order* invariant: two sibling search branches that apply the same set of mutations in opposite orders must produce equal cache results. For a deterministic simulation, accidental cache order dependence is silently corruptive.
 
@@ -16,7 +16,7 @@ This spec is intentionally narrow. It is a pre-requisite for S146 (Goal Schema a
 
 ## Phase and Status
 
-Phase 12: AI Architecture Evolution — Draft
+Phase 12: AI Architecture Evolution — Completed and archived
 
 ## Crates
 
@@ -264,6 +264,24 @@ No new cross-system mutation paths.
 - D3 compound-order regression test (single new test as above).
 - D3.5 cache counter invariant test (depends on D4 landing first).
 - Existing `golden_two_phase_planning.rs` and `golden_planner_pathology.rs` regress unchanged (no behavioral change on single-stage paths).
-- New `golden_strategic_budget_scaling.rs` proves a 5-stage production chain completes under the new budget where it timed out under the old `* 2` formula.
+- New `golden_strategic_budget_scaling.rs` proves a 5-stage production chain records a complete strategic itinerary and non-exhausted stage-aware budget provenance under the new formula.
 - S144's fixture `crates/worldwake-ai/tests/fixtures/expected-scenario-diagnostics.json` is regenerated to include the new `planning_state_cache_*` fields.
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
+
+## Outcome
+
+Completed on 2026-05-16.
+
+- Landed the stage-aware strategic budget formula on `ExecutionBudget::strategic_budget_for_stages`, removed the private AI-only budget helper, and kept the single-stage default budget unchanged.
+- Added `StrategicBudgetTrace` provenance to planning attempts and observer/debug surfaces so strategic-budget exhaustion is attributable by stage count and used-vs-total budget.
+- Added `PlanningStateCacheCounters`, aggregated planning-state cache metrics, and cache invariant tests for compound-order equality plus invalidation counting.
+- Added `golden_strategic_budget_scaling.rs`, proving a five-stage `ProduceCommodity` strategic itinerary records non-exhausted stage-aware budget provenance. Live reassessment narrowed the original full tactical completion claim to S145's strategic-budget substrate because the enclosing tactical search may still stop later while realizing prerequisites.
+- Regenerated the affected golden inventory, scenario index, coverage matrix, and scenario diagnostics fixture/docs during the ticket sequence.
+
+Verification highlights:
+
+- Passed S145 ticket-level focused tests for `ExecutionBudget`, strategic-budget traces, planning-state counters, compound-order cache behavior, golden diagnostics, and the five-stage strategic-budget golden.
+- Passed `cargo test -p worldwake-ai --test golden_strategic_budget_scaling`.
+- Passed `cargo test -p worldwake-ai --test golden_planner_pathology`.
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`.
+- Passed `cargo test -p worldwake-ai`.

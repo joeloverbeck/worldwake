@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 48
-- Files contributing `golden_*` tests: 48
-- Total `golden_*` tests: 220
+- Golden test files: 49
+- Files contributing `golden_*` tests: 49
+- Total `golden_*` tests: 222
 
 ## Per-File Inventory
 
@@ -44,6 +44,7 @@ Do not hand-edit it.
 | `golden_sleep_episode.rs` | 6 |
 | `golden_source_composite.rs` | 6 |
 | `golden_source_reliability.rs` | 2 |
+| `golden_strategic_budget_scaling.rs` | 2 |
 | `golden_survival_ask_consult.rs` | 1 |
 | `golden_survival_baseline.rs` | 7 |
 | `golden_survival_combat.rs` | 2 |
@@ -313,6 +314,11 @@ Do not hand-edit it.
 
 - `resource_extraction_wait_observation_records_when_promoted`
 - `capacity_observation_records_from_perception`
+
+### `golden_strategic_budget_scaling.rs`
+
+- `five_stage_production_chain_records_stage_aware_budget`
+- `five_stage_production_chain_replays_deterministically`
 
 ### `golden_survival_ask_consult.rs`
 

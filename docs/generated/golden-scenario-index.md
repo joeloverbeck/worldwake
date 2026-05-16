@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 180
-- Contributing golden test files: 45
-- Associated tests: 215
+- Scenario blocks: 181
+- Contributing golden test files: 46
+- Associated tests: 217
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1789,6 +1789,19 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: The normal perception tick records the source's observed capacity into the agent's SourceReliability for the same (source, commodity) key used by ranking.
 
 **Cross-system chain**: Co-located resource source -> perception batch -> SourceReliability capacity observation.
+
+### Scenario 423: S145 Five-Stage Strategic Budget Scaling
+
+- Source: `golden_strategic_budget_scaling.rs:164`
+- Systems: AI, Search, Production
+- GoalKinds: ProduceCommodity
+- ActionDomains: Production, Travel
+- Places: Village Square, Orchard Farm
+- Principles: 12, 20, 27, 29
+
+**Setup**: a baker knows one recipe whose four missing inputs are available away from the local production workstation.
+
+**Proves**: stage-aware strategic budget records a non-exhausted five-stage strategic itinerary.
 
 ### Scenario 170: Survival Ask-Consult Lands Roadmap Row Six
 

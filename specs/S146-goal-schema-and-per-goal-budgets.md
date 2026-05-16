@@ -29,7 +29,7 @@ Phase 12: AI Architecture Evolution — Draft
 - S138 (Opportunity Compiler, archived) — provides `EffectSchemaIndex` and `Opportunity` substrate; S146's `CandidateExtractor::Opportunity` variant delegates to it.
 - S141 (Motive Source Ledger, archived) — provides `MotiveSourceRef`; `GoalSchema.motive_source_hints` declares which motive sources naturally produce each goal kind.
 - S134 (Canonical Effect Schema, archived) — provides `EffectSchema` per `ActionDef`; `GoalSchema.satisfaction_predicate` declares which effect facts satisfy each goal.
-- S145 (Planning Substrate Hardening) — provides `strategic_budget_for_stages`; per-goal budget composes with it.
+- S145 (Planning Substrate Hardening, archived at `archive/specs/S145-planning-substrate-hardening.md`) — provides `strategic_budget_for_stages`; per-goal budget composes with it.
 - S109 (Typed Discrepancy Taxonomy, archived) — `GoalSchema.invalidator_templates` produces typed `Discrepancy` instances on assumption failure.
 
 ## Design Goals
