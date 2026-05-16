@@ -194,8 +194,7 @@ fn five_stage_production_chain_records_stage_aware_budget() {
     );
     assert!(
         !observation.budget_exhausted_outcome,
-        "the full tactical search may stop later, but the five-stage strategic attempt must not be classified as budget-exhausted: {:?}",
-        observation
+        "the full tactical search may stop later, but the five-stage strategic attempt must not be classified as budget-exhausted: {observation:?}"
     );
 
     assert_eq!(
