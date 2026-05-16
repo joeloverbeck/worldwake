@@ -1,0 +1,19 @@
+{
+  "originating_spec": "specs/S145-planning-substrate-hardening.md",
+  "archived_spec": null,
+  "last_ticket": "archive/tickets/S145PLASUBHAR-001.md",
+  "last_result": "completed_archived",
+  "last_work_commit": "cdbd237447767e549f1d8bf5be4188781e440a25",
+  "last_state_commit": "self",
+  "next_target": "tickets/S145PLASUBHAR-002.md",
+  "queue": [
+    "tickets/S145PLASUBHAR-002.md",
+    "tickets/S145PLASUBHAR-003.md",
+    "tickets/S145PLASUBHAR-004.md",
+    "tickets/S145PLASUBHAR-005.md"
+  ],
+  "blocked": false,
+  "blocker": null,
+  "dirty_state": "clean except untracked state file before state commit",
+  "updated_at": "2026-05-16"
+}
