@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: No (golden test only; tests the formula change shipped by ticket 001)
-**Deps**: S145PLASUBHAR-001
+**Deps**: archive/tickets/S145PLASUBHAR-001.md
 
 ## Problem
 

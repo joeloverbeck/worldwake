@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new trace type in `decision_trace.rs`, new optional field on `PlanAttemptTrace`, strategic-search instrumentation, observer Section 9 rendering
-**Deps**: S145PLASUBHAR-001
+**Deps**: archive/tickets/S145PLASUBHAR-001.md
 
 ## Problem
 

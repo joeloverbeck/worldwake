@@ -55,6 +55,11 @@ impl ExecutionBudget {
     pub const fn preferred_operator_boost(&self) -> u8 {
         self.preferred_operator_boost
     }
+
+    pub const fn strategic_budget_for_stages(&self, stage_count: usize) -> usize {
+        let stages = if stage_count == 0 { 1 } else { stage_count };
+        2 * stages * self.max_prerequisite_locations() as usize
+    }
 }
 
 impl Default for ExecutionBudget {
@@ -112,6 +117,23 @@ mod tests {
         assert_eq!(budget.beam_width(), 8);
         assert_eq!(budget.max_prerequisite_locations(), 3);
         assert_eq!(budget.preferred_operator_boost(), 2);
+    }
+
+    #[test]
+    fn strategic_budget_for_stages_scales_with_stage_count() {
+        let default = ExecutionBudget::default();
+
+        assert_eq!(default.strategic_budget_for_stages(0), 6);
+        assert_eq!(default.strategic_budget_for_stages(1), 6);
+        assert_eq!(default.strategic_budget_for_stages(3), 18);
+        assert_eq!(default.strategic_budget_for_stages(5), 30);
+        assert_eq!(default.strategic_budget_for_stages(8), 48);
+
+        let widened =
+            ExecutionBudget::new(default.beam_width(), 5, default.preferred_operator_boost());
+
+        assert_eq!(widened.strategic_budget_for_stages(0), 10);
+        assert_eq!(widened.strategic_budget_for_stages(5), 50);
     }
 
     #[test]
