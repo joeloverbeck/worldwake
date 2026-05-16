@@ -222,7 +222,7 @@ Before committing:
 6. Re-run `git diff --cached --name-status` after staging and confirm every staged path is owned by this iteration, explicitly approved, or intentional same-family state needed for the queue/handoff.
 7. Commit with a concise message that names the ticket id and whether the iteration included implementation, review/archive, follow-up creation, and skill hardening.
 
-When `post-ticket-review` archived a ticket with `git mv`, do not try to stage the now-missing active ticket path by name. Stage the archive destination and other edited owned paths, then confirm the source deletion or rename is staged with `git diff --cached --name-status`.
+When `post-ticket-review` archived a ticket with `git mv`, do not try to stage the now-missing active ticket path by name. Stage the archive destination and other edited owned paths, then confirm the source deletion or rename is staged with `git diff --cached --name-status`. If a staging command still fails with a missing-path pathspec for the old active ticket, do not retry with that source path; inspect `git status --short` or `git diff --cached --name-status` and continue only if the rename is already staged as `R old -> archive/...`.
 
 If non-destructive git index commands needed for this harness step fail because Codex cannot write the git index or reports a sandbox/read-only filesystem error, rerun the same staging or commit command with the required approval/escalation and record the retry in the handoff or final report. Do not use this as permission for destructive commands or for staging unrelated paths.
 
