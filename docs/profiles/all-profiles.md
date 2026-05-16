@@ -113,6 +113,8 @@ Stable per-agent cognitive reasoning parameters used by the AI layer.
 | `no_legal_binding_backoff_ticks` | `u32` | TTL for legal-binding discrepancies before retry. (default: `default_no_legal_binding_backoff_ticks()`) |
 | `counterparty_refusal_backoff_ticks` | `u32` | TTL for counterparty-refusal discrepancies before retry. (default: `default_counterparty_refusal_backoff_ticks()`) |
 | `route_unknown_backoff_ticks` | `u32` | TTL for route-unknown discrepancies before retry. (default: `default_route_unknown_backoff_ticks()`) |
+| `route_segment_blocker_ticks` | `u32` | Ticks before a RouteSegment-scoped blocker expires under `TtlOnly` clearing. (default: `default_route_segment_blocker_ticks()`) |
+| `counterparty_blocker_ticks` | `u32` | Ticks before a Counterparty-scoped blocker expires under `TtlOnly` clearing. (default: `default_counterparty_blocker_ticks()`) |
 | `search_exhaustion_backoff_ticks` | `u32` | TTL for search-budget-exhaustion discrepancies before retry. (default: `default_search_exhaustion_backoff_ticks()`) |
 | `partial_drift_backoff_ticks` | `u32` | TTL for partial-execution-drift discrepancies before retry. (default: `default_partial_drift_backoff_ticks()`) |
 | `expectation_tolerance_ticks` | `u32` | Grace window before a plan-step expectation is treated as overdue. (default: `default_expectation_tolerance_ticks()`) |

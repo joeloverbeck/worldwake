@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `worldwake-core` substrate (`BlockerScope`, `RouteSegment`, `BlockerMemory`, `DiscrepancyMemory`, `BlockerRecordedPayload`); `worldwake-ai` consumer migrations (3 read sites + 3 record sites + 17 dependent modules); `worldwake-sim` save-format bump; `worldwake-systems` trade-action recording; `worldwake-cli` observer rendering preservation
-**Deps**: S150CROGOABLO-001
+**Deps**: archive/tickets/S150CROGOABLO-001.md
 
 ## Problem
 

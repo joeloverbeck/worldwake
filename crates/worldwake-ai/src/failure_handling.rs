@@ -1940,6 +1940,8 @@ mod tests {
             counterparty_refusal_backoff_ticks: CognitiveProfile::default()
                 .counterparty_refusal_backoff_ticks,
             route_unknown_backoff_ticks: CognitiveProfile::default().route_unknown_backoff_ticks,
+            route_segment_blocker_ticks: CognitiveProfile::default().route_segment_blocker_ticks,
+            counterparty_blocker_ticks: CognitiveProfile::default().counterparty_blocker_ticks,
             search_exhaustion_backoff_ticks: CognitiveProfile::default()
                 .search_exhaustion_backoff_ticks,
             partial_drift_backoff_ticks: CognitiveProfile::default().partial_drift_backoff_ticks,

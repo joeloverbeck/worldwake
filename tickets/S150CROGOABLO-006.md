@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — test coverage only (new golden file)
-**Deps**: S150CROGOABLO-001, S150CROGOABLO-002, S150CROGOABLO-003
+**Deps**: archive/tickets/S150CROGOABLO-001.md, S150CROGOABLO-002, S150CROGOABLO-003
 
 ## Problem
 
