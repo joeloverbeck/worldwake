@@ -41,12 +41,18 @@ When a phase invokes one of the child skills, read any focused references that c
 
 Use `.codex/run-state/implement-spec-tickets.json` as the harness state file. Create `.codex/run-state/` if needed.
 
+This file represents one active harness run. If it already exists and names a different `originating_spec` than the requested run, do not overwrite it silently. Treat it as a durable record for another spec family: either resume that family, or ask the user whether to archive/replace the state file before starting the new family. Do not mix queues from two spec families in one state file.
+
 Keep the file small and machine-readable. Update it after intake, after every iteration commit, after blockers, and after final spec archival. A useful shape is:
 
 ```json
 {
   "originating_spec": "specs/S123-example.md",
   "archived_spec": null,
+  "worktree_root": "/home/joeloverbeck/projects/worldwake",
+  "starting_branch": "main",
+  "current_branch": "spec-123-example",
+  "base_head": "0123456789abcdef0123456789abcdef01234567",
   "last_ticket": "tickets/S123EXAMPLE-001.md",
   "last_result": "completed_archived",
   "last_work_commit": "abc1234",
@@ -65,6 +71,9 @@ Keep the file small and machine-readable. Update it after intake, after every it
 On resume after `/new`, read this state file first, then verify every important field against live repo state before continuing:
 
 - `originating_spec` still exists unless `archived_spec` is set
+- `worktree_root` matches the current repository root
+- `current_branch` matches the current branch, or the mismatch is intentional and explained before continuing
+- `base_head` is reachable from `HEAD`
 - `next_target` exists and is still active, unless the next action is final spec archival
 - queued ticket paths still exist and still belong to the originating spec family
 - `last_work_commit` is reachable from `HEAD`
@@ -74,7 +83,7 @@ On resume after `/new`, read this state file first, then verify every important 
 After resume validation, state the checked fields compactly before invoking a child skill:
 
 ```text
-Resume validation checked: spec, next_target, queue, last_work_commit, last_state_commit, dirty_state.
+Resume validation checked: spec, worktree_root, branch, base_head, next_target, queue, last_work_commit, last_state_commit, dirty_state.
 ```
 
 If the state file conflicts with the live repo, trust the live repo and patch the state file before continuing. If the conflict changes the next target or archival readiness, state that explicitly before invoking a child skill.
@@ -90,14 +99,18 @@ If the state file conflicts with the live repo, trust the live repo and patch th
    - existing user work that the run must not absorb silently
    - unrelated noise
 4. If the initial snapshot shows staged/index entries, inspect `git diff --cached --name-status` and classify them separately from unstaged dirt. Pre-existing staged unrelated work must not be absorbed by a harness commit.
-5. If `.codex/run-state/implement-spec-tickets.json` already exists, read and validate it even on a normal first invocation. If it conflicts with live repo state, trust the live repo and refresh the state file before invoking child skills.
+5. If `.codex/run-state/implement-spec-tickets.json` already exists, read and validate it even on a normal first invocation.
+   - If it names the same originating spec, treat the invocation as a resume or restart of that family and verify it against the live repo before invoking child skills.
+   - If it names a different originating spec, stop before any child skill invocation and ask whether to preserve, replace, or explicitly retire the existing run state.
+   - If it conflicts with live repo state for the same originating spec, trust the live repo and refresh the state file before invoking child skills.
 6. If unrelated dirty paths exist and this harness is expected to stage and commit work, stop and ask whether those paths should be included. Do not silently commit unrelated user work.
-7. Resolve the first ticket:
+7. Create or switch to the family branch before the first harness commit. Derive a concise branch name from the spec id or filename, record `starting_branch`, `current_branch`, `base_head`, and `worktree_root` in state, and do not commit to the starting branch unless the user explicitly approves that branch as the work branch.
+8. Resolve the first ticket:
    - if `ticket_path` is supplied, resolve it to exactly one active ticket under `tickets/`
-   - otherwise inspect active `tickets/*.md`, choose the first ticket in lexical order whose filename, `Deps`, problem statement, or explicit spec reference ties it to the originating spec, and state the selection
-8. Build the initial pending queue from active tickets that clearly belong to the same originating spec family. Keep the queue lexical and append-only; do not jump ahead of a follow-up created by the current iteration.
-9. Decide how to handle pre-existing untracked same-family ticket/spec files before implementation. Include them only when they are required to define the active family queue, dependency chain, or truthful handoff for the current iteration.
-10. Write or refresh `.codex/run-state/implement-spec-tickets.json` with the resolved spec, initial target, initial queue, dirty-state classification, and `blocked: false`.
+   - otherwise inspect active `tickets/*.md`, choose the first ticket in lexical order whose filename, `Deps`, problem statement, or explicit active deliverable wording ties it to the originating spec, and state the selection
+9. Build the initial pending queue from active tickets that clearly belong to the same originating spec family. Include a ticket only when it owns active implementation work for the spec: matching family id, explicit active spec dependency, or active deliverable wording. Treat incidental historical mentions, roadmap examples, and archived-context references as evidence to read, not queue membership. Keep the queue lexical and append-only; do not jump ahead of a follow-up created by the current iteration.
+10. Decide how to handle pre-existing untracked same-family ticket/spec files before implementation. Include them only when they are required to define the active family queue, dependency chain, or truthful handoff for the current iteration.
+11. Write or refresh `.codex/run-state/implement-spec-tickets.json` with the resolved spec, branch/worktree metadata, initial target, initial queue, dirty-state classification, and `blocked: false`.
 
 If an old state file exists but no reset or blocker will occur before the first target is processed, a pre-work state refresh may be deferred until the first iteration state commit. This is allowed only when the next target, queue, ownership classification, and archival readiness have been validated against live repo state before invoking child skills.
 
@@ -208,6 +221,7 @@ If nothing changed after an iteration, do not create an empty commit. Record tha
 After each iteration work commit, update `.codex/run-state/implement-spec-tickets.json` before context compaction or a fresh-session restart. Include:
 
 - originating spec path or archived spec path
+- worktree root, starting branch, current branch, and base commit for the run
 - last ticket processed and result
 - `last_work_commit`: the ticket iteration work commit sha, or `"none"` if no work commit was created
 - `last_state_commit`: `"self"` when the state update is committed separately as a state-file-only commit, the same sha as `last_work_commit` when amended into the work commit, or `"none"` when the state file remains intentionally uncommitted
@@ -229,6 +243,7 @@ Then print a short handoff that mirrors the state file:
 ```text
 Harness handoff:
 - Originating spec: <active or archived path>
+- Branch: <current branch, with starting branch if different>
 - Last ticket processed: <ticket id and result>
 - Work commit: <sha or "none">
 - State commit: <sha or "none" | same as work commit>
@@ -269,7 +284,7 @@ When all originating-spec tickets are completed, reviewed, archived, and committ
 6. Sweep active tickets, docs, specs, `specs/IMPLEMENTATION-ORDER.md`, same-family archived tickets, and same-seam triage/report docs for stale active-spec path references. Repair actionable references to the archived path, including archived ticket `Deps`, current proof commands, and direct implementation-reference snippets that now point at the archived spec. Leave historical references only when clearly harmless or explicitly labelled as historical intake context.
 7. Run hygiene over the spec archive move and reference repairs.
 8. Commit the spec archive as its own finalization commit unless it is already included in the last ticket-family commit for a clear reason.
-9. Update `.codex/run-state/implement-spec-tickets.json` with `archived_spec`, `next_target: null`, an empty queue, `blocked: false`, the final commit sha, and clean dirty-state classification.
+9. Update `.codex/run-state/implement-spec-tickets.json` with `archived_spec`, `next_target: null`, an empty queue, `blocked: false`, the final commit sha, branch/worktree metadata, and clean dirty-state classification.
 
 If `git mv`, `git add`, or `git commit` fails during final archival because Codex cannot write the git index or reports a sandbox/read-only filesystem error, rerun the same non-destructive command with the required approval/escalation and record the first failure plus retry result. Do not widen the staged set while retrying.
 
@@ -278,11 +293,11 @@ If `git mv`, `git add`, or `git commit` fails during final archival because Code
 After the final archive commit and any required final state-file persistence commit:
 
 1. Refresh `git status --short`. Stop if uncommitted owned changes remain.
-2. Create a new branch from the current HEAD with a concise family name derived from the spec id or filename, for example `spec-123-planner-contracts`.
-3. Push the new branch to the configured remote.
+2. Confirm the current branch matches the recorded `current_branch` and is not the original starting branch unless the user explicitly approved using that branch for the harness work.
+3. Push the recorded current branch to the configured remote.
 4. Report the branch name, pushed remote, commits created by the harness, archived spec path, archived ticket paths, and any follow-up tickets left active.
 
-If branch creation or push fails because Codex cannot write the git ref in the sandbox, cannot resolve the remote host, or otherwise hits a clear sandbox/network restriction, rerun the same branch/push command with the required approval or escalation. Record both the first failure and the successful retry, or the remaining blocker if escalation still fails.
+If branch setup during intake or push during finalization fails because Codex cannot write the git ref in the sandbox, cannot resolve the remote host, or otherwise hits a clear sandbox/network restriction, rerun the same branch/push command with the required approval or escalation. Record both the first failure and the successful retry, or the remaining blocker if escalation still fails.
 
 Do not create or push a branch if the implementation loop stopped blocked or if the worktree still contains unapproved dirty paths.
 
