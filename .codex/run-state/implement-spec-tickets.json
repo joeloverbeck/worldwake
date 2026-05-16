@@ -8,7 +8,8 @@
   "last_ticket": "archive/tickets/S145PLASUBHAR-004.md",
   "last_result": "completed_archived",
   "last_work_commit": "edf166b6e3631b5ab6d06e70fc3fd0f6fa0d6a93",
-  "last_state_commit": "self",
+  "last_state_commit": "00355ae7b083db749cb9f7c9940673862000e25c",
+  "last_state_commit_kind": "separate",
   "next_target": "tickets/S145PLASUBHAR-005.md",
   "queue": [
     "tickets/S145PLASUBHAR-005.md"
