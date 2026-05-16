@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 46
-- Files contributing `golden_*` tests: 46
-- Total `golden_*` tests: 220
+- Golden test files: 49
+- Files contributing `golden_*` tests: 49
+- Total `golden_*` tests: 222
 
 ## Per-File Inventory
 
@@ -34,14 +34,17 @@ Do not hand-edit it.
 | `golden_perception_omission.rs` | 3 |
 | `golden_place_dirtiness.rs` | 9 |
 | `golden_plan_repair.rs` | 7 |
-| `golden_planner_pathology.rs` | 3 |
+| `golden_planner_pathology.rs` | 2 |
+| `golden_planner_pathology_degenerate.rs` | 1 |
 | `golden_portfolio_planning.rs` | 1 |
 | `golden_quantity_aware_acquisition.rs` | 5 |
-| `golden_scenario_diagnostics.rs` | 2 |
+| `golden_scenario_diagnostics_fixture.rs` | 1 |
+| `golden_scenario_diagnostics_replay.rs` | 1 |
 | `golden_simulation_gaps.rs` | 5 |
 | `golden_sleep_episode.rs` | 6 |
 | `golden_source_composite.rs` | 6 |
 | `golden_source_reliability.rs` | 2 |
+| `golden_strategic_budget_scaling.rs` | 2 |
 | `golden_survival_ask_consult.rs` | 1 |
 | `golden_survival_baseline.rs` | 7 |
 | `golden_survival_combat.rs` | 2 |
@@ -255,8 +258,11 @@ Do not hand-edit it.
 ### `golden_planner_pathology.rs`
 
 - `cross_location_water_acquisition_succeeds_without_budget_exhaustion`
-- `degenerate_zero_step_loop_blocks_actionable_goals`
 - `obligation_satiation_allows_survival_needs_to_override_posting`
+
+### `golden_planner_pathology_degenerate.rs`
+
+- `degenerate_zero_step_loop_blocks_actionable_goals`
 
 ### `golden_portfolio_planning.rs`
 
@@ -270,9 +276,12 @@ Do not hand-edit it.
 - `golden_s126_long_horizon_scales_desired_target`
 - `golden_scenario_e_queue_abandonment_promotes_next_actor`
 
-### `golden_scenario_diagnostics.rs`
+### `golden_scenario_diagnostics_fixture.rs`
 
 - `golden_scenario_diagnostics_survival_baseline_fixture_is_stable`
+
+### `golden_scenario_diagnostics_replay.rs`
+
 - `golden_scenario_diagnostics_survival_baseline_replays_deterministically`
 
 ### `golden_simulation_gaps.rs`
@@ -305,6 +314,11 @@ Do not hand-edit it.
 
 - `resource_extraction_wait_observation_records_when_promoted`
 - `capacity_observation_records_from_perception`
+
+### `golden_strategic_budget_scaling.rs`
+
+- `five_stage_production_chain_records_stage_aware_budget`
+- `five_stage_production_chain_replays_deterministically`
 
 ### `golden_survival_ask_consult.rs`
 

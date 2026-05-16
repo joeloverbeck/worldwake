@@ -324,6 +324,7 @@ mod tests {
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
             snapshot_cache_counters: None,
+            planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Dead,

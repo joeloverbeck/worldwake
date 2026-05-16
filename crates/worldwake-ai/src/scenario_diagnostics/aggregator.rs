@@ -84,6 +84,11 @@ struct ScenarioDiagnosticsBuilder {
     cache_hit_count: u64,
     cache_miss_count: u64,
     cache_invalidation_count: u64,
+    planning_state_cache_entities_at_hits: u64,
+    planning_state_cache_entities_at_misses: u64,
+    planning_state_cache_effective_place_hits: u64,
+    planning_state_cache_effective_place_misses: u64,
+    planning_state_cache_invalidations: u64,
 }
 
 impl ScenarioDiagnosticsBuilder {
@@ -182,6 +187,23 @@ impl ScenarioDiagnosticsBuilder {
             self.cache_invalidation_count = self
                 .cache_invalidation_count
                 .saturating_add(counters.cache_invalidation_count);
+        }
+        if let Some(counters) = trace.planning_state_cache_counters {
+            self.planning_state_cache_entities_at_hits = self
+                .planning_state_cache_entities_at_hits
+                .saturating_add(counters.entities_at_hits);
+            self.planning_state_cache_entities_at_misses = self
+                .planning_state_cache_entities_at_misses
+                .saturating_add(counters.entities_at_misses);
+            self.planning_state_cache_effective_place_hits = self
+                .planning_state_cache_effective_place_hits
+                .saturating_add(counters.effective_place_hits);
+            self.planning_state_cache_effective_place_misses = self
+                .planning_state_cache_effective_place_misses
+                .saturating_add(counters.effective_place_misses);
+            self.planning_state_cache_invalidations = self
+                .planning_state_cache_invalidations
+                .saturating_add(counters.invalidations);
         }
     }
 
@@ -443,6 +465,14 @@ impl ScenarioDiagnosticsBuilder {
                 cache_hit_count: self.cache_hit_count,
                 cache_miss_count: self.cache_miss_count,
                 cache_invalidation_count: self.cache_invalidation_count,
+                planning_state_cache_entities_at_hits: self.planning_state_cache_entities_at_hits,
+                planning_state_cache_entities_at_misses: self
+                    .planning_state_cache_entities_at_misses,
+                planning_state_cache_effective_place_hits: self
+                    .planning_state_cache_effective_place_hits,
+                planning_state_cache_effective_place_misses: self
+                    .planning_state_cache_effective_place_misses,
+                planning_state_cache_invalidations: self.planning_state_cache_invalidations,
             },
         }
     }
@@ -664,6 +694,7 @@ mod tests {
                 goal: GoalKey::from(wash_goal()),
                 opportunity_anchor: OpportunityAnchor::None,
                 outcome: PlanSearchOutcome::BudgetExhausted { expansions_used: 4 },
+                strategic_budget: None,
                 strategic_plan: None,
                 tactical_goal: None,
                 landmarks_extracted: 0,
@@ -696,6 +727,7 @@ mod tests {
                 goal: GoalKey::from(wash_goal()),
                 opportunity_anchor: OpportunityAnchor::None,
                 outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 2 },
+                strategic_budget: None,
                 strategic_plan: None,
                 tactical_goal: None,
                 landmarks_extracted: 0,
@@ -857,6 +889,22 @@ mod tests {
         assert_eq!(report.performance.cache_hit_count, 11);
         assert_eq!(report.performance.cache_miss_count, 4);
         assert_eq!(report.performance.cache_invalidation_count, 0);
+        assert_eq!(report.performance.planning_state_cache_entities_at_hits, 3);
+        assert_eq!(
+            report.performance.planning_state_cache_entities_at_misses,
+            2
+        );
+        assert_eq!(
+            report.performance.planning_state_cache_effective_place_hits,
+            5
+        );
+        assert_eq!(
+            report
+                .performance
+                .planning_state_cache_effective_place_misses,
+            4
+        );
+        assert_eq!(report.performance.planning_state_cache_invalidations, 1);
     }
 
     fn planning_decision_trace() -> crate::AgentDecisionTrace {
@@ -963,6 +1011,13 @@ mod tests {
                 cache_miss_count: 4,
                 cache_invalidation_count: 0,
             }),
+            planning_state_cache_counters: Some(crate::PlanningStateCacheCounters {
+                entities_at_hits: 3,
+                entities_at_misses: 2,
+                effective_place_hits: 5,
+                effective_place_misses: 4,
+                invalidations: 1,
+            }),
             repair_attempts: Vec::new(),
             causal_link_cap_hits: Vec::new(),
         }
@@ -985,6 +1040,7 @@ mod tests {
                     .collect(),
                 terminal_kind: crate::PlanTerminalKind::GoalSatisfied,
             },
+            strategic_budget: None,
             strategic_plan: None,
             tactical_goal: None,
             landmarks_extracted: 0,

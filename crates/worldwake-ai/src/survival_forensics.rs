@@ -739,6 +739,7 @@ mod tests {
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
             snapshot_cache_counters: None,
+            planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
@@ -787,6 +788,7 @@ mod tests {
                             steps: Vec::new(),
                             terminal_kind: crate::PlanTerminalKind::GoalSatisfied,
                         },
+                        strategic_budget: None,
                         strategic_plan: None,
                         tactical_goal: None,
                         landmarks_extracted: 0,

@@ -1361,6 +1361,7 @@ fn process_agent(
                 compiled_opportunities: Vec::new(),
                 opportunity_compiler_load: None,
                 snapshot_cache_counters: None,
+                planning_state_cache_counters: None,
                 repair_attempts: Vec::new(),
                 causal_link_cap_hits: Vec::new(),
             }));
@@ -1781,6 +1782,7 @@ fn process_agent(
 
     // ── Active-action path: interrupt evaluation ──
     let mut snapshot_cache_counters = None;
+    let mut planning_state_cache_counters = None;
     let outcome_trace = if let Some(active_action) = active_action {
         let active_goal_before_interrupt =
             current_active_goal.as_ref().map(|goal| goal.key.goal_key);
@@ -1872,6 +1874,7 @@ fn process_agent(
             selection_trace,
             portfolio_trace,
             planning_snapshot_cache_counters,
+            planning_state_counters,
             pending_tracker_increments,
         ) = plan_and_validate_next_step_traced_with_opportunity_index(
             ctx.world,
@@ -1901,6 +1904,7 @@ fn process_agent(
             &read_result.opportunity_index,
         );
         snapshot_cache_counters = planning_snapshot_cache_counters;
+        planning_state_cache_counters = planning_state_counters;
         current_active_goal = current_agenda_state.committed.clone();
         if !pending_tracker_increments.is_empty() {
             apply_acquisition_exhaustion_tracker_increments(
@@ -2364,6 +2368,7 @@ fn process_agent(
         compiled_opportunities: read_result.opportunities,
         opportunity_compiler_load: Some(read_result.opportunity_compiler_load),
         snapshot_cache_counters,
+        planning_state_cache_counters,
         repair_attempts: repair_attempt_traces,
         causal_link_cap_hits,
     }))

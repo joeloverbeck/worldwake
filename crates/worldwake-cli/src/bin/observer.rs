@@ -13,7 +13,8 @@ use std::fmt::Write as FmtWrite;
 use std::path::PathBuf;
 use worldwake_ai::decision_trace::{
     AffordanceSummary, AffordanceTrace, AgentDecisionTrace, DecisionOutcome, DecisionTraceSink,
-    PlanAttemptTrace, PlanSearchOutcome, RepairAttemptTrace, TargetBeliefPresence,
+    PlanAttemptTrace, PlanSearchOutcome, RepairAttemptTrace, StrategicBudgetTrace,
+    TargetBeliefPresence,
 };
 use worldwake_ai::opportunity_compiler::{
     BelievedLegalStatus, ClaimTopic, EffectFactKey, Opportunity, RiskFact,
@@ -286,6 +287,7 @@ struct BudgetExhaustionSnapshot {
     expansions_used: u16,
     max_depth_reached: u8,
     total_candidates: u32,
+    strategic_budget: Option<StrategicBudgetTrace>,
 }
 
 /// Deduplication key for budget exhaustion snapshots.
@@ -1116,6 +1118,19 @@ fn format_budget_exhaustion_snapshots(out: &mut String, snapshots: &[BudgetExhau
         )
         .unwrap();
         writeln!(out).unwrap();
+
+        if let Some(strategic_budget) = &snap.strategic_budget {
+            writeln!(out, "**Strategic budget**:").unwrap();
+            writeln!(out, "- Stages attempted: {}", strategic_budget.stages_count).unwrap();
+            writeln!(
+                out,
+                "- Budget used / total: {} / {}",
+                strategic_budget.budget_used, strategic_budget.budget_total
+            )
+            .unwrap();
+            writeln!(out, "- Exhausted: {}", strategic_budget.exhausted).unwrap();
+            writeln!(out).unwrap();
+        }
 
         // Cognitive/execution profile
         writeln!(out, "**Planner configuration**:").unwrap();
@@ -3745,6 +3760,33 @@ fn render_scenario_diagnostics_text(
         "- **Cache invalidations**: {}\n",
         report.performance.cache_invalidation_count
     )?;
+    writeln!(
+        out,
+        "- **Planning-state entities_at cache hits**: {}",
+        report.performance.planning_state_cache_entities_at_hits
+    )?;
+    writeln!(
+        out,
+        "- **Planning-state entities_at cache misses**: {}",
+        report.performance.planning_state_cache_entities_at_misses
+    )?;
+    writeln!(
+        out,
+        "- **Planning-state effective-place cache hits**: {}",
+        report.performance.planning_state_cache_effective_place_hits
+    )?;
+    writeln!(
+        out,
+        "- **Planning-state effective-place cache misses**: {}",
+        report
+            .performance
+            .planning_state_cache_effective_place_misses
+    )?;
+    writeln!(
+        out,
+        "- **Planning-state cache invalidations**: {}\n",
+        report.performance.planning_state_cache_invalidations
+    )?;
     render_percentile_bucket(
         out,
         "Opportunity compiled count",
@@ -5253,6 +5295,7 @@ fn main() {
                             expansions_used: *expansions_used,
                             max_depth_reached,
                             total_candidates,
+                            strategic_budget: attempt.strategic_budget.clone(),
                         });
                     }
                 }
@@ -5372,18 +5415,18 @@ fn main() {
 mod tests {
     use super::{
         ANOMALY_ROLLING_WINDOW_TICKS, AgentStats, Anomaly, AnomalyKind, BehavioralTransition,
-        DiagnosticsFormat, DiagnosticsRenderOptions, NeedsSample, PlanAttemptTrace,
-        PlanSearchOutcome, affordance_change_snapshots, behavioral_transitions,
+        BudgetExhaustionSnapshot, DiagnosticsFormat, DiagnosticsRenderOptions, NeedsSample,
+        PlanAttemptTrace, PlanSearchOutcome, affordance_change_snapshots, behavioral_transitions,
         committed_travel_ticks, compute_maintenance_rates, death_summary_line,
         decision_payload_summary, detect_acute_need_spike, detect_anomalies,
         detect_geographic_convergence, detect_maintenance_starvation, detect_recipe_monoculture,
         failed_plan_breakdown, failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
         failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
         format_affordance_summary, format_anomaly_header, format_behavioral_transition,
-        format_death_cause, format_opportunity_line, format_report, need_high_threshold,
-        post_travel_affordance_snapshots, primary_satisfied_need, recipe_usage_rows,
-        render_artifact_lifecycle_section, render_contention_section,
-        render_decision_history_section, render_maintenance_rates_table,
+        format_budget_exhaustion_snapshots, format_death_cause, format_opportunity_line,
+        format_report, need_high_threshold, post_travel_affordance_snapshots,
+        primary_satisfied_need, recipe_usage_rows, render_artifact_lifecycle_section,
+        render_contention_section, render_decision_history_section, render_maintenance_rates_table,
         render_opportunity_compiler_section, render_recipe_usage_table,
         render_scenario_diagnostics_section, unknown_location_entity_groups,
     };
@@ -5396,7 +5439,7 @@ mod tests {
         AffordanceSummary, AffordanceTrace, AgentDecisionTrace, CandidateTrace, DecisionOutcome,
         DecisionTraceSink, ExecutionTrace, OpportunityCompilerLoad, PatrolRouteSnapshotTrace,
         PlanSearchTrace, PlanningPipelineTrace, RepairAttemptTrace, SearchExpansionSummary,
-        SelectionTrace, TargetBeliefPresence,
+        SelectionTrace, StrategicBudgetTrace, TargetBeliefPresence,
     };
     use worldwake_ai::opportunity_compiler::{
         BelievedLegalStatus, ClaimTopic, EffectFactKey, Opportunity, RiskFact, SocialExposureBand,
@@ -5499,6 +5542,7 @@ mod tests {
             opportunity_anchor: OpportunityAnchor::None,
             outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 3 },
             target_belief_presence: TargetBeliefPresence::NotApplicable,
+            strategic_budget: None,
             strategic_plan: None,
             tactical_goal: None,
             landmarks_extracted: 0,
@@ -6143,6 +6187,7 @@ mod tests {
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
             snapshot_cache_counters: None,
+            planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
@@ -6600,6 +6645,46 @@ mod tests {
         };
 
         assert_eq!(failed_plan_outcome_label(&attempt), "frontier-exhausted");
+    }
+
+    #[test]
+    fn budget_exhaustion_snapshot_renders_strategic_budget_trace() {
+        let snapshot = BudgetExhaustionSnapshot {
+            tick: 12,
+            agent_id: entity(1),
+            agent_name: "Aster".to_string(),
+            goal_debug: "AcquireCommodity(SelfConsume)".to_string(),
+            needs: need_sample(100),
+            location: entity(10),
+            location_name: "Village Square".to_string(),
+            inventory: BTreeMap::new(),
+            beliefs: BTreeMap::new(),
+            known_entity_count: 0,
+            place_contents: Vec::new(),
+            adjacent_contents: BTreeMap::new(),
+            max_node_expansions: 224,
+            max_plan_depth: 10,
+            max_candidates_per_expansion: 0,
+            max_prerequisite_locations: 3,
+            beam_width: 5,
+            preferred_operator_boost: 0,
+            expansions_used: 30,
+            max_depth_reached: 4,
+            total_candidates: 18,
+            strategic_budget: Some(StrategicBudgetTrace {
+                stages_count: 5,
+                budget_total: 30,
+                budget_used: 30,
+                exhausted: true,
+            }),
+        };
+        let mut out = String::new();
+        format_budget_exhaustion_snapshots(&mut out, &[snapshot]);
+
+        assert!(out.contains("**Strategic budget**:"));
+        assert!(out.contains("- Stages attempted: 5"));
+        assert!(out.contains("- Budget used / total: 30 / 30"));
+        assert!(out.contains("- Exhausted: true"));
     }
 
     #[test]
@@ -7152,6 +7237,11 @@ mod tests {
                 cache_hit_count: 11,
                 cache_miss_count: 4,
                 cache_invalidation_count: 0,
+                planning_state_cache_entities_at_hits: 3,
+                planning_state_cache_entities_at_misses: 2,
+                planning_state_cache_effective_place_hits: 5,
+                planning_state_cache_effective_place_misses: 4,
+                planning_state_cache_invalidations: 1,
             },
         }
     }

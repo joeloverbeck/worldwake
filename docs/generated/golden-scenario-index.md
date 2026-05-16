@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 179
-- Contributing golden test files: 43
-- Associated tests: 215
+- Scenario blocks: 181
+- Contributing golden test files: 46
+- Associated tests: 217
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1409,48 +1409,33 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 142: Dusty Trail Remote Water Acquisition Recovery
 
-- Source: `golden_planner_pathology.rs:696`
-- Systems: Needs, AI, Travel, Production
-- GoalKinds: AcquireCommodity
-- ActionDomains: Travel, Production, Needs
-- Places: DustyTrail, ThornwallVillage
-- Principles: 7, 14, 20
+- Source: `golden_planner_pathology.rs:3`
 
-**Setup**: A Dusty Trail guard uses the `cli-evaluation.ron` place graph slice: Thornwall Village with a well 2 ticks away, Dusty Trail as the starting place, and the guard's patrol-style profile boundary. The guard starts thirsty enough for water acquisition to compete immediately.
+**Setup**: A Dusty Trail guard uses the cli-evaluation place graph slice with a remote Thornwall Village well and local thirst pressure.
 
-**Proves**: The exact Dusty Trail-style cross-location water path now produces a lawful `AcquireCommodity(Water)` plan without budget exhaustion, commits a `drink`, and lowers thirst within the scenario window.
+**Proves**: Cross-location AcquireCommodity(Water) finds a lawful non-exhausted plan, commits drink, and lowers thirst.
 
 **Cross-system chain**: Dusty Trail thirst pressure -> AcquireCommodity(Water) found plan -> travel to Thornwall Village -> committed drink -> reduced thirst.
 
-### Scenario 143: CLI Evaluation Lina 0-step FreeCarryCapacity Loop
-
-- Source: `golden_planner_pathology.rs:821`
-- Systems: Needs, AI, Production
-- GoalKinds: FreeCarryCapacity
-- ActionDomains: Needs, Production
-- Places: EldergroveForest
-- Principles: 3, 7, 20, 21
-
-**Setup**: Rebuild the exact Forager Lina Eldergrove Forest substrate from `scenarios/cli-evaluation.ron` using the live place graph, Lina's scenario profile values, 8 ground Apples, 5 ground Water, and the `Eldergrove Orchard` Apple source. The run uses the scenario seed `7777` and only seeds Lina's local Eldergrove beliefs, matching the observer report's locality boundary.
-
-**Proves**: After the real waste-accumulation phase from the cli-evaluation scenario, Lina no longer enters the observer-reported degenerate loop. The late-run decision window now lawfully includes both planning and active-action execution ticks: when planning occurs it either switches away from `FreeCarryCapacity` or produces executable disposal work, and the overall window still shows resumed eating and falling hunger.
-
-**Cross-system chain**: Eldergrove harvest/eat/waste accumulation -> carry strain assessed from actual carried load -> no spurious `FreeCarryCapacity` loop -> lawful self-care resumes -> late eat commit -> falling hunger.
-
 ### Scenario 144: Obligation satiation allows survival needs to override posting
 
-- Source: `golden_planner_pathology.rs:953`
-- Systems: Social artifact actions, Needs, AI, Perception
-- GoalKinds: PostNotice, AcquireCommodity(SelfConsume)
-- ActionDomains: Social, Needs
-- Places: DustyTrail, HearthstoneInn
-- Principles: 3, 7, 11, 22, 26
+- Source: `golden_planner_pathology.rs:12`
 
-**Setup**: A guard first directly observes a hostile at Dusty Trail, then starts the scenario window at Hearthstone Inn with local Bread and Water, critical hunger/thirst, `notice_posting_weight=900`, and the default obligation satiation profile. The remembered combat belief keeps a remote `ThreatWarning` notice branch lawful without reintroducing co-located combat as a competing explanation.
+**Setup**: A guard remembers a hostile, starts at Hearthstone Inn with local Bread and Water, critical needs, and high notice-posting weight.
 
-**Proves**: Repeated `PostNotice` still happens enough for satiation to matter, but the guard also commits both `eat` and `drink`, survives the window, and does not let notice posting dominate the committed action mix indefinitely.
+**Proves**: Repeated PostNotice still happens, but eat and drink commits recover and notice posting does not dominate indefinitely.
 
-**Cross-system chain**: remembered hostile belief -> repeated PostNotice commits append obligation tracker state -> ranking dampens saturated notice motive -> self-care commits become competitive -> guard survives.
+**Cross-system chain**: remembered hostile belief -> repeated PostNotice commits -> obligation satiation dampens notice motive -> self-care commits recover.
+
+### Scenario 143: CLI Evaluation Lina 0-step FreeCarryCapacity Loop
+
+- Source: `golden_planner_pathology_degenerate.rs:3`
+
+**Setup**: Rebuilds the Forager Lina Eldergrove Forest slice from cli-evaluation with local apples, water, orchard source, and seed 7777.
+
+**Proves**: The late-run window has no repeated 0-step FreeCarryCapacity loop and self-care resumes with a late eat commit.
+
+**Cross-system chain**: harvest/eat/waste accumulation -> carry strain from actual load -> no spurious FreeCarryCapacity loop -> self-care resumes.
 
 ### Scenario 167: Portfolio Rejects Infeasible Commitment After Sleep Blocker Suppression
 
@@ -1544,13 +1529,23 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 421: Survival-baseline diagnostics fixture
 
-- Source: `golden_scenario_diagnostics.rs:94`
+- Source: `golden_scenario_diagnostics_fixture.rs:3`
 
 **Setup**: Runs scenarios/survival-baseline.ron for 1440 ticks with decision tracing enabled.
 
-**Proves**: Aggregate scenario diagnostics are deterministic, schema-covered, observer-JSON round-trippable, and fixture-stable.
+**Proves**: Aggregate scenario diagnostics are schema-covered, observer-JSON round-trippable, and fixture-stable.
 
 **Cross-system chain**: Scenario spawn -> AI decision traces -> scenario diagnostics aggregation -> observer JSON representation.
+
+### Scenario 422: Survival-baseline diagnostics replay
+
+- Source: `golden_scenario_diagnostics_replay.rs:3`
+
+**Setup**: Runs scenarios/survival-baseline.ron for 1440 ticks with decision tracing enabled.
+
+**Proves**: Aggregate scenario diagnostics replay deterministically against the fixture run.
+
+**Cross-system chain**: Scenario spawn -> AI decision traces -> scenario diagnostics aggregation -> deterministic report equality.
 
 ### Scenario 126: Remote Travel To Resource Under Local Scarcity
 
@@ -1794,6 +1789,19 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: The normal perception tick records the source's observed capacity into the agent's SourceReliability for the same (source, commodity) key used by ranking.
 
 **Cross-system chain**: Co-located resource source -> perception batch -> SourceReliability capacity observation.
+
+### Scenario 423: S145 Five-Stage Strategic Budget Scaling
+
+- Source: `golden_strategic_budget_scaling.rs:164`
+- Systems: AI, Search, Production
+- GoalKinds: ProduceCommodity
+- ActionDomains: Production, Travel
+- Places: Village Square, Orchard Farm
+- Principles: 12, 20, 27, 29
+
+**Setup**: a baker knows one recipe whose four missing inputs are available away from the local production workstation.
+
+**Proves**: stage-aware strategic budget records a non-exhausted five-stage strategic itinerary.
 
 ### Scenario 170: Survival Ask-Consult Lands Roadmap Row Six
 

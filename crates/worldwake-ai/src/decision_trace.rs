@@ -98,6 +98,7 @@ pub struct AgentDecisionTrace {
     pub compiled_opportunities: Vec<Opportunity>,
     pub opportunity_compiler_load: Option<OpportunityCompilerLoad>,
     pub snapshot_cache_counters: Option<SnapshotCacheCounters>,
+    pub planning_state_cache_counters: Option<PlanningStateCacheCounters>,
     pub repair_attempts: Vec<RepairAttemptTrace>,
     pub causal_link_cap_hits: Vec<CausalLinkCapHit>,
 }
@@ -124,6 +125,41 @@ impl SnapshotCacheCounters {
         self.cache_invalidation_count = self
             .cache_invalidation_count
             .saturating_add(other.cache_invalidation_count);
+    }
+}
+
+/// Logical read counters for `PlanningState` branch-evaluation caches.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PlanningStateCacheCounters {
+    pub entities_at_hits: u64,
+    pub entities_at_misses: u64,
+    pub effective_place_hits: u64,
+    pub effective_place_misses: u64,
+    pub invalidations: u64,
+}
+
+impl PlanningStateCacheCounters {
+    #[must_use]
+    pub fn is_empty(self) -> bool {
+        self.entities_at_hits == 0
+            && self.entities_at_misses == 0
+            && self.effective_place_hits == 0
+            && self.effective_place_misses == 0
+            && self.invalidations == 0
+    }
+
+    pub fn add_assign(&mut self, other: Self) {
+        self.entities_at_hits = self.entities_at_hits.saturating_add(other.entities_at_hits);
+        self.entities_at_misses = self
+            .entities_at_misses
+            .saturating_add(other.entities_at_misses);
+        self.effective_place_hits = self
+            .effective_place_hits
+            .saturating_add(other.effective_place_hits);
+        self.effective_place_misses = self
+            .effective_place_misses
+            .saturating_add(other.effective_place_misses);
+        self.invalidations = self.invalidations.saturating_add(other.invalidations);
     }
 }
 
@@ -1122,6 +1158,9 @@ pub struct PlanAttemptTrace {
     pub goal: GoalKey,
     pub opportunity_anchor: OpportunityAnchor,
     pub outcome: PlanSearchOutcome,
+    /// Strategic-search budget provenance, when this attempt entered the
+    /// stage-budgeted strategic expansion loop.
+    pub strategic_budget: Option<StrategicBudgetTrace>,
     /// Strategic itinerary produced for this search attempt, when the planner
     /// entered the two-phase path and the itinerary had concrete steps.
     pub strategic_plan: Option<Vec<StrategicStepTrace>>,
@@ -1137,6 +1176,14 @@ pub struct PlanAttemptTrace {
     pub binding_rejections: Vec<BindingRejection>,
     /// Per-expansion summaries. Empty when tracing is disabled.
     pub expansion_summaries: Vec<SearchExpansionSummary>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StrategicBudgetTrace {
+    pub stages_count: u16,
+    pub budget_total: u32,
+    pub budget_used: u32,
+    pub exhausted: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1416,6 +1463,7 @@ pub struct DecisionTraceSink {
     traces: Vec<AgentDecisionTrace>,
     opportunity_compiler_loads: BTreeMap<(EntityId, Tick), OpportunityCompilerLoad>,
     snapshot_cache_counters: BTreeMap<(EntityId, Tick), SnapshotCacheCounters>,
+    planning_state_cache_counters: BTreeMap<(EntityId, Tick), PlanningStateCacheCounters>,
 }
 
 impl DecisionTraceSink {
@@ -1424,6 +1472,7 @@ impl DecisionTraceSink {
             traces: Vec::new(),
             opportunity_compiler_loads: BTreeMap::new(),
             snapshot_cache_counters: BTreeMap::new(),
+            planning_state_cache_counters: BTreeMap::new(),
         }
     }
 
@@ -1434,6 +1483,10 @@ impl DecisionTraceSink {
         }
         if let Some(counters) = trace.snapshot_cache_counters {
             self.snapshot_cache_counters
+                .insert((trace.agent, trace.tick), counters);
+        }
+        if let Some(counters) = trace.planning_state_cache_counters {
+            self.planning_state_cache_counters
                 .insert((trace.agent, trace.tick), counters);
         }
         self.traces.push(trace);
@@ -1471,6 +1524,24 @@ impl DecisionTraceSink {
         tick: Tick,
     ) -> Option<&SnapshotCacheCounters> {
         self.snapshot_cache_counters.get(&(agent, tick))
+    }
+
+    pub fn record_planning_state_cache_counters(
+        &mut self,
+        agent: EntityId,
+        tick: Tick,
+        counters: PlanningStateCacheCounters,
+    ) {
+        self.planning_state_cache_counters
+            .insert((agent, tick), counters);
+    }
+
+    pub fn planning_state_cache_counters(
+        &self,
+        agent: EntityId,
+        tick: Tick,
+    ) -> Option<&PlanningStateCacheCounters> {
+        self.planning_state_cache_counters.get(&(agent, tick))
     }
 
     pub fn traces(&self) -> &[AgentDecisionTrace] {
@@ -1514,6 +1585,7 @@ impl DecisionTraceSink {
         self.traces.clear();
         self.opportunity_compiler_loads.clear();
         self.snapshot_cache_counters.clear();
+        self.planning_state_cache_counters.clear();
     }
 
     /// Print a human-readable summary for one agent across all recorded ticks.
@@ -2735,6 +2807,7 @@ mod tests {
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
             snapshot_cache_counters: None,
+            planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
@@ -2826,6 +2899,7 @@ mod tests {
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
             snapshot_cache_counters: None,
+            planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Dead,
@@ -2890,6 +2964,7 @@ mod tests {
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
             snapshot_cache_counters: None,
+            planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
@@ -2951,6 +3026,7 @@ mod tests {
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
             snapshot_cache_counters: None,
+            planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
@@ -3073,6 +3149,29 @@ mod tests {
         sink.record(trace);
 
         assert_eq!(sink.snapshot_cache_counters(agent, tick), Some(&counters));
+    }
+
+    #[test]
+    fn sink_records_planning_state_cache_counters_by_agent_tick() {
+        let mut sink = DecisionTraceSink::new();
+        let agent = entity(0);
+        let tick = Tick(4);
+        let counters = PlanningStateCacheCounters {
+            entities_at_hits: 1,
+            entities_at_misses: 2,
+            effective_place_hits: 3,
+            effective_place_misses: 4,
+            invalidations: 5,
+        };
+        let mut trace = dead_trace(agent, tick);
+        trace.planning_state_cache_counters = Some(counters);
+
+        sink.record(trace);
+
+        assert_eq!(
+            sink.planning_state_cache_counters(agent, tick),
+            Some(&counters)
+        );
     }
 
     #[test]
@@ -4450,6 +4549,7 @@ mod tests {
                     goal: GoalKey::new(GoalKind::Sleep),
                     opportunity_anchor: OpportunityAnchor::Place(entity(42)),
                     outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 2 },
+                    strategic_budget: None,
                     target_belief_presence: TargetBeliefPresence::NotApplicable,
                     strategic_plan: None,
                     tactical_goal: None,
@@ -4884,6 +4984,7 @@ mod tests {
                     goal: GoalKey::new(GoalKind::ClaimOffice { office: entity(4) }),
                     opportunity_anchor: OpportunityAnchor::None,
                     outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 1 },
+                    strategic_budget: None,
                     strategic_plan: Some(vec![StrategicStepTrace {
                         destination: entity(8),
                         sub_goal: "AcquirePrerequisite(Firewood)".to_string(),
@@ -5073,6 +5174,7 @@ mod tests {
             goal: GoalKey::new(GoalKind::Sleep),
             opportunity_anchor: OpportunityAnchor::Place(entity(9)),
             outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 5 },
+            strategic_budget: None,
             strategic_plan: None,
             tactical_goal: None,
             landmarks_extracted: 0,
@@ -5479,6 +5581,7 @@ mod tests {
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
             snapshot_cache_counters: None,
+            planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
