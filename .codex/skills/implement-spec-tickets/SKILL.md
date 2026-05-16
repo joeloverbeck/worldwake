@@ -61,6 +61,8 @@ Keep the file small and machine-readable. Update it after intake, after every it
   "queue": [
     "tickets/S123EXAMPLE-002.md"
   ],
+  "implement_ticket_audit": "pending",
+  "post_ticket_review_audit": "not_required",
   "blocked": false,
   "blocker": null,
   "dirty_state": "clean",
@@ -78,12 +80,16 @@ On resume after `/new`, read this state file first, then verify every important 
 - queued ticket paths still exist and still belong to the originating spec family
 - `last_work_commit` is reachable from `HEAD`
 - `last_state_commit` is either `null` / `"none"`, `"self"`, or reachable from `HEAD`
+- child-audit markers, when present, are compatible with the last iteration state:
+  - `implement_ticket_audit` is `done`, `pending`, or `skipped:<reason>`
+  - `post_ticket_review_audit` is `done`, `pending`, `not_required`, or `skipped:<reason>`
+  - if a marker is missing for an in-flight iteration, infer it from live evidence only when the compact audit/review block or changed skill diff is visible; otherwise set it to `pending` before committing the iteration
 - `git status --short` matches or safely supersedes `dirty_state`
 
 After resume validation, state the checked fields compactly before invoking a child skill:
 
 ```text
-Resume validation checked: spec, worktree_root, branch, base_head, next_target, queue, last_work_commit, last_state_commit, dirty_state.
+Resume validation checked: spec, worktree_root, branch, base_head, next_target, queue, last_work_commit, last_state_commit, child-audit markers, dirty_state.
 ```
 
 If the state file conflicts with the live repo, trust the live repo and patch the state file before continuing. If the conflict changes the next target or archival readiness, state that explicitly before invoking a child skill.
@@ -110,9 +116,11 @@ If the state file conflicts with the live repo, trust the live repo and patch th
    - otherwise inspect active `tickets/*.md`, choose the first ticket in lexical order whose filename, `Deps`, problem statement, or explicit active deliverable wording ties it to the originating spec, and state the selection
 9. Build the initial pending queue from active tickets that clearly belong to the same originating spec family. Include a ticket only when it owns active implementation work for the spec: matching family id, explicit active spec dependency, or active deliverable wording. Treat incidental historical mentions, roadmap examples, and archived-context references as evidence to read, not queue membership. Keep the queue lexical and append-only; do not jump ahead of a follow-up created by the current iteration.
 10. Decide how to handle pre-existing untracked same-family ticket/spec files before implementation. Include them only when they are required to define the active family queue, dependency chain, or truthful handoff for the current iteration.
-11. Write or refresh `.codex/run-state/implement-spec-tickets.json` with the resolved spec, branch/worktree metadata, initial target, initial queue, dirty-state classification, and `blocked: false`.
+11. Write or refresh `.codex/run-state/implement-spec-tickets.json` with the resolved spec, branch/worktree metadata, initial target, initial queue, child-audit markers initialized for the first iteration, dirty-state classification, and `blocked: false`.
 
 If an old state file exists but no reset or blocker will occur before the first target is processed, a pre-work state refresh may be deferred until the first iteration state commit. This is allowed only when the next target, queue, ownership classification, and archival readiness have been validated against live repo state before invoking child skills.
+
+If an existing same-family state file is missing branch/worktree/base metadata, child-audit markers, or other resume-critical fields, it is also acceptable to make a small state-only commit before implementation begins. Use this only to make the harness resumable and keep that commit limited to `.codex/run-state/implement-spec-tickets.json`.
 
 ## Loop
 
@@ -144,6 +152,8 @@ $skill-audit .codex/skills/implement-ticket
 Apply every audit suggestion that is specific, evidence-backed, and compatible with `AGENTS.md` and `docs/FOUNDATIONS.md`. This harness is the user's explicit authorization to implement those suggestions; do not wait for a separate "Implement suggestions" prompt.
 
 Reject or defer only suggestions that are clearly wrong, speculative, duplicate already-live guidance, or would weaken Worldwake's ticket truthing, proof integrity, FOUNDATIONS alignment, or Cargo discipline.
+
+Before starting this phase, set or confirm `implement_ticket_audit: "pending"` in the run state for the current iteration. After the compact audit block is printed and any accepted skill edits are applied or rejected, update it to `done` or `skipped:<reason>`. Do not commit an iteration with this marker still `pending` unless the harness is intentionally stopping before the iteration commit.
 
 Before applying or rejecting suggestions, print a compact visible audit result:
 
@@ -196,6 +206,8 @@ Apply every sound, evidence-backed suggestion under the same rules as the `imple
 
 Archive-path and dependency repairs in active specs, implementation-order prose, or active sibling tickets count as material handoff updates for this trigger, even when the repairs are mechanical.
 
+Track this phase in the state file as well. Set `post_ticket_review_audit: "pending"` when the trigger is met, `done` after the compact audit block and any accepted edits are complete, `not_required` when the trigger is not met, or `skipped:<reason>` only when skipping is explicit and justified. Treat a missing marker on resume as `pending` if the review materially changed handoff surfaces and no evidence shows the audit ran.
+
 Put any review-created follow-up ticket at the front of the queue, ahead of the original lexical next ticket. If review only truthed a spec, ticket dependency, or current contract doc and created no follow-up, keep the existing queue order.
 
 ### 5. Commit The Iteration
@@ -227,6 +239,9 @@ After each iteration work commit, update `.codex/run-state/implement-spec-ticket
 - `last_state_commit`: `"self"` when the state update is committed separately as a state-file-only commit, the same sha as `last_work_commit` when amended into the work commit, or `"none"` when the state file remains intentionally uncommitted
 - next target, or `"final_spec_archive"` / `"blocked"`
 - remaining queue
+- child-audit markers for the completed or in-flight iteration:
+  - `implement_ticket_audit`
+  - `post_ticket_review_audit`
 - blocker summary when blocked
 - dirty-state classification
 - `updated_at`
@@ -237,6 +252,8 @@ If the state file itself changes after the work commit, either:
 
 - amend it into the work commit before reporting the sha, then set `last_work_commit` and `last_state_commit` to that amended commit sha; or
 - commit it separately as a harness-state commit, then set `last_work_commit` to the implementation/archive commit and `last_state_commit` to `"self"`. Report the actual state-only commit sha in the handoff after the commit succeeds.
+
+When the state file is committed separately, the committed `dirty_state` must describe the expected worktree state after that state commit succeeds, not the transient state-file dirt before the commit. In the normal successful case, record `clean`. If the state file intentionally remains uncommitted, only then mention the dirty state file in `dirty_state` and set `last_state_commit` to `"none"`.
 
 Then print a short handoff that mirrors the state file:
 

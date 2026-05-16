@@ -15,8 +15,10 @@
     "tickets/S145PLASUBHAR-004.md",
     "tickets/S145PLASUBHAR-005.md"
   ],
+  "implement_ticket_audit": "done",
+  "post_ticket_review_audit": "done",
   "blocked": false,
   "blocker": null,
-  "dirty_state": "clean after ticket commit; state file dirty until state commit",
+  "dirty_state": "clean",
   "updated_at": "2026-05-16"
 }
