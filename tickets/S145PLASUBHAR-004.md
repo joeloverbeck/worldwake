@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — module-level doc comment on `planning_state.rs` (D5 subsumed); no runtime behavior change
-**Deps**: S145PLASUBHAR-003
+**Deps**: archive/tickets/S145PLASUBHAR-003.md
 
 ## Problem
 
@@ -15,7 +15,7 @@
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
 1. Existing tests at `crates/worldwake-ai/src/planning_state.rs:4179` and `:4210` cover single-mutation cross-clone invariance (A clones B, B mutates, A's cache unchanged) but do not cover compound-order invariance (A applies X-then-Y, B applies Y-then-X, results equal). The new compound-order test exercises the full six-mutator invalidation surface: `move_lot_ref_to_holder` (line 407), `move_lot_ref_to_ground` (line 434), `move_entity_ref` (line 571), `set_possessor_ref` (line 583), `set_container_ref` (line 596), `mark_removed_ref` (line 618). `set_quantity_ref` at `:605-614` deliberately does NOT invalidate the cache (commodity quantity does not affect entity placement) and serves as the no-op control in the D3.5 counter test.
-2. `PlanningStateCacheCounters` and `PlanningState::cache_counters()` accessor are introduced in ticket S145PLASUBHAR-003 — this ticket's D3.5 test depends on them. The deferral is per the Placeholder-replace pattern in spirit: ticket 003 owns the infrastructure; this ticket owns the correctness proof.
+2. `PlanningStateCacheCounters` and `PlanningState::cache_counters()` accessor were introduced by archived ticket `archive/tickets/S145PLASUBHAR-003.md` — this ticket's D3.5 test depends on them. The deferral is per the Placeholder-replace pattern in spirit: ticket 003 owns the infrastructure; this ticket owns the correctness proof.
 3. Shared abstraction boundary: the cache invariant being asserted is "two equivalent mutation sequences applied to clones of the same `PlanningState` produce identical results across `entities_at` and `effective_place_ref` queries." This boundary is `PlanningState`-internal; FND-27 forbids the caches from becoming source of truth, and the new test enforces that the caches' memoization remains a pure function of the substrate, not of the order in which mutations were applied.
 
 ## Architecture Check

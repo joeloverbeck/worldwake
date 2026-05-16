@@ -80,6 +80,11 @@ pub struct PerformanceMetrics {
     pub cache_hit_count: u64,
     pub cache_miss_count: u64,
     pub cache_invalidation_count: u64,
+    pub planning_state_cache_entities_at_hits: u64,
+    pub planning_state_cache_entities_at_misses: u64,
+    pub planning_state_cache_effective_place_hits: u64,
+    pub planning_state_cache_effective_place_misses: u64,
+    pub planning_state_cache_invalidations: u64,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -211,6 +216,11 @@ mod tests {
                 cache_hit_count: 10,
                 cache_miss_count: 4,
                 cache_invalidation_count: 0,
+                planning_state_cache_entities_at_hits: 3,
+                planning_state_cache_entities_at_misses: 2,
+                planning_state_cache_effective_place_hits: 5,
+                planning_state_cache_effective_place_misses: 4,
+                planning_state_cache_invalidations: 1,
             },
         }
     }

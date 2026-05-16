@@ -3760,6 +3760,33 @@ fn render_scenario_diagnostics_text(
         "- **Cache invalidations**: {}\n",
         report.performance.cache_invalidation_count
     )?;
+    writeln!(
+        out,
+        "- **Planning-state entities_at cache hits**: {}",
+        report.performance.planning_state_cache_entities_at_hits
+    )?;
+    writeln!(
+        out,
+        "- **Planning-state entities_at cache misses**: {}",
+        report.performance.planning_state_cache_entities_at_misses
+    )?;
+    writeln!(
+        out,
+        "- **Planning-state effective-place cache hits**: {}",
+        report.performance.planning_state_cache_effective_place_hits
+    )?;
+    writeln!(
+        out,
+        "- **Planning-state effective-place cache misses**: {}",
+        report
+            .performance
+            .planning_state_cache_effective_place_misses
+    )?;
+    writeln!(
+        out,
+        "- **Planning-state cache invalidations**: {}\n",
+        report.performance.planning_state_cache_invalidations
+    )?;
     render_percentile_bucket(
         out,
         "Opportunity compiled count",
@@ -6160,6 +6187,7 @@ mod tests {
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
             snapshot_cache_counters: None,
+            planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
@@ -7209,6 +7237,11 @@ mod tests {
                 cache_hit_count: 11,
                 cache_miss_count: 4,
                 cache_invalidation_count: 0,
+                planning_state_cache_entities_at_hits: 3,
+                planning_state_cache_entities_at_misses: 2,
+                planning_state_cache_effective_place_hits: 5,
+                planning_state_cache_effective_place_misses: 4,
+                planning_state_cache_invalidations: 1,
             },
         }
     }

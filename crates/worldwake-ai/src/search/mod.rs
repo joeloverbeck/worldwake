@@ -8,7 +8,8 @@ mod transition;
 use crate::opportunity_compiler::PerceivedOpportunityIndex;
 use crate::{
     GoalKindPlannerExt, GoalOffer, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpSemantics,
-    PlanningEntityRef, PlanningSnapshot, PlanningState, shared_collections::SharedVec,
+    PlanningEntityRef, PlanningSnapshot, PlanningState, PlanningStateCacheCounters,
+    shared_collections::SharedVec,
 };
 #[cfg(test)]
 use candidates::search_candidate_from_planner;
@@ -53,6 +54,7 @@ use worldwake_sim::{
 pub(crate) struct SearchTraceMetadata {
     pub(crate) strategic_plan: Option<strategic::StrategicPlan>,
     pub(crate) strategic_budget: Option<crate::decision_trace::StrategicBudgetTrace>,
+    pub(crate) planning_state_cache_counters: Option<PlanningStateCacheCounters>,
     pub(crate) tactical_goal: Option<String>,
     pub(crate) landmarks_extracted: u16,
     pub(crate) landmark_orderings: u16,
@@ -608,14 +610,16 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
         }
         return PlanSearchResult::FrontierExhausted { expansions_used: 0 };
     }
-    let mut frontier = DualFrontier::new(execution_budget.preferred_operator_boost());
-    frontier.push_regular(FrontierEntry::new(root_node_for_tactical(
+    let root = root_node_for_tactical(
         snapshot,
         goal,
         recipes,
         execution_budget,
         tactical_goal.as_ref(),
-    )));
+    );
+    let cache_counter_source = root.state.clone();
+    let mut frontier = DualFrontier::new(execution_budget.preferred_operator_boost());
+    frontier.push_regular(FrontierEntry::new(root));
     let mut landmark_set = LandmarkSet::empty();
     let mut expansions = 0u16;
     let effective_budget = cognitive.max_node_expansions;
@@ -625,6 +629,10 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
         if root_goal_satisfaction_allowed(goal, &node.state)
             && goal.key.kind.is_satisfied(&node.state)
         {
+            trace_state.planning_state_cache_counters = Some(cache_counter_source.cache_counters());
+            if let Some(ref mut meta) = trace_metadata {
+                **meta = trace_state.clone();
+            }
             return PlanSearchResult::Found(
                 PlannedPlan::new(
                     opportunity,
@@ -646,6 +654,10 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
             continue;
         }
         if expansions >= effective_budget {
+            trace_state.planning_state_cache_counters = Some(cache_counter_source.cache_counters());
+            if let Some(ref mut meta) = trace_metadata {
+                **meta = trace_state.clone();
+            }
             if let Some(barrier_plan) = best_barrier {
                 return PlanSearchResult::Found(Box::new(barrier_plan));
             }
@@ -782,6 +794,10 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
 
         let candidates_generated = candidates.len() as u16;
         if candidates_generated > cognitive.max_candidates_per_expansion {
+            trace_state.planning_state_cache_counters = Some(cache_counter_source.cache_counters());
+            if let Some(ref mut meta) = trace_metadata {
+                **meta = trace_state.clone();
+            }
             if let Some(barrier_plan) = best_barrier {
                 return PlanSearchResult::Found(Box::new(barrier_plan));
             }
@@ -918,6 +934,8 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
                             });
                         }
                         if let Some(ref mut meta) = trace_metadata {
+                            trace_state.planning_state_cache_counters =
+                                Some(cache_counter_source.cache_counters());
                             **meta = trace_state.clone();
                         }
                         return PlanSearchResult::Found(
@@ -1048,6 +1066,11 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
         }
         for (_, terminal, successor, preferred) in successors {
             if let Some(terminal_kind) = terminal {
+                trace_state.planning_state_cache_counters =
+                    Some(cache_counter_source.cache_counters());
+                if let Some(ref mut meta) = trace_metadata {
+                    **meta = trace_state.clone();
+                }
                 return PlanSearchResult::Found(
                     PlannedPlan::new(
                         opportunity,
@@ -1068,11 +1091,13 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
     }
 
     if let Some(barrier_plan) = best_barrier {
+        trace_state.planning_state_cache_counters = Some(cache_counter_source.cache_counters());
         if let Some(ref mut meta) = trace_metadata {
             **meta = trace_state;
         }
         return PlanSearchResult::Found(Box::new(barrier_plan));
     }
+    trace_state.planning_state_cache_counters = Some(cache_counter_source.cache_counters());
     if let Some(ref mut meta) = trace_metadata {
         **meta = trace_state;
     }

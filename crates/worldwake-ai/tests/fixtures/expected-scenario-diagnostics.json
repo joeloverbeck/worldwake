@@ -5408,6 +5408,11 @@
     },
     "cache_hit_count": 21898,
     "cache_miss_count": 0,
-    "cache_invalidation_count": 0
+    "cache_invalidation_count": 0,
+    "planning_state_cache_entities_at_hits": 2456,
+    "planning_state_cache_entities_at_misses": 35124,
+    "planning_state_cache_effective_place_hits": 3042523,
+    "planning_state_cache_effective_place_misses": 1345744,
+    "planning_state_cache_invalidations": 130575
   }
 }

@@ -1,7 +1,8 @@
+use crate::PlanningStateCacheCounters;
 use crate::planning_snapshot::PlanningSnapshot;
 use crate::shared_collections::{SharedMap, SharedSet};
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use worldwake_core::{
@@ -70,6 +71,7 @@ pub struct PlanningState<'snapshot> {
     hypothetical_registry: SharedMap<HypotheticalEntityId, HypotheticalEntityMeta>,
     entities_at_cache: Rc<RefCell<BTreeMap<EntityId, Vec<EntityId>>>>,
     effective_place_cache: Rc<RefCell<BTreeMap<PlanningEntityRef, Option<EntityId>>>>,
+    cache_counters: Rc<Cell<PlanningStateCacheCounters>>,
     next_hypothetical_id: u32,
 }
 
@@ -99,13 +101,28 @@ impl<'snapshot> PlanningState<'snapshot> {
             hypothetical_registry: SharedMap::new(),
             entities_at_cache: Rc::new(RefCell::new(BTreeMap::new())),
             effective_place_cache: Rc::new(RefCell::new(BTreeMap::new())),
+            cache_counters: Rc::new(Cell::new(PlanningStateCacheCounters::default())),
             next_hypothetical_id: 0,
         }
     }
 
     fn invalidate_entities_at_cache(&mut self) {
+        self.bump_cache_counters(|counters| {
+            counters.invalidations = counters.invalidations.saturating_add(1);
+        });
         self.entities_at_cache = Rc::new(RefCell::new(BTreeMap::new()));
         self.effective_place_cache = Rc::new(RefCell::new(BTreeMap::new()));
+    }
+
+    fn bump_cache_counters(&self, update: impl FnOnce(&mut PlanningStateCacheCounters)) {
+        let mut counters = self.cache_counters.get();
+        update(&mut counters);
+        self.cache_counters.set(counters);
+    }
+
+    #[must_use]
+    pub fn cache_counters(&self) -> PlanningStateCacheCounters {
+        self.cache_counters.get()
     }
 
     #[must_use]
@@ -484,14 +501,7 @@ impl<'snapshot> PlanningState<'snapshot> {
 
     #[must_use]
     pub fn effective_place_ref(&self, entity: PlanningEntityRef) -> Option<EntityId> {
-        if let Some(place) = self.effective_place_cache.borrow().get(&entity) {
-            return *place;
-        }
-        let resolved = self.resolve_effective_place_ref(entity, &mut BTreeSet::new());
-        self.effective_place_cache
-            .borrow_mut()
-            .insert(entity, resolved);
-        resolved
+        self.resolve_effective_place_ref(entity, &mut BTreeSet::new())
     }
 
     #[must_use]
@@ -909,8 +919,14 @@ impl<'snapshot> PlanningState<'snapshot> {
             return None;
         }
         if let Some(place) = self.effective_place_cache.borrow().get(&entity) {
+            self.bump_cache_counters(|counters| {
+                counters.effective_place_hits = counters.effective_place_hits.saturating_add(1);
+            });
             return *place;
         }
+        self.bump_cache_counters(|counters| {
+            counters.effective_place_misses = counters.effective_place_misses.saturating_add(1);
+        });
         let resolved = if let Some(override_place) = self.entity_place_overrides.get(&entity) {
             *override_place
         } else if let Some(possessor) = self.direct_possessor_ref(entity) {
@@ -1310,8 +1326,14 @@ impl SpatialBeliefView for PlanningState<'_> {
         }
 
         if let Some(entities) = self.entities_at_cache.borrow().get(&place) {
+            self.bump_cache_counters(|counters| {
+                counters.entities_at_hits = counters.entities_at_hits.saturating_add(1);
+            });
             return entities.clone();
         }
+        self.bump_cache_counters(|counters| {
+            counters.entities_at_misses = counters.entities_at_misses.saturating_add(1);
+        });
 
         // Slow path: full scan with override resolution.
         let mut entities = self
@@ -4225,6 +4247,15 @@ mod tests {
 
         assert_eq!(base.effective_place_ref(cargo_ref), Some(town));
         assert_eq!(moved.effective_place_ref(cargo_ref), Some(field));
+    }
+
+    #[test]
+    fn planning_state_cache_counters_start_empty() {
+        let (view, actor, _town, _field, _bread) = test_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        assert!(state.cache_counters().is_empty());
     }
 
     #[test]

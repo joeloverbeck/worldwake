@@ -6310,7 +6310,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
     let previous_goal = agenda_state.committed.as_ref().map(|ag| ag.key.goal_key);
     let mut jc = None;
     let mut facility_intents = worldwake_core::ContentionIntents::default();
-    let (_, initial_valid, initial_continued, _, initial_selection, _, _, _) =
+    let (_, initial_valid, initial_continued, _, initial_selection, _, _, _, _) =
         plan_and_validate_next_step_traced(
             &mut harness.world,
             &mut harness.event_log,
@@ -6402,7 +6402,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
 
     let previous_goal = agenda_state.committed.as_ref().map(|ag| ag.key.goal_key);
     let mut jc2 = None;
-    let (continued_step, continued_valid, plan_continued, _, continuation_selection, _, _, _) =
+    let (continued_step, continued_valid, plan_continued, _, continuation_selection, _, _, _, _) =
         plan_and_validate_next_step_traced(
             &mut harness.world,
             &mut harness.event_log,
