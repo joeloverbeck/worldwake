@@ -800,6 +800,7 @@ mod tests {
                         landmark_orderings: 0,
                         target_belief_presence:
                             crate::decision_trace::TargetBeliefPresence::NotApplicable,
+                        method_trace: None,
                         binding_rejections: Vec::new(),
                         expansion_summaries: Vec::new(),
                     }],

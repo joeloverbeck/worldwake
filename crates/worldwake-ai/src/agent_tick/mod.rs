@@ -301,7 +301,8 @@ pub(super) fn decisive_evidence_from_discrepancy_entry(
         | Discrepancy::RouteUnknown
         | Discrepancy::SearchBudgetExhausted
         | Discrepancy::PartialExecutionDrift
-        | Discrepancy::NeedHorizonExceeded { .. } => {}
+        | Discrepancy::NeedHorizonExceeded { .. }
+        | Discrepancy::MethodFailure(_) => {}
     }
     refs.capped(cap)
 }
@@ -809,6 +810,10 @@ pub(super) fn process_overdue_plan_step_expectations(
                 agent,
                 goal_key,
                 failed_step: &step,
+                method_id: runtime
+                    .current_plan
+                    .as_ref()
+                    .and_then(|plan| plan.method_id),
                 execution_failure: None,
                 belief_discrepancy: Some(overdue_discrepancy(kind_tag)),
                 current_tick: ctx.tick,
@@ -818,6 +823,7 @@ pub(super) fn process_overdue_plan_step_expectations(
                 agent,
                 &goal_key,
                 &step,
+                failure_context.method_id,
                 None,
                 failure_context.belief_discrepancy,
             );

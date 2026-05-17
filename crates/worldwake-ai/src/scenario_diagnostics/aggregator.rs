@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use worldwake_core::{
     BeliefStatusTag, BlockerScope, ClaimantOutcome, DecisionEventPayload, Discrepancy, EventLog,
-    EventTag, EventView, GoalKind, GoalRejectionReason, OmissionReason, PercentileBucket, Permille,
-    PlanInvalidationReason, ReplanReason, Tick, TopicScope,
+    EventTag, EventView, GoalKind, GoalRejectionReason, MethodSchemaId, OmissionReason,
+    PercentileBucket, Permille, PlanInvalidationReason, ReplanReason, Tick, TopicScope,
 };
 
 use crate::{
@@ -13,7 +13,8 @@ use crate::{
 
 use super::{
     BeliefMetrics, BlockerScopeVariantId, CoordinationMetrics, GoalPressureMetrics,
-    PerformanceMetrics, PlanningMetrics, RevalidationRepairMetrics, ScenarioDiagnosticsReport,
+    MethodUsageCounts, PerformanceMetrics, PlanningMetrics, RevalidationRepairMetrics,
+    ScenarioDiagnosticsReport,
 };
 
 #[must_use]
@@ -59,6 +60,7 @@ struct ScenarioDiagnosticsBuilder {
     terminal_kind_distribution: BTreeMap<crate::PlanTerminalKind, u64>,
     heuristic_helpful_expansions: u64,
     heuristic_expansions: u64,
+    method_usage: BTreeMap<Option<MethodSchemaId>, MethodUsageCounts>,
 
     invalidation_reasons: BTreeMap<Discrepancy, u64>,
     repair_attempts: u64,
@@ -212,6 +214,7 @@ impl ScenarioDiagnosticsBuilder {
     fn record_plan_trace(&mut self, trace: &PlanAttemptTrace) {
         self.plan_attempts += 1;
         increment(&mut self.plan_attempts_by_kind, trace.goal.kind, 1);
+        self.record_method_usage(trace);
 
         match &trace.outcome {
             PlanSearchOutcome::Found {
@@ -245,6 +248,27 @@ impl ScenarioDiagnosticsBuilder {
             if expansion.helpful_action_count > 0 {
                 self.heuristic_helpful_expansions += 1;
             }
+        }
+    }
+
+    fn record_method_usage(&mut self, trace: &PlanAttemptTrace) {
+        let key = trace
+            .method_trace
+            .as_ref()
+            .and_then(|method_trace| method_trace.method_id);
+        let counts = self.method_usage.entry(key).or_default();
+        counts.attempts = counts.attempts.saturating_add(1);
+        if let Some(method_trace) = &trace.method_trace {
+            if method_trace.method_id.is_some() {
+                counts.selected_count = counts.selected_count.saturating_add(1);
+            } else {
+                counts.fallback_count = counts.fallback_count.saturating_add(1);
+            }
+            if method_trace.failure_mode.is_some() {
+                counts.failure_count = counts.failure_count.saturating_add(1);
+            }
+        } else {
+            counts.fallback_count = counts.fallback_count.saturating_add(1);
         }
     }
 
@@ -445,6 +469,7 @@ impl ScenarioDiagnosticsBuilder {
                     self.heuristic_helpful_expansions,
                     self.heuristic_expansions,
                 ),
+                method_usage: self.method_usage,
             },
             revalidation_repair: RevalidationRepairMetrics {
                 invalidation_reasons: self.invalidation_reasons,
@@ -601,6 +626,13 @@ fn normalize_discrepancy(discrepancy: Discrepancy) -> Discrepancy {
             },
             reason: worldwake_core::BlockerReason::LegalEffectExpired,
         },
+        Discrepancy::MethodFailure(_) => {
+            Discrepancy::MethodFailure(worldwake_core::MethodFailureContext {
+                method_id: worldwake_core::MethodSchemaId(0),
+                kind: worldwake_core::MethodFailureKind::SubgoalUnachievable,
+                subgoal_index: None,
+            })
+        }
         other => other,
     }
 }
@@ -609,12 +641,13 @@ fn normalize_discrepancy(discrepancy: Discrepancy) -> Discrepancy {
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
-    use super::build_scenario_diagnostics;
+    use super::{MethodUsageCounts, build_scenario_diagnostics};
     use crate::agent_tick::portfolio::FeasibilityVerdict;
     use crate::decision_trace::{
-        OpportunityCompilerLoad, PortfolioSlotTrace, PortfolioTrace, SearchExpansionSummary,
-        TargetBeliefPresence,
+        MethodPlanAttemptTrace, OpportunityCompilerLoad, PortfolioSlotTrace, PortfolioTrace,
+        SearchExpansionSummary, TargetBeliefPresence,
     };
+    use crate::htn::MethodFailureMode;
     use crate::{
         BlockerScopeVariantId, CandidateDampingEntry, CandidateSuppressionCategory, CandidateTrace,
         DecisionOutcome, ExecutionTrace, GoalPriorityClass, PlanAttemptTrace, PlanSearchOutcome,
@@ -627,10 +660,10 @@ mod tests {
         ContentionEventPayload, ContentionResolutionRule, DecisionEventPayload, Discrepancy,
         EntityId, EventLog, EventPayload, EventTag, GoalCommittedPayload, GoalKey, GoalKind,
         GoalRejectionReason, GoalSuppressedPayload, HomeostaticNeedId, InvalidatorTag,
-        OmissionReason, OpportunityAnchor, OpportunityKey, PendingEvent, PercentileBucket,
-        Permille, PlanInvalidatedPayload, PlanInvalidationReason, RepairKind, ReplanReason,
-        ReplanTriggeredPayload, RoutePreferenceSummary, RouteSegment, TestimonyTrustSummary, Tick,
-        TopicScope, VisibilitySpec, WitnessData,
+        MethodSchemaId, OmissionReason, OpportunityAnchor, OpportunityKey, PendingEvent,
+        PercentileBucket, Permille, PlanInvalidatedPayload, PlanInvalidationReason, RepairKind,
+        ReplanReason, ReplanTriggeredPayload, RoutePreferenceSummary, RouteSegment,
+        TestimonyTrustSummary, Tick, TopicScope, VisibilitySpec, WitnessData,
     };
 
     #[test]
@@ -785,6 +818,7 @@ mod tests {
                 landmarks_extracted: 0,
                 landmark_orderings: 0,
                 target_belief_presence: TargetBeliefPresence::NotApplicable,
+                method_trace: None,
                 binding_rejections: Vec::new(),
                 expansion_summaries: vec![SearchExpansionSummary {
                     depth: 1,
@@ -819,6 +853,7 @@ mod tests {
                 landmarks_extracted: 0,
                 landmark_orderings: 0,
                 target_belief_presence: TargetBeliefPresence::NotApplicable,
+                method_trace: None,
                 binding_rejections: Vec::new(),
                 expansion_summaries: Vec::new(),
             },
@@ -860,8 +895,63 @@ mod tests {
             Permille::new_unchecked(1000)
         );
         assert_eq!(
+            report.planning.method_usage.get(&None),
+            Some(&MethodUsageCounts {
+                attempts: 3,
+                selected_count: 0,
+                fallback_count: 3,
+                failure_count: 0,
+            })
+        );
+        assert_eq!(
             report.performance.search_expansions,
             PercentileBucket::from_sorted(&[7])
+        );
+    }
+
+    #[test]
+    fn method_usage_counts_selected_fallback_and_failure_correctly() {
+        let mut selected = found_plan_attempt(GoalKind::Sleep, 1);
+        selected.method_trace = Some(MethodPlanAttemptTrace {
+            method_id: Some(MethodSchemaId(5)),
+            subgoals_attempted: Vec::new(),
+            failure_mode: None,
+            motive_score: 400,
+        });
+        let mut failed = found_plan_attempt(GoalKind::Sleep, 1);
+        failed.method_trace = Some(MethodPlanAttemptTrace {
+            method_id: Some(MethodSchemaId(5)),
+            subgoals_attempted: Vec::new(),
+            failure_mode: Some(MethodFailureMode::Timeout(12)),
+            motive_score: 400,
+        });
+        let fallback = found_plan_attempt(GoalKind::Wash, 1);
+
+        let report = build_scenario_diagnostics(
+            &[],
+            &[selected, failed, fallback],
+            &[],
+            &EventLog::new(),
+            (Tick(0), Tick(0)),
+        );
+
+        assert_eq!(
+            report.planning.method_usage.get(&Some(MethodSchemaId(5))),
+            Some(&MethodUsageCounts {
+                attempts: 2,
+                selected_count: 2,
+                fallback_count: 0,
+                failure_count: 1,
+            })
+        );
+        assert_eq!(
+            report.planning.method_usage.get(&None),
+            Some(&MethodUsageCounts {
+                attempts: 1,
+                selected_count: 0,
+                fallback_count: 1,
+                failure_count: 0,
+            })
         );
     }
 
@@ -1178,6 +1268,7 @@ mod tests {
             landmarks_extracted: 0,
             landmark_orderings: 0,
             target_belief_presence: TargetBeliefPresence::NotApplicable,
+            method_trace: None,
             binding_rejections: Vec::new(),
             expansion_summaries: Vec::new(),
         }

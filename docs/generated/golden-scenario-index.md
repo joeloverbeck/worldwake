@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 188
-- Contributing golden test files: 48
-- Associated tests: 224
+- Scenario blocks: 196
+- Contributing golden test files: 49
+- Associated tests: 241
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -668,6 +668,110 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 ### Scenario 349: Final Integration Authors The Full Coexistence Stack
 
 - Source: `golden_final_integration.rs:327`
+
+### Scenario 431: S147 ProduceWithGather Method Selection
+
+- Source: `golden_htn_methods.rs:790`
+- Systems: AI, Search, Production
+- GoalKinds: ProduceCommodity
+- ActionDomains: Production, Travel
+- Places: Village Square, Orchard Farm
+- Principles: 7, 14, 20, 22, 26, 28, 29
+
+**Setup**: a hungry baker knows a bread recipe, a local mill, and a remote firewood source. The agent has no firewood in inventory.
+
+**Proves**: HTN method selection chooses ProduceWithGather from the agent's belief view and a goal offer whose evidence places include the known resource source.
+
+### Scenario 433: S147 Autonomous Produce Method Trace Propagation
+
+- Source: `golden_htn_methods.rs:826`
+- Systems: AI, Search, Production
+- GoalKinds: ProduceCommodity
+- ActionDomains: Production, Travel
+- Places: Village Square, Orchard Farm
+- Principles: 7, 14, 20, 22, 26, 28, 29
+
+**Setup**: a hungry baker autonomously generates a ProduceCommodity goal from known recipe, workstation, and remote resource-source beliefs.
+
+**Proves**: generated candidate evidence reaches MethodSelector, so the planning attempt records ProduceWithGather in MethodPlanAttemptTrace.
+
+### Scenario 434: S147 FulfillBountyInvestigation Method Selection
+
+- Source: `golden_htn_methods.rs:900`
+- Systems: AI, Search, SocialArtifact
+- GoalKinds: FulfillBounty
+- ActionDomains: Social, Travel
+- Places: Village Square, Orchard Farm
+- Principles: 7, 14, 20, 26, 28, 29
+
+**Setup**: a hunter knows the same bounty through a reported source, making the witness-report precondition available for the investigation method.
+
+**Proves**: generated FulfillBounty candidate evidence can select FulfillBountyInvestigation without a hand-constructed GoalOffer.
+
+### Scenario 436: S147 FulfillBountyDirect Method Selection
+
+- Source: `golden_htn_methods.rs:940`
+- Systems: AI, Search, SocialArtifact, Combat
+- GoalKinds: FulfillBounty
+- ActionDomains: Social, Combat, Travel
+- Places: Village Square, Orchard Farm
+- Principles: 7, 14, 20, 26, 28, 29
+
+**Setup**: a hunter directly observes a posted bounty and its target-location evidence, so no witness-report precondition is available.
+
+**Proves**: generated FulfillBounty candidate evidence can select FulfillBountyDirect through TargetLastSeenKnown without a hand-built offer.
+
+### Scenario 437: S147 EscortToHome Method Selection
+
+- Source: `golden_htn_methods.rs:984`
+- Systems: AI, Search, Care, Travel
+- GoalKinds: EscortToSafety
+- ActionDomains: Care, Travel
+- Places: Village Square, Orchard Farm
+- Principles: 7, 14, 20, 22, 26, 28, 29
+
+**Setup**: a caretaker directly observes a wounded co-located ward and a reachable adjacent destination.
+
+**Proves**: generated EscortToSafety candidate evidence reaches MethodSelector and selects EscortToHome through the escortee-location belief path.
+
+### Scenario 438: S147 Method Failure Producer
+
+- Source: `golden_htn_methods.rs:1031`
+- Systems: AI, Search, Care, FailureHandling
+- GoalKinds: EscortToSafety
+- ActionDomains: Care
+- Places: Village Square
+- Principles: 14, 20, 26, 28, 29
+
+**Setup**: a generated EscortToSafety candidate selects EscortToHome, then the selected method id is carried on the active plan into the normal plan failure handler.
+
+**Proves**: method-selected failures that are not classified by a stronger blocker/discrepancy emit Discrepancy::MethodFailure through the runtime failure producer instead of through fabricated traces.
+
+### Scenario 435: S147 Autonomous FulfillBountyInvestigation Method Trace
+
+- Source: `golden_htn_methods.rs:1074`
+- Systems: AI, Search, SocialArtifact, Combat
+- GoalKinds: FulfillBounty
+- ActionDomains: Social, Combat, Travel
+- Places: Village Square, Orchard Farm
+- Principles: 7, 14, 20, 26, 28, 29
+
+**Setup**: a hunter autonomously generates a FulfillBounty goal from a reported bounty artifact and target-location report.
+
+**Proves**: the generated bounty candidate records FulfillBountyInvestigation in MethodPlanAttemptTrace during planning.
+
+### Scenario 432: S147 Disabled Methods Fall Back To Flat Strategic Search
+
+- Source: `golden_htn_methods.rs:1124`
+- Systems: AI, Search, Production
+- GoalKinds: ProduceCommodity
+- ActionDomains: Production, Travel
+- Places: Village Square, Orchard Farm
+- Principles: 20, 22, 28, 29
+
+**Setup**: a hungry baker knows a bread recipe, a local mill, and a remote firewood source, but disables all ProduceCommodity methods in AgentSchemaContextProfile.disabled_methods.
+
+**Proves**: method dispatch returns to the flat strategic path with no method trace while the ordinary ProduceCommodity planning attempt still exists.
 
 ### Scenario 342: Waste Decay Reaches A Bounded Steady State
 

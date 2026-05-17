@@ -83,6 +83,7 @@ Stable per-agent agenda memory and retry parameters used by the AI layer.
 |-------|------|-------------|
 | `disabled_extractors` | `BTreeSet<CandidateExtractorId>` | *(undocumented)* |
 | `budget_overrides` | `BTreeMap<GoalDispatchKey, GoalPlanningBudget>` | *(undocumented)* |
+| `disabled_methods` | `BTreeSet<MethodSchemaId>` | *(undocumented)* |
 
 ---
 

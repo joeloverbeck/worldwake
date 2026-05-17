@@ -10835,6 +10835,94 @@ mod tests {
     }
 
     #[test]
+    fn remote_recipe_produce_goal_carries_input_source_place_evidence() {
+        let agent = entity(1);
+        let camp = entity(10);
+        let forest = entity(11);
+        let bakery = entity(12);
+        let mill = entity(20);
+        let firewood_source = entity(21);
+        let recipe_id = RecipeId(0);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, mill, firewood_source]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(camp, EntityKind::Place);
+        view.entity_kinds.insert(forest, EntityKind::Place);
+        view.entity_kinds.insert(bakery, EntityKind::Place);
+        view.entity_kinds.insert(mill, EntityKind::Facility);
+        view.entity_kinds
+            .insert(firewood_source, EntityKind::Facility);
+        view.effective_places.insert(agent, camp);
+        view.effective_places.insert(mill, bakery);
+        view.effective_places.insert(firewood_source, forest);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.adjacent_places.insert(camp, vec![forest]);
+        view.adjacent_places.insert(forest, vec![camp, bakery]);
+        view.adjacent_places.insert(bakery, vec![forest]);
+        view.known_recipes.insert(agent, vec![recipe_id]);
+        view.unique_item_counts
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
+        view.workstations
+            .insert((bakery, WorkstationTag::Mill), vec![mill]);
+        view.sources_at
+            .insert((forest, CommodityKind::Firewood), vec![firewood_source]);
+        view.resource_sources.insert(
+            firewood_source,
+            ResourceSource {
+                commodity: CommodityKind::Firewood,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            },
+        );
+        view.workstations.insert(
+            (forest, WorkstationTag::ChoppingBlock),
+            vec![firewood_source],
+        );
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+        });
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &ViolationMemory::default(),
+            &recipes,
+            Tick(5),
+            3,
+            false,
+        );
+        let produce = result
+            .candidates
+            .iter()
+            .find(|candidate| candidate.key.kind == GoalKind::ProduceCommodity { recipe_id })
+            .expect("remote recipe-only evidence should emit a ProduceCommodity offer");
+
+        assert!(
+            produce.evidence_places.contains(&forest),
+            "ProduceCommodity evidence must include the remote input source place for HTN method selection: {produce:?}"
+        );
+        assert!(
+            produce.evidence_entities.contains(&firewood_source),
+            "ProduceCommodity evidence must include the remote input source entity for candidate provenance: {produce:?}"
+        );
+    }
+
+    #[test]
     fn hunger_below_low_band_emits_no_hunger_goals() {
         let agent = entity(1);
         let mut view = TestBeliefView::default();

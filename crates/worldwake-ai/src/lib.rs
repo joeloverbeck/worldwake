@@ -24,6 +24,7 @@ pub mod goal_policy;
 mod goal_schema;
 pub mod goal_schema_registry;
 mod goal_switching;
+pub mod htn;
 mod institutional_queries;
 pub mod interrupts;
 pub mod knowledge_path;

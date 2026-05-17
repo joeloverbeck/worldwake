@@ -81,6 +81,7 @@ pub mod learned_opportunity_memory;
 pub mod load;
 pub mod materialization_tag;
 pub mod memory_capacity_profile;
+pub mod method_schema_id;
 pub mod motive_source;
 pub mod needs;
 pub mod numerics;
@@ -196,7 +197,10 @@ pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,
     RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
 };
-pub use discrepancy::{Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory};
+pub use discrepancy::{
+    Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, MethodFailureContext,
+    MethodFailureKind,
+};
 pub use disposal::DisposalProfile;
 pub use diversification::{DiversificationProfile, LastProactiveExplorationTick};
 pub use drive_escalation_profile::{
@@ -225,7 +229,7 @@ pub use exploration::{AcquisitionExhaustionTracker, ExplorationProfile};
 pub use factions::{FactionData, FactionPurpose};
 pub use goal::{
     AcquisitionQuantity, CommodityPurpose, ExplorationMotivation, GoalKey, GoalKind,
-    HypothesisKind, OpportunityAnchor, OpportunityKey,
+    GoalKindDiscriminant, HypothesisKind, OpportunityAnchor, OpportunityKey,
 };
 pub use goal_dispatch_key::GoalDispatchKey;
 pub use goal_planning_budget::GoalPlanningBudget;
@@ -254,7 +258,8 @@ pub use load::{
 };
 pub use materialization_tag::MaterializationTag;
 pub use memory_capacity_profile::MemoryCapacityProfile;
-pub use motive_source::{MotiveSource, MotiveSourceRef};
+pub use method_schema_id::MethodSchemaId;
+pub use motive_source::{MotiveSource, MotiveSourceDiscriminant, MotiveSourceRef};
 pub use needs::{
     BodyCostPerTick, DeprivationExposure, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile,
 };

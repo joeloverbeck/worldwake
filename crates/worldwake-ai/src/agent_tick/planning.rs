@@ -762,7 +762,7 @@ pub(super) fn build_candidate_plans_with_sources(
             candidate_source,
             opportunity_index,
         );
-        let result = match result {
+        let mut result = match result {
             PlanSearchResult::Found(plan)
                 if plan.steps.first().is_some_and(|step| {
                     step.op_kind == crate::PlannerOpKind::Harvest
@@ -789,6 +789,12 @@ pub(super) fn build_candidate_plans_with_sources(
             }
             other => other,
         };
+        if let PlanSearchResult::Found(plan) = &mut result {
+            plan.method_id = trace_metadata
+                .method_trace
+                .as_ref()
+                .and_then(|trace| trace.method_id);
+        }
         let found_blocks_later_goals = match &result {
             PlanSearchResult::Found(plan) => found_plan_blocks_later_goals(plan),
             PlanSearchResult::Unsupported
@@ -2745,6 +2751,7 @@ pub(super) fn plan_search_result_to_trace(
         landmarks_extracted: trace_metadata.landmarks_extracted,
         landmark_orderings: trace_metadata.landmark_orderings,
         target_belief_presence,
+        method_trace: trace_metadata.method_trace.clone(),
         binding_rejections,
         expansion_summaries,
     }
@@ -4893,6 +4900,7 @@ mod tests {
                     budget_used: 2,
                     exhausted: false,
                 }),
+                method_trace: None,
                 goal_budget: worldwake_core::GoalPlanningBudget::PRODUCTION,
                 planning_state_cache_counters: None,
                 tactical_goal: Some(

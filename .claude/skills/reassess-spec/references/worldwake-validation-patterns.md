@@ -6,7 +6,7 @@ Project-specific patterns for reassess-spec. When a spec proposes one of the tri
 
 When any of the patterns below trigger, every named integration point must appear as an itemized deliverable (D-section) in the spec's `## Deliverables` section. Prose-only references in Summary, Design Goals, Cross-System Interactions, or FOUNDATIONS Alignment do not substitute. Flag the missing deliverable as a HIGH Issue with the pattern's integration-point list as the recommendation.
 
-**Pattern citation in findings**: When a Pattern Trigger below fires and shapes a finding's classification or recommendation, cite the pattern's name in the finding's title or evidence line (e.g., `[Pattern: Fabricated Migration]`, `[Pattern: New GoalKind Variant]`). This makes the audit trail reflect which trigger motivated the finding, and helps Step 8 summaries credit the pattern that drove the reassessment's conclusions. Apply this whether the finding is an Issue, Improvement, or Addition — the citation is about pattern application, not severity.
+**Pattern citation in findings**: When a Pattern Trigger below fires and shapes a finding's classification or recommendation, cite the pattern's name in the finding's title or evidence line (e.g., `[Pattern: Fabricated Symbol References]`, `[Pattern: New GoalKind Variant]`). This makes the audit trail reflect which trigger motivated the finding, and helps Step 8 summaries credit the pattern that drove the reassessment's conclusions. Apply this whether the finding is an Issue, Improvement, or Addition — the citation is about pattern application, not severity.
 
 ## New GoalKind Variant
 
@@ -162,21 +162,30 @@ If the spec proposes utility gates (emit only if utility > 0), that belongs in t
 
 **Flag as Issue**: Spec text that leaves placement ambiguous ("test/support or shared observer code") or picks `tests/` when observer reuse is desired. Recommend committing to runtime placement as part of the Issue finding.
 
-## Fabricated Migration Before-Signatures
+## Fabricated Symbol References
 
-**Trigger**: Spec contains Before/After code blocks (or prose framing like "currently:" / "today the trait returns…" / "migrates from X to Y") that present deliverables as migrations of existing methods, signatures, or return types.
+**Trigger**: Either of:
 
-**Rule**: Every "Before" signature the spec claims as existing MUST be verified by direct grep. Fabricated migrations are a distinct failure mode from "renamed/moved signature": the methods do not exist *anywhere*, and the spec's entire D-section framing is wrong. This is the scenario where the spec was drafted against an imagined API surface rather than against current code.
+- *Migration framing variant* — Spec contains Before/After code blocks (or prose framing like "currently:" / "today the trait returns…" / "migrates from X to Y") that present deliverables as migrations of existing methods, signatures, or return types.
+- *Net-new pseudocode variant* — Spec pseudocode in new deliverables (no migration framing) references types, functions, fields, or symbols that are not defined in the codebase AND not introduced anywhere else in the spec as a deliverable. Common signal: a new-system spec whose D1 type definition cites 5+ supporting types in field positions without defining them.
+
+**Rule**: Every symbol the spec presents as existing — whether on the "Before" side of a migration or in the field types/method parameters/return types of a net-new pseudocode block — MUST be verified by direct grep. The two variants share the failure mode (the spec was drafted against an imagined API surface rather than against current code); they differ only in framing. The fix differs by variant: migration framings need D-section reframing; net-new fictional symbols need to be either renamed to an existing semantically-equivalent type or added as explicit deliverables that define them.
 
 **Verify the spec addresses**:
 
-1. For each "Before" method name cited in migration framing, grep the workspace (`rg "fn <name>\|<name>\("` across `crates/`). Zero matches outside the spec file itself = fabricated migration.
-2. When fabrication is confirmed, check whether equivalent functionality is served under a *different* name — search for the semantic capability (e.g., grep for `last_known_place` if the spec talks about target location) and cite the actual existing surface in the finding.
-3. If no equivalent exists, the deliverables are net-new additions, not migrations — the Design Goals, Summary, and D-section framing all need rewrites.
+1. *Migration framing variant*: For each "Before" method name cited in migration framing, grep the workspace (`rg "fn <name>\|<name>\("` across `crates/`). Zero matches outside the spec file itself = fabricated migration.
+2. *Net-new pseudocode variant*: For each non-primitive type name in a new deliverable's pseudocode field positions (struct fields, enum variant payloads, function parameters, return types), grep the workspace for `(struct|enum|type|fn) <name>` across `crates/`. Zero matches outside the spec file AND no other deliverable in the same spec defining the symbol = fabricated symbol reference.
+3. When fabrication is confirmed (either variant), check whether equivalent functionality is served under a *different* name — search for the semantic capability (e.g., grep for `last_known_place` if the spec talks about target location) and cite the actual existing surface in the finding.
+4. If no equivalent exists, the deliverables are net-new additions: for the migration-framing variant, the Design Goals, Summary, and D-section framing all need rewrites; for the net-new pseudocode variant, the fictional symbols become explicit deliverables (inlined in the parent or split per the `spec-writing-rules.md` "New deliverable vs. amendment" heuristic).
 
-**Analog failure modes already covered**: Code example fidelity (3.3) catches structural mismatches in code snippets; Pseudocode dependency completeness (3.3) catches missing symbols in proposed pseudocode. Fabricated-migration fills the gap between them: it names an *explicit* failure mode where the spec's "before" side is entirely fictional, and it prescribes the grep-every-Before-signature check as the early-warning check.
+**Analog failure modes already covered**: Code example fidelity (3.3) catches structural mismatches in code snippets; Pseudocode dependency completeness (3.3) catches missing symbols in proposed pseudocode. This pattern (formerly "Fabricated Migration Before-Signatures") names two *explicit* failure modes where the spec's referenced symbols are entirely fictional — one in migration framings, one in net-new pseudocode — and prescribes the grep-every-cited-symbol check as the early-warning check.
 
-**Flag as CRITICAL Issue**: The spec's migration framing is false. Recommend reframing affected D-sections as net-new additions, deleting any `*_crisp` / `*_old` / shim discussion (nothing to shim), and rewriting Summary/Design Goals to describe the gap filled by the new methods rather than the migration of non-existent ones. Also reframe any consumer-migration D-section ("emitters currently check X.is_some()…") as net-new consumer integration, because consumers cannot be migrating code that never existed.
+**Flag as CRITICAL Issue**:
+
+- *Migration framing variant*: The spec's migration framing is false. Recommend reframing affected D-sections as net-new additions, deleting any `*_crisp` / `*_old` / shim discussion (nothing to shim), and rewriting Summary/Design Goals to describe the gap filled by the new methods rather than the migration of non-existent ones. Also reframe any consumer-migration D-section ("emitters currently check X.is_some()…") as net-new consumer integration, because consumers cannot be migrating code that never existed.
+- *Net-new pseudocode variant*: The spec's pseudocode references symbols that don't exist. Recommend either renaming to an existing semantically-equivalent type, or adding explicit deliverables (inlined or split) that define each fabricated symbol. Apply the "New deliverable vs. amendment" heuristic in `spec-writing-rules.md` to choose between inline and split.
+
+**Example (net-new pseudocode variant)**: A spec proposes `MethodSchema { motive_bias: Vec<MotiveBias> }` where `MotiveBias` is `{ motive_variant: MotiveSourceVariantId, weight: Permille }`. Grep finds 0 matches for `MotiveSourceVariantId` outside the spec — the codebase has `MotiveSource` (a payload-bearing enum). Fix: add a deliverable that defines `MotiveSourceDiscriminant` as the core-side payload-free mirror with `From<&MotiveSource>` conversion, and rename `motive_variant: MotiveSourceVariantId` to `motive_variant: MotiveSourceDiscriminant` in the original deliverable's pseudocode.
 
 ## Proposed Visibility Qualifier Audit
 

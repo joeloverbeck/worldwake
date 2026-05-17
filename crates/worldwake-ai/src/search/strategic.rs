@@ -2,16 +2,25 @@
 
 use crate::{
     GoalKindPlannerExt, GoalOffer, PlanningSnapshot, PlanningState,
-    decision_trace::StrategicBudgetTrace,
+    decision_trace::{
+        MethodPlanAttemptTrace, StrategicBudgetTrace, SubgoalAttemptOutcome, SubgoalAttemptResult,
+    },
+    htn::{
+        ArtifactTemplate, ClaimRequirement, CommodityTemplate, EntityCriterion, EntityTemplate,
+        LocationTemplate, MethodSchema, PayloadTemplate, PayloadValueTemplate, RecipeTemplate,
+        SubgoalTemplate, build_method_registry, select_method_with_recipes,
+    },
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use worldwake_core::{
-    CommodityKind, EntityId, EntityKind, ExecutionBudget, GoalKind, OpportunityAnchor, Quantity,
+    AgentSchemaContextProfile, CommodityKind, EntityId, EntityKind, ExecutionBudget, GoalKind,
+    MotiveSourceDiscriminant, MotiveSourceRef, OpportunityAnchor, Quantity, RecipeId,
+    WorkstationTag,
 };
 use worldwake_sim::{
-    EconomicBeliefView, EntityBeliefView, FacilityBeliefView, InventoryBeliefView, RecipeRegistry,
-    SpatialBeliefView,
+    EconomicBeliefView, EntityBeliefView, FacilityBeliefView, InventoryBeliefView,
+    ProfileBeliefView, RecipeRegistry, SpatialBeliefView,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -24,6 +33,7 @@ pub(crate) struct StrategicSearchResult {
     pub plan: Option<StrategicPlan>,
     pub budget_trace: Option<StrategicBudgetTrace>,
     pub stages_count: u16,
+    pub method_trace: Option<MethodPlanAttemptTrace>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -102,6 +112,7 @@ pub(crate) fn plan_with_budget_trace(
             plan: Some(StrategicPlan { steps: Vec::new() }),
             budget_trace: None,
             stages_count: 0,
+            method_trace: None,
         };
     }
 
@@ -111,20 +122,39 @@ pub(crate) fn plan_with_budget_trace(
             plan: None,
             budget_trace: None,
             stages_count: 0,
+            method_trace: None,
         };
     };
     let goal_places = goal_places(goal, &state, recipes);
     let missing_commodities = missing_commodities(goal, &state, recipes, actor_place, &goal_places);
     let query_commodity = social_query_commodity(goal, &missing_commodities, recipes);
-    let mut stages = build_stages(
+    let method_registry = build_method_registry();
+    let default_profile = AgentSchemaContextProfile::default();
+    let profile = state
+        .agent_schema_context_profile(actor)
+        .unwrap_or(default_profile);
+    let selected_method = select_method_with_recipes(
+        actor,
+        goal,
+        &method_registry,
+        &profile,
+        &state,
+        &goal.motive_sources,
+        Some(recipes),
+    );
+    let stage_build = build_stages(
         &state,
         snapshot,
+        goal,
+        recipes,
+        selected_method,
         actor,
         actor_place,
         &goal_places,
         &missing_commodities,
         execution_budget.max_prerequisite_locations(),
     );
+    let mut stages = stage_build.stages;
 
     if stages.is_empty() {
         if goal_places.contains(&actor_place) {
@@ -132,6 +162,7 @@ pub(crate) fn plan_with_budget_trace(
                 plan: Some(StrategicPlan { steps: Vec::new() }),
                 budget_trace: None,
                 stages_count: 0,
+                method_trace: None,
             };
         }
         let plan = exploration_plan(snapshot, actor_place, &goal.key.kind)
@@ -140,6 +171,7 @@ pub(crate) fn plan_with_budget_trace(
             plan,
             budget_trace: None,
             stages_count: 0,
+            method_trace: None,
         };
     }
 
@@ -151,6 +183,7 @@ pub(crate) fn plan_with_budget_trace(
             plan: Some(StrategicPlan { steps: local_steps }),
             budget_trace: None,
             stages_count: stages.len().min(usize::from(u16::MAX)) as u16,
+            method_trace: stage_build.method_trace,
         };
     }
 
@@ -179,6 +212,7 @@ pub(crate) fn plan_with_budget_trace(
                     false,
                 )),
                 stages_count,
+                method_trace: stage_build.method_trace,
             };
         }
         if expansions >= search_budget {
@@ -226,6 +260,7 @@ pub(crate) fn plan_with_budget_trace(
             expansions >= search_budget,
         )),
         stages_count,
+        method_trace: stage_build.method_trace,
     }
 }
 
@@ -321,15 +356,62 @@ fn social_query_commodity(
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct StageBuildResult {
+    stages: Vec<StrategicStage>,
+    method_trace: Option<MethodPlanAttemptTrace>,
+}
+
+#[allow(clippy::too_many_arguments)]
 fn build_stages(
     state: &PlanningState<'_>,
     snapshot: &PlanningSnapshot,
+    goal: &GoalOffer,
+    recipes: &RecipeRegistry,
+    selected_method: Option<&MethodSchema>,
     actor: EntityId,
     actor_place: EntityId,
     goal_places: &[EntityId],
     missing_commodities: &[CommodityKind],
     per_stage_limit: u8,
-) -> Vec<StrategicStage> {
+) -> StageBuildResult {
+    if let Some(method) = selected_method {
+        let stages = method
+            .subgoals
+            .iter()
+            .flat_map(|template| {
+                template_to_stages(
+                    template,
+                    state,
+                    snapshot,
+                    goal,
+                    recipes,
+                    actor,
+                    actor_place,
+                    goal_places,
+                    per_stage_limit,
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut stages = collapse_repeated_stages(stages);
+        if !goal_places.is_empty()
+            && !stages
+                .iter()
+                .any(|stage| matches!(stage.kind, StrategicStageKind::Goal))
+        {
+            stages.push(StrategicStage {
+                kind: StrategicStageKind::Goal,
+                places: goal_places.to_vec(),
+            });
+        }
+        if !stages.is_empty() {
+            return StageBuildResult {
+                stages,
+                method_trace: Some(method_trace(method, &goal.motive_sources)),
+            };
+        }
+    }
+
     let mut stages = missing_commodities
         .iter()
         .filter_map(|commodity| {
@@ -355,7 +437,461 @@ fn build_stages(
         });
     }
 
-    stages
+    StageBuildResult {
+        stages,
+        method_trace: None,
+    }
+}
+
+fn method_trace(method: &MethodSchema, motives: &[MotiveSourceRef]) -> MethodPlanAttemptTrace {
+    MethodPlanAttemptTrace {
+        method_id: Some(method.id),
+        subgoals_attempted: method
+            .subgoals
+            .iter()
+            .enumerate()
+            .map(|(template_index, template)| SubgoalAttemptResult {
+                template_index,
+                kind: template.into(),
+                outcome: SubgoalAttemptOutcome::Pending,
+            })
+            .collect(),
+        failure_mode: None,
+        motive_score: method_motive_score(method, motives),
+    }
+}
+
+fn method_motive_score(method: &MethodSchema, motives: &[MotiveSourceRef]) -> u32 {
+    method
+        .motive_bias
+        .iter()
+        .filter(|bias| {
+            motives
+                .iter()
+                .any(|source| MotiveSourceDiscriminant::from(&source.source) == bias.motive_variant)
+        })
+        .map(|bias| u32::from(bias.weight.value()))
+        .sum()
+}
+
+fn collapse_repeated_stages(stages: Vec<StrategicStage>) -> Vec<StrategicStage> {
+    stages.into_iter().fold(Vec::new(), |mut collapsed, stage| {
+        if collapsed.last() != Some(&stage) {
+            collapsed.push(stage);
+        }
+        collapsed
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn template_to_stages(
+    template: &SubgoalTemplate,
+    state: &PlanningState<'_>,
+    snapshot: &PlanningSnapshot,
+    goal: &GoalOffer,
+    recipes: &RecipeRegistry,
+    actor: EntityId,
+    actor_place: EntityId,
+    goal_places: &[EntityId],
+    per_stage_limit: u8,
+) -> Vec<StrategicStage> {
+    match template {
+        SubgoalTemplate::AcquireCommodity { commodity, .. } => {
+            let Some(commodity) = resolve_commodity_template(*commodity, goal, recipes) else {
+                return Vec::new();
+            };
+            if matches!(
+                goal.key.kind,
+                GoalKind::RestockCommodity {
+                    commodity: goal_commodity
+                } if goal_commodity == commodity
+            ) {
+                return stage_for_places(goal_places.to_vec());
+            }
+            let places = acquisition_places_for_commodity(
+                state,
+                snapshot,
+                actor,
+                actor_place,
+                commodity,
+                per_stage_limit,
+            );
+            (!places.is_empty())
+                .then_some(StrategicStage {
+                    kind: StrategicStageKind::Acquire(commodity),
+                    places,
+                })
+                .into_iter()
+                .collect()
+        }
+        SubgoalTemplate::TravelTo(location) | SubgoalTemplate::ReturnTo(location) => {
+            stage_for_places(resolve_location_template(
+                location, state, goal, recipes, actor,
+            ))
+        }
+        SubgoalTemplate::ObserveTarget(criterion) => stage_for_places(
+            resolve_entity_criterion_places(criterion, state, goal, actor),
+        ),
+        SubgoalTemplate::InspectArtifact(artifact) => stage_for_places(
+            resolve_artifact_template_places(artifact, state, goal, actor),
+        ),
+        SubgoalTemplate::ResolveCoordination(claim) => {
+            stage_for_places(resolve_claim_requirement_places(claim, state, goal, actor))
+        }
+        SubgoalTemplate::PerformAction(_, payload) => stage_for_places(
+            resolve_payload_template_places(payload, state, goal, recipes, actor)
+                .unwrap_or_else(|| goal_places.to_vec()),
+        ),
+        SubgoalTemplate::AskWitness(_) => stage_for_places(goal_places.to_vec()),
+    }
+}
+
+fn stage_for_places(mut places: Vec<EntityId>) -> Vec<StrategicStage> {
+    places.sort_unstable();
+    places.dedup();
+    (!places.is_empty())
+        .then_some(StrategicStage {
+            kind: StrategicStageKind::Goal,
+            places,
+        })
+        .into_iter()
+        .collect()
+}
+
+fn resolve_commodity_template(
+    template: CommodityTemplate,
+    goal: &GoalOffer,
+    recipes: &RecipeRegistry,
+) -> Option<CommodityKind> {
+    match template {
+        CommodityTemplate::GoalCommodity => match goal.key.kind {
+            GoalKind::ConsumeOwnedCommodity { commodity }
+            | GoalKind::AcquireCommodity { commodity, .. }
+            | GoalKind::SellCommodity { commodity }
+            | GoalKind::RestockCommodity { commodity }
+            | GoalKind::MoveCargo { commodity, .. } => Some(commodity),
+            _ => None,
+        },
+        CommodityTemplate::RecipeInput { recipe, ordinal } => {
+            let recipe_id = resolve_recipe_template(recipe, goal)?;
+            recipes
+                .get(recipe_id)?
+                .inputs
+                .get(usize::from(ordinal))
+                .map(|(commodity, _)| *commodity)
+        }
+        CommodityTemplate::Fixed(commodity) => Some(commodity),
+    }
+}
+
+fn resolve_recipe_template(template: RecipeTemplate, goal: &GoalOffer) -> Option<RecipeId> {
+    match template {
+        RecipeTemplate::GoalRecipe => {
+            if let GoalKind::ProduceCommodity { recipe_id } = goal.key.kind {
+                Some(recipe_id)
+            } else {
+                None
+            }
+        }
+        RecipeTemplate::Fixed(recipe) => Some(RecipeId(recipe)),
+    }
+}
+
+fn resolve_location_template(
+    template: &LocationTemplate,
+    state: &PlanningState<'_>,
+    goal: &GoalOffer,
+    recipes: &RecipeRegistry,
+    actor: EntityId,
+) -> Vec<EntityId> {
+    match template {
+        LocationTemplate::LastKnownTargetPlace { target }
+        | LocationTemplate::StagingPlaceForConfrontation { target }
+        | LocationTemplate::EscorteeHome { escortee: target } => {
+            resolve_entity_template(*target, state, goal, actor)
+                .and_then(|entity| state.effective_place(entity))
+                .into_iter()
+                .collect()
+        }
+        LocationTemplate::NearestSellerOf { commodity } => {
+            resolve_commodity_template(*commodity, goal, recipes)
+                .map(|commodity| seller_places(state, commodity))
+                .unwrap_or_default()
+        }
+        LocationTemplate::AgentHome => state.effective_place(actor).into_iter().collect(),
+        LocationTemplate::BountyIssuerPlace { bounty } => {
+            resolve_entity_template(*bounty, state, goal, actor)
+                .and_then(|entity| state.effective_place(entity))
+                .into_iter()
+                .collect()
+        }
+        LocationTemplate::OfficePlace { institution } => {
+            resolve_entity_template(*institution, state, goal, actor)
+                .and_then(|entity| {
+                    state
+                        .effective_place(entity)
+                        .or_else(|| state.snapshot().seat(entity))
+                })
+                .into_iter()
+                .collect()
+        }
+        LocationTemplate::KnownWorkstationFor { recipe } => {
+            let Some(recipe_id) = resolve_recipe_template(*recipe, goal) else {
+                return Vec::new();
+            };
+            let Some(recipe) = recipes.get(recipe_id) else {
+                return Vec::new();
+            };
+            recipe
+                .required_workstation_tag
+                .map_or_else(Vec::new, |tag| workstation_places(state, tag))
+        }
+    }
+}
+
+fn resolve_entity_template(
+    template: EntityTemplate,
+    state: &PlanningState<'_>,
+    goal: &GoalOffer,
+    actor: EntityId,
+) -> Option<EntityId> {
+    match template {
+        EntityTemplate::GoalPrimaryEntity | EntityTemplate::BountyTarget => {
+            primary_goal_entity(goal)
+        }
+        EntityTemplate::GoalSecondaryEntity => secondary_goal_entity(goal),
+        EntityTemplate::GoalPlace => match goal.anchor {
+            OpportunityAnchor::Place(place) => Some(place),
+            OpportunityAnchor::Entity(entity) => state.effective_place(entity),
+            OpportunityAnchor::None => None,
+        },
+        EntityTemplate::Violation => goal.evidence_entities.iter().next().copied(),
+        EntityTemplate::Institution => goal.obligation_source,
+        EntityTemplate::Escortee => {
+            if let GoalKind::EscortToSafety { subject, .. } = goal.key.kind {
+                Some(subject)
+            } else {
+                None
+            }
+        }
+        EntityTemplate::Fixed(entity) => Some(entity),
+    }
+    .or_else(|| (template == EntityTemplate::GoalPrimaryEntity).then_some(actor))
+}
+
+fn primary_goal_entity(goal: &GoalOffer) -> Option<EntityId> {
+    match goal.key.kind {
+        GoalKind::EngageHostile { target }
+        | GoalKind::RaidTarget { target }
+        | GoalKind::TreatWounds { patient: target }
+        | GoalKind::SearchForMissing {
+            subject: target, ..
+        }
+        | GoalKind::ReportMissing {
+            subject: target, ..
+        }
+        | GoalKind::ReportFound {
+            subject: target, ..
+        }
+        | GoalKind::EscortToSafety {
+            subject: target, ..
+        }
+        | GoalKind::FulfillBounty { bounty: target }
+        | GoalKind::ClaimOffice { office: target }
+        | GoalKind::SupportCandidateForOffice { office: target, .. }
+        | GoalKind::InvestigateViolation { place: target, .. }
+        | GoalKind::Patrol { place: target }
+        | GoalKind::ExploreLocation {
+            target_place: target,
+            ..
+        }
+        | GoalKind::StealItem {
+            target_item: target,
+        }
+        | GoalKind::Accuse {
+            crime_register: target,
+            ..
+        }
+        | GoalKind::PunishAccused { office: target, .. } => Some(target),
+        _ => match goal.anchor {
+            OpportunityAnchor::Entity(entity) | OpportunityAnchor::Place(entity) => Some(entity),
+            OpportunityAnchor::None => goal.evidence_entities.iter().next().copied(),
+        },
+    }
+}
+
+fn secondary_goal_entity(goal: &GoalOffer) -> Option<EntityId> {
+    match goal.key.kind {
+        GoalKind::SupportCandidateForOffice { candidate, .. }
+        | GoalKind::Accuse {
+            accused: candidate, ..
+        }
+        | GoalKind::PunishAccused {
+            accused: candidate, ..
+        } => Some(candidate),
+        GoalKind::MoveCargo { destination, .. } | GoalKind::EscortToSafety { destination, .. } => {
+            Some(destination)
+        }
+        _ => None,
+    }
+}
+
+fn resolve_entity_criterion_places(
+    criterion: &EntityCriterion,
+    state: &PlanningState<'_>,
+    goal: &GoalOffer,
+    actor: EntityId,
+) -> Vec<EntityId> {
+    match criterion {
+        EntityCriterion::Target(template) => resolve_entity_template(*template, state, goal, actor)
+            .and_then(|entity| state.effective_place(entity))
+            .into_iter()
+            .collect(),
+        EntityCriterion::Workstation(tag) => workstation_places(state, *tag),
+        EntityCriterion::ResourceSource(commodity) => {
+            resolve_commodity_template(*commodity, goal, &RecipeRegistry::new())
+                .map(|commodity| resource_source_places(state, commodity))
+                .unwrap_or_default()
+        }
+        EntityCriterion::Seller(commodity) => {
+            resolve_commodity_template(*commodity, goal, &RecipeRegistry::new())
+                .map(|commodity| seller_places(state, commodity))
+                .unwrap_or_default()
+        }
+        EntityCriterion::Witness { .. }
+        | EntityCriterion::ViolationEvidence { .. }
+        | EntityCriterion::Ledger { .. } => goal.evidence_places.iter().copied().collect(),
+    }
+}
+
+fn resolve_artifact_template_places(
+    artifact: &ArtifactTemplate,
+    state: &PlanningState<'_>,
+    goal: &GoalOffer,
+    actor: EntityId,
+) -> Vec<EntityId> {
+    match artifact {
+        ArtifactTemplate::ViolationEvidence { violation } => {
+            resolve_entity_template(*violation, state, goal, actor)
+        }
+        ArtifactTemplate::Ledger { institution } => {
+            resolve_entity_template(*institution, state, goal, actor)
+        }
+        ArtifactTemplate::BountyProof { bounty, .. } => {
+            resolve_entity_template(*bounty, state, goal, actor)
+        }
+    }
+    .and_then(|entity| state.effective_place(entity))
+    .into_iter()
+    .chain(goal.evidence_places.iter().copied())
+    .collect()
+}
+
+fn resolve_claim_requirement_places(
+    claim: &ClaimRequirement,
+    state: &PlanningState<'_>,
+    goal: &GoalOffer,
+    actor: EntityId,
+) -> Vec<EntityId> {
+    match claim {
+        ClaimRequirement::OfficeAuthority { office } => {
+            resolve_entity_template(*office, state, goal, actor)
+        }
+        ClaimRequirement::ResourceSourceAccess { place, .. }
+        | ClaimRequirement::FacilityQueueSlot { facility: place } => {
+            resolve_entity_template(*place, state, goal, actor)
+        }
+        ClaimRequirement::BountyIssuance { bounty } => {
+            resolve_entity_template(*bounty, state, goal, actor)
+        }
+    }
+    .and_then(|entity| state.effective_place(entity).or(Some(entity)))
+    .into_iter()
+    .collect()
+}
+
+fn resolve_payload_template_places(
+    payload: &PayloadTemplate,
+    state: &PlanningState<'_>,
+    goal: &GoalOffer,
+    recipes: &RecipeRegistry,
+    actor: EntityId,
+) -> Option<Vec<EntityId>> {
+    let PayloadTemplate::Explicit(payload) = payload else {
+        return None;
+    };
+    match payload {
+        PayloadValueTemplate::Trade { commodity, .. } => {
+            resolve_commodity_template(*commodity, goal, recipes).map(|commodity| {
+                let mut places = seller_places(state, commodity);
+                places.extend(resource_source_places(state, commodity));
+                places
+            })
+        }
+        PayloadValueTemplate::Craft { recipe } => {
+            let recipe_id = resolve_recipe_template(*recipe, goal)?;
+            let tag = recipes.get(recipe_id)?.required_workstation_tag?;
+            Some(workstation_places(state, tag))
+        }
+        PayloadValueTemplate::Attack { target } => {
+            resolve_entity_template(*target, state, goal, actor)
+                .and_then(|entity| state.effective_place(entity))
+                .map(|place| vec![place])
+        }
+        PayloadValueTemplate::ClaimBounty { bounty } => {
+            resolve_entity_template(*bounty, state, goal, actor)
+                .and_then(|entity| state.effective_place(entity))
+                .map(|place| vec![place])
+        }
+        PayloadValueTemplate::EscortToSafety { destination, .. } => Some(
+            resolve_location_template(destination, state, goal, recipes, actor),
+        ),
+    }
+}
+
+fn workstation_places(state: &PlanningState<'_>, tag: WorkstationTag) -> Vec<EntityId> {
+    places_for_entities(
+        state,
+        state
+            .snapshot()
+            .entities
+            .keys()
+            .copied()
+            .filter(|entity| state.workstation_tag(*entity) == Some(tag)),
+    )
+}
+
+fn seller_places(state: &PlanningState<'_>, commodity: CommodityKind) -> Vec<EntityId> {
+    places_for_entities(
+        state,
+        state.snapshot().entities.keys().copied().filter(|entity| {
+            state.item_lot_commodity(*entity) == Some(commodity) && state.has_sale_listing(*entity)
+        }),
+    )
+}
+
+fn resource_source_places(state: &PlanningState<'_>, commodity: CommodityKind) -> Vec<EntityId> {
+    places_for_entities(
+        state,
+        state.snapshot().entities.keys().copied().filter(|entity| {
+            state
+                .resource_source(*entity)
+                .is_some_and(|source| source.commodity == commodity)
+        }),
+    )
+}
+
+fn places_for_entities(
+    state: &PlanningState<'_>,
+    entities: impl IntoIterator<Item = EntityId>,
+) -> Vec<EntityId> {
+    let mut places = entities
+        .into_iter()
+        .filter_map(|entity| state.effective_place(entity))
+        .collect::<Vec<_>>();
+    places.sort_unstable();
+    places.dedup();
+    places
 }
 
 fn acquisition_places_for_commodity(
@@ -550,7 +1086,7 @@ mod tests {
         BodyCostPerTick, BodyPart, CommodityKind, DeprivationKind, EntityId, EntityKind, GoalKind,
         InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, OpportunityAnchor,
         PatrolRoute, Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        ToldBeliefMemory, Wound, WoundCause, WoundId,
+        ToldBeliefMemory, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, EconomicBeliefView,
@@ -574,6 +1110,7 @@ mod tests {
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
         resource_sources: BTreeMap<EntityId, ResourceSource>,
+        workstation_tags: BTreeMap<EntityId, WorkstationTag>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
     }
@@ -595,6 +1132,7 @@ mod tests {
                 commodity_quantities: BTreeMap::new(),
                 item_lot_commodities: BTreeMap::new(),
                 resource_sources: BTreeMap::new(),
+                workstation_tags: BTreeMap::new(),
                 merchandise_profiles: BTreeMap::new(),
                 wounds: BTreeMap::new(),
             }
@@ -911,8 +1449,8 @@ mod tests {
     }
 
     impl FacilityBeliefView for StubBeliefView {
-        fn workstation_tag(&self, _entity: EntityId) -> Option<worldwake_core::WorkstationTag> {
-            None
+        fn workstation_tag(&self, entity: EntityId) -> Option<worldwake_core::WorkstationTag> {
+            self.workstation_tags.get(&entity).copied()
         }
 
         fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
@@ -925,10 +1463,13 @@ mod tests {
 
         fn matching_workstations_at(
             &self,
-            _place: EntityId,
-            _tag: worldwake_core::WorkstationTag,
+            place: EntityId,
+            tag: worldwake_core::WorkstationTag,
         ) -> Vec<EntityId> {
-            Vec::new()
+            self.entities_at(place)
+                .into_iter()
+                .filter(|entity| self.workstation_tags.get(entity) == Some(&tag))
+                .collect()
         }
 
         fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
@@ -1010,6 +1551,19 @@ mod tests {
         view.effective_places.insert(facility, place);
         view.entities_at.entry(place).or_default().push(facility);
         view.resource_sources.insert(facility, source);
+    }
+
+    fn register_workstation(
+        view: &mut StubBeliefView,
+        workstation: EntityId,
+        place: EntityId,
+        tag: WorkstationTag,
+    ) {
+        view.alive.insert(workstation, true);
+        view.kinds.insert(workstation, EntityKind::Facility);
+        view.effective_places.insert(workstation, place);
+        view.entities_at.entry(place).or_default().push(workstation);
+        view.workstation_tags.insert(workstation, tag);
     }
 
     fn register_patient(view: &mut StubBeliefView, patient: EntityId, place: EntityId) {
@@ -1356,6 +1910,126 @@ mod tests {
                 budget_used: 1,
                 exhausted: false,
             })
+        );
+    }
+
+    #[test]
+    fn method_selection_substitutes_method_subgoals_into_stage_list() {
+        let actor = entity(1);
+        let place_a = entity(10);
+        let grain_field = entity(11);
+        let mill_place = entity(12);
+        let grain_source = entity(20);
+        let mill = entity(21);
+        let mut view = StubBeliefView::default();
+        register_agent(&mut view, actor, place_a);
+        register_facility(
+            &mut view,
+            grain_source,
+            grain_field,
+            ResourceSource {
+                commodity: CommodityKind::Grain,
+                available_quantity: Quantity(3),
+                max_quantity: Quantity(3),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            },
+        );
+        register_workstation(&mut view, mill, mill_place, WorkstationTag::Mill);
+        connect(&mut view, place_a, grain_field, 2);
+        connect(&mut view, grain_field, mill_place, 3);
+
+        let mut recipes = RecipeRegistry::new();
+        let recipe_id = recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(1))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(4).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+        });
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([grain_source, mill]),
+            &BTreeSet::from([grain_field, mill_place]),
+            2,
+        );
+        let state = crate::PlanningState::new(&snapshot);
+        let goal = crate::GoalOffer {
+            key: worldwake_core::GoalKey::from(GoalKind::ProduceCommodity { recipe_id }),
+            anchor: OpportunityAnchor::None,
+            evidence_entities: BTreeSet::from([grain_source, mill]),
+            evidence_places: BTreeSet::from([grain_field, mill_place]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
+            acquisition_quantity: None,
+        };
+
+        let mut registry = crate::htn::MethodRegistry::default();
+        registry.insert(crate::htn::MethodSchema {
+            id: worldwake_core::MethodSchemaId(99),
+            goal_kind: worldwake_core::GoalKindDiscriminant::ProduceCommodity,
+            preconditions: Vec::new(),
+            subgoals: vec![
+                crate::htn::SubgoalTemplate::AcquireCommodity {
+                    commodity: crate::htn::CommodityTemplate::Fixed(CommodityKind::Grain),
+                    min_quantity: Quantity(1),
+                },
+                crate::htn::SubgoalTemplate::TravelTo(
+                    crate::htn::LocationTemplate::KnownWorkstationFor {
+                        recipe: crate::htn::RecipeTemplate::GoalRecipe,
+                    },
+                ),
+            ],
+            expected_artifacts: Vec::new(),
+            required_claims: Vec::new(),
+            failure_modes: Vec::new(),
+            explanation_template: crate::htn::ExplanationTemplateId(99),
+            motive_bias: Vec::new(),
+            planning_budget_hint: None,
+        });
+
+        let stage_build = super::build_stages(
+            &state,
+            &snapshot,
+            &goal,
+            &recipes,
+            registry.get(worldwake_core::MethodSchemaId(99)),
+            actor,
+            place_a,
+            &[],
+            &[CommodityKind::Grain],
+            base_budget().max_prerequisite_locations(),
+        );
+
+        assert_eq!(
+            stage_build.stages,
+            vec![
+                super::StrategicStage {
+                    kind: super::StrategicStageKind::Acquire(CommodityKind::Grain),
+                    places: vec![grain_field],
+                },
+                super::StrategicStage {
+                    kind: super::StrategicStageKind::Goal,
+                    places: vec![mill_place],
+                },
+            ],
+            "produce_with_gather should replace the flat missing-commodity-only stage list with method subgoals"
+        );
+        assert_eq!(
+            stage_build
+                .method_trace
+                .as_ref()
+                .map(|trace| trace.method_id),
+            Some(Some(worldwake_core::MethodSchemaId(99)))
         );
     }
 

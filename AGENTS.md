@@ -97,7 +97,7 @@ These design rules are intentional and should be preserved unless the user expli
 - Conservation. Items are not created or destroyed except through explicit actions.
 - Unique location. Every entity exists in exactly one place.
 - No backward compatibility layers. When a design changes, update or remove the old path instead of adding shims, redirects, or deprecated wrappers.
-- Scenario profile completeness. Every agent profile component registered on `EntityKind::Agent` must be scenario-definable via `AgentDef` and `spawn_agent()`. Universal profiles are always applied with defaults. See `docs/spec-drafting-rules.md` section 5 for the checklist.
+- Scenario profile completeness. Every agent profile component registered on `EntityKind::Agent` must be scenario-definable via `AgentDef` and `spawn_agent()`. Universal profiles are always applied with defaults. See the Agent Profile Scenario Contract section in `docs/spec-drafting-rules.md` for the checklist.
 
 ## Authoritative-To-AI Impact Rule
 
@@ -117,11 +117,11 @@ Golden tests that expect agents to observe produced or newly materialized output
 All new spec drafts must:
 
 1. Use `Permille` for any [0,1] or [0,1000] range values. Do not use `f32` or `f64`.
-2. Include FND-01 Section H analyses: information-path analysis, positive-feedback analysis, concrete dampeners, and stored-vs-derived state listing.
+2. Include FND-01 Section H analyses: information-path analysis, positive-feedback analysis, concrete dampeners, stored-vs-derived state listing, and planner-formalism analysis for planner-facing features.
 3. Use profile-driven per-agent parameters instead of hardcoded numeric constants.
 4. Include SystemFn Integration and Component Registration sections.
 5. Document cross-system interactions through Principle 12: state-mediated, never direct system-to-system calls.
-6. If a spec adds an agent behavior component registered on `EntityKind::Agent`, make it scenario-definable and follow the agent profile contract in `docs/spec-drafting-rules.md` section 5.
+6. If a spec adds an agent behavior component registered on `EntityKind::Agent`, make it scenario-definable and follow the Agent Profile Scenario Contract section in `docs/spec-drafting-rules.md`.
 
 These rules exist to prevent specs from drifting into magic numbers, float-based scoring, and missing foundation analysis that would need correction before implementation.
 

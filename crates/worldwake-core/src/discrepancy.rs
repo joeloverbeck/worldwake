@@ -1,6 +1,6 @@
 use crate::{
     BeliefClaimKey, BlockerReason, BlockerScope, CommodityKind, Component, EntityId, EventId,
-    HomeostaticNeedId, OmissionReason, Tick,
+    HomeostaticNeedId, MethodSchemaId, OmissionReason, Tick,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -42,6 +42,24 @@ pub enum Discrepancy {
         artifact: EntityId,
         reason: BlockerReason,
     },
+    /// A method-level pursuit pattern failed before or during subgoal execution.
+    MethodFailure(MethodFailureContext),
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Hash, Serialize, Deserialize)]
+pub struct MethodFailureContext {
+    pub method_id: MethodSchemaId,
+    pub kind: MethodFailureKind,
+    pub subgoal_index: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum MethodFailureKind {
+    PreconditionLost,
+    SubgoalUnachievable,
+    ArtifactNotProduced,
+    ClaimDenied,
+    Timeout,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -105,11 +123,14 @@ impl Component for DiscrepancyMemory {}
 
 #[cfg(test)]
 mod tests {
-    use super::{Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory};
+    use super::{
+        Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
+        MethodFailureContext, MethodFailureKind,
+    };
     use crate::{
         ActionDefId, BeliefClaimKey, BlockerKey, BlockerReason, BlockerScope, CommodityKind,
-        EntityBeliefAspect, EntityId, EventId, GoalKind, OmissionReason, RouteSegment,
-        SaliencePolicy, Tick,
+        EntityBeliefAspect, EntityId, EventId, GoalKind, MethodSchemaId, OmissionReason,
+        RouteSegment, SaliencePolicy, Tick,
         test_utils::{entity_id, sample_goal_key},
         traits::Component,
     };
@@ -154,6 +175,8 @@ mod tests {
         assert_copy_value_bounds::<Discrepancy>();
         assert_copy_value_bounds::<DiscrepancyEntry>();
         assert_copy_value_bounds::<DiscrepancyClearing>();
+        assert_copy_value_bounds::<MethodFailureContext>();
+        assert_copy_value_bounds::<MethodFailureKind>();
     }
 
     #[test]
@@ -198,6 +221,20 @@ mod tests {
             artifact: entity_id(42, 0),
             reason: BlockerReason::LegalEffectExpired,
         };
+
+        let bytes = bincode::serialize(&discrepancy).unwrap();
+        let roundtrip: Discrepancy = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, discrepancy);
+    }
+
+    #[test]
+    fn discrepancy_method_failure_roundtrips_through_bincode() {
+        let discrepancy = Discrepancy::MethodFailure(MethodFailureContext {
+            method_id: MethodSchemaId(7),
+            kind: MethodFailureKind::SubgoalUnachievable,
+            subgoal_index: Some(2),
+        });
 
         let bytes = bincode::serialize(&discrepancy).unwrap();
         let roundtrip: Discrepancy = bincode::deserialize(&bytes).unwrap();

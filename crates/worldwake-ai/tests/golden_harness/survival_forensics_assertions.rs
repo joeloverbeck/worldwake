@@ -245,6 +245,7 @@ pub fn synthetic_planning_trace(
                     landmark_orderings: 0,
                     target_belief_presence:
                         worldwake_ai::decision_trace::TargetBeliefPresence::NotApplicable,
+                    method_trace: None,
                     binding_rejections: Vec::new(),
                     expansion_summaries: Vec::new(),
                 }],

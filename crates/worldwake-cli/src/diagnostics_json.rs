@@ -4,16 +4,22 @@ use serde::{Deserialize, Serialize};
 use worldwake_ai::{
     CandidateSuppressionCategory, PlanTerminalKind, ScenarioDiagnosticsReport, SlotKind,
     scenario_diagnostics::{
-        BeliefMetrics, CoordinationMetrics, GoalPressureMetrics, PerformanceMetrics,
-        PlanningMetrics, RevalidationRepairMetrics,
+        BeliefMetrics, CoordinationMetrics, GoalPressureMetrics, MethodUsageCounts,
+        PerformanceMetrics, PlanningMetrics, RevalidationRepairMetrics,
     },
 };
-use worldwake_core::{Discrepancy, GoalKind, PercentileBucket, Permille, Tick};
+use worldwake_core::{Discrepancy, GoalKind, MethodSchemaId, PercentileBucket, Permille, Tick};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 struct DiagnosticsMapEntry<K> {
     key: K,
     count: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+struct MethodUsageDiagnosticsEntry {
+    method_id: Option<MethodSchemaId>,
+    counts: MethodUsageCounts,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -48,6 +54,8 @@ struct PlanningDiagnosticsJson {
     plan_depth: PercentileBucket,
     terminal_kind_distribution: Vec<DiagnosticsMapEntry<PlanTerminalKind>>,
     heuristic_helpful_action_hit_rate: Permille,
+    #[serde(default)]
+    method_usage: Vec<MethodUsageDiagnosticsEntry>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -74,6 +82,26 @@ fn diagnostics_map_from_entries<K: Ord>(entries: Vec<DiagnosticsMapEntry<K>>) ->
     entries
         .into_iter()
         .map(|entry| (entry.key, entry.count))
+        .collect()
+}
+
+fn method_usage_entries(
+    map: &BTreeMap<Option<MethodSchemaId>, MethodUsageCounts>,
+) -> Vec<MethodUsageDiagnosticsEntry> {
+    map.iter()
+        .map(|(method_id, counts)| MethodUsageDiagnosticsEntry {
+            method_id: *method_id,
+            counts: counts.clone(),
+        })
+        .collect()
+}
+
+fn method_usage_from_entries(
+    entries: Vec<MethodUsageDiagnosticsEntry>,
+) -> BTreeMap<Option<MethodSchemaId>, MethodUsageCounts> {
+    entries
+        .into_iter()
+        .map(|entry| (entry.method_id, entry.counts))
         .collect()
 }
 
@@ -113,6 +141,7 @@ impl From<&ScenarioDiagnosticsReport> for ScenarioDiagnosticsJson {
                 heuristic_helpful_action_hit_rate: report
                     .planning
                     .heuristic_helpful_action_hit_rate,
+                method_usage: method_usage_entries(&report.planning.method_usage),
             },
             revalidation_repair: RevalidationRepairDiagnosticsJson {
                 invalidation_reasons: diagnostics_map_entries(
@@ -170,6 +199,7 @@ impl From<ScenarioDiagnosticsJson> for ScenarioDiagnosticsReport {
                 heuristic_helpful_action_hit_rate: report
                     .planning
                     .heuristic_helpful_action_hit_rate,
+                method_usage: method_usage_from_entries(report.planning.method_usage),
             },
             revalidation_repair: RevalidationRepairMetrics {
                 invalidation_reasons: diagnostics_map_from_entries(

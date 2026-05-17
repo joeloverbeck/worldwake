@@ -31,9 +31,9 @@ use worldwake_core::{
     ActionInterruptReasonTag, AgentBeliefStore, ArtifactAxisValue, ArtifactHeader, AxisName,
     CommodityKind, DeadAt, DeathCause, DecisionEventPayload, EntityId, EntityKind, EventId,
     EventTag, EventView, GoalAbandonReason, GoalCommittedPayload, GoalKey, HomeostaticNeedId,
-    KnownRecipes, MetabolismProfile, MotiveSource, MotiveSourceRef, OpportunityAnchor, PlaceTag,
-    PlanInvalidationReason, Quantity, RecipeId, ReplanReason, RoutePreferenceSummary,
-    TestimonyTrustSummary, Tick, WorkstationTag,
+    KnownRecipes, MetabolismProfile, MethodSchemaId, MotiveSource, MotiveSourceRef,
+    OpportunityAnchor, PlaceTag, PlanInvalidationReason, Quantity, RecipeId, ReplanReason,
+    RoutePreferenceSummary, TestimonyTrustSummary, Tick, WorkstationTag,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionTraceEvent, ActionTraceKind, ActionTraceSink,
@@ -3111,6 +3111,90 @@ fn failed_plan_budget_label(attempt: &PlanAttemptTrace) -> String {
     )
 }
 
+fn method_schema_label(method_id: MethodSchemaId) -> &'static str {
+    match method_id.0 {
+        1 => "FulfillBountyDirect",
+        2 => "FulfillBountyInvestigation",
+        3 => "FulfillBountyGroupHunt",
+        4 => "ProduceFromOwnedStock",
+        5 => "ProduceWithGather",
+        6 => "ProduceWithPurchase",
+        7 => "RestockFromHarvest",
+        8 => "RestockFromMarket",
+        9 => "InvestigateOnScene",
+        10 => "InvestigateByWitness",
+        11 => "EscortKnownPath",
+        12 => "EscortScoutThenGuide",
+        13 => "EscortDefensive",
+        _ => "UnknownMethod",
+    }
+}
+
+fn method_trace_summary(attempt: &PlanAttemptTrace) -> String {
+    let Some(method_trace) = &attempt.method_trace else {
+        return "none (flat GOAP fallback)".to_string();
+    };
+    method_trace.method_id.map_or_else(
+        || "none (flat GOAP fallback)".to_string(),
+        |method_id| format!("{} ({:?})", method_schema_label(method_id), method_id),
+    )
+}
+
+fn subgoal_kind_label(kind: worldwake_ai::decision_trace::SubgoalAttemptKind) -> &'static str {
+    match kind {
+        worldwake_ai::decision_trace::SubgoalAttemptKind::AcquireCommodity => "AcquireCommodity",
+        worldwake_ai::decision_trace::SubgoalAttemptKind::TravelTo => "TravelTo",
+        worldwake_ai::decision_trace::SubgoalAttemptKind::ObserveTarget => "ObserveTarget",
+        worldwake_ai::decision_trace::SubgoalAttemptKind::AskWitness => "AskWitness",
+        worldwake_ai::decision_trace::SubgoalAttemptKind::InspectArtifact => "InspectArtifact",
+        worldwake_ai::decision_trace::SubgoalAttemptKind::PerformAction => "PerformAction",
+        worldwake_ai::decision_trace::SubgoalAttemptKind::ResolveCoordination => {
+            "ResolveCoordination"
+        }
+        worldwake_ai::decision_trace::SubgoalAttemptKind::ReturnTo => "ReturnTo",
+    }
+}
+
+fn subgoal_outcome_label(
+    outcome: worldwake_ai::decision_trace::SubgoalAttemptOutcome,
+) -> &'static str {
+    match outcome {
+        worldwake_ai::decision_trace::SubgoalAttemptOutcome::Pending => "Pending",
+        worldwake_ai::decision_trace::SubgoalAttemptOutcome::Succeeded => "Succeeded",
+        worldwake_ai::decision_trace::SubgoalAttemptOutcome::Failed => "Failed",
+    }
+}
+
+fn method_trace_details(attempt: &PlanAttemptTrace) -> Vec<String> {
+    let Some(method_trace) = &attempt.method_trace else {
+        return vec![format!(
+            "Plan attempt: {:?} (Method: none - flat GOAP fallback)",
+            attempt.goal.kind
+        )];
+    };
+    let mut lines = vec![format!(
+        "Plan attempt: {:?} (Method: {})",
+        attempt.goal.kind,
+        method_trace_summary(attempt)
+    )];
+    for subgoal in &method_trace.subgoals_attempted {
+        lines.push(format!(
+            "  Subgoal {}: {} - {}",
+            subgoal.template_index + 1,
+            subgoal_kind_label(subgoal.kind),
+            subgoal_outcome_label(subgoal.outcome)
+        ));
+    }
+    if let Some(failure_mode) = &method_trace.failure_mode {
+        lines.push(format!(
+            "  Failure: {:?} - Discrepancy::MethodFailure({:?})",
+            failure_mode,
+            worldwake_core::MethodFailureKind::from(failure_mode)
+        ));
+    }
+    lines
+}
+
 fn action_timeline_bins_for_agent<'a>(
     action_trace: &'a ActionTraceSink,
     agent_id: EntityId,
@@ -3792,6 +3876,25 @@ fn render_scenario_diagnostics_text(
         &report.planning.terminal_kind_distribution,
         options.top_n,
     )?;
+    if !report.planning.method_usage.is_empty() {
+        writeln!(out, "**Method usage**")?;
+        for (method_id, counts) in report
+            .planning
+            .method_usage
+            .iter()
+            .take(options.top_n.unwrap_or(usize::MAX))
+        {
+            let label = method_id.map_or("(no method)".to_string(), |method_id| {
+                format!("{} ({:?})", method_schema_label(method_id), method_id)
+            });
+            writeln!(
+                out,
+                "- {label}: {} attempts, {} selected, {} fallback, {} failed",
+                counts.attempts, counts.selected_count, counts.fallback_count, counts.failure_count
+            )?;
+        }
+        writeln!(out)?;
+    }
     render_percentile_bucket(out, "Plan depth", &report.planning.plan_depth, options)?;
 
     writeln!(out, "### Revalidation and Repair\n")?;
@@ -4860,12 +4963,12 @@ fn format_report(
                 .unwrap();
                 writeln!(
                     out,
-                    "| Tick | Goal | Outcome | Budget | Expansions | Max Depth | Candidates | Location | Had Target Beliefs |"
+                    "| Tick | Goal | Outcome | Method | Budget | Expansions | Max Depth | Candidates | Location | Had Target Beliefs |"
                 )
                 .unwrap();
                 writeln!(
                     out,
-                    "|------|------|---------|--------|------------|-----------|------------|----------|--------------------|"
+                    "|------|------|---------|--------|--------|------------|-----------|------------|----------|--------------------|"
                 )
                 .unwrap();
                 let mut shown = 0u32;
@@ -4885,10 +4988,11 @@ fn format_report(
                     };
                     writeln!(
                         out,
-                        "| {} | {:?} | {} | {} | {} | {} | {} | {} | {} |",
+                        "| {} | {:?} | {} | {} | {} | {} | {} | {} | {} | {} |",
                         tick,
                         attempt.goal.kind,
                         failed_plan_outcome_label(attempt),
+                        method_trace_summary(attempt),
                         failed_plan_budget_label(attempt),
                         expansions,
                         failed_plan_max_depth(attempt),
@@ -4899,6 +5003,13 @@ fn format_report(
                     .unwrap();
                     shown += 1;
                     shown_attempts.push(*attempt);
+                }
+                writeln!(out).unwrap();
+
+                for attempt in &shown_attempts {
+                    for line in method_trace_details(attempt) {
+                        writeln!(out, "- {line}").unwrap();
+                    }
                 }
                 writeln!(out).unwrap();
 
@@ -5571,9 +5682,9 @@ mod tests {
         failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
         format_affordance_summary, format_anomaly_header, format_behavioral_transition,
         format_budget_exhaustion_snapshots, format_death_cause, format_opportunity_line,
-        format_report, goal_committed_context_lines, need_high_threshold,
-        post_travel_affordance_snapshots, primary_satisfied_need, recipe_usage_rows,
-        render_artifact_lifecycle_section, render_contention_section,
+        format_report, goal_committed_context_lines, method_trace_details, method_trace_summary,
+        need_high_threshold, post_travel_affordance_snapshots, primary_satisfied_need,
+        recipe_usage_rows, render_artifact_lifecycle_section, render_contention_section,
         render_decision_history_section, render_maintenance_rates_table,
         render_opportunity_compiler_section, render_recipe_usage_table,
         render_scenario_diagnostics_section, testimony_trust_context_lines,
@@ -5586,10 +5697,12 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_ai::decision_trace::{
         AffordanceSummary, AffordanceTrace, AgentDecisionTrace, CandidateTrace, DecisionOutcome,
-        DecisionTraceSink, ExecutionTrace, OpportunityCompilerLoad, PatrolRouteSnapshotTrace,
-        PlanSearchTrace, PlanningPipelineTrace, RepairAttemptTrace, SearchExpansionSummary,
-        SelectionTrace, StrategicBudgetTrace, TargetBeliefPresence,
+        DecisionTraceSink, ExecutionTrace, MethodPlanAttemptTrace, OpportunityCompilerLoad,
+        PatrolRouteSnapshotTrace, PlanSearchTrace, PlanningPipelineTrace, RepairAttemptTrace,
+        SearchExpansionSummary, SelectionTrace, StrategicBudgetTrace, SubgoalAttemptKind,
+        SubgoalAttemptOutcome, SubgoalAttemptResult, TargetBeliefPresence,
     };
+    use worldwake_ai::htn::MethodFailureMode;
     use worldwake_ai::opportunity_compiler::{
         BelievedLegalStatus, ClaimTopic, EffectFactKey, Opportunity, RiskFact, SocialExposureBand,
     };
@@ -5613,7 +5726,7 @@ mod tests {
         EntityId, EntityKind, EventLog, EventPayload, EventTag, FrameAssumption, GoalAbandonReason,
         GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind, GoalOfferedPayload,
         GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
-        HomeostaticNeedId, InvalidatorTag, KnownRecipes, MetabolismProfile, Name,
+        HomeostaticNeedId, InvalidatorTag, KnownRecipes, MetabolismProfile, MethodSchemaId, Name,
         ObservationOmission, ObservationRef, OmissionReason, OpportunityAnchor, PendingEvent,
         PercentileBucket, Permille, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
         PlanInvalidationReason, PrototypePlace, Quantity, RankedGoalComparisonDimensionTag,
@@ -5697,6 +5810,7 @@ mod tests {
             tactical_goal: None,
             landmarks_extracted: 0,
             landmark_orderings: 0,
+            method_trace: None,
             binding_rejections: Vec::new(),
             expansion_summaries,
         }
@@ -6782,10 +6896,10 @@ mod tests {
         );
 
         assert!(report.contains(
-            "| Tick | Goal | Outcome | Budget | Expansions | Max Depth | Candidates | Location | Had Target Beliefs |"
+            "| Tick | Goal | Outcome | Method | Budget | Expansions | Max Depth | Candidates | Location | Had Target Beliefs |"
         ));
         assert!(report.contains(
-            "| 12 | Sleep | budget-exhausted | PRODUCTION (depth 16, expansions 384) | 7 | 4 | 12 | e10g0 | n/a |"
+            "| 12 | Sleep | budget-exhausted | none (flat GOAP fallback) | PRODUCTION (depth 16, expansions 384) | 7 | 4 | 12 | e10g0 | n/a |"
         ));
     }
 
@@ -6806,6 +6920,73 @@ mod tests {
             failed_plan_target_beliefs(&sample_attempt(Vec::new())),
             "n/a"
         );
+    }
+
+    #[test]
+    fn render_method_trace_with_subgoals_produces_expected_text() {
+        let attempt = PlanAttemptTrace {
+            method_trace: Some(MethodPlanAttemptTrace {
+                method_id: Some(MethodSchemaId(5)),
+                subgoals_attempted: vec![
+                    SubgoalAttemptResult {
+                        template_index: 0,
+                        kind: SubgoalAttemptKind::AcquireCommodity,
+                        outcome: SubgoalAttemptOutcome::Succeeded,
+                    },
+                    SubgoalAttemptResult {
+                        template_index: 1,
+                        kind: SubgoalAttemptKind::TravelTo,
+                        outcome: SubgoalAttemptOutcome::Pending,
+                    },
+                ],
+                failure_mode: None,
+                motive_score: 400,
+            }),
+            ..sample_attempt(Vec::new())
+        };
+
+        let lines = method_trace_details(&attempt);
+
+        assert!(lines[0].contains("Method: ProduceWithGather"));
+        assert!(lines[1].contains("Subgoal 1: AcquireCommodity - Succeeded"));
+        assert!(lines[2].contains("Subgoal 2: TravelTo - Pending"));
+        assert_eq!(
+            method_trace_summary(&attempt),
+            "ProduceWithGather (MethodSchemaId(5))"
+        );
+    }
+
+    #[test]
+    fn render_method_trace_none_produces_fallback_note() {
+        let attempt = sample_attempt(Vec::new());
+
+        assert_eq!(method_trace_summary(&attempt), "none (flat GOAP fallback)");
+        assert_eq!(
+            method_trace_details(&attempt),
+            vec!["Plan attempt: Sleep (Method: none - flat GOAP fallback)".to_string()]
+        );
+    }
+
+    #[test]
+    fn render_method_trace_failure_includes_discrepancy_reference() {
+        let attempt = PlanAttemptTrace {
+            method_trace: Some(MethodPlanAttemptTrace {
+                method_id: Some(MethodSchemaId(5)),
+                subgoals_attempted: vec![SubgoalAttemptResult {
+                    template_index: 0,
+                    kind: SubgoalAttemptKind::AcquireCommodity,
+                    outcome: SubgoalAttemptOutcome::Failed,
+                }],
+                failure_mode: Some(MethodFailureMode::SubgoalUnachievable(0)),
+                motive_score: 400,
+            }),
+            ..sample_attempt(Vec::new())
+        };
+
+        let lines = method_trace_details(&attempt);
+
+        assert!(lines[1].contains("Subgoal 1: AcquireCommodity - Failed"));
+        assert!(lines[2].contains("Discrepancy::MethodFailure(SubgoalUnachievable)"));
     }
 
     #[test]
@@ -7406,6 +7587,26 @@ mod tests {
                     (worldwake_ai::PlanTerminalKind::ProgressBarrier, 2),
                 ]),
                 heuristic_helpful_action_hit_rate: Permille::new_unchecked(750),
+                method_usage: BTreeMap::from([
+                    (
+                        Some(MethodSchemaId(5)),
+                        worldwake_ai::scenario_diagnostics::MethodUsageCounts {
+                            attempts: 3,
+                            selected_count: 3,
+                            fallback_count: 0,
+                            failure_count: 1,
+                        },
+                    ),
+                    (
+                        None,
+                        worldwake_ai::scenario_diagnostics::MethodUsageCounts {
+                            attempts: 5,
+                            selected_count: 0,
+                            fallback_count: 5,
+                            failure_count: 0,
+                        },
+                    ),
+                ]),
             },
             revalidation_repair: worldwake_ai::scenario_diagnostics::RevalidationRepairMetrics {
                 invalidation_reasons: BTreeMap::from([
@@ -7481,6 +7682,9 @@ mod tests {
 
         assert!(out.contains("## Section 13 \u{2014} Scenario Diagnostics"));
         assert!(out.contains("#### Candidates emitted by goal kind"));
+        assert!(out.contains("**Method usage**"));
+        assert!(out.contains("ProduceWithGather"));
+        assert!(out.contains("(no method): 5 attempts"));
         assert!(out.contains("| ...others (1) | 2 |"));
         assert!(out.contains("| n | min | p50 | p95 | p99 | max | mean |"));
     }

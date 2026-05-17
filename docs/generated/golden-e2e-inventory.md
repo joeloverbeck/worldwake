@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 52
-- Files contributing `golden_*` tests: 52
-- Total `golden_*` tests: 237
+- Golden test files: 53
+- Files contributing `golden_*` tests: 53
+- Total `golden_*` tests: 254
 
 ## Per-File Inventory
 
@@ -25,6 +25,7 @@ Do not hand-edit it.
 | `golden_experience_preferences.rs` | 3 |
 | `golden_exploration.rs` | 16 |
 | `golden_final_integration.rs` | 2 |
+| `golden_htn_methods.rs` | 17 |
 | `golden_item_decay.rs` | 1 |
 | `golden_merchant_selling.rs` | 13 |
 | `golden_motive_sources.rs` | 5 |
@@ -175,6 +176,26 @@ Do not hand-edit it.
 
 - `final_integration_proves_full_stack_coexistence`
 - `final_integration_replay_is_deterministic`
+
+### `golden_htn_methods.rs`
+
+- `produce_with_gather_selector_uses_belief_view_evidence`
+- `produce_with_gather_selector_replays_deterministically`
+- `autonomous_produce_candidate_records_method_trace`
+- `autonomous_produce_candidate_carries_source_evidence`
+- `autonomous_produce_snapshot_selector_uses_source_evidence`
+- `autonomous_produce_method_trace_replays_deterministically`
+- `generated_bounty_candidate_selects_fulfill_bounty_investigation`
+- `generated_bounty_candidate_selector_replays_deterministically`
+- `generated_direct_bounty_candidate_selects_fulfill_bounty_direct`
+- `generated_direct_bounty_candidate_selector_replays_deterministically`
+- `generated_escort_candidate_selects_escort_to_home`
+- `generated_escort_candidate_selector_replays_deterministically`
+- `method_selected_failure_records_method_failure_discrepancy`
+- `autonomous_bounty_candidate_records_method_trace`
+- `autonomous_bounty_method_trace_replays_deterministically`
+- `disabled_produce_methods_fall_back_to_flat_strategic_search`
+- `disabled_method_fallback_replays_deterministically`
 
 ### `golden_item_decay.rs`
 
