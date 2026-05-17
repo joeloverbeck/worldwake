@@ -116,7 +116,7 @@ Completed on 2026-05-17.
 ## Deviations
 
 - The drafted 13 explicit `AgentDecisionRuntime` constructor-site count was stale. Live reassessment found 70 textual literals, but most used `..AgentDecisionRuntime::default()` and required no source edit; only the current-format round-trip fixture needed explicit field additions.
-- The ticket originally implied pre-bump save-byte deserialization proof through serde defaults. This ticket proves current-format runtime serialization and default emptiness only; `SAVE_FORMAT_VERSION` and old-save boundary claims remain owned by `tickets/S151TESRELROU-010.md`.
+- The ticket originally implied pre-bump save-byte deserialization proof through serde defaults. This ticket proves current-format runtime serialization and default emptiness only; `SAVE_FORMAT_VERSION` and old-save boundary claims are owned by the now-archived `archive/tickets/S151TESRELROU-010.md`.
 - `trust()` and `preference()` derived-view formulas intentionally remain deferred to the now-archived `archive/tickets/S151TESRELROU-003.md`, where the profile types land.
 
 ## Verification Result
