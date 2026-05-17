@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: No — observer-only rendering extension in `crates/worldwake-cli/src/bin/observer.rs`.
-**Deps**: 009 (PlanAttemptTrace.method_trace field exists)
+**Deps**: `archive/tickets/S147HTNMETDEC-009.md` (PlanAttemptTrace.method_trace field exists)
 
 ## Problem
 

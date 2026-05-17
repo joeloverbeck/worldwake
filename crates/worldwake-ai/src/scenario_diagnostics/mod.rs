@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use worldwake_core::{Discrepancy, GoalKind, PercentileBucket, Permille, Tick, TopicScope};
+use worldwake_core::{
+    Discrepancy, GoalKind, MethodSchemaId, PercentileBucket, Permille, Tick, TopicScope,
+};
 
 use crate::{PlanTerminalKind, SlotKind};
 
@@ -40,6 +42,16 @@ pub struct PlanningMetrics {
     pub plan_depth: PercentileBucket,
     pub terminal_kind_distribution: BTreeMap<PlanTerminalKind, u64>,
     pub heuristic_helpful_action_hit_rate: Permille,
+    #[serde(default)]
+    pub method_usage: BTreeMap<Option<MethodSchemaId>, MethodUsageCounts>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct MethodUsageCounts {
+    pub attempts: u64,
+    pub selected_count: u64,
+    pub fallback_count: u64,
+    pub failure_count: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -216,6 +228,7 @@ mod tests {
                 plan_depth: PercentileBucket::from_sorted(&[1, 2, 4, 8]),
                 terminal_kind_distribution: BTreeMap::from([(PlanTerminalKind::GoalSatisfied, 6)]),
                 heuristic_helpful_action_hit_rate: Permille::new_unchecked(625),
+                method_usage: BTreeMap::new(),
             },
             revalidation_repair: RevalidationRepairMetrics {
                 invalidation_reasons: BTreeMap::from([(Discrepancy::BeliefStale, 2)]),

@@ -2,18 +2,21 @@
 
 use crate::{
     GoalKindPlannerExt, GoalOffer, PlanningSnapshot, PlanningState,
-    decision_trace::StrategicBudgetTrace,
+    decision_trace::{
+        MethodPlanAttemptTrace, StrategicBudgetTrace, SubgoalAttemptOutcome, SubgoalAttemptResult,
+    },
     htn::{
         ArtifactTemplate, ClaimRequirement, CommodityTemplate, EntityCriterion, EntityTemplate,
-        LocationTemplate, PayloadTemplate, PayloadValueTemplate, RecipeTemplate, SubgoalTemplate,
-        build_method_registry, select_method,
+        LocationTemplate, MethodSchema, PayloadTemplate, PayloadValueTemplate, RecipeTemplate,
+        SubgoalTemplate, build_method_registry, select_method,
     },
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use worldwake_core::{
     AgentSchemaContextProfile, CommodityKind, EntityId, EntityKind, ExecutionBudget, GoalKind,
-    OpportunityAnchor, Quantity, RecipeId, WorkstationTag,
+    MotiveSourceDiscriminant, MotiveSourceRef, OpportunityAnchor, Quantity, RecipeId,
+    WorkstationTag,
 };
 use worldwake_sim::{
     EconomicBeliefView, EntityBeliefView, FacilityBeliefView, InventoryBeliefView,
@@ -30,6 +33,7 @@ pub(crate) struct StrategicSearchResult {
     pub plan: Option<StrategicPlan>,
     pub budget_trace: Option<StrategicBudgetTrace>,
     pub stages_count: u16,
+    pub method_trace: Option<MethodPlanAttemptTrace>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -108,6 +112,7 @@ pub(crate) fn plan_with_budget_trace(
             plan: Some(StrategicPlan { steps: Vec::new() }),
             budget_trace: None,
             stages_count: 0,
+            method_trace: None,
         };
     }
 
@@ -117,6 +122,7 @@ pub(crate) fn plan_with_budget_trace(
             plan: None,
             budget_trace: None,
             stages_count: 0,
+            method_trace: None,
         };
     };
     let goal_places = goal_places(goal, &state, recipes);
@@ -127,19 +133,27 @@ pub(crate) fn plan_with_budget_trace(
     let profile = state
         .agent_schema_context_profile(actor)
         .unwrap_or(default_profile);
-    let mut stages = build_stages(
+    let selected_method = select_method(
+        actor,
+        goal,
+        &method_registry,
+        &profile,
+        &state,
+        &goal.motive_sources,
+    );
+    let stage_build = build_stages(
         &state,
         snapshot,
         goal,
         recipes,
-        &method_registry,
-        &profile,
+        selected_method,
         actor,
         actor_place,
         &goal_places,
         &missing_commodities,
         execution_budget.max_prerequisite_locations(),
     );
+    let mut stages = stage_build.stages;
 
     if stages.is_empty() {
         if goal_places.contains(&actor_place) {
@@ -147,6 +161,7 @@ pub(crate) fn plan_with_budget_trace(
                 plan: Some(StrategicPlan { steps: Vec::new() }),
                 budget_trace: None,
                 stages_count: 0,
+                method_trace: None,
             };
         }
         let plan = exploration_plan(snapshot, actor_place, &goal.key.kind)
@@ -155,6 +170,7 @@ pub(crate) fn plan_with_budget_trace(
             plan,
             budget_trace: None,
             stages_count: 0,
+            method_trace: None,
         };
     }
 
@@ -166,6 +182,7 @@ pub(crate) fn plan_with_budget_trace(
             plan: Some(StrategicPlan { steps: local_steps }),
             budget_trace: None,
             stages_count: stages.len().min(usize::from(u16::MAX)) as u16,
+            method_trace: stage_build.method_trace,
         };
     }
 
@@ -194,6 +211,7 @@ pub(crate) fn plan_with_budget_trace(
                     false,
                 )),
                 stages_count,
+                method_trace: stage_build.method_trace,
             };
         }
         if expansions >= search_budget {
@@ -241,6 +259,7 @@ pub(crate) fn plan_with_budget_trace(
             expansions >= search_budget,
         )),
         stages_count,
+        method_trace: stage_build.method_trace,
     }
 }
 
@@ -336,28 +355,26 @@ fn social_query_commodity(
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct StageBuildResult {
+    stages: Vec<StrategicStage>,
+    method_trace: Option<MethodPlanAttemptTrace>,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_stages(
     state: &PlanningState<'_>,
     snapshot: &PlanningSnapshot,
     goal: &GoalOffer,
     recipes: &RecipeRegistry,
-    method_registry: &crate::htn::MethodRegistry,
-    profile: &AgentSchemaContextProfile,
+    selected_method: Option<&MethodSchema>,
     actor: EntityId,
     actor_place: EntityId,
     goal_places: &[EntityId],
     missing_commodities: &[CommodityKind],
     per_stage_limit: u8,
-) -> Vec<StrategicStage> {
-    if let Some(method) = select_method(
-        actor,
-        goal,
-        method_registry,
-        profile,
-        state,
-        &goal.motive_sources,
-    ) {
+) -> StageBuildResult {
+    if let Some(method) = selected_method {
         let stages = method
             .subgoals
             .iter()
@@ -387,7 +404,10 @@ fn build_stages(
             });
         }
         if !stages.is_empty() {
-            return stages;
+            return StageBuildResult {
+                stages,
+                method_trace: Some(method_trace(method, &goal.motive_sources)),
+            };
         }
     }
 
@@ -416,7 +436,41 @@ fn build_stages(
         });
     }
 
-    stages
+    StageBuildResult {
+        stages,
+        method_trace: None,
+    }
+}
+
+fn method_trace(method: &MethodSchema, motives: &[MotiveSourceRef]) -> MethodPlanAttemptTrace {
+    MethodPlanAttemptTrace {
+        method_id: Some(method.id),
+        subgoals_attempted: method
+            .subgoals
+            .iter()
+            .enumerate()
+            .map(|(template_index, template)| SubgoalAttemptResult {
+                template_index,
+                kind: template.into(),
+                outcome: SubgoalAttemptOutcome::Pending,
+            })
+            .collect(),
+        failure_mode: None,
+        motive_score: method_motive_score(method, motives),
+    }
+}
+
+fn method_motive_score(method: &MethodSchema, motives: &[MotiveSourceRef]) -> u32 {
+    method
+        .motive_bias
+        .iter()
+        .filter(|bias| {
+            motives
+                .iter()
+                .any(|source| MotiveSourceDiscriminant::from(&source.source) == bias.motive_variant)
+        })
+        .map(|bias| u32::from(bias.weight.value()))
+        .sum()
 }
 
 fn collapse_repeated_stages(stages: Vec<StrategicStage>) -> Vec<StrategicStage> {
@@ -1942,13 +1996,12 @@ mod tests {
             planning_budget_hint: None,
         });
 
-        let stages = super::build_stages(
+        let stage_build = super::build_stages(
             &state,
             &snapshot,
             &goal,
             &recipes,
-            &registry,
-            &worldwake_core::AgentSchemaContextProfile::default(),
+            registry.get(worldwake_core::MethodSchemaId(99)),
             actor,
             place_a,
             &[],
@@ -1957,7 +2010,7 @@ mod tests {
         );
 
         assert_eq!(
-            stages,
+            stage_build.stages,
             vec![
                 super::StrategicStage {
                     kind: super::StrategicStageKind::Acquire(CommodityKind::Grain),
@@ -1969,6 +2022,13 @@ mod tests {
                 },
             ],
             "produce_with_gather should replace the flat missing-commodity-only stage list with method subgoals"
+        );
+        assert_eq!(
+            stage_build
+                .method_trace
+                .as_ref()
+                .map(|trace| trace.method_id),
+            Some(Some(worldwake_core::MethodSchemaId(99)))
         );
     }
 

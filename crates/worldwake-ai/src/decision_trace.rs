@@ -11,9 +11,10 @@ use worldwake_core::{
     ActionDefId, ActionDomain, ArtifactActionability, ArtifactCredibility, ArtifactExistence,
     ArtifactLegalEffect, ArtifactVisibility, BelievedArtifactState, BlockingFact, CommodityKind,
     EntityId, FrameAssumption, FrameClearReason, GoalKey, GoalPlanningBudget, HypothesisKind,
-    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, MotiveSourceRef,
-    OmissionReason, OpportunityAnchor, OpportunityKey, PatrolRoute, PerceptionSource, Permille,
-    PunishmentFineSelectionTrace, RepairKind, SuspensionReason, TellTopic, Tick,
+    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, MethodSchemaId,
+    MotiveSourceRef, OmissionReason, OpportunityAnchor, OpportunityKey, PatrolRoute,
+    PerceptionSource, Permille, PunishmentFineSelectionTrace, RepairKind, SuspensionReason,
+    TellTopic, Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionStartFailureReason, BindingStrictness, ResolvedRequestTrace,
@@ -25,6 +26,7 @@ use crate::agent_tick::portfolio::{FeasibilityVerdict, SlotKind};
 use crate::feasibility::FeasibilityHint;
 use crate::goal_model::{GoalPriorityClass, RankedGoalProvenance};
 use crate::goal_switching::GoalSwitchKind;
+use crate::htn::{MethodFailureMode, SubgoalTemplate};
 use crate::interrupts::InterruptDecision;
 use crate::knowledge_path::{
     BeliefAspect, BeliefProvenance, InstitutionalBeliefProvenance, KnowledgePath,
@@ -1204,9 +1206,61 @@ pub struct PlanAttemptTrace {
     /// Whether the actor had a planning-time belief entry for the goal's
     /// target entity. `NotApplicable` is used for targetless goals.
     pub target_belief_presence: TargetBeliefPresence,
+    /// HTN method selected for this attempt, when the strategic planner used
+    /// method decomposition instead of flat-GOAP fallback.
+    pub method_trace: Option<MethodPlanAttemptTrace>,
     pub binding_rejections: Vec<BindingRejection>,
     /// Per-expansion summaries. Empty when tracing is disabled.
     pub expansion_summaries: Vec<SearchExpansionSummary>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MethodPlanAttemptTrace {
+    pub method_id: Option<MethodSchemaId>,
+    pub subgoals_attempted: Vec<SubgoalAttemptResult>,
+    pub failure_mode: Option<MethodFailureMode>,
+    pub motive_score: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubgoalAttemptResult {
+    pub template_index: usize,
+    pub kind: SubgoalAttemptKind,
+    pub outcome: SubgoalAttemptOutcome,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum SubgoalAttemptKind {
+    AcquireCommodity,
+    TravelTo,
+    ObserveTarget,
+    AskWitness,
+    InspectArtifact,
+    PerformAction,
+    ResolveCoordination,
+    ReturnTo,
+}
+
+impl From<&SubgoalTemplate> for SubgoalAttemptKind {
+    fn from(value: &SubgoalTemplate) -> Self {
+        match value {
+            SubgoalTemplate::AcquireCommodity { .. } => Self::AcquireCommodity,
+            SubgoalTemplate::TravelTo(_) => Self::TravelTo,
+            SubgoalTemplate::ObserveTarget(_) => Self::ObserveTarget,
+            SubgoalTemplate::AskWitness(_) => Self::AskWitness,
+            SubgoalTemplate::InspectArtifact(_) => Self::InspectArtifact,
+            SubgoalTemplate::PerformAction(_, _) => Self::PerformAction,
+            SubgoalTemplate::ResolveCoordination(_) => Self::ResolveCoordination,
+            SubgoalTemplate::ReturnTo(_) => Self::ReturnTo,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum SubgoalAttemptOutcome {
+    Pending,
+    Succeeded,
+    Failed,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -4613,6 +4667,7 @@ mod tests {
                     tactical_goal: None,
                     landmarks_extracted: 0,
                     landmark_orderings: 0,
+                    method_trace: None,
                     binding_rejections: vec![],
                     expansion_summaries: vec![],
                 }],
@@ -5058,6 +5113,7 @@ mod tests {
                     landmarks_extracted: 2,
                     landmark_orderings: 1,
                     target_belief_presence: TargetBeliefPresence::Present,
+                    method_trace: None,
                     binding_rejections: vec![],
                     expansion_summaries: vec![SearchExpansionSummary {
                         depth: 0,
@@ -5249,12 +5305,56 @@ mod tests {
             landmarks_extracted: 0,
             landmark_orderings: 0,
             target_belief_presence: TargetBeliefPresence::NotApplicable,
+            method_trace: None,
             binding_rejections: rejections,
             expansion_summaries: vec![],
         };
         assert_eq!(trace.binding_rejections.len(), 2);
         assert_eq!(trace.binding_rejections[0].def_id, ActionDefId(1));
         assert_eq!(trace.binding_rejections[1].rejected_targets[0], entity(30));
+    }
+
+    #[test]
+    fn method_plan_attempt_trace_records_selected_method_and_pending_subgoals() {
+        let trace = MethodPlanAttemptTrace {
+            method_id: Some(MethodSchemaId(5)),
+            subgoals_attempted: vec![SubgoalAttemptResult {
+                template_index: 0,
+                kind: SubgoalAttemptKind::AcquireCommodity,
+                outcome: SubgoalAttemptOutcome::Pending,
+            }],
+            failure_mode: None,
+            motive_score: 400,
+        };
+
+        assert_eq!(trace.method_id, Some(MethodSchemaId(5)));
+        assert_eq!(trace.subgoals_attempted.len(), 1);
+        assert_eq!(
+            trace.subgoals_attempted[0].outcome,
+            SubgoalAttemptOutcome::Pending
+        );
+        assert_eq!(trace.motive_score, 400);
+    }
+
+    #[test]
+    fn plan_attempt_trace_method_trace_none_represents_flat_fallback() {
+        let trace = PlanAttemptTrace {
+            goal: GoalKey::new(GoalKind::Sleep),
+            opportunity_anchor: OpportunityAnchor::None,
+            outcome: PlanSearchOutcome::Unsupported,
+            goal_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
+            strategic_budget: None,
+            strategic_plan: None,
+            tactical_goal: None,
+            landmarks_extracted: 0,
+            landmark_orderings: 0,
+            target_belief_presence: TargetBeliefPresence::NotApplicable,
+            method_trace: None,
+            binding_rejections: Vec::new(),
+            expansion_summaries: Vec::new(),
+        };
+
+        assert!(trace.method_trace.is_none());
     }
 
     #[test]

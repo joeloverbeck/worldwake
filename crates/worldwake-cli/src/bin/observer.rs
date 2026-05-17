@@ -5697,6 +5697,7 @@ mod tests {
             tactical_goal: None,
             landmarks_extracted: 0,
             landmark_orderings: 0,
+            method_trace: None,
             binding_rejections: Vec::new(),
             expansion_summaries,
         }
@@ -7406,6 +7407,7 @@ mod tests {
                     (worldwake_ai::PlanTerminalKind::ProgressBarrier, 2),
                 ]),
                 heuristic_helpful_action_hit_rate: Permille::new_unchecked(750),
+                method_usage: BTreeMap::new(),
             },
             revalidation_repair: worldwake_ai::scenario_diagnostics::RevalidationRepairMetrics {
                 invalidation_reasons: BTreeMap::from([

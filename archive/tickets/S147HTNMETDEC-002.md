@@ -93,7 +93,7 @@ For method failures:
 - `crates/worldwake-ai/src/scenario_diagnostics/aggregator.rs` (modify — normalize method-failure payloads for metrics)
 - `archive/tickets/S147HTNMETDEC-002.md` (modify — closeout truthing and archival)
 
-Merge note: Ticket 002 bumps `SAVE_FORMAT_VERSION` 88→89 for the new `Discrepancy::MethodFailure` variant. Sibling tickets 003 (`disabled_methods` with `#[serde(default)]`) and 009 (`method_trace: Option<…>`) deliberately avoid additional bumps via additive serde-default surfaces.
+Merge note: Ticket 002 bumps `SAVE_FORMAT_VERSION` 88→89 for the new `Discrepancy::MethodFailure` variant. Sibling ticket 003 (`disabled_methods` with `#[serde(default)]`) deliberately avoids an additional bump via an additive serde-default surface. Ticket 009's `method_trace: Option<…>` lands on the in-memory decision-trace model rather than the save-format surface, so it also does not require a save-version bump.
 
 ## Out of Scope
 

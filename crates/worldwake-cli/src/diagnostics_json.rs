@@ -4,11 +4,11 @@ use serde::{Deserialize, Serialize};
 use worldwake_ai::{
     CandidateSuppressionCategory, PlanTerminalKind, ScenarioDiagnosticsReport, SlotKind,
     scenario_diagnostics::{
-        BeliefMetrics, CoordinationMetrics, GoalPressureMetrics, PerformanceMetrics,
-        PlanningMetrics, RevalidationRepairMetrics,
+        BeliefMetrics, CoordinationMetrics, GoalPressureMetrics, MethodUsageCounts,
+        PerformanceMetrics, PlanningMetrics, RevalidationRepairMetrics,
     },
 };
-use worldwake_core::{Discrepancy, GoalKind, PercentileBucket, Permille, Tick};
+use worldwake_core::{Discrepancy, GoalKind, MethodSchemaId, PercentileBucket, Permille, Tick};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 struct DiagnosticsMapEntry<K> {
@@ -48,6 +48,8 @@ struct PlanningDiagnosticsJson {
     plan_depth: PercentileBucket,
     terminal_kind_distribution: Vec<DiagnosticsMapEntry<PlanTerminalKind>>,
     heuristic_helpful_action_hit_rate: Permille,
+    #[serde(default)]
+    method_usage: BTreeMap<Option<MethodSchemaId>, MethodUsageCounts>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -113,6 +115,7 @@ impl From<&ScenarioDiagnosticsReport> for ScenarioDiagnosticsJson {
                 heuristic_helpful_action_hit_rate: report
                     .planning
                     .heuristic_helpful_action_hit_rate,
+                method_usage: report.planning.method_usage.clone(),
             },
             revalidation_repair: RevalidationRepairDiagnosticsJson {
                 invalidation_reasons: diagnostics_map_entries(
@@ -170,6 +173,7 @@ impl From<ScenarioDiagnosticsJson> for ScenarioDiagnosticsReport {
                 heuristic_helpful_action_hit_rate: report
                     .planning
                     .heuristic_helpful_action_hit_rate,
+                method_usage: report.planning.method_usage,
             },
             revalidation_repair: RevalidationRepairMetrics {
                 invalidation_reasons: diagnostics_map_from_entries(

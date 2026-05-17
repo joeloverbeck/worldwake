@@ -2745,6 +2745,7 @@ pub(super) fn plan_search_result_to_trace(
         landmarks_extracted: trace_metadata.landmarks_extracted,
         landmark_orderings: trace_metadata.landmark_orderings,
         target_belief_presence,
+        method_trace: trace_metadata.method_trace.clone(),
         binding_rejections,
         expansion_summaries,
     }
@@ -4893,6 +4894,7 @@ mod tests {
                     budget_used: 2,
                     exhausted: false,
                 }),
+                method_trace: None,
                 goal_budget: worldwake_core::GoalPlanningBudget::PRODUCTION,
                 planning_state_cache_counters: None,
                 tactical_goal: Some(

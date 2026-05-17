@@ -362,7 +362,7 @@ fn build_stages(
 }
 ```
 
-When a method is chosen, its subgoals expand into `StrategicStage`s via the existing decomposition machinery — `template_to_stages` is a new helper in `htn/selector.rs` that first resolves `EntityTemplate`, `CommodityTemplate`, and `RecipeTemplate` bindings against the live goal and belief view, then maps each `SubgoalTemplate` to one or more `StrategicStage` values whose `kind` is `Goal` or `Acquire(CommodityKind)`. The strategic search iterates over these stages as today. Tactical search remains unchanged. Caller signature updates (passing `registry`, `profile`, `belief_view`, `motives`) propagate to the existing call site at `strategic.rs:119`.
+When a method is chosen, its subgoals expand into `StrategicStage`s via the existing decomposition machinery — `template_to_stages` is a private helper in `search/strategic.rs` that first resolves `EntityTemplate`, `CommodityTemplate`, and `RecipeTemplate` bindings against the live goal, planner-visible beliefs, and recipe registry, then maps each `SubgoalTemplate` to one or more `StrategicStage` values whose `kind` is `Goal` or `Acquire(CommodityKind)`. The strategic search iterates over these stages as today. Tactical search remains unchanged. `PlanningSnapshot`/`PlanningState` carry the actor's `AgentSchemaContextProfile` so the method selector can honor disabled methods without reading authoritative world state.
 
 ### D5: `MethodPlanAttemptTrace` and `PlanAttemptTrace.method_trace`
 
@@ -374,7 +374,7 @@ pub struct PlanAttemptTrace {
 }
 
 pub struct MethodPlanAttemptTrace {
-    pub method_id: Option<MethodSchemaId>,    // None = flat GOAP fallback
+    pub method_id: Option<MethodSchemaId>,
     pub subgoals_attempted: Vec<SubgoalAttemptResult>,
     pub failure_mode: Option<MethodFailureMode>,
     pub motive_score: u32,                    // 0..=1_000_000 per D3
@@ -390,7 +390,7 @@ pub enum SubgoalAttemptKind { /* one variant per SubgoalTemplate */ }
 pub enum SubgoalAttemptOutcome { Pending, Succeeded, Failed }
 ```
 
-`method_trace` is `Option<…>` so flat-GOAP plan attempts (no method selected) record `None` rather than synthesize a trace.
+`method_trace` is `Option<…>` so flat-GOAP plan attempts (no method selected) record `None` rather than synthesize a trace. In the first shipped trace surface, selected method subgoals are recorded as `Pending` at selection time; later execution/golden work may assert success or failure only at the layer that observes action lifecycle outcomes.
 
 `MethodPlanAttemptTrace` is also surfaced through `ScenarioDiagnosticsReport.planning.method_usage` — a new `BTreeMap<Option<MethodSchemaId>, MethodUsageCounts>` field added to `PlanningMetrics` at `crates/worldwake-ai/src/scenario_diagnostics/mod.rs:32`. `MethodUsageCounts` records `attempts`, `selected_count`, `fallback_count`, and `failure_count`.
 
@@ -689,7 +689,7 @@ D10 golden coverage provides scenario-level regression. D8 validation tests prov
 
 ### 18. Save/load / replay / offscreen compression
 
-`MethodSchema` is build-time and not serialized. `Discrepancy::MethodFailure(MethodFailureContext)` derives `Serialize, Deserialize` (per D6), and `MethodFailureContext` carries only `Copy`-safe core-side types so it round-trips through the existing save/load and replay paths. The `disabled_methods` field on `AgentSchemaContextProfile` has `#[serde(default)]` (per D7), so existing serialized scenarios deserialize unchanged. `PlanAttemptTrace.method_trace` is `Option<…>` so existing trace replays without method context produce `None`.
+`MethodSchema` is build-time and not serialized. `Discrepancy::MethodFailure(MethodFailureContext)` derives `Serialize, Deserialize` (per D6), and `MethodFailureContext` carries only `Copy`-safe core-side types so it round-trips through the existing save/load and replay paths. The `disabled_methods` field on `AgentSchemaContextProfile` has `#[serde(default)]` (per D7), so existing serialized scenarios deserialize unchanged. `PlanAttemptTrace.method_trace` is on the in-memory decision trace surface, not the save-format surface; scenario diagnostics expose method usage through the serde-derived `PlanningMetrics.method_usage` field.
 
 ## SystemFn Integration
 

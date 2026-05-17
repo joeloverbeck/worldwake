@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: No — adds golden E2E tests under `crates/worldwake-ai/tests/`.
-**Deps**: `archive/tickets/S147HTNMETDEC-008.md` (planner integration), `tickets/S147HTNMETDEC-009.md` (trace + diagnostics), `tickets/S147HTNMETDEC-010.md` (observer rendering), `archive/tickets/S147HTNMETDEC-012.md` (canonical recipe-input method preconditions)
+**Deps**: `archive/tickets/S147HTNMETDEC-008.md` (planner integration), `archive/tickets/S147HTNMETDEC-009.md` (trace + diagnostics), `tickets/S147HTNMETDEC-010.md` (observer rendering), `archive/tickets/S147HTNMETDEC-012.md` (canonical recipe-input method preconditions)
 
 ## Problem
 
@@ -50,7 +50,7 @@ New file `crates/worldwake-ai/tests/golden_htn_methods.rs` with 6 scenarios per 
 
 3. **`golden_produce_with_gather_for_three_input_recipe`** — `ProduceCommodity{recipe="Bake Bread"}` with agent missing 3 inputs but knowing sources → `ProduceWithGather` selected → 3 AcquireCommodity subgoals execute in order → final Craft action commits. Asserts subgoal sequence matches method definition.
 
-4. **`golden_method_disabled_fallback_to_flat_goap`** — agent with `disabled_methods = {ProduceFromOwnedStock, ProduceWithGather, ProduceWithPurchase}` on `ProduceCommodity` goal → `select_method` returns `None` → flat-GOAP path executes (unchanged from pre-S147 behavior). Asserts `method_trace.method_id == None` and the produced stages match the existing flat-GOAP output for the same scenario.
+4. **`golden_method_disabled_fallback_to_flat_goap`** — agent with `disabled_methods = {ProduceFromOwnedStock, ProduceWithGather, ProduceWithPurchase}` on `ProduceCommodity` goal → `select_method` returns `None` → flat-GOAP path executes (unchanged from pre-S147 behavior). Asserts `method_trace == None` and the produced stages match the existing flat-GOAP output for the same scenario.
 
 5. **`golden_method_failure_records_typed_discrepancy`** — method selected, subgoal becomes unachievable mid-execution (e.g., target moves between observation and attack) → `MethodFailureMode::SubgoalUnachievable` recorded in trace AND `Discrepancy::MethodFailure(MethodFailureContext { kind: SubgoalUnachievable, … })` emitted on typed channel. Asserts both surfaces carry consistent context.
 

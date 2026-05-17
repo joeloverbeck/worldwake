@@ -55,6 +55,7 @@ use worldwake_sim::{
 pub(crate) struct SearchTraceMetadata {
     pub(crate) strategic_plan: Option<strategic::StrategicPlan>,
     pub(crate) strategic_budget: Option<crate::decision_trace::StrategicBudgetTrace>,
+    pub(crate) method_trace: Option<crate::decision_trace::MethodPlanAttemptTrace>,
     pub(crate) goal_budget: GoalPlanningBudget,
     pub(crate) planning_state_cache_counters: Option<PlanningStateCacheCounters>,
     pub(crate) tactical_goal: Option<String>,
@@ -67,6 +68,7 @@ impl Default for SearchTraceMetadata {
         Self {
             strategic_plan: None,
             strategic_budget: None,
+            method_trace: None,
             goal_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
             planning_state_cache_counters: None,
             tactical_goal: None,
@@ -624,6 +626,7 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
             .filter(|plan| !plan.steps.is_empty())
             .cloned(),
         strategic_budget: strategic_result.budget_trace,
+        method_trace: strategic_result.method_trace,
         goal_budget: effective_budget,
         ..SearchTraceMetadata::default()
     };
