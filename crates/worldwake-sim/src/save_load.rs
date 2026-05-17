@@ -1080,6 +1080,7 @@ mod tests {
                     agent: actor,
                     goal_key: sleep_goal,
                     reason: GoalRejectionReason::SuppressedByStressPolicy,
+                    testimony_trust_context: Vec::new(),
                 }),
             ),
             (
@@ -1104,6 +1105,8 @@ mod tests {
                         assumption: worldwake_core::FrameAssumption::NoCriticalThreat,
                         introduced_at_step: 0,
                     }],
+                    testimony_trust_context: Vec::new(),
+                    route_preference_context: Vec::new(),
                 }),
             ),
             (

@@ -2,8 +2,8 @@ use crate::{
     ActionDefId, BeliefClaimKey, BlockerScope, BlockingFact, CommodityKind, Discrepancy,
     EntityBeliefAspect, EntityId, ExpectationKindTag, FrameAssumption, FrameClearReason, GoalKey,
     HomeostaticNeedId, HypothesisKind, MaterializationTag, MismatchDetail, MotiveSourceRef,
-    OpportunityKey, Permille, RecipeId, SleepRecoveryModifier, SuspensionReason, Tick,
-    WakeCondition,
+    OpportunityKey, Permille, RecipeId, RouteSegment, SleepRecoveryModifier, SuspensionReason,
+    Tick, TopicScope, WakeCondition,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -153,6 +153,8 @@ pub struct GoalSuppressedPayload {
     pub agent: EntityId,
     pub goal_key: GoalKey,
     pub reason: GoalRejectionReason,
+    #[serde(default)]
+    pub testimony_trust_context: Vec<TestimonyTrustSummary>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -165,6 +167,10 @@ pub struct GoalCommittedPayload {
     pub rejected_alternatives: Vec<RejectedAlternativeSummary>,
     #[serde(default)]
     pub assumptions: Vec<PlanAssumptionRef>,
+    #[serde(default)]
+    pub testimony_trust_context: Vec<TestimonyTrustSummary>,
+    #[serde(default)]
+    pub route_preference_context: Vec<RoutePreferenceSummary>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -251,6 +257,22 @@ pub struct BeliefSnapshot {
     pub confidence: Permille,
     pub status: BeliefStatusTag,
     pub acquired_tick: Tick,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub struct TestimonyTrustSummary {
+    pub source: EntityId,
+    pub topic: TopicScope,
+    pub trust: Permille,
+    pub observations: u32,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub struct RoutePreferenceSummary {
+    pub segment: RouteSegment,
+    pub preference: Permille,
+    pub last_safe_tick: Option<Tick>,
+    pub last_dangerous_tick: Option<Tick>,
 }
 
 /// Core-side historical-record mirror of `worldwake-sim::BeliefStatus`.
@@ -504,26 +526,34 @@ mod tests {
         PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag,
         RankedGoalComparisonDimensionTag, RecordRef, RejectedAlternativeSummary,
         RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload,
-        SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SourceAttributionOutcomeTag,
-        SourceExpectationFailurePayload, SourceKeyPayload, SurveyRecordedPayload, WakeReason,
-        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
+        RoutePreferenceSummary, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
+        SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKeyPayload,
+        SurveyRecordedPayload, TestimonyTrustSummary, WakeReason, WashFacilityUsedPayload,
+        WasteCreatedPayload, WasteSource,
     };
     use crate::{
         ActionDefId, BeliefClaimKey, BlockingFact, CommodityKind, Discrepancy, EntityBeliefAspect,
         ExpectationKindTag, FrameAssumption, FrameClearReason, HomeostaticNeedId, HypothesisKind,
         InvalidatorTag, MaterializationTag, MismatchDetail, MotiveSourceRef, ObservationPredicate,
-        OpportunityAnchor, OpportunityKey, RecipeId, SuspensionReason, Tick, WakeCondition,
+        OpportunityAnchor, OpportunityKey, Permille, RecipeId, RouteSegment, SuspensionReason,
+        Tick, TopicScope, WakeCondition,
         test_utils::{entity_id, sample_blocker_key, sample_goal_key},
     };
     use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeMap;
     use std::fmt::Debug;
+    use std::hash::Hash;
     use std::num::NonZeroU32;
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
 
     fn assert_copy_value_bounds<
         T: Copy + Clone + Eq + Ord + Debug + Serialize + DeserializeOwned,
+    >() {
+    }
+
+    fn assert_hash_copy_value_bounds<
+        T: Copy + Clone + Eq + Ord + Hash + Debug + Serialize + DeserializeOwned,
     >() {
     }
 
@@ -578,6 +608,7 @@ mod tests {
                 agent: entity_id(2, 0),
                 goal_key: sample_goal_key(),
                 reason: GoalRejectionReason::SuppressedByBlocker,
+                testimony_trust_context: Vec::new(),
             }),
             DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
                 agent: entity_id(3, 0),
@@ -594,6 +625,8 @@ mod tests {
                     assumption: FrameAssumption::NoCriticalThreat,
                     introduced_at_step: 0,
                 }],
+                testimony_trust_context: Vec::new(),
+                route_preference_context: Vec::new(),
             }),
             DecisionEventPayload::GoalSuspended(GoalSuspendedPayload {
                 agent: entity_id(4, 0),
@@ -749,6 +782,8 @@ mod tests {
         assert_copy_value_bounds::<EvidenceKindTag>();
         assert_value_bounds::<GoalSuppressedPayload>();
         assert_value_bounds::<GoalCommittedPayload>();
+        assert_hash_copy_value_bounds::<TestimonyTrustSummary>();
+        assert_hash_copy_value_bounds::<RoutePreferenceSummary>();
         assert_value_bounds::<RejectedAlternativeSummary>();
         assert_copy_value_bounds::<RankedGoalComparisonDimensionTag>();
         assert_copy_value_bounds::<BeliefRef>();
@@ -904,15 +939,47 @@ mod tests {
         let payload: GoalCommittedPayload = ron::from_str(ron).unwrap();
 
         assert!(payload.decisive_motive_sources.is_empty());
+        assert!(payload.testimony_trust_context.is_empty());
+        assert!(payload.route_preference_context.is_empty());
     }
 
     #[test]
-    fn goal_committed_payload_roundtrips_populated_decisive_motive_sources() {
+    fn goal_suppressed_payload_defaults_omitted_testimony_trust_context() {
+        let ron = r"(
+            agent: (slot: 3, generation: 0),
+            goal_key: (
+                kind: Sleep,
+                commodity: None,
+                entity: None,
+                place: None,
+            ),
+            reason: SuppressedByBlocker,
+        )";
+
+        let payload: GoalSuppressedPayload = ron::from_str(ron).unwrap();
+
+        assert!(payload.testimony_trust_context.is_empty());
+    }
+
+    #[test]
+    fn goal_committed_payload_roundtrips_populated_contexts() {
         let source = MotiveSourceRef {
             source: crate::MotiveSource::NeedPressure {
                 need: HomeostaticNeedId::Hunger,
             },
             introduced_tick: Tick(42),
+        };
+        let testimony = TestimonyTrustSummary {
+            source: entity_id(7, 0),
+            topic: TopicScope::RouteHazard,
+            trust: Permille::new(320).unwrap(),
+            observations: 4,
+        };
+        let route = RoutePreferenceSummary {
+            segment: RouteSegment::new(entity_id(8, 0), entity_id(9, 0)),
+            preference: Permille::new(610).unwrap(),
+            last_safe_tick: Some(Tick(40)),
+            last_dangerous_tick: None,
         };
         let payload = GoalCommittedPayload {
             agent: entity_id(3, 0),
@@ -921,12 +988,38 @@ mod tests {
             decisive_motive_sources: vec![source.clone()],
             rejected_alternatives: Vec::new(),
             assumptions: Vec::new(),
+            testimony_trust_context: vec![testimony],
+            route_preference_context: vec![route],
         };
 
         let bytes = bincode::serialize(&payload).unwrap();
         let roundtrip: GoalCommittedPayload = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip.decisive_motive_sources, vec![source]);
+        assert_eq!(roundtrip.testimony_trust_context, vec![testimony]);
+        assert_eq!(roundtrip.route_preference_context, vec![route]);
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn goal_suppressed_payload_roundtrips_populated_testimony_context() {
+        let testimony = TestimonyTrustSummary {
+            source: entity_id(7, 0),
+            topic: TopicScope::AccusationCredibility,
+            trust: Permille::new(280).unwrap(),
+            observations: 6,
+        };
+        let payload = GoalSuppressedPayload {
+            agent: entity_id(3, 0),
+            goal_key: sample_goal_key(),
+            reason: GoalRejectionReason::SuppressedByDiscrepancy,
+            testimony_trust_context: vec![testimony],
+        };
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: GoalSuppressedPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip.testimony_trust_context, vec![testimony]);
         assert_eq!(roundtrip, payload);
     }
 

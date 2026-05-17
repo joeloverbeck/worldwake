@@ -1115,6 +1115,7 @@ fn emit_candidate_decision_events(
                 agent,
                 goal_key: suppression.opportunity.goal_key,
                 reason: suppression.reason,
+                testimony_trust_context: Vec::new(),
             }),
         );
     }

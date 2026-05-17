@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — replaces flat `source_reliability_changes: u64` with `source_reliability_changes_by_topic: BTreeMap<TopicScope, u64>`, adds new `route_preference_changes: u64`, aggregator + observer + fixture updates
-**Deps**: archive/tickets/S151TESRELROU-001.md, S151TESRELROU-005
+**Deps**: archive/tickets/S151TESRELROU-001.md, archive/tickets/S151TESRELROU-005.md
 
 ## Problem
 

@@ -32,7 +32,8 @@ use worldwake_core::{
     CommodityKind, DeadAt, DeathCause, DecisionEventPayload, EntityId, EntityKind, EventId,
     EventTag, EventView, GoalAbandonReason, GoalCommittedPayload, GoalKey, HomeostaticNeedId,
     KnownRecipes, MetabolismProfile, MotiveSource, MotiveSourceRef, OpportunityAnchor, PlaceTag,
-    PlanInvalidationReason, Quantity, RecipeId, ReplanReason, Tick, WorkstationTag,
+    PlanInvalidationReason, Quantity, RecipeId, ReplanReason, RoutePreferenceSummary,
+    TestimonyTrustSummary, Tick, WorkstationTag,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionTraceEvent, ActionTraceKind, ActionTraceSink,
@@ -960,7 +961,15 @@ fn render_decision_history_section(
         )
         .unwrap();
         if let DecisionEventPayload::GoalCommitted(inner) = payload {
+            for line in goal_committed_context_lines(inner, Some(world)) {
+                writeln!(out, "|  |  |  | {line} |").unwrap();
+            }
             for line in goal_committed_motive_source_lines(inner, traces, record.tick()) {
+                writeln!(out, "|  |  |  | {line} |").unwrap();
+            }
+        }
+        if let DecisionEventPayload::GoalSuppressed(inner) = payload {
+            for line in testimony_trust_context_lines(&inner.testimony_trust_context, Some(world)) {
                 writeln!(out, "|  |  |  | {line} |").unwrap();
             }
         }
@@ -975,6 +984,68 @@ fn render_decision_history_section(
         writeln!(out, "| - | - | - | No decision events recorded. |").unwrap();
     }
     writeln!(out).unwrap();
+}
+
+fn goal_committed_context_lines(
+    payload: &GoalCommittedPayload,
+    world: Option<&worldwake_core::World>,
+) -> Vec<String> {
+    let mut lines = testimony_trust_context_lines(&payload.testimony_trust_context, world);
+    lines.extend(route_preference_context_lines(
+        &payload.route_preference_context,
+        world,
+    ));
+    lines
+}
+
+fn testimony_trust_context_lines(
+    context: &[TestimonyTrustSummary],
+    world: Option<&worldwake_core::World>,
+) -> Vec<String> {
+    context
+        .iter()
+        .map(|summary| {
+            let source = world.map_or_else(
+                || summary.source.to_string(),
+                |world| entity_display_name(world, summary.source),
+            );
+            format!(
+                "&nbsp;&nbsp;trust: {source} {:?} p={} obs={}",
+                summary.topic,
+                summary.trust.value(),
+                summary.observations
+            )
+        })
+        .collect()
+}
+
+fn route_preference_context_lines(
+    context: &[RoutePreferenceSummary],
+    world: Option<&worldwake_core::World>,
+) -> Vec<String> {
+    context
+        .iter()
+        .map(|summary| {
+            let from = world.map_or_else(
+                || summary.segment.from.to_string(),
+                |world| entity_display_name(world, summary.segment.from),
+            );
+            let to = world.map_or_else(
+                || summary.segment.to.to_string(),
+                |world| entity_display_name(world, summary.segment.to),
+            );
+            format!(
+                "&nbsp;&nbsp;route: {from} <-> {to} pref={} last_safe={} last_danger={}",
+                summary.preference.value(),
+                format_optional_tick(summary.last_safe_tick),
+                format_optional_tick(summary.last_dangerous_tick)
+            )
+        })
+        .collect()
+}
+
+fn format_optional_tick(tick: Option<Tick>) -> String {
+    tick.map_or_else(|| "-".to_string(), |tick| tick.0.to_string())
 }
 
 fn repair_applied_detail_lines(
@@ -5494,11 +5565,13 @@ mod tests {
         failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
         format_affordance_summary, format_anomaly_header, format_behavioral_transition,
         format_budget_exhaustion_snapshots, format_death_cause, format_opportunity_line,
-        format_report, need_high_threshold, post_travel_affordance_snapshots,
-        primary_satisfied_need, recipe_usage_rows, render_artifact_lifecycle_section,
-        render_contention_section, render_decision_history_section, render_maintenance_rates_table,
+        format_report, goal_committed_context_lines, need_high_threshold,
+        post_travel_affordance_snapshots, primary_satisfied_need, recipe_usage_rows,
+        render_artifact_lifecycle_section, render_contention_section,
+        render_decision_history_section, render_maintenance_rates_table,
         render_opportunity_compiler_section, render_recipe_usage_table,
-        render_scenario_diagnostics_section, unknown_location_entity_groups,
+        render_scenario_diagnostics_section, testimony_trust_context_lines,
+        unknown_location_entity_groups,
     };
     use crate::ObserverCli;
     use clap::Parser;
@@ -5538,11 +5611,11 @@ mod tests {
         ObservationOmission, ObservationRef, OmissionReason, OpportunityAnchor, PendingEvent,
         PercentileBucket, Permille, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
         PlanInvalidationReason, PrototypePlace, Quantity, RankedGoalComparisonDimensionTag,
-        RecipeId, RecordRef, ResourceSource, RouteSegment, SaliencePolicy,
-        SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepRecoveryModifier, Tick,
-        VisibilitySpec, WakeCondition, WakeReason, WashFacilityUsedPayload, WasteCreatedPayload,
-        WasteSource, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
-        build_prototype_world, prototype_place_entity,
+        RecipeId, RecordRef, ResourceSource, RoutePreferenceSummary, RouteSegment, SaliencePolicy,
+        SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepRecoveryModifier,
+        TestimonyTrustSummary, Tick, TopicScope, VisibilitySpec, WakeCondition, WakeReason,
+        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionHandlerId, ActionInstanceId, ActionPayload,
@@ -6016,6 +6089,7 @@ mod tests {
                 agent,
                 goal_key: sleep_goal,
                 reason: GoalRejectionReason::SuppressedByStressPolicy,
+                testimony_trust_context: Vec::new(),
             }),
         );
         emit_decision_event(
@@ -6035,6 +6109,8 @@ mod tests {
                     rejection_dimension: None,
                 }],
                 assumptions: Vec::new(),
+                testimony_trust_context: Vec::new(),
+                route_preference_context: Vec::new(),
             }),
         );
         emit_decision_event(
@@ -7821,6 +7897,8 @@ mod tests {
                 decisive_motive_sources: vec![source],
                 rejected_alternatives: Vec::new(),
                 assumptions: Vec::new(),
+                testimony_trust_context: Vec::new(),
+                route_preference_context: Vec::new(),
             }),
         );
 
@@ -7935,6 +8013,8 @@ mod tests {
                     rejection_dimension: Some(RankedGoalComparisonDimensionTag::MotiveScore),
                 }],
                 assumptions: vec![assumption_ref(1), assumption_ref(2)],
+                testimony_trust_context: Vec::new(),
+                route_preference_context: Vec::new(),
             }),
             None,
         );
@@ -7962,6 +8042,8 @@ mod tests {
                     rejection_dimension: None,
                 }],
                 assumptions: Vec::new(),
+                testimony_trust_context: Vec::new(),
+                route_preference_context: Vec::new(),
             }),
             None,
         );
@@ -7970,6 +8052,59 @@ mod tests {
         assert_single_line(&empty);
         assert!(!empty.contains(" dim="));
         assert!(!empty.contains(" assume="));
+    }
+
+    #[test]
+    fn goal_committed_context_lines_render_testimony_and_route_contexts() {
+        let payload = GoalCommittedPayload {
+            agent: entity(1),
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            motive_score: 420,
+            decisive_motive_sources: Vec::new(),
+            rejected_alternatives: Vec::new(),
+            assumptions: Vec::new(),
+            testimony_trust_context: vec![TestimonyTrustSummary {
+                source: entity(17),
+                topic: TopicScope::RouteHazard,
+                trust: Permille::new(320).unwrap(),
+                observations: 4,
+            }],
+            route_preference_context: vec![RoutePreferenceSummary {
+                segment: RouteSegment::new(entity(2), entity(3)),
+                preference: Permille::new(610).unwrap(),
+                last_safe_tick: Some(Tick(40)),
+                last_dangerous_tick: None,
+            }],
+        };
+
+        let lines = goal_committed_context_lines(&payload, None);
+
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("trust:"));
+        assert!(lines[0].contains("RouteHazard p=320 obs=4"));
+        assert!(lines[1].contains("route:"));
+        assert!(lines[1].contains("pref=610 last_safe=40 last_danger=-"));
+        for line in lines {
+            assert_single_line(&line);
+        }
+    }
+
+    #[test]
+    fn goal_suppressed_context_lines_render_testimony_contexts() {
+        let lines = testimony_trust_context_lines(
+            &[TestimonyTrustSummary {
+                source: entity(17),
+                topic: TopicScope::AccusationCredibility,
+                trust: Permille::new(280).unwrap(),
+                observations: 6,
+            }],
+            None,
+        );
+
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("trust:"));
+        assert!(lines[0].contains("AccusationCredibility p=280 obs=6"));
+        assert_single_line(&lines[0]);
     }
 
     #[test]

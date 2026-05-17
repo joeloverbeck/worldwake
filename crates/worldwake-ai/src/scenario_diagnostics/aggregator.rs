@@ -656,6 +656,7 @@ mod tests {
                 agent: entity(1),
                 goal_key: GoalKey::from(GoalKind::Sleep),
                 reason: GoalRejectionReason::FeasibilityProbeFailed,
+                testimony_trust_context: Vec::new(),
             }),
         );
 

@@ -1204,6 +1204,8 @@ fn emit_plan_selection_events(
                     max_alternatives,
                     Some(selected_plan),
                 ),
+                testimony_trust_context: Vec::new(),
+                route_preference_context: Vec::new(),
             }),
         );
     }
@@ -4046,6 +4048,8 @@ mod tests {
                     },
                     introduced_at_step: 1,
                 }],
+                testimony_trust_context: Vec::new(),
+                route_preference_context: Vec::new(),
             }))
         );
         assert_eq!(

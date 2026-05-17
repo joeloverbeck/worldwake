@@ -5478,6 +5478,7 @@ fn read_phase_emits_goal_offered_and_goal_suppressed_events_from_candidate_prove
                         agent: harness.actor,
                         goal_key,
                         reason: GoalRejectionReason::SuppressedByBlocker,
+                        testimony_trust_context: Vec::new(),
                     },
                 ))
         }),

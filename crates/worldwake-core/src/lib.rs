@@ -187,9 +187,10 @@ pub use decision_event_payload::{
     OpportunityExpectationKindTag, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
     PlanInvalidationReason, PursuitInvalidationReasonTag, RankedGoalComparisonDimensionTag,
     RecordRef, RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
-    ReplanTriggeredPayload, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
-    SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKeyPayload,
-    SurveyRecordedPayload, WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
+    ReplanTriggeredPayload, RoutePreferenceSummary, SleepEpisodeEndedPayload,
+    SleepEpisodeStartedPayload, SourceAttributionOutcomeTag, SourceExpectationFailurePayload,
+    SourceKeyPayload, SurveyRecordedPayload, TestimonyTrustSummary, WakeReason,
+    WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
 };
 pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,
