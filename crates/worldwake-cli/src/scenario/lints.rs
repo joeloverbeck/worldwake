@@ -265,6 +265,8 @@ mod tests {
             contention_disposition: None,
             commodity_valuation: None,
             substitute_preferences: None,
+            testimony_trust_profile: None,
+            route_preference_profile: None,
             known_recipes: None,
         }
     }

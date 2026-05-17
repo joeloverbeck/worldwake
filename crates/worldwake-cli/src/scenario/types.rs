@@ -18,10 +18,10 @@ use worldwake_core::{
     LatrineFullness, LawAbidingProfile, LoadUnits, MetabolismProfile, ObligationSatiationProfile,
     PatrolProfile, PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness,
     PlaceVisibilityProfile, PreferenceProfile, ProofKind, ProofRequirement, PursuitProfile,
-    Quantity, RevocationReason, RiskWeightProfile, ShelterTag, SleepQualityProfile,
-    SleepRecoveryModifier, SubstitutePreferences, SuccessionLaw, TellProfile,
-    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
-    WashBasinState, WorkstationTag, items::CommodityKind,
+    Quantity, RevocationReason, RiskWeightProfile, RoutePreferenceProfile, ShelterTag,
+    SleepQualityProfile, SleepRecoveryModifier, SubstitutePreferences, SuccessionLaw, TellProfile,
+    TestimonyTrustProfile, TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
+    ViolationDispositionProfile, WashBasinState, WorkstationTag, items::CommodityKind,
     social_artifact::SuspensionReason as ArtifactSuspensionReason, topology::PlaceTag,
 };
 
@@ -649,6 +649,10 @@ pub struct AgentDef {
     pub commodity_valuation: Option<CommodityValuationProfile>,
     #[serde(default)]
     pub substitute_preferences: Option<SubstitutePreferences>,
+    #[serde(default)]
+    pub testimony_trust_profile: Option<TestimonyTrustProfile>,
+    #[serde(default)]
+    pub route_preference_profile: Option<RoutePreferenceProfile>,
     #[serde(default)]
     pub known_recipes: Option<Vec<String>>,
 }
@@ -1731,6 +1735,8 @@ mod tests {
         assert!(agent.contention_disposition.is_none());
         assert!(agent.commodity_valuation.is_none());
         assert!(agent.substitute_preferences.is_none());
+        assert!(agent.testimony_trust_profile.is_none());
+        assert!(agent.route_preference_profile.is_none());
     }
 
     #[test]

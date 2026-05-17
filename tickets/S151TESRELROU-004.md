@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `GoalBeliefView` trait extension in `worldwake-sim`
-**Deps**: S151TESRELROU-003
+**Deps**: archive/tickets/S151TESRELROU-003.md
 
 ## Problem
 

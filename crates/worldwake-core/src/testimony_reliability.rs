@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{EntityId, EventId, Tick, TopicScope};
+use crate::{EntityId, EventId, Permille, TestimonyTrustProfile, Tick, TopicScope};
 
 pub const PROVENANCE_RING_CAPACITY: usize = 8;
 
@@ -29,6 +29,24 @@ pub struct TestimonyReliabilityEntry {
 
 impl TestimonyReliabilityEntry {
     #[must_use]
+    pub fn trust(&self, profile: &TestimonyTrustProfile, topic: TopicScope) -> Permille {
+        if self.observations() < u32::from(profile.minimum_observations) {
+            return Permille::new_unchecked(500);
+        }
+
+        let positive =
+            i64::from(self.direct_confirmations) * i64::from(profile.confirmation_weight.value());
+        let negative = i64::from(self.direct_refutations)
+            * i64::from(profile.refutation_penalty.value())
+            + i64::from(self.stale_claims) * i64::from(profile.stale_decay_per_tick.value())
+            + i64::from(self.contradicted_claims) * i64::from(profile.contradicted_penalty.value());
+        let topic_weight = i64::from(topic_weight(profile, topic).value());
+        let adjusted_signal = (positive - negative) * topic_weight / 1000;
+
+        permille_from_signed(500 + adjusted_signal)
+    }
+
+    #[must_use]
     pub fn observations(&self) -> u32 {
         self.direct_confirmations
             .saturating_add(self.direct_refutations)
@@ -42,6 +60,24 @@ impl TestimonyReliabilityEntry {
         }
         self.provenance_events.push(event);
     }
+}
+
+fn topic_weight(profile: &TestimonyTrustProfile, topic: TopicScope) -> Permille {
+    match topic {
+        TopicScope::RouteHazard => profile.topic_weight_route_hazard,
+        TopicScope::ResourceAvailability => profile.topic_weight_resource_availability,
+        TopicScope::OfficeHolder => profile.topic_weight_office_holder,
+        TopicScope::AccusationCredibility => profile.topic_weight_accusation_credibility,
+        TopicScope::BountyValidity => profile.topic_weight_bounty_validity,
+        TopicScope::PriceLevel => profile.topic_weight_price_level,
+        TopicScope::EntityWhereabouts => profile.topic_weight_entity_whereabouts,
+        TopicScope::GeneralFact => profile.topic_weight_general_fact,
+    }
+}
+
+fn permille_from_signed(value: i64) -> Permille {
+    let clamped = u16::try_from(value.clamp(0, 1000)).expect("value clamped to permille range");
+    Permille::new_unchecked(clamped)
 }
 
 impl TestimonyReliability {
@@ -121,8 +157,11 @@ impl TestimonyReliability {
 
 #[cfg(test)]
 mod tests {
-    use super::{PROVENANCE_RING_CAPACITY, TestimonyReliability, TestimonyReliabilityKey};
-    use crate::{EntityId, EventId, Tick, TopicScope};
+    use super::{
+        PROVENANCE_RING_CAPACITY, TestimonyReliability, TestimonyReliabilityEntry,
+        TestimonyReliabilityKey,
+    };
+    use crate::{EntityId, EventId, Permille, TestimonyTrustProfile, Tick, TopicScope};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -187,5 +226,55 @@ mod tests {
             bincode::deserialize(&encoded).expect("deserialize reliability");
 
         assert_eq!(decoded, reliability);
+    }
+
+    #[test]
+    fn trust_is_neutral_below_minimum_observations() {
+        let entry = TestimonyReliabilityEntry {
+            direct_confirmations: 1,
+            direct_refutations: 0,
+            stale_claims: 0,
+            contradicted_claims: 0,
+            last_updated_tick: Tick(1),
+            provenance_events: vec![EventId(1)],
+        };
+
+        assert_eq!(
+            entry.trust(&TestimonyTrustProfile::default(), TopicScope::RouteHazard),
+            Permille::new_unchecked(500)
+        );
+    }
+
+    #[test]
+    fn trust_increases_and_decreases_from_evidence_with_topic_weight() {
+        let profile = TestimonyTrustProfile {
+            topic_weight_route_hazard: Permille::new_unchecked(1000),
+            ..TestimonyTrustProfile::default()
+        };
+        let confirmed = TestimonyReliabilityEntry {
+            direct_confirmations: 2,
+            direct_refutations: 0,
+            stale_claims: 0,
+            contradicted_claims: 0,
+            last_updated_tick: Tick(2),
+            provenance_events: vec![EventId(1), EventId(2)],
+        };
+        let refuted = TestimonyReliabilityEntry {
+            direct_confirmations: 0,
+            direct_refutations: 1,
+            stale_claims: 0,
+            contradicted_claims: 1,
+            last_updated_tick: Tick(3),
+            provenance_events: vec![EventId(3), EventId(4)],
+        };
+
+        assert_eq!(
+            confirmed.trust(&profile, TopicScope::RouteHazard),
+            Permille::new_unchecked(1000)
+        );
+        assert_eq!(
+            refuted.trust(&profile, TopicScope::RouteHazard),
+            Permille::ZERO
+        );
     }
 }

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — extends `apply_ask_witness_learned_damping`, adds new variant to `CandidateDampingReason`, adds new `TestimonyOmissionReason` enum, extends `extract_ask_witness_candidates`
-**Deps**: archive/tickets/S151TESRELROU-001.md, archive/tickets/S151TESRELROU-002.md, S151TESRELROU-003, S151TESRELROU-004
+**Deps**: archive/tickets/S151TESRELROU-001.md, archive/tickets/S151TESRELROU-002.md, archive/tickets/S151TESRELROU-003.md, S151TESRELROU-004
 
 ## Problem
 

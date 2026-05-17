@@ -20,12 +20,12 @@ use crate::{
     PlaceDirtiness, PlaceTag, PlaceTagSet, PlaceVisibilityProfile, PreferenceProfile,
     ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity,
     RecordData, RelationTables, RepairMemory, ResourceExtractionQueues, ResourceSource,
-    RewardEncumbrance, RiskWeightProfile, RouteExperience, SaleListing, SceneEvidence,
-    SleepEpisode, SleepQualityProfile, SourceReliability, StockAssignment, StockStoragePolicy,
-    SubstitutePreferences, SurveyMemory, TellProfile, TheftDispositionProfile, Tick, Topology,
-    TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
-    ViolationDispositionProfile, ViolationMemory, WashBasinState, WorkstationMarker, WorldError,
-    WoundList, component_schema::with_component_schema_entries,
+    RewardEncumbrance, RiskWeightProfile, RouteExperience, RoutePreferenceProfile, SaleListing,
+    SceneEvidence, SleepEpisode, SleepQualityProfile, SourceReliability, StockAssignment,
+    StockStoragePolicy, SubstitutePreferences, SurveyMemory, TellProfile, TestimonyTrustProfile,
+    TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
+    UtilityProfile, ViolationDispositionProfile, ViolationMemory, WashBasinState,
+    WorkstationMarker, WorldError, WoundList, component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -228,6 +228,14 @@ impl World {
             world
                 .insert_component_communication_profile(entity, CommunicationProfile::default())?;
             world.insert_component_preference_profile(entity, PreferenceProfile::default())?;
+            world.insert_component_testimony_trust_profile(
+                entity,
+                TestimonyTrustProfile::default(),
+            )?;
+            world.insert_component_route_preference_profile(
+                entity,
+                RoutePreferenceProfile::default(),
+            )?;
             world.insert_component_risk_weight_profile(entity, RiskWeightProfile::default())?;
             world.insert_component_law_abiding_profile(entity, LawAbidingProfile::default())?;
             world.insert_component_drive_escalation_profile(
@@ -685,11 +693,11 @@ mod tests {
         OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource,
         Permille, Place, PlaceTag, PlaceVisitRecord, ProductionJob, ProvenanceEntry,
         PursuitProfile, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
-        ReservationRecord, ResourceSource, RightKind, RiskWeightProfile, SubstitutePreferences,
-        SuccessionLaw, SurveyMemory, TellProfile, TheftDispositionProfile, Tick, TickRange,
-        Topology, TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind,
-        WorkstationMarker, WorkstationTag, WorldError, Wound, WoundCause, WoundList,
-        build_prototype_world,
+        ReservationRecord, ResourceSource, RightKind, RiskWeightProfile, RoutePreferenceProfile,
+        SubstitutePreferences, SuccessionLaw, SurveyMemory, TellProfile, TestimonyTrustProfile,
+        TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId,
+        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound,
+        WoundCause, WoundList, build_prototype_world,
         test_utils::{
             sample_blocker_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
@@ -1356,6 +1364,14 @@ mod tests {
         assert_eq!(
             world.get_component_agenda_profile(id),
             Some(&AgendaProfile::default())
+        );
+        assert_eq!(
+            world.get_component_testimony_trust_profile(id),
+            Some(&TestimonyTrustProfile::default())
+        );
+        assert_eq!(
+            world.get_component_route_preference_profile(id),
+            Some(&RoutePreferenceProfile::default())
         );
         assert_eq!(
             world.get_component_disposal_profile(id),
@@ -5751,6 +5767,46 @@ mod tests {
             .unwrap_err();
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn testimony_trust_profile_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+        let profile = TestimonyTrustProfile::default();
+
+        world
+            .insert_component_testimony_trust_profile(id, profile.clone())
+            .unwrap();
+        assert_eq!(
+            world.get_component_testimony_trust_profile(id),
+            Some(&profile)
+        );
+        assert!(world.has_component_testimony_trust_profile(id));
+
+        let removed = world.remove_component_testimony_trust_profile(id).unwrap();
+        assert_eq!(removed, Some(profile));
+        assert_eq!(world.get_component_testimony_trust_profile(id), None);
+    }
+
+    #[test]
+    fn route_preference_profile_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+        let profile = RoutePreferenceProfile::default();
+
+        world
+            .insert_component_route_preference_profile(id, profile.clone())
+            .unwrap();
+        assert_eq!(
+            world.get_component_route_preference_profile(id),
+            Some(&profile)
+        );
+        assert!(world.has_component_route_preference_profile(id));
+
+        let removed = world.remove_component_route_preference_profile(id).unwrap();
+        assert_eq!(removed, Some(profile));
+        assert_eq!(world.get_component_route_preference_profile(id), None);
     }
 
     #[test]
