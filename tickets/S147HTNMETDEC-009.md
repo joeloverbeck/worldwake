@@ -21,7 +21,7 @@ S147 D5 surfaces method choice and decomposition through `PlanAttemptTrace.metho
 2. Spread-syntax check (Step 2 sub-check (d)): observer.rs test sites use `..sample_attempt(…)` spread, so only the `sample_attempt` helper needs `method_trace: None`. The other observer sites inherit through spread. With `Option`'s default being `None`, the rollout is mostly mechanical at the production sites; the 1 production site in `agent_tick/planning.rs` needs an actual method-trace emission when `select_method` returned `Some(_)`.
 3. `PlanningMetrics` lives at `crates/worldwake-ai/src/scenario_diagnostics/mod.rs:32` with existing fields (plan_attempts, plan_attempts_by_kind, budget_exhaustion_count, budget_exhaustion_rate, frontier_exhaustion_count, frontier_exhaustion_rate, beam_truncation_ratio, plan_depth, terminal_kind_distribution, heuristic_helpful_action_hit_rate). The `method_usage` field is net-new and aggregates per-method counts from `PlanAttemptTrace.method_trace` across a scenario run.
 4. Shared boundary: `PlanAttemptTrace` is the contract between planner emission (the runtime `build_stages` caller at `agent_tick/planning.rs`) and downstream consumers (observer ticket 010, scenario diagnostics, goldens). The `method_trace` field is `Option<MethodPlanAttemptTrace>` so flat-GOAP fallback records `None` rather than synthesizing a trace.
-5. `MethodFailureMode` and `From<&MethodFailureMode> for MethodFailureKind` exist after ticket 004 lands. `MethodPlanAttemptTrace.failure_mode: Option<MethodFailureMode>` carries the rich ai-side payload; the typed `Discrepancy::MethodFailure(MethodFailureContext)` (from ticket 002) is the parallel core-side surface.
+5. `MethodFailureMode` and `From<&MethodFailureMode> for MethodFailureKind` exist after `archive/tickets/S147HTNMETDEC-004.md` landed. `MethodPlanAttemptTrace.failure_mode: Option<MethodFailureMode>` carries the rich ai-side payload; the typed `Discrepancy::MethodFailure(MethodFailureContext)` (from `archive/tickets/S147HTNMETDEC-002.md`) is the parallel core-side surface.
 
 ## Architecture Check
 
@@ -133,7 +133,7 @@ Update `aggregator.rs` to populate `method_usage` from `PlanAttemptTrace.method_
 ## Out of Scope
 
 - Observer Section rendering of `method_trace` (ticket 010 — verifies actual observer section number too).
-- `Discrepancy::MethodFailure` emission from action handlers — ticket 002 owns the variant; emission from planner failure paths may need wiring in `failure_handling.rs`, but that's part of the planner integration (ticket 008) rather than the trace recording (this ticket).
+- `Discrepancy::MethodFailure` emission from action handlers — `archive/tickets/S147HTNMETDEC-002.md` owns the variant; emission from planner failure paths may need wiring in `failure_handling.rs`, but that's part of the planner integration (ticket 008) rather than the trace recording (this ticket).
 - Golden coverage of trace correctness — ticket 011.
 
 ## Acceptance Criteria

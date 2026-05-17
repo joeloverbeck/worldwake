@@ -23,7 +23,7 @@ S147 D6 routes method-failure attribution through the existing typed-discrepancy
 ## Architecture Check
 
 1. A single new variant carrying a `Copy`-safe payload (`MethodFailureContext { method_id, kind, subgoal_index }`) keeps each existing Discrepancy variant single-meaning. Option (c) from the reassessment — widening each existing variant with optional method context — would have given each variant two meanings (method-driven vs not), violating FND-28's parallel-authority test for downstream blocker-memory consumers. Option (b) — trace-only — would have failed FND-29A's authoritative-history test. Option (a) (this choice) is the only one that passes all three lenses.
-2. No backwards-compatibility shims. The variant is purely additive in the typed channel. `MethodFailureMode` (ai-side, defined in ticket 004) projects to `MethodFailureKind` (core-side, defined here) via a `From` impl that ticket 004 owns — this ticket only declares the core-side surface.
+2. No backwards-compatibility shims. The variant is purely additive in the typed channel. `MethodFailureMode` (ai-side, defined in `archive/tickets/S147HTNMETDEC-004.md`) projects to `MethodFailureKind` (core-side, defined here) via a `From` impl that `archive/tickets/S147HTNMETDEC-004.md` owns — this ticket only declares the core-side surface.
 
 ## Verified Layers
 
@@ -97,7 +97,7 @@ Merge note: Ticket 002 bumps `SAVE_FORMAT_VERSION` 88→89 for the new `Discrepa
 
 ## Out of Scope
 
-- The ai-side `MethodFailureMode` enum and its `From<&MethodFailureMode> for MethodFailureKind` impl — those land in ticket 004 (split — variant + audit in core (this ticket), `From` impl in ai (004)).
+- The ai-side `MethodFailureMode` enum and its `From<&MethodFailureMode> for MethodFailureKind` impl — those landed in `archive/tickets/S147HTNMETDEC-004.md` (split — variant + audit in core (this ticket), `From` impl in ai (004)).
 - Production sites that emit `Discrepancy::MethodFailure` — emission happens from the planner integration (ticket 008) and the method selector (ticket 007); this ticket only adds the variant.
 - Per-method TTL/backoff tuning — moderate defaults are sufficient for first ship; per-method tuning is future work.
 

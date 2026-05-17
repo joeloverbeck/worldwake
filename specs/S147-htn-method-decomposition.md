@@ -87,11 +87,10 @@ crates/worldwake-ai/src/htn/
 ```rust
 // crates/worldwake-ai/src/htn/method_schema.rs
 use worldwake_core::{
-    CommodityKind, EntityId, GoalKindDiscriminant, MethodSchemaId,
-    MotiveSourceDiscriminant, Permille, Quantity, WorkstationTag,
+    CommodityKind, EntityId, GoalKindDiscriminant, GoalPlanningBudget,
+    MethodSchemaId, MotiveSourceDiscriminant, Permille, Quantity, WorkstationTag,
 };
 use crate::planner_ops::PlannerOpKind;
-use crate::goal_planning_budget::GoalPlanningBudget;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MethodSchema {
@@ -170,7 +169,6 @@ pub enum EntityCriterion {
     Workstation(WorkstationTag),
     ResourceSource(CommodityKind),
     Seller(CommodityKind),
-    OfficeOfKind(crate::role::OfficeKind),
     Witness { topic: TopicTemplate },
     ViolationEvidence { violation: EntityId },
     Ledger { institution: EntityId },

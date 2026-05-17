@@ -23,7 +23,7 @@ S147's per-agent method enablement is gated by the `disabled_methods` field on `
 ## Architecture Check
 
 1. Denylist semantics (empty default = all enabled) match `disabled_extractors`. The original allowlist proposal (`enabled_methods` with default "all enabled") contradicted Design Goal #5 because a default of "all enabled" makes role-specific methods like `FulfillBountyGroupHunt` default-available to every agent, defeating diversity. The denylist puts the burden on scenario authors to opt agents out of methods, which is the right ergonomic direction for FND-22 (concrete per-agent variation).
-2. `#[serde(default)]` on the new field preserves existing scenario RON deserialization without modification — no backwards-compatibility shim is needed and no SAVE_FORMAT_VERSION bump is required (sibling ticket 002 owns the only bump in S147).
+2. `#[serde(default)]` on the new field preserves existing scenario RON deserialization without modification — no backwards-compatibility shim is needed and no SAVE_FORMAT_VERSION bump is required (`archive/tickets/S147HTNMETDEC-002.md` owns the only bump in S147).
 3. Profile-doc regeneration (`scripts/profile_docs.py`) is in-scope to keep `docs/profiles/all-profiles.md` consistent with the code surface; deferring the doc regen would leave a doc/code mismatch invisible to Rust grep.
 
 ## Verified Layers
@@ -90,7 +90,7 @@ Ran `python3 scripts/profile_docs.py --write`; `docs/profiles/all-profiles.md` n
 ### Invariants
 
 1. Existing scenario RON files continue to deserialize without modification (`#[serde(default)]` invariant).
-2. No `SAVE_FORMAT_VERSION` bump needed in this ticket — scenario RON files that omit `disabled_methods` continue to deserialize through the additive `#[serde(default)]` field, and S147's only save-format bump remains owned by archived ticket 002.
+2. No `SAVE_FORMAT_VERSION` bump needed in this ticket — scenario RON files that omit `disabled_methods` continue to deserialize through the additive `#[serde(default)]` field, and S147's only save-format bump remains owned by `archive/tickets/S147HTNMETDEC-002.md`.
 3. `ProfileHomogeneity` lint covers all three `AgentSchemaContextProfile` fields uniformly.
 
 ## Test Plan Result

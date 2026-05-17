@@ -77,7 +77,7 @@ Reuse existing scenario RON fixtures where possible (e.g., the bounty/justice sc
 
 - Per-method observer formatting tweaks (ticket 010 owns observer surface).
 - Adding new `PlannerOpKind` variants (would be a separate spec — first-ship uses only existing variants).
-- Per-method TTL/backoff tuning in `failure_handling.rs` (ticket 002's moderate defaults are sufficient; tuning is future work).
+- Per-method TTL/backoff tuning in `failure_handling.rs` (`archive/tickets/S147HTNMETDEC-002.md`'s moderate defaults are sufficient; tuning is future work).
 - Performance regression guards — S147 is not a performance-optimization spec; goldens cover correctness, not wall-clock metrics.
 
 ## Acceptance Criteria

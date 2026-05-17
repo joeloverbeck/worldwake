@@ -71,8 +71,8 @@ Added `crates/worldwake-core/tests/discriminant_mirrors.rs`:
 ## Out of Scope
 
 - HTN module in worldwake-ai (separate tickets 004, 006, 007, 008).
-- `MethodSchema` and supporting types (separate ticket 004).
-- `Discrepancy::MethodFailure` variant (separate ticket 002, depends on `MethodSchemaId` from this ticket).
+- `MethodSchema` and supporting types (now archived at `archive/tickets/S147HTNMETDEC-004.md`).
+- `Discrepancy::MethodFailure` variant (now archived at `archive/tickets/S147HTNMETDEC-002.md`, depends on `MethodSchemaId` from this ticket).
 - `AgentSchemaContextProfile.disabled_methods` (separate ticket 003, depends on `MethodSchemaId` from this ticket).
 - Reverse `Discriminant → Source` conversion — no current consumer needs to lift a discriminant back to a source enum; do not add speculatively.
 
