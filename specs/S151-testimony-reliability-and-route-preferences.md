@@ -116,8 +116,10 @@ The internal helpers `topic_scope_for_entity_aspect`, `topic_scope_for_social_ob
 - `EntityBeliefAspect::WorkstationPresent` / `ContentionState` / `WashBasinState` → `ResourceAvailability`
 - `EntityBeliefAspect::Owner` / `Artifact` → `GeneralFact`
 - `EntityBeliefAspect::Evidence` → `AccusationCredibility`
-- `SocialObservation::*` referencing accusations → `AccusationCredibility`; referencing offices → `OfficeHolder`
-- `InstitutionalClaim::*` referencing bounties → `BountyValidity`; referencing office holders → `OfficeHolder`; otherwise → `GeneralFact`
+- `SocialObservationDetail::WitnessedConflict` → `RouteHazard`; `WitnessedAbsence` / `SuspectedTheft` → `AccusationCredibility`; otherwise → `GeneralFact`
+- `InstitutionalClaim::OfficeHolder` / `SupportDeclaration` / `ForceControl` → `OfficeHolder`; `Accusation` / `Verdict` / `ArtifactCredibilityRefutation` → `AccusationCredibility`; `MissingPersonStatus` → `EntityWhereabouts`; otherwise → `GeneralFact`
+
+The `BountyValidity` and `PriceLevel` categories are reserved in `TopicScope` for later testimony topics. The current `InstitutionalClaim` enum does not yet expose bounty-validity or price-level variants, so D2's exhaustive mapping has no live upstream arm that returns those categories in S151TESRELROU-001.
 
 The exhaustive table is asserted by a workspace test that fails compilation if a new `EntityBeliefAspect`, `SocialObservation`, or `InstitutionalClaim` variant lands without an explicit mapping arm.
 

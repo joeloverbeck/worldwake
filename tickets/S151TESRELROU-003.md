@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — two new universal ECS components, `World::create_agent()` bootstrap seeding, AgentDef integration, profile-doc regeneration
-**Deps**: S151TESRELROU-001
+**Deps**: archive/tickets/S151TESRELROU-001.md
 
 ## Problem
 

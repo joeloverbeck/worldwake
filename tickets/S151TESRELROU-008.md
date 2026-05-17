@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — extends `perceived_direct_travel_cost_from_memory` signature to accept `RoutePreference` + `RoutePreferenceProfile`, plus caller threading
-**Deps**: S151TESRELROU-001, S151TESRELROU-002, S151TESRELROU-004
+**Deps**: archive/tickets/S151TESRELROU-001.md, S151TESRELROU-002, S151TESRELROU-004
 
 ## Problem
 

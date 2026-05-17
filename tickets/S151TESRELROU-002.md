@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — two new core data types and two new fields on `AgentDecisionRuntime` (ai-crate runtime state)
-**Deps**: S151TESRELROU-001
+**Deps**: archive/tickets/S151TESRELROU-001.md
 
 ## Problem
 

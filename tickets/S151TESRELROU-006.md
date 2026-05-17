@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — new AI-tick observation phase reading belief overwrites and travel-action commits, writing to runtime stores, and populating decision-event contexts
-**Deps**: S151TESRELROU-001, S151TESRELROU-002, S151TESRELROU-003, S151TESRELROU-005
+**Deps**: archive/tickets/S151TESRELROU-001.md, S151TESRELROU-002, S151TESRELROU-003, S151TESRELROU-005
 
 ## Problem
 

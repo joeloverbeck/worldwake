@@ -102,6 +102,7 @@ pub mod sleep_episode;
 pub mod social_artifact;
 pub mod survey_memory;
 pub mod test_utils;
+pub mod topic_scope;
 pub mod topology;
 pub mod trade;
 pub mod traits;
@@ -287,6 +288,7 @@ pub use social_artifact::{
     ProofRequirement, RevocationReason, RewardSource,
 };
 pub use survey_memory::{SurveyMemory, SurveyRecord};
+pub use topic_scope::{TopicScope, belief_topic_to_topic_scope, entity_aspect_to_topic_scope};
 pub use topology::{
     OUTDOOR_RELIEF_TAGS, Place, PlaceTag, PlaceTagSet, PrototypePlace, Route, Topology, TravelEdge,
     build_prototype_world, prototype_place_entity,

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — two new summary types + payload-field extensions on `GoalCommittedPayload` and `GoalSuppressedPayload` + observer rendering
-**Deps**: S151TESRELROU-001
+**Deps**: archive/tickets/S151TESRELROU-001.md
 
 ## Problem
 
