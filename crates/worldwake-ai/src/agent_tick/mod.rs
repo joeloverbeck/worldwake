@@ -32,8 +32,9 @@ use observation::{
 #[cfg(test)]
 use planning::plan_and_validate_next_step_traced;
 use planning::{
-    build_candidate_plans, plan_and_validate_next_step_traced_with_opportunity_index,
-    summarize_ranked_goal, summarize_step,
+    build_candidate_plans_with_route_preference,
+    plan_and_validate_next_step_traced_with_opportunity_index, summarize_ranked_goal,
+    summarize_step,
 };
 
 use crate::decision_trace::{

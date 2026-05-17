@@ -11,8 +11,9 @@ use worldwake_sim::{
 use super::frame::progress_op_kinds;
 use super::observation::{InFlightReconciliation, reconcile_in_flight_state};
 use super::{
-    AgentTickContext, AssumptionRefContext, FrameSwitchMarginSource, build_candidate_plans,
-    persist_blocked_memory, persist_discrepancy_memory,
+    AgentTickContext, AssumptionRefContext, FrameSwitchMarginSource,
+    build_candidate_plans_with_route_preference, persist_blocked_memory,
+    persist_discrepancy_memory,
 };
 use crate::DirtySet;
 use crate::failure_handling::{ExecutionFailure, FailureClassification};
@@ -84,7 +85,7 @@ pub(super) fn handle_active_action_phase(
     let needs_plans =
         should_build_interrupt_plans(interruptibility, runtime, active_goal.as_ref(), jc.as_ref());
     let planned_candidates = needs_plans.then(|| {
-        build_candidate_plans(
+        build_candidate_plans_with_route_preference(
             ctx.world,
             ctx.scheduler,
             agent,
@@ -102,6 +103,7 @@ pub(super) fn handle_active_action_phase(
             false,
             false,
             &runtime.exhaustion_cache,
+            Some(&runtime.route_preference),
         )
     });
     let selection_plans = planned_candidates

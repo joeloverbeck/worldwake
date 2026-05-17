@@ -29,7 +29,8 @@ use crate::{
     DirtySet, ExhaustionEntry, ExhaustionRetryState, ExpectationFailureCause,
     ExpectationFailurePhase, KillCondition, OpportunityExpectationFailureIncident, OpportunityKey,
     PlanValue, PlannedPlan, PlannedStep, PlannerOpSemantics, PlanningStateCacheCounters,
-    RevivalTrigger, authoritative_target, build_planning_snapshot_with_blocked_facility_uses,
+    RevivalTrigger, authoritative_target,
+    build_planning_snapshot_with_blocked_facility_uses_and_route_preference,
     planner_ops::committed_source_for_offer, planner_ops::expectation_kind_for_offer,
     ranking::OrderedRanked, revalidate_next_step, select_best_plan,
 };
@@ -38,8 +39,9 @@ use std::time::Instant;
 use worldwake_core::{
     ActionDefId, BlockerMemory, CognitiveProfile, DecisionEventPayload, DiscrepancyMemory,
     EntityId, EventLog, EventTag, ExecutionBudget, GoalKind, IntentionFrame, OpportunityAnchor,
-    Permille, PlanAdoptedPayload, RepairKind, RoutePreferenceSummary, RouteSegment,
-    TestimonyReliabilityKey, TestimonyTrustSummary, Tick, belief_topic_to_topic_scope,
+    Permille, PlanAdoptedPayload, RepairKind, RoutePreference, RoutePreferenceSummary,
+    RouteSegment, TestimonyReliabilityKey, TestimonyTrustSummary, Tick,
+    belief_topic_to_topic_scope,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, ActionPayload, GoalBeliefView, ProfileBeliefView, RecipeRegistry,
@@ -415,6 +417,7 @@ fn same_goal_search_failure_incidents(
     }]
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
 pub(super) fn build_candidate_plans(
     world: &worldwake_core::World,
@@ -434,6 +437,49 @@ pub(super) fn build_candidate_plans(
     collect_rejections: bool,
     collect_expansion_summaries: bool,
     exhaustion_cache: &std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
+) -> CandidatePlanningPass {
+    build_candidate_plans_with_route_preference(
+        world,
+        scheduler,
+        agent,
+        ranked_candidates,
+        committed_opportunity,
+        discrepancy_memory,
+        blocked_memory,
+        current_tick,
+        cognitive,
+        execution_budget,
+        semantics_table,
+        action_defs,
+        action_handlers,
+        recipe_registry,
+        collect_rejections,
+        collect_expansion_summaries,
+        exhaustion_cache,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
+pub(super) fn build_candidate_plans_with_route_preference(
+    world: &worldwake_core::World,
+    scheduler: &Scheduler,
+    agent: worldwake_core::EntityId,
+    ranked_candidates: &OrderedRanked<'_>,
+    committed_opportunity: Option<OpportunityKey>,
+    discrepancy_memory: &DiscrepancyMemory,
+    blocked_memory: &BlockerMemory,
+    current_tick: Tick,
+    cognitive: &CognitiveProfile,
+    execution_budget: &ExecutionBudget,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+    action_handlers: &ActionHandlerRegistry,
+    recipe_registry: &RecipeRegistry,
+    collect_rejections: bool,
+    collect_expansion_summaries: bool,
+    exhaustion_cache: &std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
+    route_preference: Option<&RoutePreference>,
 ) -> CandidatePlanningPass {
     let opportunity_index = PerceivedOpportunityIndex::default();
     build_candidate_plans_with_opportunity_index(
@@ -455,6 +501,7 @@ pub(super) fn build_candidate_plans(
         collect_expansion_summaries,
         exhaustion_cache,
         &opportunity_index,
+        route_preference,
     )
 }
 
@@ -478,6 +525,7 @@ fn build_candidate_plans_with_opportunity_index(
     collect_expansion_summaries: bool,
     exhaustion_cache: &std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
     opportunity_index: &PerceivedOpportunityIndex,
+    route_preference: Option<&RoutePreference>,
 ) -> CandidatePlanningPass {
     build_candidate_plans_with_sources(
         world,
@@ -499,6 +547,7 @@ fn build_candidate_plans_with_opportunity_index(
         exhaustion_cache,
         &BTreeMap::new(),
         opportunity_index,
+        route_preference,
     )
 }
 
@@ -523,8 +572,11 @@ pub(super) fn build_candidate_plans_with_sources(
     exhaustion_cache: &std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
     candidate_sources: &BTreeMap<OpportunityKey, CandidateSource>,
     opportunity_index: &PerceivedOpportunityIndex,
+    route_preference: Option<&RoutePreference>,
 ) -> CandidatePlanningPass {
     let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
+    let route_preference_profile =
+        route_preference.and_then(|_| ProfileBeliefView::route_preference_profile(&view, agent));
     let mut admitted_candidates: Vec<_> = ranked_candidates
         .iter()
         .filter(|c| {
@@ -650,7 +702,7 @@ pub(super) fn build_candidate_plans_with_sources(
         let mut rejections = Vec::new();
         let mut expansions = Vec::new();
         let mut trace_metadata = SearchTraceMetadata::default();
-        let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+        let snapshot = build_planning_snapshot_with_blocked_facility_uses_and_route_preference(
             &view,
             agent,
             &ranked.offer.evidence_entities,
@@ -659,6 +711,8 @@ pub(super) fn build_candidate_plans_with_sources(
             blocked_memory,
             current_tick,
             ranked.offer.key.kind.relevant_op_kinds(),
+            route_preference,
+            route_preference_profile.as_ref(),
         );
         let opportunity = OpportunityKey {
             goal_key: ranked.offer.key,
@@ -1913,6 +1967,7 @@ fn plan_and_validate_next_step_with_opportunity_index(
                 false,
                 &runtime.exhaustion_cache,
                 opportunity_index,
+                Some(&runtime.route_preference),
             );
 
             // Record newly exhausted goals for next tick.
@@ -2362,6 +2417,7 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
             &runtime.exhaustion_cache,
             candidate_sources,
             opportunity_index,
+            Some(&runtime.route_preference),
         );
         snapshot_cache_counters = plans.snapshot_cache_counters;
         planning_state_cache_counters = plans.planning_state_cache_counters;

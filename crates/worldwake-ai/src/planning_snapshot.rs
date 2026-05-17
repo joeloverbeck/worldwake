@@ -10,10 +10,10 @@ use worldwake_core::{
     HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile,
     LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
     PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecordData, RecordedViolation,
-    ResourceSource, SocialObservation, StockStoragePolicy, SuccessionLaw, TellMemoryKey,
-    TellProfile, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WashBasinState,
-    WorkstationTag, Wound,
+    ResourceSource, RoutePreference, RoutePreferenceProfile, SocialObservation, StockStoragePolicy,
+    SuccessionLaw, TellMemoryKey, TellProfile, TheftDispositionProfile, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile,
+    WashBasinState, WorkstationTag, Wound,
 };
 use worldwake_sim::{BeliefRead, RuntimeBeliefView};
 
@@ -465,6 +465,8 @@ pub struct PlanningSnapshot {
     /// the number of places in the snapshot (typically 10-20, so < 8000 ops).
     shortest_travel_ticks: DistanceMatrix,
     perceived_travel_costs: DistanceMatrix,
+    actor_route_preference: Option<RoutePreference>,
+    actor_route_preference_profile: Option<RoutePreferenceProfile>,
     cache_hit_count: Cell<u64>,
     cache_miss_count: Cell<u64>,
 }
@@ -499,6 +501,32 @@ impl PlanningSnapshot {
         travel_horizon: u8,
         blocked_facility_uses: &BTreeSet<(EntityId, ActionDefId)>,
         filter: SnapshotEntityFilter,
+    ) -> Self {
+        Self::build_with_blocked_facility_uses_and_route_preference(
+            view,
+            actor,
+            evidence_entities,
+            evidence_places,
+            travel_horizon,
+            blocked_facility_uses,
+            filter,
+            None,
+            None,
+        )
+    }
+
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn build_with_blocked_facility_uses_and_route_preference(
+        view: &dyn RuntimeBeliefView,
+        actor: EntityId,
+        evidence_entities: &BTreeSet<EntityId>,
+        evidence_places: &BTreeSet<EntityId>,
+        travel_horizon: u8,
+        blocked_facility_uses: &BTreeSet<(EntityId, ActionDefId)>,
+        filter: SnapshotEntityFilter,
+        route_preference: Option<&RoutePreference>,
+        route_preference_profile: Option<&RoutePreferenceProfile>,
     ) -> Self {
         let included_places = collect_places(
             view,
@@ -561,6 +589,8 @@ impl PlanningSnapshot {
                 actor_confidence_policy,
                 &actor_known_entity_beliefs,
                 &actor_known_social_observations,
+                route_preference,
+                route_preference_profile,
                 from,
                 to,
                 ticks.get(),
@@ -668,6 +698,8 @@ impl PlanningSnapshot {
                 .collect(),
             shortest_travel_ticks,
             perceived_travel_costs,
+            actor_route_preference: route_preference.cloned(),
+            actor_route_preference_profile: route_preference_profile.cloned(),
             cache_hit_count: Cell::new(0),
             cache_miss_count: Cell::new(0),
         }
@@ -723,6 +755,8 @@ impl PlanningSnapshot {
             actor_bandit_establishment_ticks: BTreeMap::new(),
             shortest_travel_ticks,
             perceived_travel_costs,
+            actor_route_preference: None,
+            actor_route_preference_profile: None,
             cache_hit_count: Cell::new(0),
             cache_miss_count: Cell::new(0),
         }
@@ -886,11 +920,22 @@ impl PlanningSnapshot {
                 .saturating_mul(u32::from(threat.value()))
                 .div_ceil(1000)
         };
+        let perceived_cost = perceived_direct_travel_cost_from_memory(
+            self.current_tick,
+            self.actor_confidence_policy,
+            &self.actor_known_entity_beliefs,
+            &self.actor_known_social_observations,
+            self.actor_route_preference.as_ref(),
+            self.actor_route_preference_profile.as_ref(),
+            from,
+            to,
+            base_ticks,
+        );
         Some(DirectPerceivedTravelCostBreakdown {
             base_ticks,
             threat,
             penalty_ticks,
-            perceived_cost: base_ticks.saturating_add(penalty_ticks),
+            perceived_cost,
         })
     }
 
@@ -1271,6 +1316,33 @@ pub fn build_planning_snapshot_with_blocked_facility_uses(
     )
 }
 
+#[must_use]
+#[allow(clippy::too_many_arguments)]
+pub fn build_planning_snapshot_with_blocked_facility_uses_and_route_preference(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    evidence_entities: &BTreeSet<EntityId>,
+    evidence_places: &BTreeSet<EntityId>,
+    travel_horizon: u8,
+    blocked_memory: &BlockerMemory,
+    current_tick: Tick,
+    relevant_ops: &[PlannerOpKind],
+    route_preference: Option<&RoutePreference>,
+    route_preference_profile: Option<&RoutePreferenceProfile>,
+) -> PlanningSnapshot {
+    PlanningSnapshot::build_with_blocked_facility_uses_and_route_preference(
+        view,
+        actor,
+        evidence_entities,
+        evidence_places,
+        travel_horizon,
+        &blocked_facility_uses(blocked_memory, current_tick),
+        SnapshotEntityFilter::from_relevant_ops(relevant_ops),
+        route_preference,
+        route_preference_profile,
+    )
+}
+
 fn blocked_facility_uses(
     blocked_memory: &BlockerMemory,
     current_tick: Tick,
@@ -1414,8 +1486,9 @@ mod tests {
         DemandObservation, DisposalProfile, DriveThresholds, EligibilityRule, EntityId, EntityKind,
         HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
         MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Quantity, RecipeId,
-        ResourceSource, SuccessionLaw, TellMemoryKey, TellProfile, Tick, TickRange,
-        ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        ResourceSource, RoutePreference, RoutePreferenceProfile, RouteSegment, SuccessionLaw,
+        TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+        UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload, ControlBeliefView,
@@ -2991,6 +3064,58 @@ mod tests {
         // A -> B -> C = 3 + 5 = 8
         assert_eq!(snapshot.min_travel_ticks(place_a, place_c), Some(8));
         assert_eq!(snapshot.min_travel_ticks(place_c, place_a), Some(8));
+    }
+
+    #[test]
+    fn snapshot_perceived_travel_cost_applies_route_preference() {
+        let actor = entity(1);
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let segment = RouteSegment::new(place_a, place_b);
+        let profile = RoutePreferenceProfile {
+            minimum_traversals: 1,
+            ..RoutePreferenceProfile::default()
+        };
+        let mut route_preference = RoutePreference::default();
+        route_preference.record_safe(segment, Tick(0));
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.effective_places.insert(actor, place_a);
+        view.entities_at.insert(place_a, vec![actor]);
+        view.entities_at.insert(place_b, vec![]);
+        view.adjacent
+            .insert(place_a, vec![(place_b, NonZeroU32::new(10).unwrap())]);
+        view.adjacent
+            .insert(place_b, vec![(place_a, NonZeroU32::new(10).unwrap())]);
+
+        let neutral = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let preferred =
+            super::PlanningSnapshot::build_with_blocked_facility_uses_and_route_preference(
+                &view,
+                actor,
+                &BTreeSet::new(),
+                &BTreeSet::new(),
+                1,
+                &BTreeSet::new(),
+                SnapshotEntityFilter::unfiltered(),
+                Some(&route_preference),
+                Some(&profile),
+            );
+
+        assert_eq!(
+            neutral.direct_perceived_travel_cost(place_a, place_b),
+            Some(10)
+        );
+        assert_eq!(
+            preferred.direct_perceived_travel_cost(place_a, place_b),
+            preferred.min_perceived_travel_cost_to_any(place_a, &[place_b])
+        );
+        assert!(
+            preferred.direct_perceived_travel_cost(place_a, place_b)
+                < neutral.direct_perceived_travel_cost(place_a, place_b)
+        );
     }
 
     #[test]

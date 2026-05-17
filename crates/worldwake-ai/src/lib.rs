@@ -136,6 +136,7 @@ pub use planner_ops::{
 };
 pub use planning_snapshot::{
     PlanningSnapshot, build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,
+    build_planning_snapshot_with_blocked_facility_uses_and_route_preference,
 };
 pub use planning_state::{
     HypotheticalEntityId, HypotheticalEntityMeta, PlanningEntityRef, PlanningState,
