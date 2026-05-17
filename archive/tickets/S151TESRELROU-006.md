@@ -30,7 +30,7 @@ Completed on 2026-05-17.
 - Populated `GoalCommittedPayload.testimony_trust_context` for `AskWitness` goals with existing witness/topic reliability entries.
 - Populated `GoalCommittedPayload.route_preference_context` for committed travel plans that cross segments with existing route preference entries.
 - Added focused unit coverage for learned-state observation and goal-commit learned contexts.
-- Truth-synced `specs/S151-testimony-reliability-and-route-preferences.md` so downstream tickets use the landed `RouteExperience` route-update seam.
+- Truth-synced the now-archived `archive/specs/S151-testimony-reliability-and-route-preferences.md` so downstream tickets use the landed `RouteExperience` route-update seam.
 
 ## Deviations
 

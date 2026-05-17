@@ -18,7 +18,7 @@ S151 needs two universal per-agent profiles (`TestimonyTrustProfile`, `RoutePref
 4. `spawn_agent()` at `crates/worldwake-cli/src/scenario/mod.rs:617-656` cluster uses the universal `.unwrap_or_default()` pattern (e.g., line 617: `txn.set_component_metabolism_profile(agent_id, agent_def.metabolism_profile.unwrap_or_default())?`).
 5. `scripts/profile_docs.py` regenerates `docs/profiles/all-profiles.md` from Rust Profile structs (parses `crates/worldwake-cli/src/scenario/mod.rs` per the script header). Run `python3 scripts/profile_docs.py --write` after adding the new profiles.
 6. `crates/worldwake-sim/src/world_txn.rs` does NOT exist in the codebase — no delta assertion to update (verified per Step 2 spot-check (e)).
-7. Spec D5+D6+D11 at `specs/S151-testimony-reliability-and-route-preferences.md:181-353`. The `trust()` and `preference()` impl bodies (deferred from ticket 002) land here alongside the profile types so the formula and parameters are reviewed together.
+7. Spec D5+D6+D11 at `archive/specs/S151-testimony-reliability-and-route-preferences.md:181-353`. The `trust()` and `preference()` impl bodies (deferred from ticket 002) land here alongside the profile types so the formula and parameters are reviewed together.
 
 ## Architecture Check
 

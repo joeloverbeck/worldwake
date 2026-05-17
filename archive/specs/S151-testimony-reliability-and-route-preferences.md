@@ -1,6 +1,6 @@
 # S151: Testimony Source Reliability and Route Preferences
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
@@ -22,7 +22,7 @@ Both stores live as fields on the existing `AgentDecisionRuntime` struct (`crate
 
 ## Phase and Status
 
-Phase 12: AI Architecture Evolution — Draft
+Phase 12: AI Architecture Evolution - Completed
 
 ## Crates
 
@@ -460,12 +460,42 @@ State-mediated per FND-26. No new cross-system command channels.
 
 All profile fields are `Permille` or `u32`/`u8` integer counts. No floats. `TestimonyTrustProfile` and `RoutePreferenceProfile` are both universal per FND-22A; per-agent variation enables archetype expression (S152 substrate).
 
-## Test Plan
+## Verification Result
 
-- D14 golden coverage (3 testimony + 4 route-preference + exhaustive mapping unit tests).
-- Determinism: same observation sequence → identical trust/preference values.
-- Decay tests: aging without new observations → entries decay toward neutral.
-- Save/load coverage for both runtime stores under bumped `SAVE_FORMAT_VERSION = 88`.
-- Component-registration tests via the existing `with_component_schema_entries!` test surface.
-- `GoalBeliefView` accessor tests verifying `RuntimeBeliefView` resolves the new profiles.
-- `cargo clippy --workspace --all-targets -- -D warnings` clean.
+1. Passed: D14 golden coverage landed as three testimony scenarios and four route-preference scenarios.
+2. Passed: deterministic testimony summary derivation and route-preference decay are covered by focused tests.
+3. Passed: save/load coverage proves both runtime stores and S151 decision payload context under bumped `SAVE_FORMAT_VERSION = 88`.
+4. Passed: component-registration tests cover the new universal profile surface.
+5. Passed: `GoalBeliefView` accessor tests cover `RuntimeBeliefView` resolution of the new profiles.
+6. Passed: `cargo clippy --workspace --all-targets -- -D warnings`.
+
+## Outcome
+
+Completed on 2026-05-17.
+
+S151 landed the testimony-reliability and route-preference substrate across tickets `archive/tickets/S151TESRELROU-001.md` through `archive/tickets/S151TESRELROU-011.md`:
+
+1. `TopicScope`, `belief_topic_to_topic_scope`, `TestimonyReliability`, `RoutePreference`, `TestimonyTrustProfile`, and `RoutePreferenceProfile` landed in `worldwake-core`.
+2. The new universal profiles are registered for agents, scenario-definable through `AgentDef` / `spawn_agent()`, and readable through `GoalBeliefView`.
+3. Agent tick observation now updates testimony reliability and route preference state from local belief and route-experience events.
+4. AskWitness candidate generation and ranking consume testimony reliability for source suppression and damping, with decision-trace and decision-payload context.
+5. Route planning consumes route preferences as a soft learned travel-cost bias that composes with S150 route-segment blockers.
+6. Observer and scenario diagnostics surfaces render/aggregate the new testimony and route preference context.
+7. Save format version 88 is the completed S151 boundary; version 87 bytes are intentionally rejected under the no-backward-compatibility policy.
+8. Golden coverage landed as seven scenario-documented public-contract tests for testimony trust summaries, suppressed-goal payload context, route preference derivation/decay, and blocker/preference composition.
+
+Deviations from the draft:
+
+1. `BountyValidity` and `PriceLevel` remain reserved `TopicScope` categories with no current upstream `InstitutionalClaim` mapping arm.
+2. The final route-update seam uses the landed `RouteExperience` delta path rather than a speculative separate route-event hook.
+3. The D14 final goldens intentionally prove stable public contract surfaces rather than duplicating crate-private candidate/ranking/cost internals through brittle full authored scenarios. Those internals are covered by focused module tests from the earlier S151 tickets.
+4. `HabitMemory` remains deferred until diagnostics expose a concrete method-thrash pathology.
+
+Verification included:
+
+1. Passed: `cargo fmt --all`
+2. Passed: focused S151 ticket test lanes across core, sim, ai, systems, cli, observer, diagnostics, save/load, and golden integration surfaces.
+3. Passed: `python3 scripts/golden_inventory.py --write --check-docs`
+4. Passed: `cargo test --workspace`
+5. Passed: `cargo clippy --workspace --all-targets -- -D warnings`
+6. Passed: `./scripts/verify.sh`

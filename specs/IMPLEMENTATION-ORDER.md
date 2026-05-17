@@ -664,11 +664,11 @@ S143 (archived)       S144 (archived)       S145 (archived)       S150 (archived
    │                          │
    │                          └── S149 (soft dep on S148 for shared resume/abandon types)
    │
-   └─── S151 (soft dep on archived S150 for RouteSegment)
+   └─── S151 (archived; soft dep on archived S150 for RouteSegment)
             │
             └── S152 (soft deps on archived S146/S148/S151; modifies their profile types)
 
-S153 (hard deps on archived S143, S148, archived S150, S151)
+S153 (hard deps on archived S143, S148, archived S150, archived S151)
 ```
 
 ### Active Execution Steps
@@ -682,7 +682,7 @@ S153 (hard deps on archived S143, S148, archived S150, S151)
 **Wave 2** (after Wave 1):
 - **S146**: ✅ COMPLETED — archived at [archive/specs/S146-goal-schema-and-per-goal-budgets.md](/home/joeloverbeck/projects/worldwake/archive/specs/S146-goal-schema-and-per-goal-budgets.md). Landed the `GoalSchema` registry, `CandidateExtractor` migration of the 20 `emit_*` families, `GoalPlanningBudget` preset table (SELF_CARE/TRAVEL_PURCHASE/PRODUCTION/INVESTIGATION/BOUNTY_ESCORT), `AgentSchemaContextProfile` universal component, per-goal search budget traces, and observer failed-plan budget rendering.
   - soft depends on archived S145 (uses `strategic_budget_for_stages` helper)
-- **S151**: Testimony Source Reliability and Route Preferences — `TestimonyReliability` keyed by `(EntityId, TopicScope)`, `RoutePreference` keyed by `RouteSegment`, `TestimonyTrustProfile` / `RoutePreferenceProfile` universal components, ranking damping and travel-cost integration.
+- **S151**: ✅ COMPLETED — archived at [archive/specs/S151-testimony-reliability-and-route-preferences.md](/home/joeloverbeck/projects/worldwake/archive/specs/S151-testimony-reliability-and-route-preferences.md). Landed `TestimonyReliability` keyed by `(EntityId, TopicScope)`, `RoutePreference` keyed by `RouteSegment`, `TestimonyTrustProfile` / `RoutePreferenceProfile` universal components, ranking damping, travel-cost integration, diagnostics/observer surfaces, save-format version 88, and public-contract golden coverage.
   - soft depends on archived S150 (`RouteSegment` newtype)
   - HabitMemory portion of PR-8 deferred until S144 diagnostics surface method-thrash pathology
 
@@ -701,7 +701,7 @@ S153 (hard deps on archived S143, S148, archived S150, S151)
 
 **Wave 5** (final, after Wave 4):
 - **S153**: Golden Gaps — AI Architecture Scaling — three remaining scenarios: false rumor justice (regression for S151), office vacancy → patrol gap (regression for S148 portfolio breadth), scaled contention (regression for S150 cross-goal blockers). Belief-wall trap (regression for S143) is covered by S143STABELVIE-006; 4 PR-15 scenarios deferred (100-goal dense market, 20-agent contention, long production chain, boundary shock).
-  - hard depends on archived S143, S148, archived S150, S151
+  - hard depends on archived S143, S148, archived S150, archived S151
 
 ### Phase 12 Gate
 
@@ -719,7 +719,7 @@ S153 (hard deps on archived S143, S148, archived S150, S151)
 - [ ] S148 7-slot portfolio golden proves slot occupancy under Normal/Emergency/Idle modes; default `max_plans_normal=6` replaces legacy `max_candidates_to_plan=2`
 - [ ] S149 typed-terminal goldens prove each of the 7 terminal kinds with concrete observability + resume conditions
 - [x] S150 archived: cross-goal blocker goldens prove `RouteSegment` and `Counterparty` blockers suppress multi-goal candidates and clear on observation
-- [ ] S151 testimony-reliability golden proves trust update from confirmation/refutation/contradiction; route-preference golden proves dangerous-traversal penalty plus decay
+- [x] S151 archived: testimony-reliability goldens prove confirmation/refutation trust summaries and suppressed-goal payload context; route-preference goldens prove dangerous-traversal penalty, decay, and composition with route-segment blockers
 - [ ] S152 archetype golden proves deterministic seeded assignment + 10-template behavioral diversification + `PersonalityAssigned` event replay
 - [ ] S153 remaining three golden scenarios all pass with byte-stable event log on fixed seeds; belief-wall trap is covered by S143STABELVIE-006
 - [ ] PR-9 (incremental snapshots / multi-queue search) reassessed against S144 diagnostics: actual planning-cost bottlenecks identified or proposal stays deferred
