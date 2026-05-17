@@ -27,7 +27,7 @@ S147 D10 ships 6 golden scenarios that prove the HTN method system works end-to-
 ## Architecture Check
 
 1. Golden scenarios are the authoritative regression guard per FND-31 (Validation and Falsification Are First-Class). The 6 scenarios cover the success path (FulfillBountyDirect e2e), a multi-method chain (Investigation → Direct), a complex decomposition (ProduceWithGather), the fallback path (method-disabled), the failure path (typed Discrepancy emission), and the determinism contract.
-2. Per FND-31's test: each scenario declares its target invariant, the artifacts it must never produce, and the trace surface used to detect failure. The determinism golden specifically tests the replay-equivalence invariant required for CLAUDE.md's determinism rule.
+2. Per FND-31's test: each scenario declares its target invariant, the artifacts it must never produce, and the trace surface used to detect failure. The determinism golden specifically tests the replay-equivalence invariant required for AGENTS.md's determinism rule.
 3. No backwards-compatibility shims. All goldens are net-new.
 
 ## Verification Layers

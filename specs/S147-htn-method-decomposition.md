@@ -319,6 +319,7 @@ Each method is shipped as a `MethodSchema` entry in `build_method_registry()` (D
 ```rust
 // crates/worldwake-ai/src/htn/selector.rs
 pub fn select_method<'r>(
+    actor: EntityId,
     goal: &GoalOffer,
     registry: &'r MethodRegistry,
     profile: &AgentSchemaContextProfile,
@@ -328,11 +329,11 @@ pub fn select_method<'r>(
 ```
 
 Deterministic selection:
-1. Filter methods to those whose `goal_kind` matches `GoalKindDiscriminant::from(&goal.key.goal_kind)` and whose `id ∉ profile.disabled_methods`.
-2. Filter to methods whose `preconditions` evaluate to `true` per `belief_view`. Each `MethodPrecondition` variant evaluates against the existing accessors on `RuntimeBeliefView` (defined at `crates/worldwake-sim/src/belief_view.rs:1588`) — no new trait accessor is required because `BeliefPredicate` variants compose existing reads.
+1. Filter methods to those whose `goal_kind` matches `GoalKindDiscriminant::from(&goal.key.kind)` and whose `id ∉ profile.disabled_methods`.
+2. Filter to methods whose `preconditions` evaluate to `true` per `belief_view` for `actor`. Each `MethodPrecondition` variant evaluates against the existing accessors on `RuntimeBeliefView` (defined at `crates/worldwake-sim/src/belief_view.rs:1588`) — no new trait accessor is required because `BeliefPredicate` variants compose existing reads. `actor` is required because every belief read is agent-relative under FND-14.
 3. Rank remaining methods by motive-source bias score. Formula (integer, no floats):
-   - For each present `MotiveSourceRef m` in `motives`, find `bias ∈ method.motive_bias` with `bias.motive_variant == MotiveSourceDiscriminant::from(&m.source)`. If found, add `bias.weight.0 * m.weight.0` (both `Permille`, range 0–1000; product range 0–1_000_000, fits in `u32`).
-   - Method score = sum of contributions, divided by 1000 (integer division) so the score stays in the `0..=1_000_000` range of `Permille * Permille / 1000`. Score ties go to step 4.
+   - For each `bias ∈ method.motive_bias`, add `bias.weight.value()` when any present `MotiveSourceRef m` has `MotiveSourceDiscriminant::from(&m.source) == bias.motive_variant`.
+   - `MotiveSourceRef` carries source identity and introduction tick, not a per-source weight; source magnitude is already reflected in the upstream ranked `GoalOffer` / `motive_source_contributions` path. Method selection is a within-goal method-bias choice, not a second goal-ranking pass.
 4. Tie-break by `MethodSchemaId` (stable integer order).
 5. Return the top method or `None` (fall back to flat GOAP).
 
@@ -343,6 +344,7 @@ Deterministic selection:
 ```rust
 // crates/worldwake-ai/src/search/strategic.rs
 fn build_stages(
+    actor: EntityId,
     goal: &GoalOffer,
     profile: &AgentSchemaContextProfile,
     registry: &MethodRegistry,
@@ -350,7 +352,7 @@ fn build_stages(
     motives: &[MotiveSourceRef],
     /* existing parameters */
 ) -> Vec<StrategicStage> {
-    if let Some(method) = select_method(goal, registry, profile, belief_view, motives) {
+    if let Some(method) = select_method(actor, goal, registry, profile, belief_view, motives) {
         return method.subgoals.iter()
             .flat_map(|template| template_to_stages(template, goal, belief_view))
             .collect();
@@ -635,7 +637,7 @@ None at the method level. `MethodSchema.required_claims` references existing `Op
 
 ### 7. Partial failures, degraded states, aftermath
 
-`MethodFailureMode` (D1) and the typed `Discrepancy::MethodFailure(MethodFailureContext)` (D6) jointly cover this. Failed method attempts leave (a) the typed discrepancy on the planner trace (authoritative), (b) the richer `MethodPlanAttemptTrace` (derived), and (c) any partial action effects from leaves that did complete (authoritative event log entries). Recovery is handled by the existing `handle_plan_failure` chain (CLAUDE.md authoritative-to-ai impact rule does not trigger because method selection is upstream of action validation).
+`MethodFailureMode` (D1) and the typed `Discrepancy::MethodFailure(MethodFailureContext)` (D6) jointly cover this. Failed method attempts leave (a) the typed discrepancy on the planner trace (authoritative), (b) the richer `MethodPlanAttemptTrace` (derived), and (c) any partial action effects from leaves that did complete (authoritative event log entries). Recovery is handled by the existing `handle_plan_failure` chain. The AGENTS.md authoritative-to-AI impact rule does not trigger because method selection is upstream of action validation.
 
 ### 8. Positive feedback loops amplified
 
@@ -702,7 +704,7 @@ No new ECS component. Two component-bearing structs are extended:
 
 ## Cross-System Interactions
 
-- Method selector reads `BeliefView` (existing trait at `crates/worldwake-sim/src/belief_view.rs:1588`), `MotiveSourceRef`s (from S141 ledger at `crates/worldwake-core/src/motive_source.rs:25`), and `AgentSchemaContextProfile` (archived S146 profile, extended by D7).
+- Method selector reads `BeliefView` for the selected actor (existing trait at `crates/worldwake-sim/src/belief_view.rs:1588`), `MotiveSourceRef`s (from S141 ledger at `crates/worldwake-core/src/motive_source.rs:25`), and `AgentSchemaContextProfile` (archived S146 profile, extended by D7).
 - Method-driven subgoals execute through existing `ActionDef`s registered in `ActionDefRegistry`.
 - Method failures flow through `Discrepancy::MethodFailure` (D6) — typed-discrepancy chain consumed by existing blocker-memory and learning systems (S109).
 - Aggregated method usage flows through `PlanningMetrics.method_usage` (D5) — observer / diagnostics consumed surface.

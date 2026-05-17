@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — modifies `build_stages` in `crates/worldwake-ai/src/search/strategic.rs:324` to consult the method selector before flat-GOAP fallback. Updates 7 existing inline tests for new parameters.
-**Deps**: `archive/tickets/S147HTNMETDEC-006.md` (MethodRegistry + explicit method binding templates), 007 (select_method)
+**Deps**: `archive/tickets/S147HTNMETDEC-006.md` (MethodRegistry + explicit method binding templates), `archive/tickets/S147HTNMETDEC-007.md` (`select_method` with actor-relative belief evaluation)
 
 ## Problem
 
@@ -14,7 +14,7 @@ S147 D4 wires `select_method` into the strategic search so methods can substitut
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. `build_stages` exists at `crates/worldwake-ai/src/search/strategic.rs:324`. Called from `strategic.rs:119` (single caller). Returns `Vec<StrategicStage>`. Current parameters include the goal and existing planning context; new parameters (`registry: &MethodRegistry`, `profile: &AgentSchemaContextProfile`, `belief_view: &dyn RuntimeBeliefView`, `motives: &[MotiveSourceRef]`) propagate from the caller. Verify caller signature at line 119 during implementation — it may already carry some of these as it sits inside the agent-tick planning path.
+1. `build_stages` exists at `crates/worldwake-ai/src/search/strategic.rs:324`. Called from `strategic.rs:119` (single caller). Returns `Vec<StrategicStage>`. Current parameters include the goal and existing planning context; new parameters (`actor: EntityId`, `registry: &MethodRegistry`, `profile: &AgentSchemaContextProfile`, `belief_view: &dyn RuntimeBeliefView`, `motives: &[MotiveSourceRef]`) propagate from the caller. Verify caller signature at line 119 during implementation — it may already carry some of these as it sits inside the agent-tick planning path.
 2. Existing inline tests on `build_stages` in `crates/worldwake-ai/src/search/strategic.rs` (test module starts at line 542):
    - `test_single_location_goal_no_travel` (line 1045)
    - `test_multi_location_prerequisite_then_goal` (line 1072)
@@ -31,7 +31,7 @@ S147 D4 wires `select_method` into the strategic search so methods can substitut
 ## Architecture Check
 
 1. Modifying `build_stages` in place (rather than introducing a parallel `build_stages_with_method`) is cleaner because it preserves single-entry-point semantics — every caller routes through one function. The method-selection branch is a prefix; if no method matches, the function falls through to the existing flat-GOAP logic, which is the current behavior. This satisfies FND-28 (no parallel authority paths).
-2. Per the Authoritative-to-AI Impact Rule (CLAUDE.md): method selection does NOT modify action preconditions, `validate_*` functions, affordance generation, candidate emission, or goal satisfaction. It modifies which `StrategicStage`s the planner iterates. The 7-point Auth-to-AI checklist does not trigger for this ticket — confirmed during reassessment.
+2. Per the Authoritative-to-AI Impact Rule (AGENTS.md): method selection does NOT modify action preconditions, `validate_*` functions, affordance generation, candidate emission, or goal satisfaction. It modifies which `StrategicStage`s the planner iterates. The 7-point Auth-to-AI checklist does not trigger for this ticket — confirmed during reassessment.
 3. No backwards-compatibility shims. The method-selection branch is purely additive within `build_stages`.
 4. Per FND-20: method-driven decomposition is "reusable affordance composition" (acceptable). It is not plot progression. Verified during reassessment.
 
@@ -51,13 +51,14 @@ Modify `crates/worldwake-ai/src/search/strategic.rs:324`:
 ```rust
 fn build_stages(
     goal: &GoalOffer,
+    actor: EntityId,                            // NEW
     registry: &MethodRegistry,                  // NEW
     profile: &AgentSchemaContextProfile,        // NEW
     belief_view: &dyn RuntimeBeliefView,        // NEW
     motives: &[MotiveSourceRef],                // NEW
     /* existing parameters unchanged */
 ) -> Vec<StrategicStage> {
-    if let Some(method) = crate::htn::select_method(goal, registry, profile, belief_view, motives) {
+    if let Some(method) = crate::htn::select_method(actor, goal, registry, profile, belief_view, motives) {
         return method.subgoals.iter()
             .flat_map(|template| template_to_stages(template, goal, belief_view))
             .collect();
@@ -162,7 +163,7 @@ Inline test in `strategic.rs` test module:
 1. `build_stages` has exactly one definition in `strategic.rs` (no parallel function introduced).
 2. When `select_method` returns `None`, `build_stages` produces the same `Vec<StrategicStage>` as before this ticket — flat-GOAP fallback is the actual current path.
 3. `template_to_stages` is deterministic — same template + goal + belief view → same stages across runs.
-4. No floats introduced into the planner integration path (CLAUDE.md determinism invariant).
+4. No floats introduced into the planner integration path (AGENTS.md determinism invariant).
 
 ## Test Plan
 
