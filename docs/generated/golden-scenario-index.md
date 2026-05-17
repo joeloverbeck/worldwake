@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 191
+- Scenario blocks: 193
 - Contributing golden test files: 49
-- Associated tests: 232
+- Associated tests: 236
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -671,7 +671,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 431: S147 ProduceWithGather Method Selection
 
-- Source: `golden_htn_methods.rs:308`
+- Source: `golden_htn_methods.rs:495`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -684,7 +684,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 433: S147 Autonomous Produce Method Trace Propagation
 
-- Source: `golden_htn_methods.rs:344`
+- Source: `golden_htn_methods.rs:531`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -695,9 +695,35 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Proves**: generated candidate evidence reaches MethodSelector, so the planning attempt records ProduceWithGather in MethodPlanAttemptTrace.
 
+### Scenario 434: S147 FulfillBountyInvestigation Method Selection
+
+- Source: `golden_htn_methods.rs:605`
+- Systems: AI, Search, SocialArtifact
+- GoalKinds: FulfillBounty
+- ActionDomains: Social, Travel
+- Places: Village Square, Orchard Farm
+- Principles: 7, 14, 20, 26, 28, 29
+
+**Setup**: a hunter knows the same bounty through a reported source, making the witness-report precondition available for the investigation method.
+
+**Proves**: generated FulfillBounty candidate evidence can select FulfillBountyInvestigation without a hand-constructed GoalOffer.
+
+### Scenario 435: S147 Autonomous FulfillBountyInvestigation Method Trace
+
+- Source: `golden_htn_methods.rs:645`
+- Systems: AI, Search, SocialArtifact, Combat
+- GoalKinds: FulfillBounty
+- ActionDomains: Social, Combat, Travel
+- Places: Village Square, Orchard Farm
+- Principles: 7, 14, 20, 26, 28, 29
+
+**Setup**: a hunter autonomously generates a FulfillBounty goal from a reported bounty artifact and target-location report.
+
+**Proves**: the generated bounty candidate records FulfillBountyInvestigation in MethodPlanAttemptTrace during planning.
+
 ### Scenario 432: S147 Disabled Methods Fall Back To Flat Strategic Search
 
-- Source: `golden_htn_methods.rs:418`
+- Source: `golden_htn_methods.rs:695`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel

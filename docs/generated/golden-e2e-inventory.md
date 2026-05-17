@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 53
 - Files contributing `golden_*` tests: 53
-- Total `golden_*` tests: 245
+- Total `golden_*` tests: 249
 
 ## Per-File Inventory
 
@@ -25,7 +25,7 @@ Do not hand-edit it.
 | `golden_experience_preferences.rs` | 3 |
 | `golden_exploration.rs` | 16 |
 | `golden_final_integration.rs` | 2 |
-| `golden_htn_methods.rs` | 8 |
+| `golden_htn_methods.rs` | 12 |
 | `golden_item_decay.rs` | 1 |
 | `golden_merchant_selling.rs` | 13 |
 | `golden_motive_sources.rs` | 5 |
@@ -185,6 +185,10 @@ Do not hand-edit it.
 - `autonomous_produce_candidate_carries_source_evidence`
 - `autonomous_produce_snapshot_selector_uses_source_evidence`
 - `autonomous_produce_method_trace_replays_deterministically`
+- `generated_bounty_candidate_selects_fulfill_bounty_investigation`
+- `generated_bounty_candidate_selector_replays_deterministically`
+- `autonomous_bounty_candidate_records_method_trace`
+- `autonomous_bounty_method_trace_replays_deterministically`
 - `disabled_produce_methods_fall_back_to_flat_strategic_search`
 - `disabled_method_fallback_replays_deterministically`
 

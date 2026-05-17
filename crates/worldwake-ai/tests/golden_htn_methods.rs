@@ -11,15 +11,17 @@ use worldwake_ai::{
     generate_candidates,
 };
 use worldwake_core::{
-    AgentSchemaContextProfile, BlockerMemory, BodyCostPerTick, CommodityKind, EntityId, GoalKey,
-    GoalPlanningBudget, HomeostaticNeedId, HomeostaticNeeds, KnownRecipes, MetabolismProfile,
-    MethodSchemaId, MotiveSource, MotiveSourceRef, OpportunityAnchor, PerceptionSource, Quantity,
-    ResourceSource, Seed, Tick, UtilityProfile, WorkstationTag,
+    AgentSchemaContextProfile, ArtifactHeader, ArtifactKind, BlockerMemory, BodyCostPerTick,
+    BountyTarget, BountyTerms, CommodityKind, EntityId, EntityKind, GoalKey, GoalPlanningBudget,
+    HomeostaticNeedId, HomeostaticNeeds, KnownRecipes, MetabolismProfile, MethodSchemaId,
+    MotiveSource, MotiveSourceRef, OpportunityAnchor, PerceptionSource, ProofRequirement, Quantity,
+    ResourceSource, RewardSource, Seed, Tick, UtilityProfile, WorkstationTag,
 };
 use worldwake_sim::RecipeDefinition;
 use worldwake_sim::{PerAgentBeliefView, ProfileBeliefView};
 
 const PRODUCE_WITH_GATHER: MethodSchemaId = MethodSchemaId(5);
+const FULFILL_BOUNTY_INVESTIGATION: MethodSchemaId = MethodSchemaId(2);
 const PRODUCE_METHODS: [MethodSchemaId; 3] =
     [MethodSchemaId(4), MethodSchemaId(5), MethodSchemaId(6)];
 
@@ -39,6 +41,13 @@ struct SelectorObservation {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct GeneratedProduceOfferObservation {
+    evidence_entities: BTreeSet<EntityId>,
+    evidence_places: BTreeSet<EntityId>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct GeneratedBountyOfferObservation {
+    selected_method: Option<MethodSchemaId>,
     evidence_entities: BTreeSet<EntityId>,
     evidence_places: BTreeSet<EntityId>,
 }
@@ -123,6 +132,88 @@ fn setup_htn_production_harness(
     );
     h.driver.enable_tracing();
     (h, baker, recipe_id)
+}
+
+fn setup_htn_bounty_harness() -> (GoldenHarness, EntityId, EntityId) {
+    let mut h = GoldenHarness::new(Seed([147; 32]));
+    let hunter = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "HTN Hunter",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let target = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Bounty Target",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        hunter,
+        worldwake_core::PerceptionProfile {
+            observation_buffer_capacity: 64,
+            observation_budget: 24,
+            ..worldwake_core::PerceptionProfile::default()
+        },
+    );
+    set_agent_execution_budget(
+        &mut h.world,
+        &mut h.event_log,
+        hunter,
+        worldwake_core::ExecutionBudget::default(),
+    );
+    set_schema_context_profile(&mut h, hunter, BTreeSet::new());
+
+    let issuer = hunter;
+    let bounty = {
+        let mut txn = new_txn(&mut h.world, 0);
+        let bounty = txn.create_entity(EntityKind::SocialArtifact);
+        txn.set_component_artifact_header(
+            bounty,
+            ArtifactHeader::posted_active(
+                ArtifactKind::Bounty,
+                issuer,
+                None,
+                Tick(0),
+                None,
+                None,
+                VILLAGE_SQUARE,
+            ),
+        )
+        .expect("golden harness should create a bounty artifact header");
+        txn.set_component_bounty_terms(
+            bounty,
+            BountyTerms {
+                target: BountyTarget::EliminateEntity { target },
+                proof_requirement: ProofRequirement::PhysicalEvidence,
+                reward_commodity: CommodityKind::Coin,
+                reward_quantity: Quantity(4),
+                reward_source: RewardSource::PersonalFunds { issuer },
+                claim_place: VILLAGE_SQUARE,
+            },
+        )
+        .expect("golden harness should create bounty terms");
+        txn.set_ground_location(bounty, VILLAGE_SQUARE)
+            .expect("golden harness should place the bounty artifact");
+        commit_txn(txn, &mut h.event_log);
+        bounty
+    };
+
+    let source = PerceptionSource::Report {
+        from: issuer,
+        chain_len: 0,
+    };
+    seed_actor_world_beliefs(&mut h.world, &mut h.event_log, hunter, Tick(0), source);
+    h.driver.enable_tracing();
+    (h, hunter, bounty)
 }
 
 fn set_schema_context_profile(
@@ -251,6 +342,101 @@ fn observe_generated_produce_offer() -> GeneratedProduceOfferObservation {
     GeneratedProduceOfferObservation {
         evidence_entities: offer.evidence_entities,
         evidence_places: offer.evidence_places,
+    }
+}
+
+fn observe_generated_bounty_offer() -> GeneratedBountyOfferObservation {
+    let (h, hunter, bounty) = setup_htn_bounty_harness();
+    let belief_store = h
+        .world
+        .get_component_agent_belief_store(hunter)
+        .expect("hunter should have seeded bounty beliefs");
+    let view = PerAgentBeliefView::new(hunter, &h.world, belief_store);
+    let candidates = generate_candidates(
+        &view,
+        hunter,
+        &BlockerMemory::default(),
+        &h.recipes,
+        Tick(0),
+    );
+    let offer = candidates
+        .into_iter()
+        .find(|offer| offer.key.kind == GoalKind::FulfillBounty { bounty })
+        .expect("autonomous candidate generation should emit FulfillBounty");
+    let snapshot = build_planning_snapshot(
+        &view,
+        hunter,
+        &offer.evidence_entities,
+        &offer.evidence_places,
+        6,
+    );
+    let state = PlanningState::new(&snapshot);
+    let registry = build_method_registry();
+    let profile = state
+        .agent_schema_context_profile(hunter)
+        .unwrap_or_default();
+    let selected_method = select_method(
+        hunter,
+        &offer,
+        &registry,
+        &profile,
+        &state,
+        &offer.motive_sources,
+    )
+    .map(|method| method.id);
+
+    GeneratedBountyOfferObservation {
+        selected_method,
+        evidence_entities: offer.evidence_entities,
+        evidence_places: offer.evidence_places,
+    }
+}
+
+fn observe_htn_bounty() -> HtnMethodObservation {
+    let (mut h, hunter, bounty) = setup_htn_bounty_harness();
+
+    h.step_once();
+
+    let trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .trace_at(hunter, Tick(0))
+        .expect("hunter should have a tick-0 decision trace");
+    let planning = match &trace.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected a planning trace for the hunter, got {other:?}"),
+    };
+    let attempt = planning
+        .planning
+        .attempts
+        .iter()
+        .find(|attempt| attempt.goal.kind == GoalKind::FulfillBounty { bounty })
+        .unwrap_or_else(|| {
+            panic!(
+                "HTN FulfillBounty attempt should enter planning; attempts={:?}",
+                planning.planning.attempts
+            )
+        });
+
+    let method_trace = attempt.method_trace.as_ref();
+    HtnMethodObservation {
+        selected_method: method_trace.and_then(|trace| trace.method_id),
+        subgoal_kinds: method_trace.map_or_else(Vec::new, |trace| {
+            trace
+                .subgoals_attempted
+                .iter()
+                .map(|subgoal| format!("{:?}", subgoal.kind))
+                .collect()
+        }),
+        motive_score: method_trace.map_or(0, |trace| trace.motive_score),
+        strategic_sub_goals: attempt
+            .strategic_plan
+            .as_ref()
+            .map_or_else(Vec::new, |plan| {
+                plan.iter().map(|step| step.sub_goal.clone()).collect()
+            }),
+        goal_budget: attempt.goal_budget,
     }
 }
 
@@ -400,6 +586,96 @@ fn autonomous_produce_snapshot_selector_uses_source_evidence() {
 fn autonomous_produce_method_trace_replays_deterministically() {
     let first = observe_htn_production(BTreeSet::new());
     let second = observe_htn_production(BTreeSet::new());
+
+    assert_eq!(first, second);
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 434: S147 FulfillBountyInvestigation Method Selection
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Search, SocialArtifact
+// GoalKinds: FulfillBounty
+// ActionDomains: Social, Travel
+// Places: Village Square, Orchard Farm
+// Principles: 7, 14, 20, 26, 28, 29
+//
+// Setup: a hunter knows the same bounty through a reported source, making the
+//   witness-report precondition available for the investigation method.
+// Proves: generated FulfillBounty candidate evidence can select
+//   FulfillBountyInvestigation without a hand-constructed GoalOffer.
+// Cross-system chain: reported bounty artifact belief -> generated
+//   FulfillBounty candidate evidence -> snapshot-backed MethodSelector ->
+//   selected investigation method id.
+#[test]
+fn generated_bounty_candidate_selects_fulfill_bounty_investigation() {
+    let observation = observe_generated_bounty_offer();
+
+    assert_eq!(
+        observation.selected_method,
+        Some(FULFILL_BOUNTY_INVESTIGATION),
+        "reported bounty candidate should select FulfillBountyInvestigation: {observation:?}"
+    );
+    assert!(
+        !observation.evidence_entities.is_empty(),
+        "generated bounty candidate should carry bounty and target evidence: {observation:?}"
+    );
+}
+
+#[test]
+fn generated_bounty_candidate_selector_replays_deterministically() {
+    let first = observe_generated_bounty_offer();
+    let second = observe_generated_bounty_offer();
+
+    assert_eq!(first, second);
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 435: S147 Autonomous FulfillBountyInvestigation Method Trace
+// Propagation
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Search, SocialArtifact, Combat
+// GoalKinds: FulfillBounty
+// ActionDomains: Social, Combat, Travel
+// Places: Village Square, Orchard Farm
+// Principles: 7, 14, 20, 26, 28, 29
+//
+// Setup: a hunter autonomously generates a FulfillBounty goal from a reported
+//   bounty artifact and target-location report.
+// Proves: the generated bounty candidate records FulfillBountyInvestigation
+//   in MethodPlanAttemptTrace during planning.
+// Cross-system chain: generated bounty candidate -> strategic HTN selector ->
+//   method subgoal substitution -> decision trace method_trace.
+#[test]
+fn autonomous_bounty_candidate_records_method_trace() {
+    let observation = observe_htn_bounty();
+
+    assert_eq!(
+        observation.selected_method,
+        Some(FULFILL_BOUNTY_INVESTIGATION),
+        "autonomous bounty planning should select FulfillBountyInvestigation: {observation:?}"
+    );
+    assert!(
+        observation
+            .subgoal_kinds
+            .iter()
+            .any(|subgoal| subgoal.contains("AskWitness")),
+        "method trace should record the investigation witness subgoal: {observation:?}"
+    );
+    assert!(
+        observation
+            .strategic_sub_goals
+            .iter()
+            .any(|sub_goal| sub_goal.contains("SatisfyGoal")),
+        "method-selected strategic plan should include investigation goal stages: {observation:?}"
+    );
+}
+
+#[test]
+fn autonomous_bounty_method_trace_replays_deterministically() {
+    let first = observe_htn_bounty();
+    let second = observe_htn_bounty();
 
     assert_eq!(first, second);
 }
