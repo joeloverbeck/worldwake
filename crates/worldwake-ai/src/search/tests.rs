@@ -31,13 +31,13 @@ use worldwake_core::{
     GoalPlanningBudget, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, KnownRecipes,
     LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, ObservationOmission,
     ObservationOmissionLog, OmissionReason, OpportunityAnchor, OpportunityKey, PatrolProfile,
-    PatrolRoute, PerceptionSource, Permille, Place, PlaceTag, PortfolioSlotWeights,
-    ProofRequirement, PrototypePlace, Quantity, RecipeId, RecordedViolation, ResourceSource,
-    RewardSource, TellTopic, TheftDispositionProfile, Tick, TickRange, Topology,
-    TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind, ViolationDispositionProfile,
-    ViolationId, ViolationKind, VisibilitySpec, WashBasinState, WitnessData, WorkstationMarker,
-    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state,
-    build_prototype_world, prototype_place_entity, test_utils::sample_trade_disposition_profile,
+    PatrolRoute, PerceptionSource, Permille, Place, PlaceTag, ProofRequirement, PrototypePlace,
+    Quantity, RecipeId, RecordedViolation, ResourceSource, RewardSource, TellTopic,
+    TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge,
+    TravelEdgeId, UniqueItemKind, ViolationDispositionProfile, ViolationId, ViolationKind,
+    VisibilitySpec, WashBasinState, WitnessData, WorkstationMarker, WorkstationTag, World,
+    WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state, build_prototype_world,
+    prototype_place_entity, test_utils::sample_trade_disposition_profile,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionPayload, Affordance, CombatBeliefView, ControlBeliefView,
@@ -90,7 +90,6 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         decision_history_alternatives: CognitiveProfile::default().decision_history_alternatives,
         detour_budget_permille: CognitiveProfile::default().detour_budget_permille,
         compile_opportunity_cap: CognitiveProfile::default().compile_opportunity_cap,
-        slot_weights: PortfolioSlotWeights::default(),
         repair_budget_fraction: CognitiveProfile::default().repair_budget_fraction,
         causal_links_per_step_cap: CognitiveProfile::default().causal_links_per_step_cap,
     }

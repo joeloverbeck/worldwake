@@ -281,6 +281,7 @@ mod tests {
                 perception_profile: None,
                 tell_profile: None,
                 cognitive_profile: None,
+                portfolio_weights_profile: None,
                 agent_schema_context_profile: None,
                 risk_weight_profile: None,
                 law_abiding_profile: None,

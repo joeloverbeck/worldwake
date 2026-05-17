@@ -640,6 +640,7 @@ fn spawn_agent(
     let tell = agent_def.tell_profile.unwrap_or_default();
     txn.set_component_tell_profile(agent_id, tell)?;
     let cognitive = agent_def.cognitive_profile.unwrap_or_default();
+    let portfolio_weights = agent_def.portfolio_weights_profile.unwrap_or_default();
     let schema_context = agent_def
         .agent_schema_context_profile
         .clone()
@@ -649,6 +650,7 @@ fn spawn_agent(
     let agenda_profile = agent_def.agenda_profile.unwrap_or_default();
     let execution_budget = agent_def.execution_budget.unwrap_or_default();
     txn.set_component_cognitive_profile(agent_id, cognitive)?;
+    txn.set_component_portfolio_weights_profile(agent_id, portfolio_weights)?;
     txn.set_component_agent_schema_context_profile(agent_id, schema_context)?;
     txn.set_component_risk_weight_profile(agent_id, risk_weight)?;
     txn.set_component_law_abiding_profile(agent_id, law_abiding)?;
@@ -1549,11 +1551,11 @@ mod tests {
         IntentionDispositionProfile, JusticeDispositionProfile, LastProactiveExplorationTick,
         LastSeenMemory, LatrineFullness, LawAbidingProfile, LoadUnits, MultiplierPermille,
         ObligationSatiationProfile, PatrolProfile, PatrolRoute, PerceptionProfile, Permille,
-        PlaceDirtiness, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity,
-        RiskWeightProfile, RoutePreferenceProfile, ShelterTag, SleepQualityProfile,
-        SleepRecoveryModifier, SubstitutePreferences, TellProfile, TestimonyTrustProfile,
-        TheftDispositionProfile, ThresholdBand, TradeCategory, ViolationDispositionProfile,
-        WashBasinState, WorkstationTag, default_commodity_decay_map,
+        PlaceDirtiness, PlaceVisibilityProfile, PortfolioWeightsProfile, PreferenceProfile,
+        PursuitProfile, Quantity, RiskWeightProfile, RoutePreferenceProfile, ShelterTag,
+        SleepQualityProfile, SleepRecoveryModifier, SubstitutePreferences, TellProfile,
+        TestimonyTrustProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
+        ViolationDispositionProfile, WashBasinState, WorkstationTag, default_commodity_decay_map,
     };
     use worldwake_sim::{BeliefRead, BelievedAuthorityView, PerAgentBeliefView};
 
@@ -1571,6 +1573,7 @@ mod tests {
             perception_profile: None,
             tell_profile: None,
             cognitive_profile: None,
+            portfolio_weights_profile: None,
             agent_schema_context_profile: None,
             risk_weight_profile: None,
             law_abiding_profile: None,
@@ -3573,6 +3576,10 @@ mod tests {
         assert_eq!(
             world.get_component_cognitive_profile(agent),
             Some(&CognitiveProfile::default())
+        );
+        assert_eq!(
+            world.get_component_portfolio_weights_profile(agent),
+            Some(&PortfolioWeightsProfile::default())
         );
         assert_eq!(
             world.get_component_agent_schema_context_profile(agent),

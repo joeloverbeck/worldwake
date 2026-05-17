@@ -1,6 +1,6 @@
 # S148PORMOTBAC-002: Lift PortfolioSlotWeights to PortfolioWeightsProfile universal component
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — removes `PortfolioSlotWeights` from `CognitiveProfile`; introduces `PortfolioWeightsProfile` universal ECS component on `EntityKind::Agent`; threads weights read through a new `GoalBeliefView` accessor
@@ -25,13 +25,13 @@
 2. FND-28 clean migration: the embedded `slot_weights` field is removed atomically with the universal component's introduction. No shim, no parallel store, no transient dual-truth.
 3. The `GoalBeliefView` accessor pattern keeps the AI crate's read locality intact (FND-14) — the planner reads weights through the belief-view abstraction, not through direct `World::get_component_*`. Future memory-fidelity work can add belief-staleness over the weights without rewriting the call sites.
 
-## Verification Layers
+## Verified Layers
 
 1. `PortfolioWeightsProfile` registered as universal ECS component and attached on agent spawn → focused unit test exercising `spawn_agent()` and asserting the component is queryable on the spawned agent
 2. `CognitiveProfile.slot_weights` field absence → workspace compile under `cargo clippy --workspace --all-targets -- -D warnings`; the field's removal forces every former reader (production and test) to migrate or fail compilation
 3. `GoalBeliefView::portfolio_weights_profile` read → focused unit test in `worldwake-sim/src/belief_view.rs::tests` constructing a `RuntimeBeliefView` over a world with a custom-weighted agent and asserting the accessor returns those weights
 
-## What to Change
+## Landed Changes
 
 ### 1. Define `PortfolioWeightsProfile` universal component
 
@@ -143,7 +143,7 @@ Test fixtures: drop `PortfolioSlotWeights::default()` construction at the 7 site
 
 Run `python3 scripts/profile_docs.py` (verify the actual invocation command in the script header) and commit the regenerated `docs/profiles/all-profiles.md`. The script discovers profile structs from the core crate's source — adding `PortfolioWeightsProfile` should populate automatically.
 
-## Files to Touch
+## Landed Files
 
 - `crates/worldwake-core/src/portfolio_weights_profile.rs` (new)
 - `crates/worldwake-core/src/cognitive_profile.rs` (modify — remove `PortfolioSlotWeights` struct, embedded field, `Default` initialization, tests at lines 290/340/540)
@@ -173,13 +173,13 @@ Run `python3 scripts/profile_docs.py` (verify the actual invocation command in t
 
 ## Acceptance Criteria
 
-### Tests That Must Pass
+### Acceptance Result
 
-1. `cargo test -p worldwake-core portfolio_weights_profile` — new component default and `weight_for` correctness
-2. `cargo test -p worldwake-cli scenario` — scenario load attaches `PortfolioWeightsProfile::default()` to agents that omit the field
-3. `cargo test -p worldwake-sim belief_view::portfolio_weights_profile` — accessor returns the world's component
-4. Existing suite: `cargo test --workspace`
-5. Lint: `cargo clippy --workspace --all-targets -- -D warnings`
+1. Passed `cargo test -p worldwake-core portfolio_weights_profile` — added component default and `weight_for` correctness
+2. Passed `cargo test -p worldwake-cli scenario` — scenario load attaches `PortfolioWeightsProfile::default()` to agents that omit the field
+3. Passed `cargo test -p worldwake-sim portfolio_weights_profile` — accessor returns the world's component
+4. Passed `cargo test --workspace --quiet`
+5. Passed `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Invariants
 
@@ -187,21 +187,54 @@ Run `python3 scripts/profile_docs.py` (verify the actual invocation command in t
 2. `CognitiveProfile.slot_weights` field does not exist; no shim, no `Option` wrapper, no deprecated alias.
 3. `PortfolioWeightsProfile` is registered exactly once as a universal component on `EntityKind::Agent`.
 4. Default agents instantiated through `spawn_agent()` carry the default `PortfolioWeightsProfile` per the universal-profile convention.
-5. Generated `docs/profiles/all-profiles.md` lists the new component.
+5. Generated `docs/profiles/all-profiles.md` lists the added component.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
 1. `crates/worldwake-core/src/portfolio_weights_profile.rs` — inline `#[cfg(test)]` module: `default_matches_spec_table`, `weight_for_returns_correct_field_per_slot`, serde round-trip
 2. `crates/worldwake-cli/src/scenario/mod.rs` — extend an existing scenario-load test (or add a focused one) asserting an agent spawned without `portfolio_weights_profile:` in RON receives `PortfolioWeightsProfile::default()`
 3. `crates/worldwake-sim/src/belief_view.rs` — focused test that `RuntimeBeliefView::portfolio_weights_profile(agent)` returns the world's component (with a custom non-default weight set to prove the accessor reads world state rather than returning the trait default)
 4. `crates/worldwake-core/src/cognitive_profile.rs` — modify existing tests at lines 290, 340, 540 to drop `PortfolioSlotWeights` assertions; the surrounding `CognitiveProfile` assertions remain
 
-### Commands
+### Commands Run
 
-1. `cargo test -p worldwake-core portfolio_weights_profile cognitive_profile`
-2. `cargo test -p worldwake-cli scenario`
-3. `cargo test -p worldwake-sim belief_view`
-4. `python3 scripts/profile_docs.py` (regenerate doc; commit the diff)
-5. `./scripts/verify.sh`
+1. Passed `cargo test -p worldwake-core portfolio_weights_profile`
+2. Passed `cargo test -p worldwake-core cognitive_profile`
+3. Passed `cargo test -p worldwake-sim portfolio_weights_profile`
+4. Passed `cargo test -p worldwake-cli scenario`
+5. Passed `python3 scripts/profile_docs.py --write` and regenerated `docs/profiles/all-profiles.md`; the remaining 19 warnings are pre-existing doc-comment gaps outside `PortfolioWeightsProfile`.
+6. Passed `cargo test -p worldwake-ai`
+7. Passed `cargo test -p worldwake-core create_agent_records_entity_component_and_in_transit_deltas_and_supports_read_through` after updating the agent-creation delta expectation.
+8. Passed `cargo test --workspace --quiet`
+9. Passed `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-17.
+
+- Added `PortfolioWeightsProfile` as a core universal `EntityKind::Agent` component with five slot weights, per-mode plan caps, `weight_for`, serde/default coverage, and profile documentation.
+- Removed `PortfolioSlotWeights` and `CognitiveProfile.slot_weights`; all former struct literals and slot-ordering callers now use the new profile or rely on the spawned universal component.
+- Registered the component through the core component schema, macro expansion imports, agent creation/default deltas, scenario `AgentDef` authoring, and `spawn_agent()` default attachment.
+- Added `GoalBeliefView`/`ProfileBeliefView` forwarding for `portfolio_weights_profile` and updated AI portfolio planning to read weights through that belief-view surface.
+- Extended scenario coverage/lint/test fixtures and regenerated `docs/profiles/all-profiles.md`.
+- Truth-synced `specs/S148-portfolio-and-motive-backed-intentions.md` so it records ticket 002 as landed and leaves plan-cap removal to ticket 008.
+
+## Deviations
+
+- The drafted combined command `cargo test -p worldwake-core portfolio_weights_profile cognitive_profile` is not valid Cargo syntax, so the core proof was run as two focused selectors.
+- The drafted sim selector `belief_view::portfolio_weights_profile` did not match the final test name; the landed focused selector is `cargo test -p worldwake-sim portfolio_weights_profile`.
+- `python3 scripts/profile_docs.py --write` reports 19 remaining doc-comment warnings for pre-existing profile docs, but the new `PortfolioWeightsProfile` warnings were eliminated before the final regeneration.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core portfolio_weights_profile`.
+- Passed `cargo test -p worldwake-core cognitive_profile`.
+- Passed `cargo test -p worldwake-sim portfolio_weights_profile`.
+- Passed `cargo test -p worldwake-cli scenario`.
+- Passed `python3 scripts/profile_docs.py --write`; regenerated profile docs and left only 19 pre-existing doc-comment warnings outside the new profile.
+- Passed `cargo test -p worldwake-ai`.
+- Passed `cargo test -p worldwake-core create_agent_records_entity_component_and_in_transit_deltas_and_supports_read_through`.
+- Passed `cargo test --workspace --quiet`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`; Cargo also printed the existing `ashpd v0.8.1` future-incompatibility warning.

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — extends `agent_tick/portfolio.rs::assemble_portfolio` signature to consume `&PortfolioWeightsProfile` and `OperatingMode`; adds `primary_motive_slot` and `apply_mode` helpers; wires `derive_operating_mode` call site in the per-tick decision pipeline; emits the new `PainCare` and `SocialMotive` slot winners
-**Deps**: `archive/tickets/S148PORMOTBAC-001.md`, `S148PORMOTBAC-002`, `S148PORMOTBAC-003`, `specs/S148-portfolio-and-motive-backed-intentions.md`
+**Deps**: `archive/tickets/S148PORMOTBAC-001.md`, `archive/tickets/S148PORMOTBAC-002.md`, `S148PORMOTBAC-003`, `specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Problem
 

@@ -606,8 +606,9 @@ pub(super) fn build_candidate_plans_with_sources(
     let portfolio = assemble_portfolio(&admitted_candidates, committed_opportunity, |ranked| {
         feasibility_probe::probe(ranked, &probe_context)
     });
+    let portfolio_weights = ProfileBeliefView::portfolio_weights_profile(&view, agent);
     let plausible_slots = portfolio
-        .plausible_slots_by_score(&cognitive.slot_weights)
+        .plausible_slots_by_score(&portfolio_weights)
         .into_iter()
         .map(|(kind, _slot)| kind)
         .collect::<Vec<_>>();
@@ -2972,7 +2973,6 @@ mod tests {
                 .decision_history_alternatives,
             detour_budget_permille: CognitiveProfile::default().detour_budget_permille,
             compile_opportunity_cap: CognitiveProfile::default().compile_opportunity_cap,
-            slot_weights: worldwake_core::PortfolioSlotWeights::default(),
             repair_budget_fraction: CognitiveProfile::default().repair_budget_fraction,
             causal_links_per_step_cap: CognitiveProfile::default().causal_links_per_step_cap,
         }
@@ -4568,7 +4568,7 @@ mod tests {
         let ranked = crate::ranking::sort_in_place(&mut ranked);
         let portfolio = super::assemble_portfolio(&ranked, None, |_| FeasibilityVerdict::Plausible);
         let plausible_slots = portfolio
-            .plausible_slots_by_score(&worldwake_core::PortfolioSlotWeights::default())
+            .plausible_slots_by_score(&worldwake_core::PortfolioWeightsProfile::default())
             .into_iter()
             .map(|(kind, _)| kind)
             .collect::<Vec<_>>();

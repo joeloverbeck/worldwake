@@ -2027,9 +2027,10 @@ mod tests {
         InstitutionalKnowledgeSource, InstitutionalRecordEntry, IntentionDispositionProfile,
         LawAbidingProfile, MerchandiseProfile, ObligationSatiationProfile, OfficeData,
         OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
-        PerceptionSource, PreferenceProfile, RecordData, RecordEntryId, RecordKind,
-        RiskWeightProfile, RoutePreferenceProfile, SubstitutePreferences, SuccessionLaw,
-        SurveyMemory, TellProfile, TestimonyTrustProfile, TradeDispositionProfile, UtilityProfile,
+        PerceptionSource, PortfolioWeightsProfile, PreferenceProfile, RecordData, RecordEntryId,
+        RecordKind, RiskWeightProfile, RoutePreferenceProfile, SubstitutePreferences,
+        SuccessionLaw, SurveyMemory, TellProfile, TestimonyTrustProfile, TradeDispositionProfile,
+        UtilityProfile,
         component_schema::with_component_schema_entries,
         test_utils::{
             sample_blocker_memory, sample_demand_memory, sample_merchandise_profile,
@@ -2521,6 +2522,14 @@ mod tests {
                     component_kind: ComponentKind::CognitiveProfile,
                     before: None,
                     after: ComponentValue::CognitiveProfile(CognitiveProfile::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::PortfolioWeightsProfile,
+                    before: None,
+                    after: ComponentValue::PortfolioWeightsProfile(
+                        PortfolioWeightsProfile::default(),
+                    ),
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,

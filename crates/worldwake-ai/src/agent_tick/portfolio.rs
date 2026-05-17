@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::{goal_model::AgendaEntry, ranking::OrderedRanked};
 pub use worldwake_core::SlotKind;
 use worldwake_core::{
-    CommodityPurpose, Discrepancy, GoalKind, OpportunityKey, PortfolioSlotWeights,
+    CommodityPurpose, Discrepancy, GoalKind, OpportunityKey, PortfolioWeightsProfile,
 };
 
 #[derive(Clone, Debug)]
@@ -72,7 +72,7 @@ impl Portfolio {
     #[allow(clippy::trivially_copy_pass_by_ref)]
     pub(crate) fn plausible_slots_by_score<'a>(
         &'a self,
-        weights: &PortfolioSlotWeights,
+        weights: &PortfolioWeightsProfile,
     ) -> Vec<(SlotKind, &'a PortfolioSlot)> {
         let mut slots: Vec<_> = self
             .slots
@@ -133,7 +133,7 @@ fn compare_plausible_slots(
     left_slot: &PortfolioSlot,
     right_kind: SlotKind,
     right_slot: &PortfolioSlot,
-    weights: PortfolioSlotWeights,
+    weights: PortfolioWeightsProfile,
 ) -> std::cmp::Ordering {
     right_slot
         .ranked
@@ -147,21 +147,11 @@ fn compare_plausible_slots(
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
-fn weighted_score(kind: SlotKind, slot: &PortfolioSlot, weights: &PortfolioSlotWeights) -> u32 {
+fn weighted_score(kind: SlotKind, slot: &PortfolioSlot, weights: &PortfolioWeightsProfile) -> u32 {
     slot.ranked
         .motive_score
-        .saturating_mul(u32::from(weight_for(kind, weights).value()))
+        .saturating_mul(u32::from(weights.weight_for(kind).value()))
         / 1000
-}
-
-#[allow(clippy::trivially_copy_pass_by_ref)]
-fn weight_for(kind: SlotKind, weights: &PortfolioSlotWeights) -> worldwake_core::Permille {
-    match kind {
-        SlotKind::NeedSurvival => weights.survival,
-        SlotKind::ObligationDuty => weights.commitment,
-        SlotKind::EconomicOpportunity => weights.economic,
-        SlotKind::PainCare | SlotKind::SocialMotive => worldwake_core::Permille::ZERO,
-    }
 }
 
 fn opportunity_key(ranked: &AgendaEntry) -> OpportunityKey {
@@ -227,7 +217,7 @@ mod tests {
     use worldwake_core::{
         AcquisitionQuantity, ArtifactPostingContext, CommodityKind, CommodityPurpose, Discrepancy,
         EntityId, GoalKey, GoalKind, NoticeTopic, OpportunityAnchor, OpportunityKey,
-        PortfolioSlotWeights, Tick,
+        PortfolioWeightsProfile, Tick,
     };
 
     #[test]
@@ -508,7 +498,7 @@ mod tests {
             ]),
         };
 
-        let ordered = portfolio.plausible_slots_by_score(&PortfolioSlotWeights::default());
+        let ordered = portfolio.plausible_slots_by_score(&PortfolioWeightsProfile::default());
 
         assert_eq!(ordered.len(), 2);
         assert_eq!(ordered[0].0, SlotKind::NeedSurvival);
@@ -580,7 +570,7 @@ mod tests {
             ]),
         };
 
-        let ordered = portfolio.plausible_slots_by_score(&PortfolioSlotWeights::default());
+        let ordered = portfolio.plausible_slots_by_score(&PortfolioWeightsProfile::default());
 
         assert_eq!(ordered[0].0, SlotKind::NeedSurvival);
         assert_eq!(ordered[1].0, SlotKind::ObligationDuty);

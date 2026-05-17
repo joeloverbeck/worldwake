@@ -93,6 +93,7 @@ pub mod patrol;
 pub mod percentile;
 pub mod place_dirtiness;
 pub mod plan_step_guards;
+pub mod portfolio_weights_profile;
 pub mod production;
 pub mod pursuit;
 pub mod relations;
@@ -157,7 +158,7 @@ pub use canonical::{
 };
 pub use causal_link::{CausalLink, CausalProvider, PlanningFact, RecordTopic};
 pub use cause::CauseRef;
-pub use cognitive_profile::{CognitiveProfile, PortfolioSlotWeights};
+pub use cognitive_profile::CognitiveProfile;
 pub use combat::{CombatProfile, CombatStance, DeadAt, DeathCause};
 pub use communication::{CommunicationClass, CommunicationProfile, classify_communication};
 pub use component_tables::ComponentTables;
@@ -278,6 +279,7 @@ pub use place_dirtiness::{LatrineFullness, PlaceDirtiness, WashBasinState};
 pub use plan_step_guards::{
     ExpectationKindTag, InvalidatorTag, MismatchDetail, ObservationPredicate, StatePredicate,
 };
+pub use portfolio_weights_profile::PortfolioWeightsProfile;
 pub use production::{
     CarryCapacity, HARVEST_TRACE_MAX_ENTRIES, HARVEST_TRACE_RETENTION_TICKS, HarvestTraceEntry,
     InTransitOnEdge, KnownRecipes, LastHarvestTrace, ProductionJob, ProductionOutputOwner,
