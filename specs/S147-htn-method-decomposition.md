@@ -22,7 +22,7 @@ Phase 12: AI Architecture Evolution — Draft
 - `worldwake-core` — exposes the `MethodSchemaId` newtype (so save/replay payloads can name methods), the two payload-free discriminant mirror enums `MotiveSourceDiscriminant` (mirror of `motive_source.rs:14` `MotiveSource`) and `GoalKindDiscriminant` (mirror of `goal.rs:62` `GoalKind`), the `disabled_methods: BTreeSet<MethodSchemaId>` field added to `AgentSchemaContextProfile` at `agent_schema_context_profile.rs:54`, and the new `Discrepancy::MethodFailure(MethodFailureContext)` variant at `discrepancy.rs:9`.
 - `worldwake-sim` — no change.
 - `worldwake-systems` — no change.
-- `worldwake-cli` — observer Section 7 extends to surface the method chosen per plan attempt and its decomposition trace; no scenario-types change is required because `AgentSchemaContextProfile` already has a universal scenario surface and `disabled_methods` defaults to empty.
+- `worldwake-cli` — observer Section 8 extends failed plan-attempt rows with method trace detail, and Section 13 surfaces `PlanningMetrics.method_usage`; no scenario-types change is required because `AgentSchemaContextProfile` already has a universal scenario surface and `disabled_methods` defaults to empty.
 
 ## Dependencies
 
@@ -65,7 +65,7 @@ Phase 12: AI Architecture Evolution — Draft
 | FND-22 (Agent Diversity Through Concrete Variation) | `AgentSchemaContextProfile.disabled_methods` allows scenarios to author per-role method access (peasants opt out of `FulfillBountyGroupHunt`, guards opt out of nothing, etc.). Diversity is concrete state, not abstract score. |
 | FND-26 (Systems Interact Through State, Not Through Each Other) | Methods read belief views and snapshot state; they produce subgoal templates that the planner consumes. No cross-system command. |
 | FND-28 (No Backward Compatibility in Live Authority Paths) | Methods extend the planner; the no-method fallback is the actual current path of `build_stages`, not a legacy shim. The new `Discrepancy::MethodFailure` variant lives alongside existing variants; no parallel "method-aware BeliefStale" coexists with non-method `BeliefStale`. |
-| FND-29 (Debuggability Is a Product Feature) | Method choice and decomposition are recorded in `PlanAttemptTrace.method_trace`; observer Section 7 surfaces them. |
+| FND-29 (Debuggability Is a Product Feature) | Method choice and decomposition are recorded in `PlanAttemptTrace.method_trace`; observer Section 8 surfaces per-attempt details and Section 13 surfaces aggregate method usage. |
 | FND-29A (Causal History Is Authoritative, Append-Only) | Method failures attribute through the typed `Discrepancy::MethodFailure` variant (D6), so later state changes are explainable from authoritative state, not from optional trace logs. |
 | FND-30 (Every New System Spec Must Declare Its Causal Hooks) | Section H below covers all 18 declared hooks for the new HTN module and the field extensions. |
 
@@ -479,7 +479,7 @@ pub fn build_method_registry() -> MethodRegistry {
 
 ### D9: Observer Section 7 method rendering
 
-For each plan attempt, observer Section 7 prints:
+For failed plan attempts, observer Section 8 prints a Method column and method-trace detail lines:
 
 ```
 Plan attempt: ProduceCommodity{recipe="Bake Bread"} (Method: ProduceWithGather)
@@ -501,7 +501,7 @@ Plan attempt: FulfillBounty{bounty=#42} (Method: FulfillBountyDirect)
   Failure: SubgoalUnachievable(index=1) — Discrepancy::MethodFailure(SubgoalUnachievable)
 ```
 
-The format follows the existing observer Section 7 conventions (indented prose, `✓`/`✗`/`Pending` markers).
+The format follows the existing observer conventions: compact table columns for scanability, indented method detail lines, and explicit `Pending`/`Succeeded`/`Failed` subgoal status labels.
 
 ### D10: Golden coverage
 
@@ -625,7 +625,7 @@ No new actions. Existing actions are method *leaves*; `PlannerOpKind` variants a
 
 ### 4. Information production / propagation / observability
 
-Method choice is observable through `PlanAttemptTrace.method_trace` (D5). The trace is per-agent per-tick and exposed through observer Section 7 (D9). Method failures are observable through `Discrepancy::MethodFailure` (D6) on the typed-discrepancy channel, which is already consumed by existing blocker-memory and learning systems (S109 chain).
+Method choice is observable through `PlanAttemptTrace.method_trace` (D5). The trace is per-agent per-tick and exposed through observer Section 8 failed-plan details plus Section 13 aggregate method usage (D9). Method failures are observable through `Discrepancy::MethodFailure` (D6) on the typed-discrepancy channel, which is already consumed by existing blocker-memory and learning systems (S109 chain).
 
 ### 5. Conserved quantities / source/sink paths
 

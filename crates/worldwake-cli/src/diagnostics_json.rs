@@ -17,6 +17,12 @@ struct DiagnosticsMapEntry<K> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+struct MethodUsageDiagnosticsEntry {
+    method_id: Option<MethodSchemaId>,
+    counts: MethodUsageCounts,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 struct ScenarioDiagnosticsJson {
     tick_range: (Tick, Tick),
     goal_pressure: GoalPressureDiagnosticsJson,
@@ -49,7 +55,7 @@ struct PlanningDiagnosticsJson {
     terminal_kind_distribution: Vec<DiagnosticsMapEntry<PlanTerminalKind>>,
     heuristic_helpful_action_hit_rate: Permille,
     #[serde(default)]
-    method_usage: BTreeMap<Option<MethodSchemaId>, MethodUsageCounts>,
+    method_usage: Vec<MethodUsageDiagnosticsEntry>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -76,6 +82,26 @@ fn diagnostics_map_from_entries<K: Ord>(entries: Vec<DiagnosticsMapEntry<K>>) ->
     entries
         .into_iter()
         .map(|entry| (entry.key, entry.count))
+        .collect()
+}
+
+fn method_usage_entries(
+    map: &BTreeMap<Option<MethodSchemaId>, MethodUsageCounts>,
+) -> Vec<MethodUsageDiagnosticsEntry> {
+    map.iter()
+        .map(|(method_id, counts)| MethodUsageDiagnosticsEntry {
+            method_id: *method_id,
+            counts: counts.clone(),
+        })
+        .collect()
+}
+
+fn method_usage_from_entries(
+    entries: Vec<MethodUsageDiagnosticsEntry>,
+) -> BTreeMap<Option<MethodSchemaId>, MethodUsageCounts> {
+    entries
+        .into_iter()
+        .map(|entry| (entry.method_id, entry.counts))
         .collect()
 }
 
@@ -115,7 +141,7 @@ impl From<&ScenarioDiagnosticsReport> for ScenarioDiagnosticsJson {
                 heuristic_helpful_action_hit_rate: report
                     .planning
                     .heuristic_helpful_action_hit_rate,
-                method_usage: report.planning.method_usage.clone(),
+                method_usage: method_usage_entries(&report.planning.method_usage),
             },
             revalidation_repair: RevalidationRepairDiagnosticsJson {
                 invalidation_reasons: diagnostics_map_entries(
@@ -173,7 +199,7 @@ impl From<ScenarioDiagnosticsJson> for ScenarioDiagnosticsReport {
                 heuristic_helpful_action_hit_rate: report
                     .planning
                     .heuristic_helpful_action_hit_rate,
-                method_usage: report.planning.method_usage,
+                method_usage: method_usage_from_entries(report.planning.method_usage),
             },
             revalidation_repair: RevalidationRepairMetrics {
                 invalidation_reasons: diagnostics_map_from_entries(
