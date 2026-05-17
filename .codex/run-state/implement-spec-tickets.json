@@ -1,6 +1,6 @@
 {
   "originating_spec": "specs/S150-cross-goal-blocker-scoping.md",
-  "archived_spec": null,
+  "archived_spec": "archive/specs/S150-cross-goal-blocker-scoping.md",
   "worktree_root": "/home/joeloverbeck/projects/worldwake",
   "starting_branch": "main",
   "current_branch": "implemented-S150-cross-goal-blocker-scoping",
