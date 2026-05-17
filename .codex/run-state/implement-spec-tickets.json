@@ -5,14 +5,14 @@
   "starting_branch": "main",
   "current_branch": "implemented-S147-htn-method-decomposition",
   "base_head": "a8d9671d5e4fd8642129f7ad1cb4dce84ff06564",
-  "last_ticket": "archive/tickets/S147HTNMETDEC-011.md",
+  "last_ticket": "archive/tickets/S147HTNMETDEC-013.md",
   "last_result": "completed_archived",
-  "last_work_commit": "b49e84f29ba4fb7eb989be2e11a7048f1f572a8a",
+  "last_work_commit": "7de05f3c70013f43e6a58d2bd069b9909cfd4e51",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S147HTNMETDEC-013.md",
+  "next_target": "tickets/S147HTNMETDEC-014.md",
   "queue": [
-    "tickets/S147HTNMETDEC-013.md"
+    "tickets/S147HTNMETDEC-014.md"
   ],
   "implement_ticket_audit": "pending",
   "post_ticket_review_audit": "not_required",
