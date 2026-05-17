@@ -64,18 +64,19 @@ fn evaluate_precondition(
                 .into_iter()
                 .any(|place| !belief_view.matching_workstations_at(place, *tag).is_empty()),
             crate::htn::EntityCriterion::ResourceSource(commodity) => {
-                resolve_commodity(goal, *commodity).is_some_and(|commodity| {
+                resolve_commodity(goal, *commodity, belief_view).is_some_and(|commodity| {
                     candidate_places(goal)
                         .into_iter()
                         .any(|place| !belief_view.resource_sources_at(place, commodity).is_empty())
                 })
             }
-            crate::htn::EntityCriterion::Seller(commodity) => resolve_commodity(goal, *commodity)
-                .is_some_and(|commodity| {
+            crate::htn::EntityCriterion::Seller(commodity) => {
+                resolve_commodity(goal, *commodity, belief_view).is_some_and(|commodity| {
                     candidate_places(goal)
                         .into_iter()
                         .any(|place| !belief_view.listed_sale_lots_at(place, commodity).is_empty())
-                }),
+                })
+            }
             crate::htn::EntityCriterion::Target(template) => {
                 resolve_entity(actor, goal, *template, belief_view).is_some()
             }
@@ -123,22 +124,24 @@ fn evaluate_belief_predicate(
             resolve_entity(actor, goal, *violation, belief_view)
                 .is_some_and(|violation| belief_view.record_data(violation).is_some())
         }
-        BeliefPredicate::ResourceSourceKnown { commodity } => resolve_commodity(goal, *commodity)
-            .is_some_and(|commodity| {
+        BeliefPredicate::ResourceSourceKnown { commodity } => {
+            resolve_commodity(goal, *commodity, belief_view).is_some_and(|commodity| {
                 candidate_places(goal)
                     .into_iter()
                     .any(|place| !belief_view.resource_sources_at(place, commodity).is_empty())
-            }),
-        BeliefPredicate::SellerKnown { commodity } => resolve_commodity(goal, *commodity)
-            .is_some_and(|commodity| {
+            })
+        }
+        BeliefPredicate::SellerKnown { commodity } => {
+            resolve_commodity(goal, *commodity, belief_view).is_some_and(|commodity| {
                 candidate_places(goal)
                     .into_iter()
                     .any(|place| !belief_view.listed_sale_lots_at(place, commodity).is_empty())
-            }),
+            })
+        }
         BeliefPredicate::OwnedCommodityBelowThreshold {
             commodity,
             threshold,
-        } => resolve_commodity(goal, *commodity)
+        } => resolve_commodity(goal, *commodity, belief_view)
             .is_some_and(|commodity| belief_view.commodity_quantity(actor, commodity) < *threshold),
         BeliefPredicate::OwnsInputsForRecipe { recipe } => resolve_recipe(goal, *recipe)
             .and_then(|recipe| belief_view.recipe_definition(recipe))
@@ -295,7 +298,11 @@ fn secondary_goal_entity(goal: &GoalOffer) -> Option<EntityId> {
     }
 }
 
-fn resolve_commodity(goal: &GoalOffer, template: CommodityTemplate) -> Option<CommodityKind> {
+fn resolve_commodity(
+    goal: &GoalOffer,
+    template: CommodityTemplate,
+    belief_view: &dyn RuntimeBeliefView,
+) -> Option<CommodityKind> {
     match template {
         CommodityTemplate::GoalCommodity => match goal.key.kind {
             GoalKind::ConsumeOwnedCommodity { commodity }
@@ -305,7 +312,14 @@ fn resolve_commodity(goal: &GoalOffer, template: CommodityTemplate) -> Option<Co
             | GoalKind::MoveCargo { commodity, .. } => Some(commodity),
             _ => None,
         },
-        CommodityTemplate::RecipeInput { .. } => None,
+        CommodityTemplate::RecipeInput { recipe, ordinal } => {
+            let recipe_id = resolve_recipe(goal, recipe)?;
+            belief_view
+                .recipe_definition(recipe_id)?
+                .inputs
+                .get(usize::from(ordinal))
+                .map(|(commodity, _)| *commodity)
+        }
         CommodityTemplate::Fixed(commodity) => Some(commodity),
     }
 }
@@ -370,13 +384,13 @@ fn has_witness_report_for(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::htn::{BeliefPredicate, MethodPrecondition, MotiveBias};
+    use crate::htn::{BeliefPredicate, MethodPrecondition, MotiveBias, build_method_registry};
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        BeliefConfidencePolicy, DemandObservation, DriveThresholds, EntityKind, HomeostaticNeeds,
-        InTransitOnEdge, IntentionDispositionProfile, LoadUnits, MetabolismProfile, MethodSchemaId,
-        MotiveSource, OpportunityAnchor, Permille, Quantity, ResourceSource, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, WorkstationTag,
+        BeliefConfidencePolicy, BodyCostPerTick, DemandObservation, DriveThresholds, EntityKind,
+        HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, LoadUnits,
+        MetabolismProfile, MethodSchemaId, MotiveSource, OpportunityAnchor, Permille, Quantity,
+        ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
     };
     use worldwake_sim::belief_view::{BeliefStatus, BeliefValue};
     use worldwake_sim::{
@@ -453,6 +467,24 @@ mod tests {
             registry.insert(method);
         }
         registry
+    }
+
+    fn recipe(inputs: Vec<(CommodityKind, Quantity)>) -> RecipeDefinition {
+        RecipeDefinition {
+            name: "Test recipe".to_string(),
+            inputs,
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            required_workstation_tag: None,
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+        }
+    }
+
+    fn produce_goal_with_evidence(recipe_id: RecipeId, place: EntityId) -> GoalOffer {
+        let mut goal = goal(GoalKind::ProduceCommodity { recipe_id });
+        goal.evidence_places.insert(place);
+        goal
     }
 
     #[derive(Default)]
@@ -919,6 +951,106 @@ mod tests {
         );
 
         assert!(selected.is_none());
+    }
+
+    #[test]
+    fn recipe_input_resource_source_precondition_resolves_first_recipe_input() {
+        let actor = entity(1);
+        let source_place = entity(10);
+        let source = entity(20);
+        let recipe_id = RecipeId(7);
+        let mut view = TestBeliefView::default();
+        view.recipes
+            .insert(recipe_id, recipe(vec![(CommodityKind::Grain, Quantity(2))]));
+        view.resource_sources
+            .insert((source_place, CommodityKind::Grain), vec![source]);
+        let registry = registry([method(
+            42,
+            GoalKindDiscriminant::ProduceCommodity,
+            vec![MethodPrecondition::BeliefHolds(
+                BeliefPredicate::ResourceSourceKnown {
+                    commodity: CommodityTemplate::RecipeInput {
+                        recipe: RecipeTemplate::GoalRecipe,
+                        ordinal: 0,
+                    },
+                },
+            )],
+            Vec::new(),
+        )]);
+
+        let selected = select_method(
+            actor,
+            &produce_goal_with_evidence(recipe_id, source_place),
+            &registry,
+            &AgentSchemaContextProfile::default(),
+            &view,
+            &[],
+        )
+        .expect("recipe-input commodity should resolve through recipe definition");
+
+        assert_eq!(selected.id, MethodSchemaId(42));
+    }
+
+    #[test]
+    fn recipe_input_resource_source_precondition_fails_closed_for_invalid_ordinal() {
+        let source_place = entity(10);
+        let recipe_id = RecipeId(7);
+        let mut view = TestBeliefView::default();
+        view.recipes
+            .insert(recipe_id, recipe(vec![(CommodityKind::Grain, Quantity(2))]));
+        view.resource_sources
+            .insert((source_place, CommodityKind::Grain), vec![entity(20)]);
+        let registry = registry([method(
+            42,
+            GoalKindDiscriminant::ProduceCommodity,
+            vec![MethodPrecondition::BeliefHolds(
+                BeliefPredicate::ResourceSourceKnown {
+                    commodity: CommodityTemplate::RecipeInput {
+                        recipe: RecipeTemplate::GoalRecipe,
+                        ordinal: 1,
+                    },
+                },
+            )],
+            Vec::new(),
+        )]);
+
+        let selected = select_method(
+            entity(1),
+            &produce_goal_with_evidence(recipe_id, source_place),
+            &registry,
+            &AgentSchemaContextProfile::default(),
+            &view,
+            &[],
+        );
+
+        assert!(
+            selected.is_none(),
+            "out-of-range recipe input ordinal must not satisfy a method precondition"
+        );
+    }
+
+    #[test]
+    fn canonical_produce_with_gather_selects_from_known_recipe_input_source() {
+        let source_place = entity(10);
+        let recipe_id = RecipeId(7);
+        let mut view = TestBeliefView::default();
+        view.recipes
+            .insert(recipe_id, recipe(vec![(CommodityKind::Grain, Quantity(2))]));
+        view.resource_sources
+            .insert((source_place, CommodityKind::Grain), vec![entity(20)]);
+
+        let registry = build_method_registry();
+        let selected = select_method(
+            entity(1),
+            &produce_goal_with_evidence(recipe_id, source_place),
+            &registry,
+            &AgentSchemaContextProfile::default(),
+            &view,
+            &[],
+        )
+        .expect("canonical produce_with_gather should select from recipe input source beliefs");
+
+        assert_eq!(selected.id, MethodSchemaId(5));
     }
 
     #[test]

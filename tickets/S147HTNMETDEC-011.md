@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: No — adds golden E2E tests under `crates/worldwake-ai/tests/`.
-**Deps**: `archive/tickets/S147HTNMETDEC-008.md` (planner integration), `tickets/S147HTNMETDEC-009.md` (trace + diagnostics), `tickets/S147HTNMETDEC-010.md` (observer rendering), `tickets/S147HTNMETDEC-012.md` (canonical recipe-input method preconditions)
+**Deps**: `archive/tickets/S147HTNMETDEC-008.md` (planner integration), `tickets/S147HTNMETDEC-009.md` (trace + diagnostics), `tickets/S147HTNMETDEC-010.md` (observer rendering), `archive/tickets/S147HTNMETDEC-012.md` (canonical recipe-input method preconditions)
 
 ## Problem
 

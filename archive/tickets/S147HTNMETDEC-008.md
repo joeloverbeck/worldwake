@@ -16,7 +16,7 @@ S147 D4 wires `select_method` into the strategic search so methods can substitut
 2. The shared boundary is `crate::htn::select_method(actor, goal, registry, profile, belief_view, motives)`. This ticket uses the selector result to choose method subgoals, then maps those subgoals to existing `StrategicStage` values. Tactical search and action validation are unchanged.
 3. The method selector requires `AgentSchemaContextProfile` through `ProfileBeliefView`. Before this ticket, `PlanningState` did not expose the actor's `AgentSchemaContextProfile`, so the planner-visible snapshot/state boundary had to be extended rather than reading authoritative world state during planning.
 4. Existing flat-GOAP strategic tests remain the regression surface for goals without matching methods. The broad `worldwake-ai` suite also exposed a real restock fallback boundary: canonical restock methods must not convert an already-terminal same-commodity restock goal into an unrelated acquisition stage.
-5. During implementation, a separate selector gap was exposed: canonical recipe-input method preconditions such as `CommodityTemplate::RecipeInput { recipe: GoalRecipe, ordinal: 0 }` are not currently resolved by `htn::selector`. That gap is separate from planner dispatch and is captured in `tickets/S147HTNMETDEC-012.md`.
+5. During implementation, a separate selector gap was exposed: canonical recipe-input method preconditions such as `CommodityTemplate::RecipeInput { recipe: GoalRecipe, ordinal: 0 }` were not resolved by `htn::selector`. That gap was separate from planner dispatch and is captured in `archive/tickets/S147HTNMETDEC-012.md`.
 
 ## Architecture Check
 
@@ -61,11 +61,13 @@ S147 D4 wires `select_method` into the strategic search so methods can substitut
 
 Completed: 2026-05-17.
 
+Outcome amended: 2026-05-17.
+
 Planner integration is landed. `build_stages` now considers the S147 method registry before flat-GOAP fallback, selected method subgoals are expanded into the existing strategic stage vocabulary, and actor method-disable profile data reaches the selector through the planner snapshot/state belief boundary.
 
 ## Deviations
 
-- The positive method-branch proof uses a custom method registry with concrete commodity templates. Canonical first-ship `ProduceCommodity` methods are still blocked by the pre-existing selector resolver gap for `CommodityTemplate::RecipeInput`, captured in `tickets/S147HTNMETDEC-012.md`.
+- The positive method-branch proof uses a custom method registry with concrete commodity templates. The canonical first-ship `ProduceCommodity` selector resolver gap was closed afterward in `archive/tickets/S147HTNMETDEC-012.md`.
 - Full `./scripts/verify.sh` remains the final pre-push gate for the S147 harness run. This ticket iteration used the narrower `worldwake-ai` proof surface plus all-target clippy for the crate because the touched runtime code is contained to `worldwake-ai`.
 
 ## Out of Scope
@@ -73,7 +75,7 @@ Planner integration is landed. `build_stages` now considers the S147 method regi
 - `MethodPlanAttemptTrace` recording during plan attempts (ticket 009).
 - Observer rendering of method choice (ticket 010).
 - Golden end-to-end method scenarios (ticket 011).
-- Selector resolution for recipe-input method preconditions (ticket 012).
+- Selector resolution for recipe-input method preconditions (completed in `archive/tickets/S147HTNMETDEC-012.md`).
 
 ## Acceptance Result
 
