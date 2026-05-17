@@ -5344,6 +5344,9 @@
       "p99": 0,
       "max": 0,
       "mean": 0
+    },
+    "blocker_counts_by_scope": {
+      "Exact": 1338
     }
   },
   "coordination": {
@@ -5411,7 +5414,7 @@
     "cache_invalidation_count": 0,
     "planning_state_cache_entities_at_hits": 2456,
     "planning_state_cache_entities_at_misses": 35124,
-    "planning_state_cache_effective_place_hits": 3042523,
+    "planning_state_cache_effective_place_hits": 3140656,
     "planning_state_cache_effective_place_misses": 1345744,
     "planning_state_cache_invalidations": 130575
   }

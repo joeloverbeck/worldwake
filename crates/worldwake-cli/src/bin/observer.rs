@@ -7282,6 +7282,10 @@ mod tests {
                 source_reliability_changes: 2,
                 false_rumor_propagation_count: 0,
                 correction_latency: PercentileBucket::from_sorted(&[2, 6]),
+                blocker_counts_by_scope: BTreeMap::from([
+                    (worldwake_ai::BlockerScopeVariantId::Exact, 2),
+                    (worldwake_ai::BlockerScopeVariantId::RouteSegment, 1),
+                ]),
             },
             coordination: worldwake_ai::scenario_diagnostics::CoordinationMetrics {
                 queue_wait_ticks: PercentileBucket::from_sorted(&[0, 3, 7]),

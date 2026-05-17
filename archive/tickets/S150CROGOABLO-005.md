@@ -1,6 +1,6 @@
 # S150CROGOABLO-005: S144 per-scope blocker diagnostics
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `ScenarioDiagnosticsReport.belief` extension; new `BlockerScopeVariantId` enum; aggregator extension
@@ -122,3 +122,20 @@ In `crates/worldwake-ai/src/scenario_diagnostics/aggregator.rs`:
 1. `cargo test -p worldwake-ai --lib scenario_diagnostics`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
 3. `./scripts/verify.sh` for the full pre-PR gate.
+
+## Outcome
+
+Completed on 2026-05-17.
+
+- Added payload-free `BlockerScopeVariantId` (`Exact`, `RouteSegment`, `Counterparty`) alongside the existing diagnostics aggregation keys and extended `BeliefMetrics` with `blocker_counts_by_scope: BTreeMap<BlockerScopeVariantId, u64>`.
+- Extended the scenario diagnostics aggregator to count every `DecisionEventPayload::BlockerRecorded` by projecting `BlockerScope` to its variant id, while preserving the existing discrepancy aggregation from the same event.
+- Added focused tests for enum ordering/serde and synthetic histogram aggregation with 3 Exact / 2 RouteSegment / 1 Counterparty events.
+- Updated the observer diagnostics test fixture and the survival-baseline diagnostics JSON fixture. The current deterministic survival-baseline report records `blocker_counts_by_scope: { "Exact": 1338 }`; the fixture's `planning_state_cache_effective_place_hits` also changed from `3042523` to `3140656` in the freshly encoded report.
+
+Verification:
+
+- `cargo fmt --all`
+- `cargo test -p worldwake-ai --lib scenario_diagnostics`
+- `cargo test -p worldwake-cli --bin observer`
+- `cargo test -p worldwake-ai --test golden_scenario_diagnostics_fixture golden_scenario_diagnostics_survival_baseline_fixture_is_stable -- --ignored --nocapture`
+- `cargo clippy --workspace --all-targets -- -D warnings`

@@ -87,7 +87,7 @@ add them as small additions to existing `golden_harness/` modules (placement con
 - **`BlockerClearingCondition` variants** — landed in ticket 003.
 - **Per-scope TTL fields** — landed in ticket 001.
 - **Observer rendering** — ticket 004; the goldens here do not depend on observer output.
-- **S144 diagnostics aggregation** — ticket 005; the goldens here do not assert against `BeliefMetrics.blocker_counts_by_scope`.
+- **S144 diagnostics aggregation** — `archive/tickets/S150CROGOABLO-005.md`; the goldens here do not assert against `BeliefMetrics.blocker_counts_by_scope`.
 - **Existing blocker goldens** (`golden_portfolio_planning`, `golden_plan_repair`, `golden_contention_inspectability`, `golden_need_projection`) — already migrated in ticket 002 to use the scope-keyed shape (BlockerScope::Exact preservation). This ticket does not modify them.
 
 ## Acceptance Criteria

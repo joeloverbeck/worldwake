@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use worldwake_core::{
-    BeliefStatusTag, ClaimantOutcome, DecisionEventPayload, Discrepancy, EventLog, EventTag,
-    EventView, GoalKind, GoalRejectionReason, OmissionReason, PercentileBucket, Permille,
+    BeliefStatusTag, BlockerScope, ClaimantOutcome, DecisionEventPayload, Discrepancy, EventLog,
+    EventTag, EventView, GoalKind, GoalRejectionReason, OmissionReason, PercentileBucket, Permille,
     PlanInvalidationReason, ReplanReason, SourceAttributionOutcomeTag, Tick,
 };
 
@@ -12,8 +12,8 @@ use crate::{
 };
 
 use super::{
-    BeliefMetrics, CoordinationMetrics, GoalPressureMetrics, PerformanceMetrics, PlanningMetrics,
-    RevalidationRepairMetrics, ScenarioDiagnosticsReport,
+    BeliefMetrics, BlockerScopeVariantId, CoordinationMetrics, GoalPressureMetrics,
+    PerformanceMetrics, PlanningMetrics, RevalidationRepairMetrics, ScenarioDiagnosticsReport,
 };
 
 #[must_use]
@@ -70,6 +70,7 @@ struct ScenarioDiagnosticsBuilder {
     contradicted_belief_actions: u64,
     source_reliability_changes: u64,
     correction_latency_values: Vec<u64>,
+    blocker_counts_by_scope: BTreeMap<BlockerScopeVariantId, u64>,
 
     queue_wait_values: Vec<u64>,
     reservation_conflict_count: u64,
@@ -294,6 +295,11 @@ impl ScenarioDiagnosticsBuilder {
                 self.record_replan_reason(&payload.reason);
             }
             DecisionEventPayload::BlockerRecorded(payload) => {
+                increment(
+                    &mut self.blocker_counts_by_scope,
+                    blocker_scope_variant(payload.scope),
+                    1,
+                );
                 if let Some(discrepancy) = payload.discrepancy {
                     self.record_discrepancy(discrepancy);
                 }
@@ -441,6 +447,7 @@ impl ScenarioDiagnosticsBuilder {
                 source_reliability_changes: self.source_reliability_changes,
                 false_rumor_propagation_count: 0,
                 correction_latency: bucket_from_unsorted(&mut self.correction_latency_values),
+                blocker_counts_by_scope: self.blocker_counts_by_scope,
             },
             coordination: CoordinationMetrics {
                 queue_wait_ticks: bucket_from_unsorted(&mut self.queue_wait_values),
@@ -475,6 +482,14 @@ impl ScenarioDiagnosticsBuilder {
                 planning_state_cache_invalidations: self.planning_state_cache_invalidations,
             },
         }
+    }
+}
+
+fn blocker_scope_variant(scope: BlockerScope) -> BlockerScopeVariantId {
+    match scope {
+        BlockerScope::Exact(_) => BlockerScopeVariantId::Exact,
+        BlockerScope::RouteSegment(_) => BlockerScopeVariantId::RouteSegment,
+        BlockerScope::Counterparty(_) => BlockerScopeVariantId::Counterparty,
     }
 }
 
@@ -585,19 +600,20 @@ mod tests {
         TargetBeliefPresence,
     };
     use crate::{
-        CandidateDampingEntry, CandidateSuppressionCategory, CandidateTrace, DecisionOutcome,
-        ExecutionTrace, GoalPriorityClass, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
-        PlannedStepSummary, PlanningPipelineTrace, RankedGoalSummary, RepairAttemptTrace,
-        RepairFailure, SelectionTrace, SnapshotCacheCounters,
+        BlockerScopeVariantId, CandidateDampingEntry, CandidateSuppressionCategory, CandidateTrace,
+        DecisionOutcome, ExecutionTrace, GoalPriorityClass, PlanAttemptTrace, PlanSearchOutcome,
+        PlanSearchTrace, PlannedStepSummary, PlanningPipelineTrace, RankedGoalSummary,
+        RepairAttemptTrace, RepairFailure, SelectionTrace, SnapshotCacheCounters,
     };
     use worldwake_core::{
-        ActionDefId, BeliefStatusTag, CauseRef, ClaimantOutcome, CommodityKind, ContentionClaimant,
+        ActionDefId, BeliefStatusTag, BlockerKey, BlockerRecordedPayload, BlockerScope,
+        BlockingFact, CauseRef, ClaimantOutcome, CommodityKind, ContentionClaimant,
         ContentionEventPayload, ContentionResolutionRule, DecisionEventPayload, Discrepancy,
         EntityId, EventLog, EventPayload, EventTag, GoalKey, GoalKind, GoalRejectionReason,
         GoalSuppressedPayload, HomeostaticNeedId, InvalidatorTag, OmissionReason,
         OpportunityAnchor, OpportunityKey, PendingEvent, PercentileBucket, Permille,
         PlanInvalidatedPayload, PlanInvalidationReason, RepairKind, ReplanReason,
-        ReplanTriggeredPayload, Tick, VisibilitySpec, WitnessData,
+        ReplanTriggeredPayload, RouteSegment, Tick, VisibilitySpec, WitnessData,
     };
 
     #[test]
@@ -861,6 +877,50 @@ mod tests {
     }
 
     #[test]
+    fn aggregator_populates_blocker_counts_by_scope() {
+        let mut event_log = EventLog::new();
+        for tick in [1, 2, 3] {
+            emit_blocker_recorded(
+                &mut event_log,
+                Tick(tick),
+                BlockerScope::Exact(BlockerKey {
+                    goal_key: GoalKey::from(GoalKind::Sleep),
+                    place: Some(entity(10)),
+                    target: None,
+                    action_def: None,
+                }),
+            );
+        }
+        for tick in [4, 5] {
+            emit_blocker_recorded(
+                &mut event_log,
+                Tick(tick),
+                BlockerScope::RouteSegment(RouteSegment::new(entity(10), entity(11))),
+            );
+        }
+        emit_blocker_recorded(
+            &mut event_log,
+            Tick(6),
+            BlockerScope::Counterparty(entity(20)),
+        );
+
+        let report = build_scenario_diagnostics(&[], &[], &[], &event_log, (Tick(0), Tick(10)));
+
+        assert_eq!(
+            report.belief.blocker_counts_by_scope,
+            BTreeMap::from([
+                (BlockerScopeVariantId::Exact, 3),
+                (BlockerScopeVariantId::RouteSegment, 2),
+                (BlockerScopeVariantId::Counterparty, 1),
+            ])
+        );
+        assert_eq!(
+            report.belief.blocker_counts_by_scope.values().sum::<u64>(),
+            6
+        );
+    }
+
+    #[test]
     fn performance_metrics_roll_up_opportunity_load_and_cache_counters() {
         let report = build_scenario_diagnostics(
             &[planning_decision_trace()],
@@ -1103,6 +1163,26 @@ mod tests {
             Some(payload),
             None,
         )));
+    }
+
+    fn emit_blocker_recorded(event_log: &mut EventLog, tick: Tick, scope: BlockerScope) {
+        emit_decision_payload(
+            event_log,
+            tick,
+            EventTag::BlockerRecorded,
+            DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
+                agent: entity(1),
+                scope,
+                discrepancy: None,
+                blocking_fact: Some(BlockingFact::PatienceExhausted),
+                expires_tick: Tick(tick.0 + 10),
+                belief_snapshot: None,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
+            }),
+        );
     }
 
     fn emit_contention_payload(event_log: &mut EventLog, tick: Tick, tag: EventTag) {

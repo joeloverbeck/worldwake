@@ -60,6 +60,7 @@ pub struct BeliefMetrics {
     pub source_reliability_changes: u64,
     pub false_rumor_propagation_count: u64,
     pub correction_latency: PercentileBucket,
+    pub blocker_counts_by_scope: BTreeMap<BlockerScopeVariantId, u64>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -107,11 +108,19 @@ pub enum CandidateSuppressionCategory {
     OmittedViolationDetection,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum BlockerScopeVariantId {
+    Exact,
+    RouteSegment,
+    Counterparty,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        BeliefMetrics, CandidateSuppressionCategory, CoordinationMetrics, GoalPressureMetrics,
-        PerformanceMetrics, PlanningMetrics, RevalidationRepairMetrics, ScenarioDiagnosticsReport,
+        BeliefMetrics, BlockerScopeVariantId, CandidateSuppressionCategory, CoordinationMetrics,
+        GoalPressureMetrics, PerformanceMetrics, PlanningMetrics, RevalidationRepairMetrics,
+        ScenarioDiagnosticsReport,
     };
     use crate::{PlanTerminalKind, SlotKind};
     use std::collections::BTreeMap;
@@ -160,6 +169,28 @@ mod tests {
         assert_eq!(decoded, counts);
     }
 
+    #[test]
+    fn blocker_scope_variant_id_is_ordered_and_serde_ready() {
+        let mut counts = BTreeMap::new();
+        counts.insert(BlockerScopeVariantId::Counterparty, 3);
+        counts.insert(BlockerScopeVariantId::Exact, 1);
+        counts.insert(BlockerScopeVariantId::RouteSegment, 2);
+
+        let encoded = serde_json::to_string(&counts).unwrap();
+        let decoded: BTreeMap<BlockerScopeVariantId, u64> = serde_json::from_str(&encoded).unwrap();
+
+        let ordered_keys: Vec<_> = decoded.keys().copied().collect();
+        assert_eq!(
+            ordered_keys,
+            vec![
+                BlockerScopeVariantId::Exact,
+                BlockerScopeVariantId::RouteSegment,
+                BlockerScopeVariantId::Counterparty,
+            ]
+        );
+        assert_eq!(decoded, counts);
+    }
+
     fn populated_report() -> ScenarioDiagnosticsReport {
         ScenarioDiagnosticsReport {
             tick_range: (Tick(3), Tick(9)),
@@ -200,6 +231,11 @@ mod tests {
                 source_reliability_changes: 3,
                 false_rumor_propagation_count: 0,
                 correction_latency: PercentileBucket::from_sorted(&[4, 9]),
+                blocker_counts_by_scope: BTreeMap::from([
+                    (BlockerScopeVariantId::Exact, 3),
+                    (BlockerScopeVariantId::RouteSegment, 2),
+                    (BlockerScopeVariantId::Counterparty, 1),
+                ]),
             },
             coordination: CoordinationMetrics {
                 queue_wait_ticks: PercentileBucket::from_sorted(&[1, 1, 5]),
