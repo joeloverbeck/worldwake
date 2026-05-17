@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 188
-- Contributing golden test files: 48
-- Associated tests: 224
+- Scenario blocks: 190
+- Contributing golden test files: 49
+- Associated tests: 228
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -668,6 +668,32 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 ### Scenario 349: Final Integration Authors The Full Coexistence Stack
 
 - Source: `golden_final_integration.rs:327`
+
+### Scenario 431: S147 ProduceWithGather Method Selection
+
+- Source: `golden_htn_methods.rs:229`
+- Systems: AI, Search, Production
+- GoalKinds: ProduceCommodity
+- ActionDomains: Production, Travel
+- Places: Village Square, Orchard Farm
+- Principles: 7, 14, 20, 22, 26, 28, 29
+
+**Setup**: a hungry baker knows a bread recipe, a local mill, and a remote firewood source. The agent has no firewood in inventory.
+
+**Proves**: HTN method selection chooses ProduceWithGather from the agent's belief view and a goal offer whose evidence places include the known resource source.
+
+### Scenario 432: S147 Disabled Methods Fall Back To Flat Strategic Search
+
+- Source: `golden_htn_methods.rs:261`
+- Systems: AI, Search, Production
+- GoalKinds: ProduceCommodity
+- ActionDomains: Production, Travel
+- Places: Village Square, Orchard Farm
+- Principles: 20, 22, 28, 29
+
+**Setup**: a hungry baker knows a bread recipe, a local mill, and a remote firewood source, but disables all ProduceCommodity methods in AgentSchemaContextProfile.disabled_methods.
+
+**Proves**: method dispatch returns to the flat strategic path with no method trace while the ordinary ProduceCommodity planning attempt still exists.
 
 ### Scenario 342: Waste Decay Reaches A Bounded Steady State
 

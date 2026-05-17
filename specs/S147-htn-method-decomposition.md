@@ -505,13 +505,10 @@ The format follows the existing observer conventions: compact table columns for 
 
 ### D10: Golden coverage
 
-`golden_htn_methods.rs` (under `crates/worldwake-ai/tests/`) covers:
-- `FulfillBountyDirect` end-to-end: agent has direct target knowledge → method selected → bounty fulfilled.
-- `FulfillBountyInvestigation` → `FulfillBountyDirect` chain: agent lacks target location → investigation method runs → witness ask updates belief → next-tick selection rebinds to `FulfillBountyDirect`.
-- `ProduceWithGather` for a 3-input recipe: prove method substitutes stages.
-- Method-disabled fallback: agent with `disabled_methods = { all ProduceCommodity methods }` falls back to flat GOAP for `ProduceCommodity` goal.
-- Method failure → `Discrepancy::MethodFailure(MethodFailureContext)` recorded: golden asserts the typed variant + the `MethodFailureKind` discriminant on the typed channel, and the richer payload on `PlanAttemptTrace.method_trace`.
-- Determinism: same scenario + seed → identical method choices across two runs (asserted via `MethodPlanAttemptTrace.method_id` and `motive_score` equality).
+`golden_htn_methods.rs` (under `crates/worldwake-ai/tests/`) is staged:
+- Landed first seam (`archive/tickets/S147HTNMETDEC-011.md`): `ProduceWithGather` selector proof from the actor belief view plus `GoalOffer` evidence places; method-disabled `ProduceCommodity` fallback to flat GOAP; deterministic replay for both observations.
+- Active remainder (`tickets/S147HTNMETDEC-013.md`): autonomous generated-candidate method trace propagation, then the remaining `FulfillBountyDirect`, `FulfillBountyInvestigation`, escort/failure, and typed `Discrepancy::MethodFailure(MethodFailureContext)` goldens once the evidence bridge is truthful.
+- Determinism remains required for each landed scenario via repeated fixed-seed observations asserted against `MethodPlanAttemptTrace` and decision-trace output.
 
 ### D11: `GoalSchema.methods` field
 
@@ -721,7 +718,7 @@ No floats.
 
 ## Test Plan
 
-- D10 golden coverage (6 scenarios above).
+- D10 golden coverage: first selector/fallback seam landed in `archive/tickets/S147HTNMETDEC-011.md`; autonomous method trace propagation and remaining full-D10 narratives are owned by `tickets/S147HTNMETDEC-013.md`.
 - D8 registry validation tests (5 invariants).
 - D11 `GoalSchema.methods` resolution tests.
 - D12 discriminant-mirror completeness tests.
