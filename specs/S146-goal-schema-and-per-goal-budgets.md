@@ -366,7 +366,7 @@ All `Permille` values (where present in `GoalPlanningBudget` presets) are bound 
 
 ## Authoritative-to-AI Impact Analysis
 
-D6 restructures candidate emission and D7 changes the budget input source. The seven CLAUDE.md checklist points:
+D6 restructures candidate emission and D7 changes the budget input source. The seven `AGENTS.md` Authoritative-To-AI Impact Rule points:
 
 1. `get_affordances` — N/A (unchanged).
 2. `generate_candidates` — restructured into extractor dispatch. D9's parity tests verify equivalent output on `survival-baseline.ron`.

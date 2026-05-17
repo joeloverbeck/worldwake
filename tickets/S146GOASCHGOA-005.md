@@ -121,7 +121,7 @@ pub fn build_extractor_registry()
 }
 ```
 
-`BTreeMap` per CLAUDE.md determinism invariant.
+`BTreeMap` per `AGENTS.md` determinism invariant.
 
 ### 4. Migrate `agent_tick/planning.rs` candidate phase
 
@@ -214,7 +214,7 @@ Tests that originally called `emit_*` directly with `&mut Vec` patterns need the
 
 1. Candidate generation produces the same output Vec for the same input state, modulo per-extractor `disabled_extractors` skipping (parity invariant — ticket 007's parity fixtures formally enforce; this ticket's tests structurally enforce per-extractor).
 2. Top-level `emit_*_candidates` functions are deleted (zero matches via `grep -rn "pub(crate) fn emit_.*_candidates" crates/worldwake-ai/src/candidate_generation.rs`).
-3. Registry iteration is `BTreeMap`-ordered (CLAUDE.md determinism).
+3. Registry iteration is `BTreeMap`-ordered (`AGENTS.md` determinism).
 4. Profile read flows exclusively through `GoalBeliefView::agent_schema_context_profile` — no direct `world.get_component_agent_schema_context_profile(actor)` call from inside candidate generation (FND-14).
 
 ## Test Plan

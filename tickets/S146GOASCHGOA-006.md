@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `search/mod.rs` reads per-goal budget from registry; `PlanAttemptTrace` gains provenance field (decision-trace layer)
-**Deps**: 002, 004
+**Deps**: archive/tickets/S146GOASCHGOA-002.md, 004
 
 ## Problem
 
@@ -30,7 +30,7 @@ S146 PR-17's per-goal budgets only matter at the search-dispatch boundary, where
 1. FND-3 (concrete state): per-goal budget is concrete typed data (`u8`, `u16`, `Permille`), not an abstract score. `effective_budget` is a derived read-model per FND-3.
 2. FND-29 (debuggability): `PlanAttemptTrace.goal_budget` makes "which budget bounded this attempt" trivially answerable post-hoc. S144's `PlanningMetrics` can aggregate exhaustion-by-preset using this single field.
 3. FND-12 (performance compresses computation, not causality): per-goal budget changes the planner's expansion budget for goals authored with deeper presets, but only when the agent's cognitive ceiling allows it. The compose-via-`min()` rule ensures world meaning never changes — only how deep the search explores.
-4. CLAUDE.md determinism: no float, no `HashMap`. All budget values are integer-typed.
+4. `AGENTS.md` determinism: no float, no `HashMap`. All budget values are integer-typed.
 
 ## Verification Layers
 
@@ -151,7 +151,7 @@ fn strategic_expansions_clamp_against_stage_count() {
 3. `effective_budget.max_strategic_expansions <= min(goal_schema.planning_budget.max_strategic_expansions, execution_budget.strategic_budget_for_stages(stage_count) as u16)`.
 4. `PlanAttemptTrace.goal_budget` records the actual `effective_budget` applied (not the preset, not the schema's static value).
 5. No new save-format bump (PlanAttemptTrace is `Clone, Debug` only, not `Serialize/Deserialize`).
-6. CLAUDE.md determinism: no `HashMap` or floats introduced.
+6. `AGENTS.md` determinism: no `HashMap` or floats introduced.
 
 ## Test Plan
 

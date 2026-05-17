@@ -68,6 +68,7 @@ pub mod experience;
 pub mod exploration;
 pub mod factions;
 pub mod goal;
+pub mod goal_planning_budget;
 pub mod ids;
 pub mod institutional;
 pub mod intention_disposition;
@@ -217,6 +218,7 @@ pub use goal::{
     AcquisitionQuantity, CommodityPurpose, ExplorationMotivation, GoalKey, GoalKind,
     HypothesisKind, OpportunityAnchor, OpportunityKey,
 };
+pub use goal_planning_budget::GoalPlanningBudget;
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
 pub use institutional::{
     BelievedInstitutionalClaim, InstitutionalBeliefKey, InstitutionalBeliefRead,

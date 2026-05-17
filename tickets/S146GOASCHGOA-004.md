@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `GoalSchema` gains 2 required fields populated atomically across all 41 entries; `CandidateExtractorId` finalized for 20 extractor identities
-**Deps**: archive/tickets/S146GOASCHGOA-001.md, 002, 003
+**Deps**: archive/tickets/S146GOASCHGOA-001.md, archive/tickets/S146GOASCHGOA-002.md, 003
 
 ## Problem
 
@@ -153,7 +153,7 @@ fn goal_schema_registry_covers_all_dispatch_keys() {
 1. Every `GoalDispatchKey::ALL` variant has a populated `GoalSchema` entry with `candidate_extractors` and `planning_budget` set (runtime test enforces).
 2. `CandidateExtractorId` enum has exactly 20 variants corresponding 1:1 to the 20 existing `emit_*` functions in `candidate_generation.rs` (semantic — verified narratively here, structurally by ticket 005's `fn id(&self)` impls).
 3. Per-entry budget assignment respects `CognitiveProfile.max_plan_depth = 8` default ceiling: even though some presets exceed depth 8, ticket 006's `min()` clamp ensures default-cognitive-profile agents are not affected. Goldens that author higher cognitive ceilings can opt into deeper budgets.
-4. No new `Permille` `new` (fallible) calls introduced — `GoalPlanningBudget` presets use `new_unchecked` exclusively (CLAUDE.md determinism).
+4. No new `Permille` `new` (fallible) calls introduced — `GoalPlanningBudget` presets use `new_unchecked` exclusively (`AGENTS.md` determinism).
 
 ## Test Plan
 

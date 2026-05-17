@@ -23,7 +23,7 @@ S146's debuggability story (FND-29) hinges on the observer surfacing which budge
 
 1. FND-29 (debuggability): the rendering makes "which budget bounded this attempt" trivially observable at a glance, without requiring readers to compare numeric field values mentally.
 2. FND-28 (no dead paths): `preset_name()` lives on `GoalPlanningBudget` because it's a property of the type, but its only caller is the observer. Defining it now (rather than in ticket 002) ensures it lands with its consumer — no period where the helper exists without a use site.
-3. Tooling-only scope: observer enhancements compress diagnostic output; world meaning is unchanged. CLAUDE.md determinism preserved.
+3. Tooling-only scope: observer enhancements compress diagnostic output; world meaning is unchanged. `AGENTS.md` determinism preserved.
 
 ## Verification Layers
 
@@ -123,7 +123,7 @@ The test reuses `scenarios/per-goal-budget-golden.ron` from ticket 007.
 ### Invariants
 
 1. Observer Section 7 renders the preset name for every plan attempt whose `goal_budget` matches a defined preset; renders `CUSTOM` for budgets that don't.
-2. Observer rendering preserves CLAUDE.md determinism — same scenario, same seed, same observer output.
+2. Observer rendering preserves `AGENTS.md` determinism — same scenario, same seed, same observer output.
 3. `preset_name()` is a pure read-only helper on `GoalPlanningBudget` (no side effects, no allocation).
 
 ## Test Plan

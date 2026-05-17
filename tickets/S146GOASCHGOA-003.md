@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new universal ECS component registered on `EntityKind::Agent`; `GoalBeliefView` accessor; scenario loader integration; `create_agent` bootstrap seeding
-**Deps**: 002
+**Deps**: archive/tickets/S146GOASCHGOA-002.md
 
 ## Problem
 

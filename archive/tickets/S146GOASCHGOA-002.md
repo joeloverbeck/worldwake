@@ -1,6 +1,6 @@
 # S146GOASCHGOA-002: Add `GoalPlanningBudget` core type
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None — new type, no consumer wiring in this ticket
@@ -22,67 +22,23 @@ S146 PR-17 introduces per-goal planning budgets so `Eat`'s search differs from `
 
 1. Concrete typed budget per FND-3: fields express bounded resource limits as plain integers + `Permille`, not abstract scores. Each preset is a named const that future tickets read by name.
 2. No backward-compat layer (FND-28): the type is net-new; no shim required.
-3. Serialization-friendly without floats per CLAUDE.md determinism invariant: all fields are integer or `Permille` (u16-backed).
+3. Serialization-friendly without floats per `AGENTS.md` determinism invariant: all fields are integer or `Permille` (u16-backed).
 
-## Verification Layers
+## Verified Layers
 
 1. New core type compiles + serializes round-trip → focused unit test in `crates/worldwake-core/src/goal_planning_budget.rs`'s `#[cfg(test)]` block
 2. Preset constants satisfy invariants (depth ordering, `Permille` validity) → const-evaluated assertions in the unit test
 3. Single-layer ticket — no cross-system invariants apply.
 
-## What to Change
+## Landed Changes
 
 ### 1. New file: `crates/worldwake-core/src/goal_planning_budget.rs`
 
-```rust
-use crate::numerics::Permille;
-use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct GoalPlanningBudget {
-    pub max_depth: u8,
-    pub max_node_expansions: u16,
-    pub repair_budget_fraction: Permille,
-    pub max_strategic_expansions: u16,
-}
-
-impl GoalPlanningBudget {
-    pub const SELF_CARE: Self = Self {
-        max_depth: 6,
-        max_node_expansions: 96,
-        repair_budget_fraction: Permille::new_unchecked(250),
-        max_strategic_expansions: 12,
-    };
-    pub const TRAVEL_PURCHASE: Self = Self {
-        max_depth: 10,
-        max_node_expansions: 224,
-        repair_budget_fraction: Permille::new_unchecked(300),
-        max_strategic_expansions: 24,
-    };
-    pub const PRODUCTION: Self = Self {
-        max_depth: 16,
-        max_node_expansions: 384,
-        repair_budget_fraction: Permille::new_unchecked(400),
-        max_strategic_expansions: 48,
-    };
-    pub const INVESTIGATION: Self = Self {
-        max_depth: 20,
-        max_node_expansions: 512,
-        repair_budget_fraction: Permille::new_unchecked(450),
-        max_strategic_expansions: 64,
-    };
-    pub const BOUNTY_ESCORT: Self = Self {
-        max_depth: 24,
-        max_node_expansions: 768,
-        repair_budget_fraction: Permille::new_unchecked(500),
-        max_strategic_expansions: 96,
-    };
-}
-```
+Added `GoalPlanningBudget` with the four D2 fields and the five requested associated preset constants: `SELF_CARE`, `TRAVEL_PURCHASE`, `PRODUCTION`, `INVESTIGATION`, and `BOUNTY_ESCORT`.
 
 ### 2. Module declaration and re-export
 
-In `crates/worldwake-core/src/lib.rs`: add `pub mod goal_planning_budget;` and `pub use goal_planning_budget::GoalPlanningBudget;`.
+Added `pub mod goal_planning_budget;` and `pub use goal_planning_budget::GoalPlanningBudget;` in `crates/worldwake-core/src/lib.rs`.
 
 ### 3. Focused unit tests
 
@@ -91,10 +47,10 @@ Inside `goal_planning_budget.rs`'s `#[cfg(test)] mod tests`:
 - `presets_have_monotone_expansion_ordering()` — same for `max_node_expansions`
 - `budget_roundtrips_through_bincode()` — Serialize/Deserialize round-trip preserves all field values for `BOUNTY_ESCORT` (the largest preset)
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-core/src/goal_planning_budget.rs` (new)
-- `crates/worldwake-core/src/lib.rs` (modify — module decl + re-export)
+- `crates/worldwake-core/src/goal_planning_budget.rs` (added)
+- `crates/worldwake-core/src/lib.rs` (module decl + re-export)
 
 ## Out of Scope
 
@@ -103,9 +59,9 @@ Inside `goal_planning_budget.rs`'s `#[cfg(test)] mod tests`:
 - Application in search dispatch — ticket 006 owns the `effective_budget` computation.
 - Trace provenance field — ticket 006 owns the `PlanAttemptTrace.goal_budget` addition.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Passed Gates
 
 1. `cargo test -p worldwake-core goal_planning_budget` — new unit tests pass
 2. `cargo build --workspace` — type compiles and re-exports resolve
@@ -115,16 +71,35 @@ Inside `goal_planning_budget.rs`'s `#[cfg(test)] mod tests`:
 
 1. Preset constants are `const`-constructible (no runtime construction required).
 2. `Permille::new_unchecked` is used only for statically-known `<= 1000` values (all 5 presets supply ≤ 500).
-3. No `HashMap`, `HashSet`, float, or `std::time` dependency (CLAUDE.md determinism).
+3. No `HashMap`, `HashSet`, float, or `std::time` dependency (`AGENTS.md` determinism).
 
-## Test Plan
+## Verification Plan Result
 
-### New/Modified Tests
+### Added Tests
 
 1. `crates/worldwake-core/src/goal_planning_budget.rs` `#[cfg(test)]` block — focused unit tests for preset ordering and serde round-trip (3 tests per "Focused unit tests" above).
 
-### Commands
+### Command Results
 
 1. `cargo test -p worldwake-core goal_planning_budget`
 2. `cargo clippy -p worldwake-core --all-targets -- -D warnings`
-3. `scripts/verify.sh` — final pre-PR
+3. `cargo build --workspace`
+4. `cargo clippy --workspace --all-targets -- -D warnings`
+5. `scripts/verify.sh` — deferred to the final pre-PR harness gate for the whole S146 family.
+
+## Outcome
+
+Completed on 2026-05-17.
+
+- Added the standalone core `GoalPlanningBudget` type with integer-only planning budget limits and `Permille` repair-budget fractions.
+- Added the five S146 preset constants using `Permille::new_unchecked` only for statically-known in-range values.
+- Re-exported the type from `worldwake-core` for later S146 tickets to place it on `GoalSchema` and apply it during search.
+- Added focused unit coverage for preset ordering and bincode round-trip serialization.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core goal_planning_budget`.
+- Passed `cargo clippy -p worldwake-core --all-targets -- -D warnings`.
+- Passed `cargo build --workspace`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Waived `scripts/verify.sh` for this ticket iteration because the harness runs the pre-PR wrapper once the full S146 ticket family is complete.
