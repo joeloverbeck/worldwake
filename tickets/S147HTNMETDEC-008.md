@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — modifies `build_stages` in `crates/worldwake-ai/src/search/strategic.rs:324` to consult the method selector before flat-GOAP fallback. Updates 7 existing inline tests for new parameters.
-**Deps**: 006 (MethodRegistry), 007 (select_method)
+**Deps**: `archive/tickets/S147HTNMETDEC-006.md` (MethodRegistry + explicit method binding templates), 007 (select_method)
 
 ## Problem
 
@@ -79,7 +79,12 @@ fn template_to_stages(
 ) -> Vec<StrategicStage> {
     match template {
         SubgoalTemplate::AcquireCommodity { commodity, .. } => {
-            vec![StrategicStage { kind: StrategicStageKind::Acquire(*commodity), places: vec![] }]
+            resolve_commodity(commodity, goal, belief_view)
+                .map(|commodity| vec![StrategicStage {
+                    kind: StrategicStageKind::Acquire(commodity),
+                    places: vec![],
+                }])
+                .unwrap_or_default()
         }
         SubgoalTemplate::TravelTo(loc_tmpl) => {
             let place = resolve_location(loc_tmpl, goal, belief_view);
@@ -97,6 +102,15 @@ fn resolve_location(
     // Resolve LocationTemplate variants against the belief view + goal context.
     // First-ship: only the variants used by ticket 006's methods need full implementations.
     /* … */
+}
+
+fn resolve_commodity(
+    tmpl: &CommodityTemplate,
+    goal: &GoalOffer,
+    belief_view: &dyn RuntimeBeliefView,
+) -> Option<CommodityKind> {
+    // Resolve GoalCommodity and RecipeInput templates against the goal and belief view.
+    /* ... */
 }
 ```
 

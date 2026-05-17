@@ -29,7 +29,7 @@ pub enum MethodPrecondition {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SubgoalTemplate {
     AcquireCommodity {
-        commodity: CommodityKind,
+        commodity: CommodityTemplate,
         min_quantity: Quantity,
     },
     TravelTo(LocationTemplate),
@@ -71,51 +71,51 @@ impl From<&MethodFailureMode> for MethodFailureKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BeliefPredicate {
     BountyRecordExists {
-        bounty: EntityId,
+        bounty: EntityTemplate,
     },
     BountyExpired {
-        bounty: EntityId,
+        bounty: EntityTemplate,
     },
     TargetLastSeenKnown {
-        target: EntityId,
+        target: EntityTemplate,
     },
     WitnessNamesKnown {
-        violation: EntityId,
+        violation: EntityTemplate,
     },
     InstitutionalRecordBelievedExtant {
-        violation: EntityId,
+        violation: EntityTemplate,
     },
     ResourceSourceKnown {
-        commodity: CommodityKind,
+        commodity: CommodityTemplate,
     },
     SellerKnown {
-        commodity: CommodityKind,
+        commodity: CommodityTemplate,
     },
     OwnedCommodityBelowThreshold {
-        commodity: CommodityKind,
+        commodity: CommodityTemplate,
         threshold: Quantity,
     },
     OwnsInputsForRecipe {
-        recipe_id: u32,
+        recipe: RecipeTemplate,
     },
     EscorteeBelievedSafeAt {
-        escortee: EntityId,
+        escortee: EntityTemplate,
     },
     AllyOrBountyOfficeAvailable,
     TargetBelievedDangerous {
-        target: EntityId,
+        target: EntityTemplate,
     },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EntityCriterion {
-    Target(EntityId),
+    Target(EntityTemplate),
     Workstation(WorkstationTag),
-    ResourceSource(CommodityKind),
-    Seller(CommodityKind),
+    ResourceSource(CommodityTemplate),
+    Seller(CommodityTemplate),
     Witness { topic: TopicTemplate },
-    ViolationEvidence { violation: EntityId },
-    Ledger { institution: EntityId },
+    ViolationEvidence { violation: EntityTemplate },
+    Ledger { institution: EntityTemplate },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -131,20 +131,20 @@ pub enum RoleTag {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LocationTemplate {
-    LastKnownTargetPlace { target: EntityId },
-    NearestSellerOf { commodity: CommodityKind },
+    LastKnownTargetPlace { target: EntityTemplate },
+    NearestSellerOf { commodity: CommodityTemplate },
     AgentHome,
-    BountyIssuerPlace { bounty: EntityId },
-    OfficePlace { institution: EntityId },
-    EscorteeHome { escortee: EntityId },
-    KnownWorkstationFor { recipe_id: u32 },
-    StagingPlaceForConfrontation { target: EntityId },
+    BountyIssuerPlace { bounty: EntityTemplate },
+    OfficePlace { institution: EntityTemplate },
+    EscorteeHome { escortee: EntityTemplate },
+    KnownWorkstationFor { recipe: RecipeTemplate },
+    StagingPlaceForConfrontation { target: EntityTemplate },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TopicTemplate {
-    TargetWhereabouts { target: EntityId },
-    ViolationCircumstances { violation: EntityId },
+    TargetWhereabouts { target: EntityTemplate },
+    ViolationCircumstances { violation: EntityTemplate },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -156,46 +156,78 @@ pub enum PayloadTemplate {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PayloadValueTemplate {
     Trade {
-        commodity: CommodityKind,
+        commodity: CommodityTemplate,
         quantity: Quantity,
     },
     Craft {
-        recipe_id: u32,
+        recipe: RecipeTemplate,
     },
     Attack {
-        target: EntityId,
+        target: EntityTemplate,
     },
     ClaimBounty {
-        bounty: EntityId,
+        bounty: EntityTemplate,
     },
     EscortToSafety {
-        escortee: EntityId,
+        escortee: EntityTemplate,
         destination: LocationTemplate,
     },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ArtifactTemplate {
-    ViolationEvidence { violation: EntityId },
-    Ledger { institution: EntityId },
-    BountyProof { bounty: EntityId, target: EntityId },
+    ViolationEvidence {
+        violation: EntityTemplate,
+    },
+    Ledger {
+        institution: EntityTemplate,
+    },
+    BountyProof {
+        bounty: EntityTemplate,
+        target: EntityTemplate,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ClaimRequirement {
     OfficeAuthority {
-        office: EntityId,
+        office: EntityTemplate,
     },
     ResourceSourceAccess {
-        commodity: CommodityKind,
-        place: EntityId,
+        commodity: CommodityTemplate,
+        place: EntityTemplate,
     },
     BountyIssuance {
-        bounty: EntityId,
+        bounty: EntityTemplate,
     },
     FacilityQueueSlot {
-        facility: EntityId,
+        facility: EntityTemplate,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EntityTemplate {
+    GoalPrimaryEntity,
+    GoalSecondaryEntity,
+    GoalPlace,
+    BountyTarget,
+    Violation,
+    Institution,
+    Escortee,
+    Fixed(EntityId),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CommodityTemplate {
+    GoalCommodity,
+    RecipeInput { recipe: RecipeTemplate, ordinal: u8 },
+    Fixed(CommodityKind),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecipeTemplate {
+    GoalRecipe,
+    Fixed(u32),
 }
 
 #[derive(
@@ -223,7 +255,7 @@ mod tests {
         let cases = [
             (
                 MethodFailureMode::PreconditionLost(BeliefPredicate::TargetBelievedDangerous {
-                    target,
+                    target: EntityTemplate::Fixed(target),
                 }),
                 MethodFailureKind::PreconditionLost,
             ),
@@ -233,15 +265,15 @@ mod tests {
             ),
             (
                 MethodFailureMode::ArtifactNotProduced(ArtifactTemplate::BountyProof {
-                    bounty: entity(4),
-                    target,
+                    bounty: EntityTemplate::Fixed(entity(4)),
+                    target: EntityTemplate::Fixed(target),
                 }),
                 MethodFailureKind::ArtifactNotProduced,
             ),
             (
                 MethodFailureMode::ClaimDenied(ClaimRequirement::ResourceSourceAccess {
-                    commodity: CommodityKind::Grain,
-                    place,
+                    commodity: CommodityTemplate::Fixed(CommodityKind::Grain),
+                    place: EntityTemplate::Fixed(place),
                 }),
                 MethodFailureKind::ClaimDenied,
             ),
@@ -252,7 +284,9 @@ mod tests {
             assert_eq!(MethodFailureKind::from(&mode), expected);
         }
 
-        let _ = ArtifactTemplate::Ledger { institution };
+        let _ = ArtifactTemplate::Ledger {
+            institution: EntityTemplate::Fixed(institution),
+        };
     }
 
     #[test]
@@ -263,26 +297,28 @@ mod tests {
             goal_kind: GoalKindDiscriminant::ProduceCommodity,
             preconditions: vec![
                 MethodPrecondition::BeliefHolds(BeliefPredicate::ResourceSourceKnown {
-                    commodity: CommodityKind::Grain,
+                    commodity: CommodityTemplate::Fixed(CommodityKind::Grain),
                 }),
                 MethodPrecondition::AgentRole(RoleTag::Crafter),
             ],
             subgoals: vec![
                 SubgoalTemplate::AcquireCommodity {
-                    commodity: CommodityKind::Grain,
+                    commodity: CommodityTemplate::Fixed(CommodityKind::Grain),
                     min_quantity: Quantity(2),
                 },
                 SubgoalTemplate::PerformAction(
                     PlannerOpKind::Craft,
-                    PayloadTemplate::Explicit(PayloadValueTemplate::Craft { recipe_id: 1 }),
+                    PayloadTemplate::Explicit(PayloadValueTemplate::Craft {
+                        recipe: RecipeTemplate::Fixed(1),
+                    }),
                 ),
             ],
             expected_artifacts: vec![ArtifactTemplate::BountyProof {
-                bounty: entity(11),
-                target,
+                bounty: EntityTemplate::Fixed(entity(11)),
+                target: EntityTemplate::Fixed(target),
             }],
             required_claims: vec![ClaimRequirement::FacilityQueueSlot {
-                facility: entity(12),
+                facility: EntityTemplate::Fixed(entity(12)),
             }],
             failure_modes: vec![MethodFailureMode::Timeout(50)],
             explanation_template: ExplanationTemplateId(3),

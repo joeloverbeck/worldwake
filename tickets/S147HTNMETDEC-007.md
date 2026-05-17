@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — adds the `MethodSelector` and `select_method()` function. Not yet wired into the planner (ticket 008).
-**Deps**: `archive/tickets/S147HTNMETDEC-001.md` (MotiveSourceDiscriminant), `archive/tickets/S147HTNMETDEC-003.md` (`AgentSchemaContextProfile.disabled_methods`), `archive/tickets/S147HTNMETDEC-004.md` (MethodSchema + supporting types), 006 (MethodRegistry)
+**Deps**: `archive/tickets/S147HTNMETDEC-001.md` (MotiveSourceDiscriminant), `archive/tickets/S147HTNMETDEC-003.md` (`AgentSchemaContextProfile.disabled_methods`), `archive/tickets/S147HTNMETDEC-004.md` (MethodSchema + supporting types), `archive/tickets/S147HTNMETDEC-006.md` (MethodRegistry + explicit method binding templates)
 
 ## Problem
 
@@ -14,11 +14,12 @@ S147 D3 defines the deterministic method-selection algorithm: filter methods by 
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. `MethodRegistry` and `methods_for(goal_kind)` exist after ticket 006 lands at `crates/worldwake-ai/src/htn/registry.rs`. `MotiveSourceDiscriminant` and `From<&MotiveSource>` exist after `archive/tickets/S147HTNMETDEC-001.md` lands at `crates/worldwake-core/src/motive_source.rs`. `MotiveSourceRef` in the same file carries `source: MotiveSource` and `weight: Permille` — both consumed by the ranking formula.
+1. `MethodRegistry` and `methods_for(goal_kind)` exist after `archive/tickets/S147HTNMETDEC-006.md` landed at `crates/worldwake-ai/src/htn/registry.rs`. `MotiveSourceDiscriminant` and `From<&MotiveSource>` exist after `archive/tickets/S147HTNMETDEC-001.md` lands at `crates/worldwake-core/src/motive_source.rs`. `MotiveSourceRef` in the same file carries `source: MotiveSource` and `weight: Permille` — both consumed by the ranking formula.
 2. `RuntimeBeliefView` trait exists at `crates/worldwake-sim/src/belief_view.rs:1588` (verified during S147 reassessment). The selector reads via `&dyn RuntimeBeliefView` — no new trait accessor is required because `BeliefPredicate` variants (from `archive/tickets/S147HTNMETDEC-004.md`) compose existing reads.
 3. `AgentSchemaContextProfile.disabled_methods` exists after `archive/tickets/S147HTNMETDEC-003.md` landed at `crates/worldwake-core/src/agent_schema_context_profile.rs`.
 4. Shared boundary: `select_method()` is the only function the planner integration (ticket 008) calls into the htn module. The function signature is the contract; the planner does not reach into the registry or supporting types directly.
 5. Ranking formula (per spec D3 step 3): integer-only, `Permille × Permille / 1000`, range `0..=1_000_000`, fits `u32`. No float arithmetic — satisfies CLAUDE.md determinism invariant. Tie-break by `MethodSchemaId` ordinal (deterministic via `BTreeMap` iteration order).
+6. Ticket 006 corrected the method-schema contract from concrete runtime IDs to explicit `EntityTemplate`, `CommodityTemplate`, and `RecipeTemplate` bindings. Selector precondition evaluation must resolve those templates against the live `GoalOffer` and belief view before asking whether a predicate holds; it must not compare hidden sentinel IDs.
 
 ## Architecture Check
 
@@ -62,7 +63,7 @@ pub fn select_method<'r>(
         .iter()
         .filter_map(|id| registry.get(*id))
         .filter(|m| !profile.disabled_methods.contains(&m.id))
-        .filter(|m| preconditions_satisfied(m, belief_view))
+        .filter(|m| preconditions_satisfied(m, goal, belief_view))
         .map(|m| (m, motive_score(m, motives)))
         .max_by(|(a, score_a), (b, score_b)| {
             score_a.cmp(score_b)
@@ -71,21 +72,34 @@ pub fn select_method<'r>(
         .map(|(m, _)| m)
 }
 
-fn preconditions_satisfied(method: &MethodSchema, belief_view: &dyn RuntimeBeliefView) -> bool {
-    method.preconditions.iter().all(|p| evaluate_precondition(p, belief_view))
+fn preconditions_satisfied(
+    method: &MethodSchema,
+    goal: &GoalOffer,
+    belief_view: &dyn RuntimeBeliefView,
+) -> bool {
+    method.preconditions.iter().all(|p| evaluate_precondition(p, goal, belief_view))
 }
 
-fn evaluate_precondition(p: &MethodPrecondition, belief_view: &dyn RuntimeBeliefView) -> bool {
+fn evaluate_precondition(
+    p: &MethodPrecondition,
+    goal: &GoalOffer,
+    belief_view: &dyn RuntimeBeliefView,
+) -> bool {
     match p {
-        MethodPrecondition::BeliefHolds(pred) => evaluate_belief_predicate(pred, belief_view),
+        MethodPrecondition::BeliefHolds(pred) => evaluate_belief_predicate(pred, goal, belief_view),
         MethodPrecondition::MotiveSourcePresent(_)   => true,  // checked separately via motives
         MethodPrecondition::AgentRole(_)             => true,  // future: role lookup
         MethodPrecondition::LocationKnown(_)         => true,  // future: location lookup
     }
 }
 
-fn evaluate_belief_predicate(pred: &BeliefPredicate, belief_view: &dyn RuntimeBeliefView) -> bool {
-    // Each BeliefPredicate variant routes to the appropriate RuntimeBeliefView accessor.
+fn evaluate_belief_predicate(
+    pred: &BeliefPredicate,
+    goal: &GoalOffer,
+    belief_view: &dyn RuntimeBeliefView,
+) -> bool {
+    // Resolve EntityTemplate / CommodityTemplate / RecipeTemplate against the
+    // goal and belief view, then route to the appropriate RuntimeBeliefView accessor.
     // First-ship: only the variants used by ticket 006's methods need full implementations;
     // others may return false (conservative — method is filtered out).
     match pred {

@@ -116,7 +116,7 @@ pub enum MethodPrecondition {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SubgoalTemplate {
-    AcquireCommodity { commodity: CommodityKind, min_quantity: Quantity },
+    AcquireCommodity { commodity: CommodityTemplate, min_quantity: Quantity },
     TravelTo(LocationTemplate),
     ObserveTarget(EntityCriterion),
     AskWitness(TopicTemplate),
@@ -148,30 +148,30 @@ pub enum MethodFailureMode {
 /// first-ship methods require; new variants are added as methods need them.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BeliefPredicate {
-    BountyRecordExists { bounty: EntityId },
-    BountyExpired { bounty: EntityId },
-    TargetLastSeenKnown { target: EntityId },
-    WitnessNamesKnown { violation: EntityId },
-    InstitutionalRecordBelievedExtant { violation: EntityId },
-    ResourceSourceKnown { commodity: CommodityKind },
-    SellerKnown { commodity: CommodityKind },
-    OwnedCommodityBelowThreshold { commodity: CommodityKind, threshold: Quantity },
-    OwnsInputsForRecipe { recipe_id: u32 },
-    EscorteeBelievedSafeAt { escortee: EntityId },
+    BountyRecordExists { bounty: EntityTemplate },
+    BountyExpired { bounty: EntityTemplate },
+    TargetLastSeenKnown { target: EntityTemplate },
+    WitnessNamesKnown { violation: EntityTemplate },
+    InstitutionalRecordBelievedExtant { violation: EntityTemplate },
+    ResourceSourceKnown { commodity: CommodityTemplate },
+    SellerKnown { commodity: CommodityTemplate },
+    OwnedCommodityBelowThreshold { commodity: CommodityTemplate, threshold: Quantity },
+    OwnsInputsForRecipe { recipe: RecipeTemplate },
+    EscorteeBelievedSafeAt { escortee: EntityTemplate },
     AllyOrBountyOfficeAvailable,
-    TargetBelievedDangerous { target: EntityId },
+    TargetBelievedDangerous { target: EntityTemplate },
 }
 
 /// Identifies a kind of entity by lawful, perceivable properties.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EntityCriterion {
-    Target(EntityId),
+    Target(EntityTemplate),
     Workstation(WorkstationTag),
-    ResourceSource(CommodityKind),
-    Seller(CommodityKind),
+    ResourceSource(CommodityTemplate),
+    Seller(CommodityTemplate),
     Witness { topic: TopicTemplate },
-    ViolationEvidence { violation: EntityId },
-    Ledger { institution: EntityId },
+    ViolationEvidence { violation: EntityTemplate },
+    Ledger { institution: EntityTemplate },
 }
 
 /// Coarse role discriminator for method enablement preconditions; mirrors
@@ -192,21 +192,21 @@ pub enum RoleTag {
 /// Names a location relative to the agent's beliefs and the method's context.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LocationTemplate {
-    LastKnownTargetPlace { target: EntityId },
-    NearestSellerOf { commodity: CommodityKind },
+    LastKnownTargetPlace { target: EntityTemplate },
+    NearestSellerOf { commodity: CommodityTemplate },
     AgentHome,
-    BountyIssuerPlace { bounty: EntityId },
-    OfficePlace { institution: EntityId },
-    EscorteeHome { escortee: EntityId },
-    KnownWorkstationFor { recipe_id: u32 },
-    StagingPlaceForConfrontation { target: EntityId },
+    BountyIssuerPlace { bounty: EntityTemplate },
+    OfficePlace { institution: EntityTemplate },
+    EscorteeHome { escortee: EntityTemplate },
+    KnownWorkstationFor { recipe: RecipeTemplate },
+    StagingPlaceForConfrontation { target: EntityTemplate },
 }
 
 /// Witness-ask topic template.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TopicTemplate {
-    TargetWhereabouts { target: EntityId },
-    ViolationCircumstances { violation: EntityId },
+    TargetWhereabouts { target: EntityTemplate },
+    ViolationCircumstances { violation: EntityTemplate },
 }
 
 /// Payload synthesis strategy for a templated `PerformAction` subgoal. The
@@ -220,20 +220,20 @@ pub enum PayloadTemplate {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PayloadValueTemplate {
-    Trade { commodity: CommodityKind, quantity: Quantity },
-    Craft { recipe_id: u32 },
-    Attack { target: EntityId },
-    ClaimBounty { bounty: EntityId },
-    EscortToSafety { escortee: EntityId, destination: LocationTemplate },
+    Trade { commodity: CommodityTemplate, quantity: Quantity },
+    Craft { recipe: RecipeTemplate },
+    Attack { target: EntityTemplate },
+    ClaimBounty { bounty: EntityTemplate },
+    EscortToSafety { escortee: EntityTemplate, destination: LocationTemplate },
 }
 
 /// References a class of evidence artifact the method expects to inspect or
 /// produce. Each variant resolves through perception against world artifacts.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ArtifactTemplate {
-    ViolationEvidence { violation: EntityId },
-    Ledger { institution: EntityId },
-    BountyProof { bounty: EntityId, target: EntityId },
+    ViolationEvidence { violation: EntityTemplate },
+    Ledger { institution: EntityTemplate },
+    BountyProof { bounty: EntityTemplate, target: EntityTemplate },
 }
 
 /// Names a coordination requirement (queue slot, office authority, resource
@@ -241,10 +241,38 @@ pub enum ArtifactTemplate {
 /// opportunity compiler at runtime.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ClaimRequirement {
-    OfficeAuthority { office: EntityId },
-    ResourceSourceAccess { commodity: CommodityKind, place: EntityId },
-    BountyIssuance { bounty: EntityId },
-    FacilityQueueSlot { facility: EntityId },
+    OfficeAuthority { office: EntityTemplate },
+    ResourceSourceAccess { commodity: CommodityTemplate, place: EntityTemplate },
+    BountyIssuance { bounty: EntityTemplate },
+    FacilityQueueSlot { facility: EntityTemplate },
+}
+
+/// Symbolic entity binding used by build-time methods. The selector/planner
+/// resolves these against the runtime goal, belief view, or a concrete fixed
+/// entity. This avoids hidden sentinel `EntityId`s in method definitions.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EntityTemplate {
+    GoalPrimaryEntity,
+    GoalSecondaryEntity,
+    GoalPlace,
+    BountyTarget,
+    Violation,
+    Institution,
+    Escortee,
+    Fixed(EntityId),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CommodityTemplate {
+    GoalCommodity,
+    RecipeInput { recipe: RecipeTemplate, ordinal: u8 },
+    Fixed(CommodityKind),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecipeTemplate {
+    GoalRecipe,
+    Fixed(u32),
 }
 
 /// Build-time identifier for an explanation template string. The actual
@@ -255,7 +283,7 @@ pub enum ClaimRequirement {
 pub struct ExplanationTemplateId(pub u32);
 ```
 
-`Permille` for all weight values. No floats. Every embedded type derives or composes from `Copy`/`Clone`/`Eq` as the outer `MethodSchema` requires (verified via the `Hash` requirement on `MotiveSourceDiscriminant` and `GoalKindDiscriminant` per D12).
+`Permille` for all weight values. No floats. Every embedded type derives or composes from `Copy`/`Clone`/`Eq` as the outer `MethodSchema` requires (verified via the `Hash` requirement on `MotiveSourceDiscriminant` and `GoalKindDiscriminant` per D12). Runtime-specific bounty, target, violation, institution, escortee, commodity, and recipe values are represented as explicit template bindings rather than concrete sentinel IDs; selector and planner integration resolve them from the live goal and belief view.
 
 **Note on supporting type scope**: The variant lists above cover the first-ship methods (D2) exhaustively. Future methods may add variants; each addition is a deliverable on the spec that introduces the new method.
 
@@ -269,9 +297,9 @@ Each method is shipped as a `MethodSchema` entry in `build_method_registry()` (D
 - `FulfillBountyGroupHunt`: preconditions — `BeliefHolds(TargetBelievedDangerous { target })`, `BeliefHolds(AllyOrBountyOfficeAvailable)`. Subgoals — `PerformAction(DeclareSupport, ...)` (recruit signal via the existing `PlannerOpKind::DeclareSupport` variant) → `TravelTo(StagingPlaceForConfrontation { target })` → confront. Motive bias toward `MotiveSourceDiscriminant::Loyalty` (high weight). **Default denylist**: most non-hunter, non-guard roles include `FulfillBountyGroupHunt` in their `disabled_methods` set (see D7 universal-component note).
 
 **`ProduceCommodity` methods**:
-- `ProduceFromOwnedStock`: precondition — `BeliefHolds(OwnsInputsForRecipe { recipe_id })`, `BeliefHolds(KnownWorkstationFor { recipe_id })` and agent at workstation. Subgoals — `PerformAction(Craft, Explicit(Craft { recipe_id }))`.
-- `ProduceWithGather`: precondition — agent missing some inputs but `BeliefHolds(ResourceSourceKnown { commodity })` for each missing input. Subgoals — for each missing input: `AcquireCommodity { commodity, min_quantity }` → `TravelTo(KnownWorkstationFor { recipe_id })` → `PerformAction(Craft, Explicit(Craft { recipe_id }))`.
-- `ProduceWithPurchase`: precondition — agent missing inputs but `BeliefHolds(SellerKnown { commodity })`. Subgoals — `TravelTo(NearestSellerOf { commodity })` → `PerformAction(Trade, Explicit(Trade { commodity, quantity }))` → `TravelTo(KnownWorkstationFor { recipe_id })` → `PerformAction(Craft, Explicit(Craft { recipe_id }))`.
+- `ProduceFromOwnedStock`: precondition — `BeliefHolds(OwnsInputsForRecipe { recipe: GoalRecipe })`, `LocationKnown(Workstation(...))`, and agent at workstation. Subgoals — `PerformAction(Craft, Explicit(Craft { recipe: GoalRecipe }))`.
+- `ProduceWithGather`: precondition — agent missing some inputs but `BeliefHolds(ResourceSourceKnown { commodity: RecipeInput { recipe: GoalRecipe, ordinal: 0 } })` for the first unresolved input. Subgoals — `AcquireCommodity { commodity: RecipeInput { recipe: GoalRecipe, ordinal: 0 }, min_quantity }` → `TravelTo(KnownWorkstationFor { recipe: GoalRecipe })` → `PerformAction(Craft, Explicit(Craft { recipe: GoalRecipe }))`.
+- `ProduceWithPurchase`: precondition — agent missing inputs but `BeliefHolds(SellerKnown { commodity: RecipeInput { recipe: GoalRecipe, ordinal: 0 } })`. Subgoals — `TravelTo(NearestSellerOf { commodity: RecipeInput { recipe: GoalRecipe, ordinal: 0 } })` → `PerformAction(Trade, Explicit(Trade { commodity, quantity }))` → `TravelTo(KnownWorkstationFor { recipe: GoalRecipe })` → `PerformAction(Craft, Explicit(Craft { recipe: GoalRecipe }))`.
 
 **`RestockCommodity` methods**:
 - `RestockFromHarvest`: precondition — `BeliefHolds(OwnedCommodityBelowThreshold { commodity, threshold })`, `BeliefHolds(ResourceSourceKnown { commodity })`. Subgoals — `AcquireCommodity { commodity, min_quantity }` from source.
@@ -332,7 +360,7 @@ fn build_stages(
 }
 ```
 
-When a method is chosen, its subgoals expand into `StrategicStage`s via the existing decomposition machinery — `template_to_stages` is a new helper in `htn/selector.rs` that maps each `SubgoalTemplate` to one or more `StrategicStage` values whose `kind` is `Goal` or `Acquire(CommodityKind)`. The strategic search iterates over these stages as today. Tactical search remains unchanged. Caller signature updates (passing `registry`, `profile`, `belief_view`, `motives`) propagate to the existing call site at `strategic.rs:119`.
+When a method is chosen, its subgoals expand into `StrategicStage`s via the existing decomposition machinery — `template_to_stages` is a new helper in `htn/selector.rs` that first resolves `EntityTemplate`, `CommodityTemplate`, and `RecipeTemplate` bindings against the live goal and belief view, then maps each `SubgoalTemplate` to one or more `StrategicStage` values whose `kind` is `Goal` or `Acquire(CommodityKind)`. The strategic search iterates over these stages as today. Tactical search remains unchanged. Caller signature updates (passing `registry`, `profile`, `belief_view`, `motives`) propagate to the existing call site at `strategic.rs:119`.
 
 ### D5: `MethodPlanAttemptTrace` and `PlanAttemptTrace.method_trace`
 
