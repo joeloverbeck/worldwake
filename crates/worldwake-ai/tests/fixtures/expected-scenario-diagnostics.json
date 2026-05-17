@@ -5294,7 +5294,18 @@
         "count": 157
       }
     ],
-    "heuristic_helpful_action_hit_rate": 146
+    "heuristic_helpful_action_hit_rate": 146,
+    "method_usage": [
+      {
+        "method_id": null,
+        "counts": {
+          "attempts": 2369,
+          "selected_count": 0,
+          "fallback_count": 2369,
+          "failure_count": 0
+        }
+      }
+    ]
   },
   "revalidation_repair": {
     "invalidation_reasons": [
