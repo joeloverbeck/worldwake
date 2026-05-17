@@ -314,7 +314,7 @@ When all originating-spec tickets are completed, reviewed, archived, and committ
 6. Sweep active tickets, docs, specs, `specs/IMPLEMENTATION-ORDER.md`, same-family archived tickets, and same-seam triage/report docs for stale active-spec path references. Repair actionable references to the archived path, including archived ticket `Deps`, current proof commands, and direct implementation-reference snippets that now point at the archived spec. Leave historical references only when clearly harmless or explicitly labelled as historical intake context.
 7. Run hygiene over the spec archive move and reference repairs.
 8. Commit the spec archive as its own finalization commit unless it is already included in the last ticket-family commit for a clear reason.
-9. Update `.codex/run-state/implement-spec-tickets.json` with `archived_spec`, `next_target: null`, an empty queue, `blocked: false`, the final commit sha, branch/worktree metadata, and clean dirty-state classification.
+9. Update `.codex/run-state/implement-spec-tickets.json` with `archived_spec`, `next_target: null`, an empty queue, `blocked: false`, the final commit sha, branch/worktree metadata, terminal child-audit markers, and clean dirty-state classification. A completed run must not leave any current child-audit marker as `pending`; copy the last completed ticket's markers into `last_implement_ticket_audit` / `last_post_ticket_review_audit` when useful, and set current markers to `not_required` or another truthful terminal value because there is no active `next_target`.
 
 If `git mv`, `git add`, or `git commit` fails during final archival because Codex cannot write the git index or reports a sandbox/read-only filesystem error, rerun the same non-destructive command with the required approval/escalation and record the first failure plus retry result. Do not widen the staged set while retrying.
 
@@ -324,8 +324,9 @@ After the final archive commit and any required final state-file persistence com
 
 1. Refresh `git status --short`. Stop if uncommitted owned changes remain.
 2. Confirm the current branch matches the recorded `current_branch` and is not the original starting branch unless the user explicitly approved using that branch for the harness work.
-3. Push the recorded current branch to the configured remote.
-4. Report the branch name, pushed remote, commits created by the harness, archived spec path, archived ticket paths, and any follow-up tickets left active.
+3. Run the repo's pre-PR verification gate before pushing: `./scripts/verify.sh`. On WSL2, VMs, or other space-constrained disks, `./scripts/verify-space-conscious.sh` is an acceptable substitute because `AGENTS.md` defines it as the same gate with reduced artifact pressure. If neither command can be run, stop before pushing unless the user explicitly approves a skip; record the skip reason in the final report and state file.
+4. Push the recorded current branch to the configured remote.
+5. Report the branch name, pushed remote, commits created by the harness, archived spec path, archived ticket paths, any follow-up tickets left active, and the pre-push verification command/result or explicitly approved skip.
 
 If branch setup during intake or push during finalization fails because Codex cannot write the git ref in the sandbox, cannot resolve the remote host, or otherwise hits a clear sandbox/network restriction, rerun the same branch/push command with the required approval or escalation. Record both the first failure and the successful retry, or the remaining blocker if escalation still fails.
 
