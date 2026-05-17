@@ -37,7 +37,7 @@ Scenarios: 5
 
 ### Scenario 405: S141 Motive Sources Pain Contribution Dominates Hunger
 
-- Source: `golden_motive_sources.rs:188`
+- Source: `golden_motive_sources.rs:190`
 - Systems: AI
 - GoalKinds: TreatWounds, ConsumeOwnedCommodity
 - ActionDomains: Medical, Needs
@@ -52,7 +52,7 @@ Scenarios: 5
 
 ### Scenario 406: S141 Motive Sources Greed Weight Variation Is Profile State
 
-- Source: `golden_motive_sources.rs:234`
+- Source: `golden_motive_sources.rs:236`
 - Systems: AI
 - GoalKinds: PostNotice
 - ActionDomains: DecisionHistory
@@ -67,7 +67,7 @@ Scenarios: 5
 
 ### Scenario 407: S141 Motive Sources Empty Offer Assertion
 
-- Source: `golden_motive_sources.rs:266`
+- Source: `golden_motive_sources.rs:268`
 - Systems: AI
 - GoalKinds: Sleep
 - ActionDomains: DecisionHistory

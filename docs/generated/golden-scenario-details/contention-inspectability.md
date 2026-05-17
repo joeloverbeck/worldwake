@@ -7,7 +7,7 @@ Scenarios: 5
 
 ### Scenario 393: Single-Slot Orchard Emits Arrival-Time Contention Payload
 
-- Source: `golden_contention_inspectability.rs:333`
+- Source: `golden_contention_inspectability.rs:334`
 - Primary tests: `golden_three_agents_single_slot_orchard_emit_per_grant`
 - Replay tests: None
 - All tests: `golden_three_agents_single_slot_orchard_emit_per_grant`
@@ -20,7 +20,7 @@ Scenarios: 5
 
 ### Scenario 394: Survival Contested Emits Resource And Facility Contention
 
-- Source: `golden_contention_inspectability.rs:398`
+- Source: `golden_contention_inspectability.rs:399`
 - Primary tests: `golden_survival_contested_multi_substrate_emission`
 - Replay tests: None
 - All tests: `golden_survival_contested_multi_substrate_emission`
@@ -33,7 +33,7 @@ Scenarios: 5
 
 ### Scenario 395: Well Facility Queue Admission Emits Contention Payload
 
-- Source: `golden_contention_inspectability.rs:448`
+- Source: `golden_contention_inspectability.rs:449`
 - Primary tests: `golden_well_facility_queue_admission`
 - Replay tests: None
 - All tests: `golden_well_facility_queue_admission`
@@ -46,7 +46,7 @@ Scenarios: 5
 
 ### Scenario 396: Reservation Conflict Backreference Resolves To Event Payload
 
-- Source: `golden_contention_inspectability.rs:515`
+- Source: `golden_contention_inspectability.rs:516`
 - Primary tests: `golden_blocker_memory_attribution_payload_resolves`
 - Replay tests: None
 - All tests: `golden_blocker_memory_attribution_payload_resolves`
@@ -59,7 +59,7 @@ Scenarios: 5
 
 ### Scenario 397: Survival Contested Contention Events Replay Deterministically
 
-- Source: `golden_contention_inspectability.rs:562`
+- Source: `golden_contention_inspectability.rs:563`
 - Primary tests: `golden_survival_contested_replay_parity`
 - Replay tests: None
 - All tests: `golden_survival_contested_replay_parity`
