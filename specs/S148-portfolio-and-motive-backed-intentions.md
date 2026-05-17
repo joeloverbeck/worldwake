@@ -6,13 +6,25 @@
 
 Folds in PR-3 (Portfolio Slot Expansion replacing top-2 candidates) and PR-1 (BDI deliberation shell — motive-backed intentions) from `reports/ai-architecture-improvements.md`.
 
-S112 (Portfolio Planning, archived) added three slots — Survival, Commitment, Economic — and `max_candidates_to_plan = 2` (`crates/worldwake-ai/src/lib.rs:181`, `crates/worldwake-core/src/cognitive_profile.rs:126`) is still the default planning cap. The assessment identifies a real gap: with hundreds of plausible motives in a dense world, three slots collapse safety/care/duty/social/exploration motives into a single Commitment-or-Economic bucket. Agents miss obligations, fail to investigate suspicions, neglect epistemic work, and skip opportunistic local wins.
+S112 (Portfolio Planning, archived) introduced the three-slot portfolio — `Survival`, `Commitment`, `Economic` — currently defined as `SlotKind` at `crates/worldwake-ai/src/agent_tick/portfolio.rs:11` and weighted via `PortfolioSlotWeights` at `crates/worldwake-core/src/cognitive_profile.rs:5` (embedded as `CognitiveProfile.slot_weights`). `CognitiveProfile.max_candidates_to_plan = 2` (`cognitive_profile.rs:25`/`:132`) is still the default planning cap. The existing weighted-slot machinery `Portfolio::plausible_slots_by_score()` at `portfolio.rs:80` already produces a score-ordered slot list, so S148 extends *that* mechanism rather than introducing a parallel one. The assessment identifies a real gap: with hundreds of plausible motives in a dense world, three slots collapse safety/care/duty/social/opportunity motives into a single Commitment-or-Economic bucket. Agents miss obligations, fail to investigate suspicions, neglect epistemic work, and skip opportunistic local wins.
 
-S148 expands the portfolio to **seven slots** matching the assessment's motive-class taxonomy: `Survival`, `ImmediateSafety`, `InjuryOrCare`, `ObligationDuty`, `EconomicMaintenance`, `SocialEpistemic`, `OpportunisticLocal`. The legacy `Commitment` and `Economic` slots from S112 fold into `ObligationDuty` and `EconomicMaintenance` respectively, so the existing portfolio code path continues to work for the slots that still exist. Slot weighting uses a new universal `PortfolioWeightsProfile` per agent. The plan-attempt cap rises to `max_candidates_to_plan = 6` by default with operating-mode adjustments: emergency mode (escape/safety motives present) drops to 4; idle mode (no critical needs) stays at 6 across diverse slots.
+S148 expands the portfolio to **five slots** derived directly from the real `MotiveSourceDiscriminant` taxonomy at `crates/worldwake-core/src/motive_source.rs:25`:
 
-PR-1's BDI extension is folded in by giving `IntentionFrame` (`crates/worldwake-core/src/intention_frame.rs:138`) the missing fields the assessment flags: `motive_refs: Vec<MotiveSourceRef>` (backed by S141), `resume_conditions: Vec<ResumeCondition>`, `abandon_conditions: Vec<AbandonCondition>`, `explicit_claims: Vec<EntityId>` (artifact references — queue tickets, reservations, contracts), and `causal_links: Vec<EventId>` (which events produced this intention). The agenda manager (S115) already handles `Suspended/Pending` lifecycles; S148 adds the *why* and the *what holds it* alongside.
+| New SlotKind variant | Source motives (`MotiveSourceDiscriminant`) |
+|----------------------|---------------------------------------------|
+| `NeedSurvival` | `NeedPressure` |
+| `PainCare` | `Pain` |
+| `ObligationDuty` | `OfficeDuty`, `Loyalty` |
+| `EconomicOpportunity` | `Greed` |
+| `SocialMotive` | `Shame`, `Revenge` |
 
-This spec consumes substrate from S141 (motive sources), archived S146 (per-goal extractor registry and budgets), and S115 (agenda manager) without changing their identity.
+The legacy `Commitment` folds into `ObligationDuty`; the legacy `Economic` folds into `EconomicOpportunity`; the legacy `Survival` becomes `NeedSurvival` (renamed for symmetry). No motive-source taxonomy changes (S141 untouched). Per FND-28 the old enum variants are removed, not aliased.
+
+Slot weighting moves to a new universal component `PortfolioWeightsProfile`. The legacy `PortfolioSlotWeights` struct embedded in `CognitiveProfile` is removed in the same migration so two live authoritative weights stores do not coexist. The plan-attempt cap rises to `max_plans_normal = 5` by default; emergency operating mode drops to 3; idle stays at 5. The legacy `CognitiveProfile.max_candidates_to_plan` and the parallel `ReasoningProfile.max_candidates_to_plan` at `crates/worldwake-ai/src/lib.rs:174` are both removed; their reads migrate to `PortfolioWeightsProfile.max_plans_<mode>`.
+
+PR-1's BDI extension enriches `IntentionFrame` (`crates/worldwake-core/src/intention_frame.rs:138`) with the fields the assessment flags: `motive_refs: Vec<MotiveSourceRef>` (backed by S141 at `motive_source.rs:57`), `resume_conditions: Vec<IntentionResumeCondition>`, `abandon_conditions: Vec<IntentionAbandonCondition>`, `explicit_claims: Vec<EntityId>` (artifact references — queue grants, sale listings, social artifacts), and `causal_links: Vec<EventId>` (which events produced this intention). Lifecycle transitions for `IntentionFrame.state` already run in `crates/worldwake-ai/src/agent_tick/frame.rs` (2381 lines), which consumes `patience_limit` at line 547+; S148 adds the *why* (motives) and *what holds the intention together* (resume/abandon conditions) alongside, and threads the new evaluator into the same module. The S115 agenda manager (`crates/worldwake-ai/src/agenda_manager.rs::tick_agenda`) continues to handle candidate revival.
+
+This spec consumes substrate from archived S141 (motive sources), S146 (per-goal extractor registry and budgets), S115 (agenda manager), and S140 (artifact lifecycle) without changing their identity.
 
 ## Phase and Status
 
@@ -20,100 +32,92 @@ Phase 12: AI Architecture Evolution — Draft
 
 ## Crates
 
-- `worldwake-ai` — extends `agent_tick/portfolio.rs` with new `SlotKind` variants and assembly logic; extends agenda manager to honor enriched intention frames.
-- `worldwake-core` — extends `IntentionFrame` with the BDI fields; adds `PortfolioWeightsProfile` universal component; adds `OperatingMode` enum.
-- `worldwake-sim` — no change.
+- `worldwake-ai` — extends `agent_tick/portfolio.rs` with the new `SlotKind` variants, the per-tick `OperatingMode` derivation, and the slot-assembly extension that composes with the existing `plausible_slots_by_score`; extends `agent_tick/frame.rs` with the resume/abandon condition evaluator; stores derived `OperatingMode` on `AgentDecisionRuntime` (`decision_runtime.rs:153`).
+- `worldwake-core` — adds the new universal `PortfolioWeightsProfile` component; removes `PortfolioSlotWeights` from `CognitiveProfile`; adds `OperatingMode` enum; extends `IntentionFrame` with the five new fields; adds core-residing `IntentionResumeCondition` and `IntentionAbandonCondition` enums; adds the `MotiveSourceSlotMap` mapping table.
+- `worldwake-sim` — extends `GoalBeliefView` with a `portfolio_weights_profile` accessor (per the New Component Read by AI Crate pattern; profile components consumed by the AI crate require belief-view forwarding).
 - `worldwake-systems` — no change.
-- `worldwake-cli` — observer renders the per-slot winners and the motive-backed intention details.
+- `worldwake-cli` — `scenario/types.rs::AgentDef` gains a `portfolio_weights_profile: Option<PortfolioWeightsProfile>` field; `scenario/mod.rs::spawn_agent()` adds the `set_component_portfolio_weights_profile` call using the canonical `unwrap_or_default()` pattern; `bin/observer.rs` Decision History section renders the per-slot winner, the contributing motive sources, the resume/abandon conditions, and the explicit claims.
 
 ## Dependencies
 
-- S112 (Portfolio Planning, archived, hard dep) — provides the slot-based portfolio infrastructure being extended.
-- S115 (Agenda Manager, archived, hard dep) — provides the lifecycle (`committed/pending/suspended`) the enriched `IntentionFrame` plugs into.
-- S141 (Motive Source Ledger, archived, hard dep) — provides `MotiveSourceRef` for `IntentionFrame.motive_refs`.
-- S140 (Multi-Axis Artifact Lifecycle, archived) — `explicit_claims` references existing artifacts; lifecycle-aware reference invalidation.
-- S146 (Goal Schema, archived at `archive/specs/S146-goal-schema-and-per-goal-budgets.md`, hard dep) — provides the `GoalSchema` registry substrate; this S148 spec adds the motive-source-to-slot mapping consumed by portfolio assembly.
+- S112 (Portfolio Planning, archived at `archive/specs/S112-portfolio-planning-three-slots.md`, hard dep) — provides the slot-based portfolio infrastructure (`SlotKind`, `Portfolio::plausible_slots_by_score`, `PortfolioSlotWeights`) being extended.
+- S115 (Agenda Manager, archived, hard dep) — `agenda_manager.rs::tick_agenda` handles candidate revival; the resume/abandon evaluator in S148 D10 cooperates with it without replacing it.
+- S141 (Motive Source Ledger, archived, hard dep) — provides `MotiveSource`, `MotiveSourceDiscriminant`, `MotiveSourceRef` at `motive_source.rs`. The five-slot taxonomy maps directly onto the existing `MotiveSourceDiscriminant` variants; no motive-source enum changes.
+- S140 (Multi-Axis Artifact Lifecycle, archived, hard dep) — `explicit_claims` references existing artifact entities; `IntentionAbandonCondition::ArtifactDestroyed` and `IntentionAbandonCondition::ArtifactLegalEffectLost` consume the lifecycle states declared at `social_artifact.rs:86-108`.
+- S146 (Goal Schema, archived at `archive/specs/S146-goal-schema-and-per-goal-budgets.md`, hard dep) — provides the `GoalSchema` registry substrate; this spec attaches the `MotiveSourceSlotMap` table alongside.
+- S122 (Frame Assumptions) — already provides `FrameAssumption` at `intention_frame.rs:62`, referenced by `IntentionAbandonCondition::AssumptionPermanentlyBroken`.
+- S123 (Goal Ranking) — `compare_ranked_goals` at `ranking.rs:3067` is reused unchanged.
+- S143 (BeliefView) — extended with `portfolio_weights_profile` accessor on `GoalBeliefView`.
+- S144 (Scenario Diagnostics) — `GoalPressureMetrics.candidates_emitted_by_slot: BTreeMap<SlotKind, u64>` at `scenario_diagnostics/mod.rs:27` already keys by `SlotKind`; the rekeyed five-variant set propagates automatically.
 
 ## Design Goals
 
-1. **Slot taxonomy matches motive taxonomy.** Each `MotiveSource` variant maps to a deterministic `SlotKind` through the S148 motive-source-to-slot mapping attached to the archived S146 `GoalSchema` registry substrate. Survival motives → Survival slot; ImmediateSafety motives → ImmediateSafety slot; Loyalty / OfficeDuty / Revenge → ObligationDuty; Greed → EconomicMaintenance; SocialEpistemic motives → SocialEpistemic; opportunity-driven Local motives → OpportunisticLocal.
-2. **Operating modes adjust slot enablement, not slot identity.** Emergency mode disables OpportunisticLocal and EconomicMaintenance; idle mode enables all seven.
-3. **Plan-attempt cap rises with breadth.** Default `max_candidates_to_plan = 6`. Single-slot fallback (one winner per slot) keeps planning bounded.
+1. **Slot taxonomy mirrors the real motive taxonomy.** Each `MotiveSourceDiscriminant` variant maps to a deterministic `SlotKind` through the new `MotiveSourceSlotMap` (D4). The mapping is total: every present variant of `MotiveSourceDiscriminant` has a slot. Aggregations (OfficeDuty + Loyalty → ObligationDuty; Shame + Revenge → SocialMotive) are explicit table entries, not implicit collapses.
+2. **Operating modes adjust slot enablement through weights, not slot identity.** Emergency mode sets `EconomicOpportunity` and `SocialMotive` weights to `Permille::ZERO` for the tick; the slots remain in the taxonomy and continue to receive emitted candidates. Idle and Normal modes use the agent's configured weights unchanged.
+3. **Plan-attempt cap rises with breadth.** `PortfolioWeightsProfile.max_plans_normal = 5` by default; `max_plans_emergency = 3`; `max_plans_idle = 5`. Single-slot fallback (one winner per slot via `plausible_slots_by_score`) keeps planning bounded.
 4. **Intentions carry their full evidence record.** `IntentionFrame.motive_refs`, `resume_conditions`, `abandon_conditions`, `explicit_claims`, `causal_links` make every commitment traceable.
-5. **No omniscient resolution.** Slot assembly reads only the agent's belief view, motive ledger, and known opportunities.
-6. **Deterministic.** Slot tie-breaking is by `MotiveSourceRef.introduced_tick` ascending, then `GoalKindDiscriminant` ordinal.
+5. **No omniscient resolution.** Slot assembly reads only the agent's belief view (`GoalBeliefView` accessor surface), the per-agent motive ledger via `AgendaEntry.motive_source_contributions`, and known opportunities surfaced through candidate generation.
+6. **Deterministic.** Slot tie-breaking is by `MotiveSourceRef.introduced_tick` ascending, then `MotiveSourceDiscriminant` ordinal. The "primary motive" for a candidate carrying multiple `motive_source_contributions` is the highest-weight contribution; tie-break by `introduced_tick` ascending.
+7. **Single authoritative weights store (FND-28).** `PortfolioSlotWeights` is removed from `CognitiveProfile`; agent weights live exclusively on `PortfolioWeightsProfile`.
 
 ## Non-Goals
 
 - **No automatic motive-record generation.** Motives are introduced through `MotiveSourceRef` (S141); S148 does not change how motives enter the ledger.
-- **No new commitment mechanism.** S115's agenda manager remains the lifecycle authority; S148 enriches the carried data only.
+- **No new commitment mechanism.** S115's agenda manager remains the candidate-revival authority; `frame.rs` remains the `FrameState` lifecycle authority; S148 enriches the carried data and adds the resume/abandon evaluator inside the existing `frame.rs` module.
 - **No method dispatch.** Methods are S147's scope.
+- **No new motive-source variants.** S141's `MotiveSource` enum is unchanged; S148 maps the existing seven discriminants onto five slots.
+- **No new artifact types.** `IntentionFrame.explicit_claims` references existing entities (`ContentionGrant`-bearing facility queues, `SaleListing`-bearing lots, `ArtifactHeader`-bearing social artifacts). S148 does not introduce `ArtifactBoundary` or `OfferRecord` types.
 - **No real-time slot mutation.** Slot composition is recomputed each tick; no incremental cache.
-- **No "ActiveIntention" slot above the seven.** The assessment proposes a special ActiveIntention slot; S148 represents this via `IntentionFrame.adopted_tick` and agenda-manager continuation logic, not as a distinct slot.
+- **No "ActiveIntention" slot above the five.** The assessment proposes a special ActiveIntention slot; S148 represents this via `IntentionFrame.established_at` and `frame.rs`'s existing continuation logic, not as a distinct slot.
 
 ## FOUNDATIONS Alignment
 
 | Principle | How Satisfied |
 |-----------|---------------|
-| FND-3 (Concrete State Over Abstract Scores) | Slot assignment derives from concrete `MotiveSource` types; no abstract "priority score" decides slot membership. |
-| FND-20 (Resource-Bounded Practical Reasoning Over Scripts) | Seven slots × bounded per-slot winners × per-goal planning budgets is exactly resource-bounded reasoning, not script execution. |
-| FND-21 (Intentions Are Revisable Commitments) | Enriched `IntentionFrame` carries `assumptions` (S122), `resume_conditions`, and `abandon_conditions` — every commitment is explicitly revisable. |
-| FND-22 (Agent Diversity Through Concrete Variation) | `PortfolioWeightsProfile` per-agent variation produces different slot priorities. |
-| FND-26 (Systems Interact Through State, Not Through Each Other) | Slot assembly reads existing belief and motive state; no cross-system command. |
-| FND-28 (No Backward Compatibility in Live Authority Paths) | S112's `Commitment` and `Economic` slot names fold into `ObligationDuty` and `EconomicMaintenance`; the old enum variants are removed, not aliased. |
+| FND-3 (Concrete State Over Abstract Scores) | Slot assignment derives from concrete `MotiveSourceDiscriminant` variants via `MotiveSourceSlotMap`; no abstract "priority score" decides slot membership. |
+| FND-7 (Locality) | Slot assembly reads `AgendaEntry.motive_source_contributions` and `PortfolioWeightsProfile` through the per-agent belief view; no global state queries. |
+| FND-14 / 14A (World State ≠ Belief State) | `PortfolioWeightsProfile` is accessed via a new `GoalBeliefView` accessor (per the New Component Read by AI Crate pattern); no direct world reads. |
+| FND-20 (Resource-Bounded Practical Reasoning Over Scripts) | Five slots × bounded per-slot winners × per-goal planning budgets (S146) × OperatingMode-modulated weights is resource-bounded reasoning, not script execution. |
+| FND-21 (Intentions Are Revisable Commitments) | Enriched `IntentionFrame` carries `assumptions` (S122), `resume_conditions`, `abandon_conditions`, and `explicit_claims` — every commitment is explicitly revisable via the D10 evaluator. |
+| FND-22 (Agent Diversity Through Concrete Variation) | `PortfolioWeightsProfile` is a static per-agent character axis — the canonical universal-component pattern (alongside `MetabolismProfile`, `PerceptionProfile`, `RiskWeightProfile`, etc.). Per-agent variation produces different slot priorities. (FND-22A is *not* cited: weights are static character, not learning state.) |
+| FND-26 (Systems Interact Through State) | Slot assembly reads existing belief, motive, and weights state; no cross-system command. The D10 evaluator emits a `Discrepancy::AbandonConditionFired` variant rather than directly invoking other systems. |
+| FND-28 (No Backward Compatibility) | S112's `Commitment`/`Economic` variants are removed (renamed in place); `PortfolioSlotWeights` is removed from `CognitiveProfile`; `CognitiveProfile.max_candidates_to_plan` is removed; `ReasoningProfile.max_candidates_to_plan` is removed. No aliases, no shims. |
+| FND-29A (Causal History) | `IntentionFrame.causal_links: Vec<EventId>` is bounded by `CognitiveProfile.causal_links_per_step_cap` (already at `cognitive_profile.rs:125`); evictions are FIFO. |
+| FND-30 (Causal Hooks Declaration) | See Section H below — 18-point coverage. |
 
 ## Deliverables
 
-### D1: Expanded `SlotKind`
+### D1: Five-variant `SlotKind`
 
 ```rust
 // crates/worldwake-ai/src/agent_tick/portfolio.rs
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum SlotKind {
-    Survival,
-    ImmediateSafety,
-    InjuryOrCare,
+    NeedSurvival,
+    PainCare,
     ObligationDuty,
-    EconomicMaintenance,
-    SocialEpistemic,
-    OpportunisticLocal,
+    EconomicOpportunity,
+    SocialMotive,
 }
 ```
 
-Migration: S112's `Commitment` → `ObligationDuty`; S112's `Economic` → `EconomicMaintenance`. All references in `portfolio.rs:166-168` and tests are migrated. No alias enum.
+**Migration**: S112's `Survival` → `NeedSurvival`; `Commitment` → `ObligationDuty`; `Economic` → `EconomicOpportunity`. New variants: `PainCare`, `SocialMotive`. Per FND-28 the old variant names are removed, not aliased. Every `SlotKind::` match site and constructor across the workspace migrates in lockstep (sites identified at `decision_trace.rs:3937,3945,3961-3972`; `observer.rs:7555-7556`; `planning.rs:4571,4597-4598,4752,4761`; `scenario_diagnostics/mod.rs:212`; `portfolio.rs:46,57,67,167-169,241,334,364,401,441,455,486,500,514-515,547,557,569,585-586` and tests). The legacy `GoalPressureMetrics.candidates_emitted_by_slot: BTreeMap<SlotKind, u64>` rekeys automatically since the field is keyed by the rekeyed enum.
 
-### D2: `OperatingMode`
+### D2: `PortfolioWeightsProfile` (universal component, lifted from `CognitiveProfile`)
 
-```rust
-// crates/worldwake-core/src/operating_mode.rs (new)
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub enum OperatingMode {
-    Emergency,    // ImmediateSafety motive present at Critical priority
-    Normal,       // default
-    Idle,         // no goal above Background priority
-}
-```
-
-Determined per-tick from current motive-source severity. Stored on `AgentSnapshot` (per-tick derivation, not authoritative).
-
-Operating-mode → enabled-slot table:
-- `Emergency`: `Survival`, `ImmediateSafety`, `InjuryOrCare` only.
-- `Normal`: all seven slots.
-- `Idle`: all seven slots (encourages exploration).
-
-### D3: `PortfolioWeightsProfile` (universal)
+Define the new component in `crates/worldwake-core/src/portfolio_weights_profile.rs`:
 
 ```rust
-// crates/worldwake-core/src/portfolio_weights_profile.rs (new)
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+use crate::{Component, Permille};
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct PortfolioWeightsProfile {
-    pub survival: Permille,
-    pub immediate_safety: Permille,
-    pub injury_or_care: Permille,
+    pub need_survival: Permille,
+    pub pain_care: Permille,
     pub obligation_duty: Permille,
-    pub economic_maintenance: Permille,
-    pub social_epistemic: Permille,
-    pub opportunistic_local: Permille,
+    pub economic_opportunity: Permille,
+    pub social_motive: Permille,
     pub max_plans_normal: u8,
     pub max_plans_emergency: u8,
     pub max_plans_idle: u8,
@@ -122,167 +126,423 @@ pub struct PortfolioWeightsProfile {
 impl Default for PortfolioWeightsProfile {
     fn default() -> Self {
         Self {
-            survival: Permille::new(1000),
-            immediate_safety: Permille::new(950),
-            injury_or_care: Permille::new(800),
-            obligation_duty: Permille::new(700),
-            economic_maintenance: Permille::new(550),
-            social_epistemic: Permille::new(400),
-            opportunistic_local: Permille::new(300),
-            max_plans_normal: 6,
-            max_plans_emergency: 4,
-            max_plans_idle: 6,
+            need_survival: Permille::new_unchecked(1000),
+            pain_care: Permille::new_unchecked(900),
+            obligation_duty: Permille::new_unchecked(800),
+            economic_opportunity: Permille::new_unchecked(600),
+            social_motive: Permille::new_unchecked(400),
+            max_plans_normal: 5,
+            max_plans_emergency: 3,
+            max_plans_idle: 5,
         }
+    }
+}
+
+impl Component for PortfolioWeightsProfile {}
+```
+
+**Migration (lift + removal)**:
+- Remove `PortfolioSlotWeights` from `cognitive_profile.rs:5-19` and the embedded `slot_weights: PortfolioSlotWeights` field at `cognitive_profile.rs:120`. Update `CognitiveProfile`'s `Default` impl (`cognitive_profile.rs:129-171`) and serde round-trip tests accordingly.
+- Update the single runtime consumer at `crates/worldwake-ai/src/agent_tick/planning.rs:610` from `cognitive.slot_weights` to `belief_view.portfolio_weights_profile(agent)` (the new `GoalBeliefView` accessor — see D2 component-read footnote).
+- Update test fixtures that construct `PortfolioSlotWeights::default()` (~10 sites including `decision_runtime.rs:469`, `failure_handling.rs:1984`, `goal_model.rs:2668`, `search/tests.rs:93`, `agent_tick/planning.rs:2975`, `agent_tick/tests.rs:212`, `delta.rs:640`, `cognitive_profile.rs:340,540`) to construct `PortfolioWeightsProfile::default()` at the appropriate location.
+- Re-export from `core/lib.rs` (replace `pub use cognitive_profile::{CognitiveProfile, PortfolioSlotWeights};` with `pub use cognitive_profile::CognitiveProfile;` and `pub use portfolio_weights_profile::PortfolioWeightsProfile;`).
+
+**Pattern: New Component on EntityKind::Agent** — registration is mandatory:
+
+1. `crates/worldwake-core/src/component_schema.rs`: add `PortfolioWeightsProfile` registration with `|kind| kind == EntityKind::Agent` predicate and the canonical insert/get accessors (`set_component_portfolio_weights_profile`, `get_component_portfolio_weights_profile`).
+2. `crates/worldwake-cli/src/scenario/types.rs::AgentDef`: add `pub portfolio_weights_profile: Option<PortfolioWeightsProfile>` with `#[serde(default)]`. No `*Def` wrapper required — the struct contains no `EntityId` references.
+3. `crates/worldwake-cli/src/scenario/mod.rs::spawn_agent()`: add `txn.set_component_portfolio_weights_profile(agent_id, agent_def.portfolio_weights_profile.unwrap_or_default())?;` following the canonical universal pattern at `mod.rs:607-678` (matches `metabolism_profile.unwrap_or_default()`).
+4. Classification: **(a) universal** — every agent needs portfolio weights to function. `Default` impl required (provided above).
+
+**Pattern: New Component Read by AI Crate** — accessor surface:
+
+5. `crates/worldwake-sim/src/belief_view.rs`: add `fn portfolio_weights_profile(&self, agent: EntityId) -> PortfolioWeightsProfile` on the `GoalBeliefView` trait with a default impl returning `PortfolioWeightsProfile::default()`.
+6. `RuntimeBeliefView` impl: backing implementation reads via `World::get_component_portfolio_weights_profile(agent).copied().unwrap_or_default()` — `expect()`-style read on known agents per the universal-profile contract.
+7. Belief-view forwarding: explicit delegation following the precedent of `metabolism_profile` (`belief_view.rs:517,2073-2078`).
+
+### D3: `OperatingMode` (per-tick derived, on `AgentDecisionRuntime`)
+
+```rust
+// crates/worldwake-core/src/operating_mode.rs (new)
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum OperatingMode {
+    Emergency, // Pain or NeedPressure motives present with critical urgency
+    Normal,    // default
+    Idle,      // no motive present above Background priority
+}
+```
+
+**Derivation site**: `crates/worldwake-ai/src/agent_tick/portfolio.rs::derive_operating_mode(belief: &impl GoalBeliefView, agent: EntityId, ranked: &OrderedRanked) -> OperatingMode`. Reads:
+- `Emergency` if any candidate in `ranked` carries a `MotiveSourceRef` whose discriminant is `Pain` or `NeedPressure` AND whose `priority_class` (from `compare_ranked_goals`) is `Critical`.
+- `Idle` if all candidates in `ranked` have `priority_class <= Background`.
+- `Normal` otherwise.
+
+**Storage**: per-tick derivation, cached on `crates/worldwake-ai/src/decision_runtime.rs::AgentDecisionRuntime` (`decision_runtime.rs:153`) as `pub operating_mode: OperatingMode` field. The cache is refreshed each tick before `assemble_portfolio()` runs and consumed by D5. Storage on `AgentDecisionRuntime` follows the existing "per-agent per-tick runtime state" precedent (`AgendaState`, `current_plan`); not stored as an ECS component because it is derived state per FND-27.
+
+**No `AgentSnapshot` reference** — the spec's earlier draft mistakenly named a non-existent struct; the only `AgentSnapshot` in the codebase is a test profiler at `crates/worldwake-ai/tests/soak_profiler.rs:37`.
+
+### D4: `MotiveSourceSlotMap` (motive-source-to-slot mapping)
+
+```rust
+// crates/worldwake-core/src/motive_source_slot_map.rs (new)
+use crate::{MotiveSourceDiscriminant, SlotKind};
+
+pub fn slot_for(discriminant: MotiveSourceDiscriminant) -> SlotKind {
+    match discriminant {
+        MotiveSourceDiscriminant::NeedPressure => SlotKind::NeedSurvival,
+        MotiveSourceDiscriminant::Pain         => SlotKind::PainCare,
+        MotiveSourceDiscriminant::OfficeDuty   => SlotKind::ObligationDuty,
+        MotiveSourceDiscriminant::Loyalty      => SlotKind::ObligationDuty,
+        MotiveSourceDiscriminant::Greed        => SlotKind::EconomicOpportunity,
+        MotiveSourceDiscriminant::Shame        => SlotKind::SocialMotive,
+        MotiveSourceDiscriminant::Revenge      => SlotKind::SocialMotive,
     }
 }
 ```
 
-Universal per FND-22A. Registered on `EntityKind::Agent` with default impl.
+**Note**: `SlotKind` is referenced from `worldwake-ai`; if the mapping lives in core, it imports the `SlotKind` enum which would also need to relocate to core. Two routings:
+- **(a) Recommended**: relocate `SlotKind` from `worldwake-ai/src/agent_tick/portfolio.rs` to `worldwake-core/src/slot_kind.rs`. Re-export from both `core/lib.rs` and `worldwake-ai/src/agent_tick/portfolio.rs` (`pub use worldwake_core::SlotKind;`). All existing `SlotKind` use sites continue to compile unchanged.
+- **(b) Alternative**: keep `SlotKind` in `worldwake-ai`, put `slot_for` in `worldwake-ai/src/agent_tick/portfolio.rs` instead. Loses the option of a future core-side belief surface keyed by `SlotKind`.
 
-### D4: Slot assembly extension
+Adopt (a) so the `MotiveSourceSlotMap` is a pure core-side table colocated with the motive-source taxonomy it indexes; this also lets `GoalPressureMetrics.candidates_emitted_by_slot: BTreeMap<SlotKind, u64>` (already core-resident via `scenario_diagnostics/mod.rs:27`) continue to import `SlotKind` from a single source of truth.
 
-`portfolio.rs::assemble_slots()` extends to:
-1. Determine `OperatingMode` from motive severity.
-2. For each goal candidate, look up its primary `MotiveSourceRef` and map to `SlotKind` via the S148 motive-source-to-slot mapping attached to the archived S146 `GoalSchema` registry substrate.
-3. Within each slot, pick one winner via existing ranking (S123's `compare_ranked_goals`).
-4. Cap the total to `PortfolioWeightsProfile.max_plans_<mode>`.
-5. If fewer than max-plans slots have winners, do not pad — fewer plans is correct.
+The mapping is **total** over `MotiveSourceDiscriminant`: exhaustive match, no default arm. If S141 ever adds a new motive variant, this match's missing-arm error forces the S148 mapping to be updated alongside.
 
-### D5: `IntentionFrame` extension
+### D5: Slot assembly extension
+
+Extend `crates/worldwake-ai/src/agent_tick/portfolio.rs::assemble_portfolio` to support the five-slot taxonomy and the operating-mode-modulated weights:
+
+```rust
+// portfolio.rs (extended; pseudocode of the runtime flow)
+pub(crate) fn assemble_portfolio(
+    ranked: &OrderedRanked<'_>,
+    committed: Option<OpportunityKey>,
+    weights: &PortfolioWeightsProfile,
+    mode: OperatingMode,
+    probe: impl Fn(&AgendaEntry) -> FeasibilityVerdict,
+) -> Portfolio {
+    let effective_weights = apply_mode(weights, mode); // mode-degraded weights
+    let mut portfolio = Portfolio::default();
+
+    for slot in [
+        SlotKind::NeedSurvival,
+        SlotKind::PainCare,
+        SlotKind::ObligationDuty,
+        SlotKind::EconomicOpportunity,
+        SlotKind::SocialMotive,
+    ] {
+        if effective_weights.weight_for(slot).is_zero() {
+            continue; // operating-mode disabled this slot
+        }
+        if let Some(winner) = select_best_candidate_for_slot(
+            ranked, slot, committed, &probe,
+            |entry| primary_motive_slot(entry) == slot,
+        ) {
+            portfolio.insert(slot, winner);
+        }
+    }
+    portfolio
+}
+
+fn primary_motive_slot(entry: &AgendaEntry) -> SlotKind {
+    // entry.motive_source_contributions: Vec<(MotiveSourceRef, u32)> (agenda_types.rs:34)
+    // Pick highest-weight contribution; tie-break by introduced_tick ascending.
+    let primary = entry.motive_source_contributions.iter()
+        .max_by(|(a, w_a), (b, w_b)| w_a.cmp(w_b)
+            .then_with(|| b.introduced_tick.cmp(&a.introduced_tick))) // newer loses tie
+        .map(|(motive_ref, _)| motive_ref);
+    primary
+        .map(|m| motive_source_slot_map::slot_for(MotiveSourceDiscriminant::from(&m.source)))
+        .unwrap_or(SlotKind::EconomicOpportunity) // fallback for motive-less candidates
+}
+
+fn apply_mode(weights: &PortfolioWeightsProfile, mode: OperatingMode) -> PortfolioWeightsProfile {
+    match mode {
+        OperatingMode::Emergency => PortfolioWeightsProfile {
+            economic_opportunity: Permille::ZERO,
+            social_motive: Permille::ZERO,
+            ..*weights
+        },
+        OperatingMode::Normal | OperatingMode::Idle => *weights,
+    }
+}
+```
+
+The existing `Portfolio::plausible_slots_by_score(&effective_weights)` at `portfolio.rs:80` continues to operate on the assembled portfolio; the only change at that call site (`planning.rs:4571`) is the source of the weights (now `PortfolioWeightsProfile` instead of `cognitive.slot_weights`).
+
+**Plan-attempt cap consumed at the planning gate**: `agent_tick/planning.rs:610` reads `weights.max_plans_for_mode(mode)` (replacing the old `cognitive.max_candidates_to_plan` read at planning.rs:660 and its sibling sites).
+
+### D6: `IntentionFrame` extension
 
 ```rust
 // crates/worldwake-core/src/intention_frame.rs (extended)
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct IntentionFrame {
-    pub goal: GoalOffer,
-    pub domain: GoalDomain,
-    pub assumptions: Vec<FrameAssumption>,
-    pub state: FrameState,
-    pub established_at: Tick,
-    pub last_progress_tick: Tick,
-    pub stalled_ticks: u32,
-    pub patience_limit: u32,
+    pub goal: GoalKey,                            // unchanged
+    pub domain: IntentionDomain,                  // unchanged
+    pub assumptions: Vec<FrameAssumption>,        // unchanged (S122)
+    pub state: FrameState,                        // unchanged
+    pub established_at: Tick,                     // unchanged
+    pub last_progress_tick: Option<Tick>,         // unchanged (Option<Tick>, not Tick)
+    pub stalled_ticks: u32,                       // unchanged
+    pub patience_limit: u32,                      // unchanged
     // New in S148:
     pub motive_refs: Vec<MotiveSourceRef>,
-    pub resume_conditions: Vec<ResumeCondition>,
-    pub abandon_conditions: Vec<AbandonCondition>,
+    pub resume_conditions: Vec<IntentionResumeCondition>,
+    pub abandon_conditions: Vec<IntentionAbandonCondition>,
     pub explicit_claims: Vec<EntityId>,
     pub causal_links: Vec<EventId>,
 }
+```
 
-pub enum ResumeCondition {
-    BeliefUpdated(BeliefPredicate),
-    OpportunityVisible(OpportunityKey),
+Field types `goal: GoalKey` (`core/src/goal.rs:314`) and `domain: IntentionDomain` (`intention_frame.rs:17`) are preserved unchanged — the earlier draft's `GoalOffer`/`GoalDomain` names were drift. The five new fields are appended with `#[serde(default)]` so existing serialized state continues to deserialize (per the spec-drafting-rules.md 5c requirement; `IntentionFrame` is part of save/replay state via `AgentBeliefStore`-adjacent serialization).
+
+### D7: `IntentionResumeCondition` and `IntentionAbandonCondition` (core-resident)
+
+```rust
+// crates/worldwake-core/src/intention_condition.rs (new)
+use crate::{ArtifactLegalEffectTag, BeliefStatusTag, EntityId, FrameAssumption,
+           MotiveSourceDiscriminant, OpportunityAnchor, Tick};
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub enum IntentionResumeCondition {
+    /// Belief about an entity transitioned to a specific status (e.g., to `Active`).
+    BeliefStatusChanged { subject: EntityId, target_status: BeliefStatusTag },
+    /// A specific opportunity became visible to the agent again.
+    OpportunityVisible(OpportunityAnchor),
+    /// Agent reached a specific place (e.g., resume on arrival).
     LocationReached(EntityId),
+    /// Wall-clock-equivalent: resume after this many ticks have elapsed since suspension.
     TickElapsed(u32),
-    ArtifactValid(EntityId),
+    /// Artifact legal effect transitioned to `Active`.
+    ArtifactLegalEffectActive(EntityId),
 }
 
-pub enum AbandonCondition {
-    MotiveSourceLost(MotiveSourceVariantId),
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub enum IntentionAbandonCondition {
+    /// The motive that produced this intention is no longer present in the ledger.
+    MotiveSourceLost(MotiveSourceDiscriminant),
+    /// A frame assumption has been broken in a way that cannot recover.
     AssumptionPermanentlyBroken(FrameAssumption),
-    OpportunityForeverGone(OpportunityKey),
+    /// The opportunity this intention targeted is gone (consumed by another agent, expired, destroyed).
+    OpportunityForeverGone(OpportunityAnchor),
+    /// `stalled_ticks` reached `patience_limit` in `frame.rs` (existing mechanism).
     PatienceExhausted,
+    /// An explicit-claim artifact transitioned to `ArtifactExistence::Destroyed`.
+    ArtifactDestroyed(EntityId),
+    /// An explicit-claim artifact's legal effect transitioned out of `Active`
+    /// (to `Suspended`, `Expired`, `Revoked`, or `Fulfilled`).
+    ArtifactLegalEffectLost(EntityId),
 }
 ```
 
-When the agenda manager evaluates a suspended intention, it walks `resume_conditions` (resume if any holds) and `abandon_conditions` (abandon if any holds).
+**Core-residency rationale (Q3=(a))**: `BeliefPredicate` at `worldwake-ai/src/htn/method_schema.rs:72` is HTN-domain-specific (`BountyRecordExists`, `WitnessNamesKnown`, etc.) and lives above the core boundary. Importing it into `IntentionFrame` would violate the `core → sim → systems → ai` dependency graph and conflate two distinct concerns (HTN method preconditions vs. generic intention lifecycle predicates). Defining the new condition enums in core gives `IntentionFrame` self-contained predicates that compose with the existing core-resident `BeliefStatusTag` (`decision_event_payload.rs:281`) and `OpportunityAnchor` (`goal.rs:324`).
 
-### D6: Explicit claims tracking
+**`ArtifactLegalEffectTag` prerequisite**: Add a payload-free discriminant mirror `ArtifactLegalEffectTag` to `worldwake-core/src/social_artifact.rs` following the `BeliefStatusTag` precedent (`decision_event_payload.rs:281`, mechanical mirror of `BeliefStatus`). Variants: `None, Active, Suspended, Expired, Revoked, Fulfilled`. Derives: `Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize`. Single conversion site `ArtifactLegalEffect → ArtifactLegalEffectTag` lives alongside the existing axis-projection helpers in `social_artifact.rs`. This is the standard Core-Side Mirror pattern from `worldwake-validation-patterns.md`.
 
-`explicit_claims: Vec<EntityId>` references existing world artifacts the intention depends on:
-- `ContentionGrant` entities (resource-extraction queue grants).
-- `ArtifactBoundary` entities (bounty notices the agent intends to fulfill).
-- `OfferRecord` entities (sales offers, contract bids).
+### D8: `explicit_claims` tracking (with correct artifact references)
 
-The agenda manager invalidates an intention when an `explicit_claim` is in S140 `ArtifactExistence::Removed` or `ArtifactLegalEffect::Suspended` lifecycle states. This makes intent-to-claim revocation lawful per FND-21.
+`IntentionFrame.explicit_claims: Vec<EntityId>` references existing world artifacts the intention depends on, scoped to entity kinds the agent might claim against:
 
-### D7: Causal links
+- **Facility queue grants**: entities carrying `ContentionGrant` via the `ContentionQueue.granted` field at `crates/worldwake-core/src/contention.rs:43`.
+- **Sale listings**: lots carrying `SaleListing` at `crates/worldwake-core/src/trade.rs:25` (the canonical "sales offer" representation; the earlier draft's `OfferRecord` does not exist).
+- **Social artifacts**: entities carrying `ArtifactHeader` (bounty notices, contracts) at `crates/worldwake-core/src/social_artifact.rs` (the earlier draft's `ArtifactBoundary` does not exist; `ArtifactHeader` is the actual carrier).
+- **Resource-extraction grants**: entities carrying `ContentionGrant` from `production_actions.rs:544,1664` (resource-source grant slots, distinct substrate from facility queues — see Multi-Substrate note in D10).
 
-`causal_links: Vec<EventId>` records the events that produced this intention: the perception event that surfaced the motive, the belief-update event, the prior committed-goal completion event that triggered the next chain. Surfaced in decision history (S110/S136) so causal reconstruction across ticks works without ad hoc logging.
+The resume/abandon evaluator (D10) invalidates an intention when an `explicit_claim` enters `ArtifactExistence::Destroyed` (`social_artifact.rs:86`) or when its `ArtifactLegalEffect` transitions out of `Active` (to `Suspended`, `Expired`, `Revoked`, or `Fulfilled`). Each transition fires `IntentionAbandonCondition::ArtifactDestroyed` or `IntentionAbandonCondition::ArtifactLegalEffectLost` per D7's typed predicates. For non-social-artifact claims (queue grants, sale listings), the evaluator falls back to `IntentionAbandonCondition::OpportunityForeverGone` keyed by the underlying `OpportunityAnchor` when the carrier entity is `is_dead()`-equivalent or the listing has been removed.
 
-### D8: Observer rendering
+### D9: Causal-link cap
 
-Observer Section 3b (Decision History) extends `IntentionFrame` rendering:
+`IntentionFrame.causal_links: Vec<EventId>` records the events that produced this intention: the perception event that surfaced the motive, the belief-update event, the prior committed-goal completion event that triggered the next chain. Reuse the existing `CognitiveProfile.causal_links_per_step_cap` (already at `cognitive_profile.rs:125`) as the per-intention cap on `causal_links.len()`. When the cap is reached, evictions are FIFO (drop oldest). This dampens the otherwise unbounded growth flagged by FND-29A.
+
+Surfaced in decision history (S110/S136) so causal reconstruction across ticks works without ad hoc logging.
+
+### D10: Resume/Abandon condition evaluator (host: `agent_tick/frame.rs`)
+
+Add `crates/worldwake-ai/src/agent_tick/frame.rs::evaluate_resume_abandon_conditions(frame: &mut IntentionFrame, belief: &impl GoalBeliefView, agent: EntityId, tick: Tick) -> Option<FrameDecision>`:
+
+```rust
+pub(crate) enum FrameDecision {
+    Resume,                                 // a resume_condition fired; transition Suspended → Active
+    Abandon(IntentionAbandonCondition),     // an abandon_condition fired; mark Exhausted, emit Discrepancy
+}
 ```
-Committed: BakeBread for Granger
-  Motive: NeedPressure(Hunger), Greed(SaleOpportunity:bread_lot_42)
-  Slot: EconomicMaintenance (weight 550)
-  Claims: ContentionGrant#127 (oven queue), OfferRecord#88 (bread sale)
+
+**Call site**: invoked from inside `frame.rs` alongside the existing `patience_limit` consumption at line 547+. The existing `FrameState::Suspended → Active` resume path (`frame.rs:519-523`) gains a pre-check against `resume_conditions`; the existing `Exhausted` transition path gains a pre-check against `abandon_conditions`.
+
+**Discrepancy emission**: when an `IntentionAbandonCondition` fires, the evaluator emits a `Discrepancy::AbandonConditionFired(IntentionAbandonCondition)` variant — a new variant added to `worldwake-core/src/discrepancy.rs`. Per the Discrepancy as Failure-Attribution Surface pattern: this is option (1) — a first-class typed variant. Payload must derive `Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize` (the same bounds `Discrepancy` already requires). `IntentionAbandonCondition` is `Clone + Eq + Ord` but not `Copy` (carries variant-bearing payload like `OpportunityAnchor`); the variant therefore wraps it in `Box<IntentionAbandonCondition>` to stay within `Discrepancy`'s `Copy` budget — or, alternatively, the variant carries only the discriminant `IntentionAbandonConditionDiscriminant` (a new payload-free mirror following the `MotiveSourceDiscriminant` precedent). Adopt the discriminant approach so `Discrepancy` retains `Copy`; the full condition is recoverable from `frame.abandon_conditions` if needed.
+
+**Multi-substrate hook note**: This evaluator runs in `frame.rs`. It does *not* duplicate the responsibilities of `agenda_manager.rs::tick_agenda` (which revives previously-rejected candidates by re-checking their feasibility). Per the Multi-Substrate Hook Coverage pattern: explicit-claim invalidation that originates from queue grants (`facility_queue.rs`) and from resource-extraction queues (`production_actions.rs`) are both relevant substrates; the evaluator queries `belief.facility_grant(facility)` and the equivalent resource-source-queue belief accessor and treats absence of the grant the same way for both.
+
+### D11: Observer rendering
+
+`crates/worldwake-cli/src/bin/observer.rs` Decision History section extends per-tick rendering of `IntentionFrame`:
+
+```
+Committed: BakeBread for Granger (Slot: EconomicOpportunity, weight 600)
+  Motives:
+    - Greed(SaleOpportunity:bread_lot_42) introduced t=412
+    - NeedPressure(Hunger) introduced t=420
+  Claims:
+    - ContentionGrant#127 (oven queue)
+    - SaleListing on bread_lot_42
   Resume on: OpportunityVisible(grain_supply_at_market)
-  Abandon if: MotiveSourceLost(NeedPressureHunger)
+  Abandon if:
+    - MotiveSourceLost(NeedPressure)
+    - ArtifactLegalEffectLost(bread_lot_42)
 ```
 
-`ScenarioDiagnosticsReport.goal_pressure` (S144) gains per-slot occupancy and per-slot winner-vs-rejected counts.
+Format conventions follow the existing `format_motive_source_ref` at `observer.rs:1194` and the existing "Committed:" header at the Decision History markdown table (currently at `observer.rs:933-941`). `ScenarioDiagnosticsReport.goal_pressure.candidates_emitted_by_slot` at `scenario_diagnostics/mod.rs:27` already keys by `SlotKind` and automatically reflects the renamed five-variant set; no schema change to `GoalPressureMetrics` is required.
 
-### D9: `max_candidates_to_plan` migration
+### D12: Plan-attempt cap migration (`max_candidates_to_plan` removal)
 
-The default value at `cognitive_profile.rs:126` rises from `2` to `6`. The old `max_candidates_to_plan` field migrates into `PortfolioWeightsProfile.max_plans_normal` for explicit per-agent control. Per `docs/spec-drafting-rules.md` Section 5, the field is universal. `CognitiveProfile.max_candidates_to_plan` is removed (no shim).
+The legacy planning cap `CognitiveProfile.max_candidates_to_plan: u8` (`cognitive_profile.rs:25`, default 2) is removed. The parallel `ReasoningProfile.max_candidates_to_plan` (`crates/worldwake-ai/src/lib.rs:174`) is also removed in the same migration so two cap stores do not coexist (FND-28). The single replacement is `PortfolioWeightsProfile.max_plans_<mode>` selected per-tick by D3's `OperatingMode`.
 
-### D10: Golden coverage
+Reader migration (15+ sites identified at validation time):
+- `crates/worldwake-ai/src/agent_tick/planning.rs:660, 2469, 6391`: replace `usize::from(cognitive.max_candidates_to_plan)` with `usize::from(weights.max_plans_for_mode(runtime.operating_mode))`.
+- `decision_runtime.rs:426, 469`: remove the `max_candidates_to_plan` assignment from `ReasoningProfile`; remove the field altogether.
+- `failure_handling.rs:1941, 1984`, `goal_model.rs:2625, 2668`, `search/tests.rs:53, 93`, `agent_tick/planning.rs:2932, 2975`, `agent_tick/tests.rs:172, 212`: update fixture constructors to drop the field.
+- `scenario/types.rs:1753, 1779`, `handlers/persistence.rs:185`, `handlers/inspect.rs:300`: update CLI surfaces to reference `PortfolioWeightsProfile.max_plans_*` instead.
 
-`golden_portfolio_seven_slots.rs` covers:
-- All seven slots populated under normal mode (no operating-mode degradation).
-- Emergency mode disables OpportunisticLocal and EconomicMaintenance.
-- Survival winner always plans first (priority order).
-- `IntentionFrame.motive_refs` matches the committed goal's motive sources.
-- `explicit_claims` invalidate on S140 lifecycle transitions.
-- `resume_conditions` resume suspended intentions on belief update.
-- `abandon_conditions` abandon on motive-source loss.
+**Golden audit**: existing portfolio and planning golden tests that depend on the cap of 2 (notably `golden_portfolio_planning.rs` and the planning tests at `planning.rs:4501`+) are reviewed in D14 and either rewritten for the new default of 5 or pinned to a per-test `max_plans_normal` value via the `PortfolioWeightsProfile` fixture.
 
-## FND-01 Section H Analysis
+### D13: Authoritative-to-AI Impact Analysis
+
+Per CLAUDE.md's Authoritative-to-AI Impact Rule, S148 modifies candidate emission (slot assembly determines what gets planned) and adds new abandon-path control flow. All seven checkpoints must hold:
+
+1. `get_affordances` — **N/A** (no affordance change).
+2. `generate_candidates` — **flag**: the five-slot taxonomy plus operating-mode-modulated weights changes which candidates win their slot. D14 includes a golden specifically asserting that under each operating mode, candidates emitted at low weight are not silently dropped (they still emit; their winning slot may differ).
+3. `search_plan` — **pass** (no precondition change).
+4. `BestEffort` action start — **N/A** (no precondition change).
+5. `handle_plan_failure` — **flag**: when an `IntentionAbandonCondition` fires inside the D10 evaluator, the produced `Discrepancy::AbandonConditionFired(_)` routes through the existing `handle_plan_failure` path (`agent_tick.rs`). D14 includes a golden asserting that a fired `MotiveSourceLost` condition causes replan with the abandoned intention's motive correctly removed from the contributing set.
+6. Payload revalidation — **N/A** (no payload change).
+7. Golden tests — **flag**: see D14.
+
+### D14: Golden coverage
+
+Add `crates/worldwake-ai/tests/golden_portfolio_five_slots.rs` covering:
+- All five slots populated under `OperatingMode::Normal` (each slot receives a winner derived from the corresponding motive class).
+- `OperatingMode::Emergency` weights `EconomicOpportunity` and `SocialMotive` to `Permille::ZERO`; the assertion confirms those slots are skipped while `NeedSurvival`, `PainCare`, and `ObligationDuty` continue to populate.
+- `OperatingMode::Idle` populates all five slots when low-priority candidates exist.
+- `NeedSurvival` winner is planned first under priority-class ordering.
+- `IntentionFrame.motive_refs` matches the committed goal's `motive_source_contributions`.
+- `explicit_claims` invalidate on `ArtifactExistence::Destroyed` and on each non-`Active` `ArtifactLegalEffect` transition (Suspended, Expired, Revoked, Fulfilled).
+- `resume_conditions` resume a suspended intention on `OpportunityVisible`, `LocationReached`, and `BeliefStatusChanged`.
+- `abandon_conditions` cause `Exhausted` transition on `MotiveSourceLost`, `OpportunityForeverGone`, `PatienceExhausted`, `ArtifactDestroyed`, and `ArtifactLegalEffectLost`.
+- `causal_links` cap enforcement: when 1+ events beyond `causal_links_per_step_cap` are pushed, the oldest is evicted.
+
+Audit and migrate the existing portfolio goldens at `crates/worldwake-ai/tests/golden_portfolio_planning.rs` (currently 6 tests on the three-slot model) — each test either (a) updates its slot assertions to the new five-slot variants while preserving its scenario, or (b) pins its `PortfolioWeightsProfile` to a fixture isolating the asserted slot.
+
+## FND-01 Section H Analysis (18-point coverage)
 
 ### Information-Path Analysis
 
-Slot assembly reads agent belief view and motive ledger. `explicit_claims` references existing artifact entities visible to the agent (S140 lifecycle gating). `resume_conditions` evaluate against future belief updates that arrive via the existing perception path. No global truth queried.
+Slot assembly reads:
+- `AgendaEntry.motive_source_contributions` via `OrderedRanked<'_>` produced by `ranking.rs::sort_in_place` (`ranking.rs:327`) — agent-local information.
+- `PortfolioWeightsProfile` via the new `GoalBeliefView::portfolio_weights_profile` accessor — universal-profile read through the belief layer.
+- `OperatingMode` via `AgentDecisionRuntime.operating_mode` set earlier in the same tick by `derive_operating_mode`.
+
+The D10 evaluator reads the agent's belief view for `is_alive`/`facility_grant`/`artifact_header` checks; transitions are observed through the existing perception channel that updates the agent's belief store. No global state queries.
+
+`IntentionFrame.causal_links: Vec<EventId>` and `motive_refs: Vec<MotiveSourceRef>` are local to the intention; observers (other agents) cannot read another agent's intentions and so do not need an information path for them.
 
 ### Positive-Feedback Analysis
 
-A potential loop: more slots → more committed intentions → more `explicit_claims` → more artifact contention → more frustrated resumes → more replans. The dampener is concrete (D below).
+Potential loops:
+- *Wider portfolio → more committed intentions → more `explicit_claims` → more contention → more abandon firings → more replans.* Dampened by `max_plans_<mode>` and by `IntentionFrame.patience_limit` (existing).
+- *More motives recorded → more candidates per tick → larger `OrderedRanked` → more work for `assemble_portfolio`.* Dampened by S141's existing motive-ledger caps and by `max_node_expansions` in the planner.
+- *AbandonConditionFired → replan → new abandon condition fires next tick.* Dampened by per-tick FIFO emission semantics: a given `Discrepancy` for the same goal is emitted once per tick, and the per-goal cooldowns in `CognitiveProfile` (`*_backoff_ticks` family at `cognitive_profile.rs:80-119`) gate replan attempts.
 
 ### Concrete Dampeners
 
-- `PortfolioWeightsProfile.max_plans_normal` (default 6) caps per-tick plan attempts.
-- `IntentionFrame.patience_limit` (existing per S115) bounds how long a suspended intention can wait before abandonment.
-- `AbandonCondition::PatienceExhausted` is the lawful exit path.
-- Operating-mode degradation (Emergency drops to 4 plans) is itself a physical dampener — agents under safety pressure plan less broadly.
+- `PortfolioWeightsProfile.max_plans_normal` (default 5) caps per-tick plan attempts.
+- `PortfolioWeightsProfile.max_plans_emergency` (default 3) caps per-tick plan attempts under emergency mode.
+- `IntentionFrame.patience_limit` (existing per S122) bounds suspended-intention wait before abandonment.
+- `IntentionAbandonCondition::PatienceExhausted` is the lawful exit path on patience runout.
+- `OperatingMode::Emergency` degradation is itself a physical dampener — agents under safety pressure plan less broadly.
+- `CognitiveProfile.causal_links_per_step_cap` (existing at `cognitive_profile.rs:125`) caps `IntentionFrame.causal_links.len()`.
+- Per-goal `*_backoff_ticks` cooldowns (existing) gate replan after AbandonConditionFired emission.
 
 ### Stored State vs. Derived Read-Model List
 
-**Stored state**:
-- `PortfolioWeightsProfile` (universal, per-agent).
-- Extended `IntentionFrame` fields (`motive_refs`, `resume_conditions`, `abandon_conditions`, `explicit_claims`, `causal_links`) — authoritative per-agent commitment state.
+**Stored state (authoritative, ECS components and per-agent runtime):**
+- `PortfolioWeightsProfile` — universal ECS component per agent (D2).
+- Extended `IntentionFrame` fields — authoritative per-agent commitment state.
 
-**Derived read-model**:
-- `OperatingMode` per-tick derivation.
-- Slot composition per-tick derivation.
-- Per-slot winner per-tick derivation.
+**Stored state (core types referenced by D7/D10):**
+- `Discrepancy::AbandonConditionFired(IntentionAbandonConditionDiscriminant)` — typed entry in the discrepancy stream.
+
+**Derived read-model (per-tick, non-authoritative):**
+- `AgentDecisionRuntime.operating_mode` — recomputed each tick by `derive_operating_mode`.
+- Portfolio composition and per-slot winners — recomputed each tick by `assemble_portfolio`.
+- Per-slot weights after operating-mode degradation (`apply_mode`'s output) — recomputed each tick.
+- `MotiveSourceSlotMap::slot_for(...)` — pure function over `MotiveSourceDiscriminant`; no state.
+
+### Causal Hooks Declaration (P30, 18 items)
+
+1. **Missing downstream consequence motivating the system**: Three-slot portfolio collapses safety/care/duty/social/opportunistic motives into a single Commitment-or-Economic bucket; agents miss obligations, fail to investigate suspicions, neglect epistemic work, skip opportunistic local wins. Existing systems cannot produce this because the slot taxonomy is the only discriminator between concurrent goals at planning time.
+2. **Concrete entities, relations, records introduced**: `PortfolioWeightsProfile` component on Agent; `OperatingMode` enum (runtime, on `AgentDecisionRuntime`); `MotiveSourceSlotMap` mapping (pure table); `IntentionResumeCondition`/`IntentionAbandonCondition` enums; `Discrepancy::AbandonConditionFired` variant; five new `IntentionFrame` fields; `ArtifactLegalEffectTag` discriminant mirror.
+3. **Actions/processes that mutate them**: D5's `assemble_portfolio` extension writes derived portfolio composition; D10's `evaluate_resume_abandon_conditions` writes `FrameState` transitions and emits `Discrepancy::AbandonConditionFired`; scenario `spawn_agent` writes the initial `PortfolioWeightsProfile` (universal default or scenario-authored).
+4. **Information produced, travel, observability**: Per-intention details (motive_refs, conditions, claims, causal_links) travel through decision-history events into the observer's Decision History section (D11); not directly observable by other agents (private to the agent's runtime). `AbandonConditionFired` discrepancies surface through the existing discrepancy-stream observability.
+5. **Quantities conserved/transferred**: None — the portfolio is a derived view; the underlying candidates already exist in `OrderedRanked`. No new quantities introduced.
+6. **Scarce capacities/exclusive affordances/reservations/queues introduced; contention rules**: None — `PortfolioWeightsProfile` per-agent; no shared resource introduced.
+7. **Partial failures, degraded states, aftermath**: `IntentionAbandonCondition::PatienceExhausted` produces `FrameState::Exhausted` with `Discrepancy::AbandonConditionFired` aftermath. `OperatingMode::Emergency` degradation is a "partial" state where two slots are zeroed.
+8. **Positive feedback loops amplified**: see Positive-Feedback Analysis above.
+9. **Physical dampeners limiting those loops**: see Concrete Dampeners above.
+10. **Agent-local/institutional learning, memory, habit, trust updates**: None — `PortfolioWeightsProfile` is static character (FND-22), not learning state (FND-22A). If a future spec wants weights to adapt, it must add an explicit learning mechanism.
+11. **How agents can become wrong / correct errors / provenance/freshness markers**: `IntentionFrame.causal_links: Vec<EventId>` provides per-intention provenance back to the events that produced the intention. `motive_refs` carry `MotiveSourceRef.introduced_tick` for freshness. If the agent's belief view is stale, the D10 evaluator may resume/abandon based on stale data; the existing belief-staleness machinery (S143) is the correction path.
+12. **Lifecycle states for new entities/artifacts**: `IntentionFrame.state` already enumerates `Active`/`Suspended`/`Exhausted` (existing per S122). S148 adds explicit transition causes via `IntentionResumeCondition`/`IntentionAbandonCondition`. Visibility unchanged (private to the agent); legality unchanged.
+13. **Temporal/spatial resolution, scheduling, simultaneity, tie-breaking**: Each agent's portfolio is recomputed once per tick before planning. Within a tick, the operating-mode derivation runs first, then the slot assembly, then the planning gate. Tie-breaks: primary motive selection is highest-weight contribution, then `introduced_tick` ascending; cross-slot ordering uses `compare_ranked_goals`'s composite ordering. Determinism preserved via `BTreeMap`-ordered iteration of the five `SlotKind` variants in `assemble_portfolio`.
+14. **Boundary conditions, external drivers**: None — internal AI-runtime mechanism.
+15. **Derived views/caches/optimizations and their source state**: `OperatingMode` is derived per-tick from motive severity (source: `AgendaEntry` contributions); portfolio composition is derived per-tick from `OrderedRanked` + `PortfolioWeightsProfile` + `OperatingMode`. No persisted cache.
+16. **Causal records/event identities/provenance links emitted**: `Discrepancy::AbandonConditionFired` (typed) is emitted when an abandon condition fires; the existing decision-history payload chain (S110/S136) carries portfolio composition into per-tick records.
+17. **Target patterns, invariants, regression cases, falsification checks**: D14 lists invariants and goldens. Key invariants: motive-source-to-slot mapping is total over `MotiveSourceDiscriminant`; emergency mode zeros exactly `EconomicOpportunity` and `SocialMotive` and nothing else; `causal_links.len() <= causal_links_per_step_cap` at all times; no `IntentionFrame` field carries data that requires global reads to populate.
+18. **Save/load/replay/offscreen compression survival**: All new authoritative state derives `Serialize, Deserialize` (component + IntentionFrame fields + condition enums). `OperatingMode` is *not* persisted — it is derived per-tick and so saved/loaded as zero state. The `Discrepancy` stream is already part of save state.
 
 ## SystemFn Integration
 
-No new top-level `SystemFn`. Slot assembly and operating-mode derivation run inside the existing agent tick.
+No new top-level `SystemFn` is added. The work integrates into existing per-tick code:
+
+- `derive_operating_mode` runs inside `agent_tick/portfolio.rs::assemble_portfolio` callers (specifically the planning entry at `agent_tick/planning.rs`) before slot assembly.
+- `assemble_portfolio` is the existing entry point; D5 extends its signature and body.
+- `evaluate_resume_abandon_conditions` runs inside `agent_tick/frame.rs` alongside the existing `FrameState` transition logic.
 
 ## Component Registration
 
-- **New universal component**: `PortfolioWeightsProfile` on `EntityKind::Agent`. Default impl per D3.
-- **Extended component**: `IntentionFrame` (already universal; field set extended).
+- **New universal component**: `PortfolioWeightsProfile` on `EntityKind::Agent`. Default impl per D2. Registered in `component_schema.rs` with insert/get accessors; threaded through `AgentDef` + `spawn_agent()` per the canonical universal pattern.
+- **Extended component**: `IntentionFrame` (already universal; field set extended with `#[serde(default)]` on new fields).
+- **Removed component fields**: `CognitiveProfile.slot_weights`, `CognitiveProfile.max_candidates_to_plan`, `ReasoningProfile.max_candidates_to_plan` — single-truth migration per FND-28.
 
-Both per `docs/spec-drafting-rules.md` Section 5.
+Per `docs/spec-drafting-rules.md` Section 5.
 
 ## Cross-System Interactions
 
-- Reads `MotiveSourceRef` (S141), S148's motive-source-to-slot mapping on the archived S146 `GoalSchema` registry substrate, and `BeliefView` (S143).
-- Writes extended `IntentionFrame` state through agenda manager (S115).
-- Surfaced through observer (S110/S136 payload chain) and S144 diagnostics.
+- **Reads** (state-mediated):
+  - `MotiveSourceRef`, `MotiveSourceDiscriminant` from S141 (core).
+  - `PortfolioWeightsProfile` via `GoalBeliefView::portfolio_weights_profile` (sim layer; consumed by ai).
+  - `AgendaEntry.motive_source_contributions` from S123 (ai).
+  - `ArtifactHeader.existence`/`legal_effect` from S140 (core, read by ai through belief view).
+  - `ContentionGrant` from S112's queue substrate (core, read by ai through `belief.facility_grant`).
+- **Writes** (state-mediated):
+  - Extended `IntentionFrame` state through `agent_tick/frame.rs`.
+  - `Discrepancy::AbandonConditionFired` into the existing discrepancy stream.
+  - `AgentDecisionRuntime.operating_mode` per-tick.
+- **Surfaced** through observer (S110/S136 payload chain) and S144 `GoalPressureMetrics`.
 
-State-mediated. No new cross-system calls.
+All interactions are state-mediated per FND-26. No new cross-system direct calls.
 
 ## Profile-Driven Parameters
 
-All slot weights are `Permille`. `max_plans_<mode>` are `u8`. Per FND-22A; per-agent variation.
+- `PortfolioWeightsProfile.{need_survival, pain_care, obligation_duty, economic_opportunity, social_motive}: Permille` — per-agent character weights.
+- `PortfolioWeightsProfile.{max_plans_normal, max_plans_emergency, max_plans_idle}: u8` — per-agent planning caps.
+
+All weights are `Permille` per the spec-drafting-rules.md requirement; per-agent variation per FND-22.
 
 ## Test Plan
 
-- D10 golden coverage (7 scenarios).
-- Migration tests proving S112 `Commitment`/`Economic` winners → `ObligationDuty`/`EconomicMaintenance` parity on the existing portfolio golden.
-- Unit tests on operating-mode derivation.
+- D14 golden coverage (5-slot scenarios; resume/abandon condition evaluator scenarios; operating-mode degradation scenario; causal_links cap scenario).
+- Migration tests proving S112 `Survival/Commitment/Economic` winners → `NeedSurvival/ObligationDuty/EconomicOpportunity` parity on the existing portfolio golden (`golden_portfolio_planning.rs`).
+- Unit tests on `derive_operating_mode` decision logic.
+- Unit tests on `motive_source_slot_map::slot_for` confirming totality over `MotiveSourceDiscriminant`.
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
