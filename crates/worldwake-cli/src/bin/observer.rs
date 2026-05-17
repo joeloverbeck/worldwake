@@ -3844,10 +3844,16 @@ fn render_scenario_diagnostics_text(
         "- **Contradicted belief actions**: {}",
         report.belief.contradicted_belief_actions
     )?;
+    render_metric_map(
+        out,
+        "Source reliability changes by topic",
+        &report.belief.source_reliability_changes_by_topic,
+        options.top_n,
+    )?;
     writeln!(
         out,
-        "- **Source reliability changes**: {}",
-        report.belief.source_reliability_changes
+        "- **Route preference changes**: {}",
+        report.belief.route_preference_changes
     )?;
     writeln!(
         out,
@@ -7422,7 +7428,11 @@ mod tests {
             belief: worldwake_ai::scenario_diagnostics::BeliefMetrics {
                 stale_belief_actions: 1,
                 contradicted_belief_actions: 1,
-                source_reliability_changes: 2,
+                source_reliability_changes_by_topic: BTreeMap::from([
+                    (worldwake_core::TopicScope::RouteHazard, 2),
+                    (worldwake_core::TopicScope::ResourceAvailability, 1),
+                ]),
+                route_preference_changes: 3,
                 false_rumor_propagation_count: 0,
                 correction_latency: PercentileBucket::from_sorted(&[2, 6]),
                 blocker_counts_by_scope: BTreeMap::from([
