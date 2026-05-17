@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implemented-S146-goal-schema-and-per-goal-budgets",
   "base_head": "ce6a97200123c0cc2b44491c9cbac72b234af737",
-  "last_ticket": "archive/tickets/S146GOASCHGOA-004.md",
+  "last_ticket": "archive/tickets/S146GOASCHGOA-005.md",
   "last_result": "completed_archived",
-  "last_work_commit": "ff8b48ae20a2d9f06548660a90daadabb5558168",
+  "last_work_commit": "85f857169e660ade2f418b9ed9152b172bda93ed",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S146GOASCHGOA-005.md",
+  "next_target": "tickets/S146GOASCHGOA-006.md",
   "queue": [
-    "tickets/S146GOASCHGOA-005.md",
     "tickets/S146GOASCHGOA-006.md",
     "tickets/S146GOASCHGOA-007.md",
     "tickets/S146GOASCHGOA-008.md"
