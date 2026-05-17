@@ -5,16 +5,19 @@ mod golden_harness;
 use std::collections::BTreeSet;
 
 use golden_harness::*;
-use worldwake_ai::htn::{build_method_registry, select_method};
-use worldwake_ai::{DecisionOutcome, GoalKind, GoalOffer};
+use worldwake_ai::htn::{build_method_registry, select_method, select_method_with_recipes};
+use worldwake_ai::{
+    DecisionOutcome, GoalKind, GoalOffer, PlanningState, build_planning_snapshot,
+    generate_candidates,
+};
 use worldwake_core::{
-    AgentSchemaContextProfile, BodyCostPerTick, CommodityKind, EntityId, GoalKey,
+    AgentSchemaContextProfile, BlockerMemory, BodyCostPerTick, CommodityKind, EntityId, GoalKey,
     GoalPlanningBudget, HomeostaticNeedId, HomeostaticNeeds, KnownRecipes, MetabolismProfile,
     MethodSchemaId, MotiveSource, MotiveSourceRef, OpportunityAnchor, PerceptionSource, Quantity,
     ResourceSource, Seed, Tick, UtilityProfile, WorkstationTag,
 };
-use worldwake_sim::PerAgentBeliefView;
 use worldwake_sim::RecipeDefinition;
+use worldwake_sim::{PerAgentBeliefView, ProfileBeliefView};
 
 const PRODUCE_WITH_GATHER: MethodSchemaId = MethodSchemaId(5);
 const PRODUCE_METHODS: [MethodSchemaId; 3] =
@@ -32,6 +35,12 @@ struct HtnMethodObservation {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SelectorObservation {
     selected_method: Option<MethodSchemaId>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct GeneratedProduceOfferObservation {
+    evidence_entities: BTreeSet<EntityId>,
+    evidence_places: BTreeSet<EntityId>,
 }
 
 fn build_single_input_recipe() -> (worldwake_sim::RecipeRegistry, worldwake_core::RecipeId) {
@@ -225,6 +234,66 @@ fn observe_selector(disabled_methods: BTreeSet<MethodSchemaId>) -> SelectorObser
     }
 }
 
+fn observe_generated_produce_offer() -> GeneratedProduceOfferObservation {
+    let (h, baker, recipe_id) = setup_htn_production_harness(BTreeSet::new());
+    let belief_store = h
+        .world
+        .get_component_agent_belief_store(baker)
+        .expect("baker should have seeded world beliefs");
+    let view = PerAgentBeliefView::new_with_recipes(baker, &h.world, &h.recipes, belief_store);
+    let candidates =
+        generate_candidates(&view, baker, &BlockerMemory::default(), &h.recipes, Tick(0));
+    let offer = candidates
+        .into_iter()
+        .find(|offer| offer.key.kind == GoalKind::ProduceCommodity { recipe_id })
+        .expect("autonomous candidate generation should emit ProduceCommodity");
+
+    GeneratedProduceOfferObservation {
+        evidence_entities: offer.evidence_entities,
+        evidence_places: offer.evidence_places,
+    }
+}
+
+fn observe_snapshot_selector_for_generated_offer() -> SelectorObservation {
+    let (h, baker, recipe_id) = setup_htn_production_harness(BTreeSet::new());
+    let belief_store = h
+        .world
+        .get_component_agent_belief_store(baker)
+        .expect("baker should have seeded world beliefs");
+    let view = PerAgentBeliefView::new_with_recipes(baker, &h.world, &h.recipes, belief_store);
+    let candidates =
+        generate_candidates(&view, baker, &BlockerMemory::default(), &h.recipes, Tick(0));
+    let offer = candidates
+        .into_iter()
+        .find(|offer| offer.key.kind == GoalKind::ProduceCommodity { recipe_id })
+        .expect("autonomous candidate generation should emit ProduceCommodity");
+    let snapshot = build_planning_snapshot(
+        &view,
+        baker,
+        &offer.evidence_entities,
+        &offer.evidence_places,
+        6,
+    );
+    let state = PlanningState::new(&snapshot);
+    let registry = build_method_registry();
+    let profile = state
+        .agent_schema_context_profile(baker)
+        .unwrap_or_default();
+
+    SelectorObservation {
+        selected_method: select_method_with_recipes(
+            baker,
+            &offer,
+            &registry,
+            &profile,
+            &state,
+            &offer.motive_sources,
+            Some(&h.recipes),
+        )
+        .map(|method| method.id),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 431: S147 ProduceWithGather Method Selection
 // ---------------------------------------------------------------------------
@@ -246,13 +315,91 @@ fn observe_selector(disabled_methods: BTreeSet<MethodSchemaId>) -> SelectorObser
 fn produce_with_gather_selector_uses_belief_view_evidence() {
     let observation = observe_selector(BTreeSet::new());
 
-    assert_eq!(observation.selected_method, Some(PRODUCE_WITH_GATHER));
+    assert_eq!(
+        observation.selected_method,
+        Some(PRODUCE_WITH_GATHER),
+        "autonomous production should select ProduceWithGather: {observation:?}"
+    );
 }
 
 #[test]
 fn produce_with_gather_selector_replays_deterministically() {
     let first = observe_selector(BTreeSet::new());
     let second = observe_selector(BTreeSet::new());
+
+    assert_eq!(first, second);
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 433: S147 Autonomous Produce Method Trace Propagation
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Search, Production
+// GoalKinds: ProduceCommodity
+// ActionDomains: Production, Travel
+// Places: Village Square, Orchard Farm
+// Principles: 7, 14, 20, 22, 26, 28, 29
+//
+// Setup: a hungry baker autonomously generates a ProduceCommodity goal from
+//   known recipe, workstation, and remote resource-source beliefs.
+// Proves: generated candidate evidence reaches MethodSelector, so the
+//   planning attempt records ProduceWithGather in MethodPlanAttemptTrace.
+// Cross-system chain: candidate-generation evidence -> strategic HTN selector
+//   -> method subgoal substitution -> decision trace method_trace.
+#[test]
+fn autonomous_produce_candidate_records_method_trace() {
+    let observation = observe_htn_production(BTreeSet::new());
+
+    assert_eq!(
+        observation.selected_method,
+        Some(PRODUCE_WITH_GATHER),
+        "autonomous production should select ProduceWithGather: {observation:?}"
+    );
+    assert!(
+        observation
+            .subgoal_kinds
+            .iter()
+            .any(|subgoal| subgoal.contains("AcquireCommodity")),
+        "method trace should record the ProduceWithGather acquisition subgoal: {observation:?}"
+    );
+    assert!(
+        observation
+            .strategic_sub_goals
+            .iter()
+            .any(|sub_goal| sub_goal.contains("AcquirePrerequisite(Firewood)")),
+        "method-selected strategic plan should include the firewood prerequisite stage: {observation:?}"
+    );
+}
+
+#[test]
+fn autonomous_produce_candidate_carries_source_evidence() {
+    let observation = observe_generated_produce_offer();
+
+    assert!(
+        observation.evidence_places.contains(&ORCHARD_FARM),
+        "generated ProduceCommodity offer should carry remote source place evidence: {observation:?}"
+    );
+    assert!(
+        !observation.evidence_entities.is_empty(),
+        "generated ProduceCommodity offer should carry source/workstation evidence entities: {observation:?}"
+    );
+}
+
+#[test]
+fn autonomous_produce_snapshot_selector_uses_source_evidence() {
+    let observation = observe_snapshot_selector_for_generated_offer();
+
+    assert_eq!(
+        observation.selected_method,
+        Some(PRODUCE_WITH_GATHER),
+        "snapshot-backed selector should see generated source evidence: {observation:?}"
+    );
+}
+
+#[test]
+fn autonomous_produce_method_trace_replays_deterministically() {
+    let first = observe_htn_production(BTreeSet::new());
+    let second = observe_htn_production(BTreeSet::new());
 
     assert_eq!(first, second);
 }

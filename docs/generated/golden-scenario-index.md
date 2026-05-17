@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 190
+- Scenario blocks: 191
 - Contributing golden test files: 49
-- Associated tests: 228
+- Associated tests: 232
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -671,7 +671,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 431: S147 ProduceWithGather Method Selection
 
-- Source: `golden_htn_methods.rs:229`
+- Source: `golden_htn_methods.rs:308`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -682,9 +682,22 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Proves**: HTN method selection chooses ProduceWithGather from the agent's belief view and a goal offer whose evidence places include the known resource source.
 
+### Scenario 433: S147 Autonomous Produce Method Trace Propagation
+
+- Source: `golden_htn_methods.rs:344`
+- Systems: AI, Search, Production
+- GoalKinds: ProduceCommodity
+- ActionDomains: Production, Travel
+- Places: Village Square, Orchard Farm
+- Principles: 7, 14, 20, 22, 26, 28, 29
+
+**Setup**: a hungry baker autonomously generates a ProduceCommodity goal from known recipe, workstation, and remote resource-source beliefs.
+
+**Proves**: generated candidate evidence reaches MethodSelector, so the planning attempt records ProduceWithGather in MethodPlanAttemptTrace.
+
 ### Scenario 432: S147 Disabled Methods Fall Back To Flat Strategic Search
 
-- Source: `golden_htn_methods.rs:261`
+- Source: `golden_htn_methods.rs:418`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel

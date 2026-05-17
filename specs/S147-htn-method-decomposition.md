@@ -507,7 +507,8 @@ The format follows the existing observer conventions: compact table columns for 
 
 `golden_htn_methods.rs` (under `crates/worldwake-ai/tests/`) is staged:
 - Landed first seam (`archive/tickets/S147HTNMETDEC-011.md`): `ProduceWithGather` selector proof from the actor belief view plus `GoalOffer` evidence places; method-disabled `ProduceCommodity` fallback to flat GOAP; deterministic replay for both observations.
-- Active remainder (`tickets/S147HTNMETDEC-013.md`): autonomous generated-candidate method trace propagation, then the remaining `FulfillBountyDirect`, `FulfillBountyInvestigation`, escort/failure, and typed `Discrepancy::MethodFailure(MethodFailureContext)` goldens once the evidence bridge is truthful.
+- Landed production bridge (`archive/tickets/S147HTNMETDEC-013.md`): generated `ProduceCommodity` candidates carry method-required source evidence, snapshot-backed method selection resolves recipe-input preconditions through the strategic planner's recipe registry, and autonomous `MethodPlanAttemptTrace` records `ProduceWithGather`.
+- Active remainder (`tickets/S147HTNMETDEC-014.md`): remaining `FulfillBountyDirect`, `FulfillBountyInvestigation`, escort/failure, and typed `Discrepancy::MethodFailure(MethodFailureContext)` goldens now that the production evidence bridge is truthful.
 - Determinism remains required for each landed scenario via repeated fixed-seed observations asserted against `MethodPlanAttemptTrace` and decision-trace output.
 
 ### D11: `GoalSchema.methods` field
@@ -718,7 +719,7 @@ No floats.
 
 ## Test Plan
 
-- D10 golden coverage: first selector/fallback seam landed in `archive/tickets/S147HTNMETDEC-011.md`; autonomous method trace propagation and remaining full-D10 narratives are owned by `tickets/S147HTNMETDEC-013.md`.
+- D10 golden coverage: first selector/fallback seam landed in `archive/tickets/S147HTNMETDEC-011.md`; autonomous production method trace propagation landed in `archive/tickets/S147HTNMETDEC-013.md`; remaining full-D10 bounty/investigation/escort/failure narratives are owned by `tickets/S147HTNMETDEC-014.md`.
 - D8 registry validation tests (5 invariants).
 - D11 `GoalSchema.methods` resolution tests.
 - D12 discriminant-mirror completeness tests.

@@ -8,7 +8,7 @@ use crate::{
     htn::{
         ArtifactTemplate, ClaimRequirement, CommodityTemplate, EntityCriterion, EntityTemplate,
         LocationTemplate, MethodSchema, PayloadTemplate, PayloadValueTemplate, RecipeTemplate,
-        SubgoalTemplate, build_method_registry, select_method,
+        SubgoalTemplate, build_method_registry, select_method_with_recipes,
     },
 };
 use std::cmp::Ordering;
@@ -133,13 +133,14 @@ pub(crate) fn plan_with_budget_trace(
     let profile = state
         .agent_schema_context_profile(actor)
         .unwrap_or(default_profile);
-    let selected_method = select_method(
+    let selected_method = select_method_with_recipes(
         actor,
         goal,
         &method_registry,
         &profile,
         &state,
         &goal.motive_sources,
+        Some(recipes),
     );
     let stage_build = build_stages(
         &state,

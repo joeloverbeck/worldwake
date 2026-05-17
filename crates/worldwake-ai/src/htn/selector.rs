@@ -7,7 +7,7 @@ use worldwake_core::{
     AgentSchemaContextProfile, ArtifactKind, ArtifactLegalEffect, BountyTarget, CommodityKind,
     EntityId, GoalKind, GoalKindDiscriminant, MotiveSourceDiscriminant, MotiveSourceRef, RecipeId,
 };
-use worldwake_sim::RuntimeBeliefView;
+use worldwake_sim::{RecipeDefinition, RecipeRegistry, RuntimeBeliefView};
 
 #[must_use]
 pub fn select_method<'r>(
@@ -18,6 +18,19 @@ pub fn select_method<'r>(
     belief_view: &dyn RuntimeBeliefView,
     motives: &[MotiveSourceRef],
 ) -> Option<&'r MethodSchema> {
+    select_method_with_recipes(actor, goal, registry, profile, belief_view, motives, None)
+}
+
+#[must_use]
+pub fn select_method_with_recipes<'r>(
+    actor: EntityId,
+    goal: &GoalOffer,
+    registry: &'r MethodRegistry,
+    profile: &AgentSchemaContextProfile,
+    belief_view: &dyn RuntimeBeliefView,
+    motives: &[MotiveSourceRef],
+    recipes: Option<&RecipeRegistry>,
+) -> Option<&'r MethodSchema> {
     let goal_kind = GoalKindDiscriminant::from(&goal.key.kind);
 
     registry
@@ -25,7 +38,9 @@ pub fn select_method<'r>(
         .iter()
         .filter_map(|id| registry.get(*id))
         .filter(|method| !profile.disabled_methods.contains(&method.id))
-        .filter(|method| preconditions_satisfied(actor, method, goal, belief_view, motives))
+        .filter(|method| {
+            preconditions_satisfied(actor, method, goal, belief_view, motives, recipes)
+        })
         .map(|method| (method, motive_score(method, motives)))
         .max_by(|(a, score_a), (b, score_b)| score_a.cmp(score_b).then_with(|| b.id.cmp(&a.id)))
         .map(|(method, _)| method)
@@ -37,11 +52,11 @@ fn preconditions_satisfied(
     goal: &GoalOffer,
     belief_view: &dyn RuntimeBeliefView,
     motives: &[MotiveSourceRef],
+    recipes: Option<&RecipeRegistry>,
 ) -> bool {
-    method
-        .preconditions
-        .iter()
-        .all(|precondition| evaluate_precondition(actor, precondition, goal, belief_view, motives))
+    method.preconditions.iter().all(|precondition| {
+        evaluate_precondition(actor, precondition, goal, belief_view, motives, recipes)
+    })
 }
 
 fn evaluate_precondition(
@@ -50,10 +65,11 @@ fn evaluate_precondition(
     goal: &GoalOffer,
     belief_view: &dyn RuntimeBeliefView,
     motives: &[MotiveSourceRef],
+    recipes: Option<&RecipeRegistry>,
 ) -> bool {
     match precondition {
         MethodPrecondition::BeliefHolds(predicate) => {
-            evaluate_belief_predicate(actor, predicate, goal, belief_view)
+            evaluate_belief_predicate(actor, predicate, goal, belief_view, recipes)
         }
         MethodPrecondition::MotiveSourcePresent(discriminant) => motives
             .iter()
@@ -64,14 +80,12 @@ fn evaluate_precondition(
                 .into_iter()
                 .any(|place| !belief_view.matching_workstations_at(place, *tag).is_empty()),
             crate::htn::EntityCriterion::ResourceSource(commodity) => {
-                resolve_commodity(goal, *commodity, belief_view).is_some_and(|commodity| {
-                    candidate_places(goal)
-                        .into_iter()
-                        .any(|place| !belief_view.resource_sources_at(place, commodity).is_empty())
+                resolve_commodity(goal, *commodity, belief_view, recipes).is_some_and(|commodity| {
+                    resource_source_known_for_candidate(goal, commodity, belief_view)
                 })
             }
             crate::htn::EntityCriterion::Seller(commodity) => {
-                resolve_commodity(goal, *commodity, belief_view).is_some_and(|commodity| {
+                resolve_commodity(goal, *commodity, belief_view, recipes).is_some_and(|commodity| {
                     candidate_places(goal)
                         .into_iter()
                         .any(|place| !belief_view.listed_sale_lots_at(place, commodity).is_empty())
@@ -92,6 +106,7 @@ fn evaluate_belief_predicate(
     predicate: &BeliefPredicate,
     goal: &GoalOffer,
     belief_view: &dyn RuntimeBeliefView,
+    recipes: Option<&RecipeRegistry>,
 ) -> bool {
     match predicate {
         BeliefPredicate::BountyRecordExists { bounty } => {
@@ -125,14 +140,12 @@ fn evaluate_belief_predicate(
                 .is_some_and(|violation| belief_view.record_data(violation).is_some())
         }
         BeliefPredicate::ResourceSourceKnown { commodity } => {
-            resolve_commodity(goal, *commodity, belief_view).is_some_and(|commodity| {
-                candidate_places(goal)
-                    .into_iter()
-                    .any(|place| !belief_view.resource_sources_at(place, commodity).is_empty())
+            resolve_commodity(goal, *commodity, belief_view, recipes).is_some_and(|commodity| {
+                resource_source_known_for_candidate(goal, commodity, belief_view)
             })
         }
         BeliefPredicate::SellerKnown { commodity } => {
-            resolve_commodity(goal, *commodity, belief_view).is_some_and(|commodity| {
+            resolve_commodity(goal, *commodity, belief_view, recipes).is_some_and(|commodity| {
                 candidate_places(goal)
                     .into_iter()
                     .any(|place| !belief_view.listed_sale_lots_at(place, commodity).is_empty())
@@ -141,10 +154,10 @@ fn evaluate_belief_predicate(
         BeliefPredicate::OwnedCommodityBelowThreshold {
             commodity,
             threshold,
-        } => resolve_commodity(goal, *commodity, belief_view)
+        } => resolve_commodity(goal, *commodity, belief_view, recipes)
             .is_some_and(|commodity| belief_view.commodity_quantity(actor, commodity) < *threshold),
         BeliefPredicate::OwnsInputsForRecipe { recipe } => resolve_recipe(goal, *recipe)
-            .and_then(|recipe| belief_view.recipe_definition(recipe))
+            .and_then(|recipe| recipe_definition(recipe, belief_view, recipes))
             .is_some_and(|recipe| {
                 recipe.inputs.iter().all(|(commodity, quantity)| {
                     belief_view.commodity_quantity(actor, *commodity) >= *quantity
@@ -191,6 +204,30 @@ fn candidate_places(goal: &GoalOffer) -> Vec<EntityId> {
     places.sort();
     places.dedup();
     places
+}
+
+fn resource_source_known_for_candidate(
+    goal: &GoalOffer,
+    commodity: CommodityKind,
+    belief_view: &dyn RuntimeBeliefView,
+) -> bool {
+    let places = candidate_places(goal);
+    if places.iter().any(|place| {
+        !belief_view
+            .resource_sources_at(*place, commodity)
+            .is_empty()
+    }) {
+        return true;
+    }
+
+    goal.evidence_entities.iter().any(|entity| {
+        belief_view
+            .resource_source(*entity)
+            .is_some_and(|source| source.commodity == commodity)
+            && belief_view
+                .effective_place(*entity)
+                .is_some_and(|place| places.contains(&place))
+    })
 }
 
 fn resolve_entity(
@@ -302,6 +339,7 @@ fn resolve_commodity(
     goal: &GoalOffer,
     template: CommodityTemplate,
     belief_view: &dyn RuntimeBeliefView,
+    recipes: Option<&RecipeRegistry>,
 ) -> Option<CommodityKind> {
     match template {
         CommodityTemplate::GoalCommodity => match goal.key.kind {
@@ -314,14 +352,23 @@ fn resolve_commodity(
         },
         CommodityTemplate::RecipeInput { recipe, ordinal } => {
             let recipe_id = resolve_recipe(goal, recipe)?;
-            belief_view
-                .recipe_definition(recipe_id)?
+            recipe_definition(recipe_id, belief_view, recipes)?
                 .inputs
                 .get(usize::from(ordinal))
                 .map(|(commodity, _)| *commodity)
         }
         CommodityTemplate::Fixed(commodity) => Some(commodity),
     }
+}
+
+fn recipe_definition(
+    recipe_id: RecipeId,
+    belief_view: &dyn RuntimeBeliefView,
+    recipes: Option<&RecipeRegistry>,
+) -> Option<RecipeDefinition> {
+    belief_view
+        .recipe_definition(recipe_id)
+        .or_else(|| recipes.and_then(|registry| registry.get(recipe_id).cloned()))
 }
 
 fn resolve_recipe(goal: &GoalOffer, template: RecipeTemplate) -> Option<RecipeId> {

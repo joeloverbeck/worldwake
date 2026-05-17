@@ -1,6 +1,6 @@
 # S147HTNMETDEC-013: Autonomous HTN method trace propagation and full D10 goldens
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — likely updates candidate evidence propagation or strategic method integration, plus golden coverage.
@@ -26,7 +26,7 @@ The remaining S147 D10 contract is therefore not just "write more goldens." The 
 2. Method selection must remain belief-only and actor-relative. Do not add omniscient world reads to make autonomous methods pass.
 3. No backwards-compatibility shim: if generated candidates are missing required evidence, update the candidate/evidence contract or method precondition bridge directly.
 
-## Verification Layers
+## Verified Layers
 
 1. Autonomous production method trace -> agent-tick decision trace (`PlanAttemptTrace.method_trace.method_id == Some(MethodSchemaId(5))`) for a generated `ProduceCommodity` candidate.
 2. Evidence propagation -> focused lower-layer test over generated `GoalOffer.evidence_places` / `evidence_entities` for the method-required source.
@@ -34,31 +34,33 @@ The remaining S147 D10 contract is therefore not just "write more goldens." The 
 4. Full D10 narratives -> golden tests only after the production bridge proves the autonomous method path.
 5. Typed method failure -> event-log or discrepancy-memory assertion only if the live method execution path actually reaches a method failure boundary; otherwise split to a narrower follow-up.
 
-## What to Change
+## Landed Changes
 
-### 1. Audit and fix the autonomous evidence bridge
+### 1. Autonomous evidence bridge audited and fixed
 
-Trace the `ProduceCommodity` candidate emitted in the ticket 011 fixture from candidate generation through `search/strategic.rs::plan_with_budget_trace`. Ensure the method selector sees the same resource-source evidence that direct selector tests see, without bypassing belief locality.
+The generated `ProduceCommodity` offer already carried the resource-source place/entity evidence at the candidate-generation boundary. The missing bridge was snapshot-backed method precondition evaluation: `PlanningState` carried known recipe IDs but not recipe definitions, so `RecipeInput` method preconditions could not resolve inside strategic planning. `select_method_with_recipes(...)` now lets strategic planning pass the live `RecipeRegistry` into method precondition evaluation while keeping resource-source checks belief/evidence-backed.
 
-### 2. Extend `golden_htn_methods.rs`
+### 2. `golden_htn_methods.rs` extended
 
-Add an autonomous method-trace scenario once the bridge is fixed. Then add as much of S147 D10's original bounty/investigation/escort/failure coverage as the live action substrate can prove honestly.
+Added autonomous generated-candidate coverage proving `ProduceCommodity` records `MethodSchemaId(5)` in `MethodPlanAttemptTrace`, plus snapshot-selector and generated-offer evidence witnesses. The existing disabled-method flat fallback remains covered.
 
-### 3. Truth-sync S147 spec and implementation order if needed
+### 3. S147 handoff truthed
 
-If reassessment shows the full six-narrative D10 contract needs further splitting, update `specs/S147-htn-method-decomposition.md` and `specs/IMPLEMENTATION-ORDER.md` so they describe the staged validation path truthfully.
+The full non-production D10 narrative set remains active and is split to `tickets/S147HTNMETDEC-014.md`: `FulfillBountyDirect`, `FulfillBountyInvestigation`, escort/failure, and typed `Discrepancy::MethodFailure(MethodFailureContext)` goldens.
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-ai/src/candidate_generation.rs` (likely — evidence propagation audit/fix)
-- `crates/worldwake-ai/src/search/strategic.rs` (possible — method integration audit)
-- `crates/worldwake-ai/tests/golden_htn_methods.rs` (modify)
-- `docs/generated/golden-e2e-inventory.md` (regenerated if golden metadata changes)
-- `docs/generated/golden-scenario-index.md` (regenerated if golden metadata changes)
-- `docs/generated/golden-scenario-details/` (regenerated if golden metadata changes)
-- `docs/generated/golden-coverage-matrix.md` (regenerated if golden metadata changes)
-- `specs/S147-htn-method-decomposition.md` (possible truth-sync)
-- `specs/IMPLEMENTATION-ORDER.md` (possible truth-sync)
+- `crates/worldwake-ai/src/candidate_generation.rs` (focused generated-offer evidence test)
+- `crates/worldwake-ai/src/htn/mod.rs` (export `select_method_with_recipes`)
+- `crates/worldwake-ai/src/htn/selector.rs` (recipe-registry precondition bridge and evidence-backed resource-source lookup)
+- `crates/worldwake-ai/src/search/strategic.rs` (method selector call passes the strategic recipe registry)
+- `crates/worldwake-ai/tests/golden_htn_methods.rs` (autonomous production evidence, selector, trace, and replay coverage)
+- `docs/generated/golden-e2e-inventory.md` (regenerated)
+- `docs/generated/golden-scenario-index.md` (regenerated)
+- `docs/generated/golden-scenario-details/htn-methods.md` (regenerated)
+- `docs/generated/golden-coverage-matrix.md` (regenerated)
+- `specs/S147-htn-method-decomposition.md` (truth-sync)
+- `specs/IMPLEMENTATION-ORDER.md` (truth-sync)
 
 ## Out of Scope
 
@@ -67,9 +69,9 @@ If reassessment shows the full six-narrative D10 contract needs further splittin
 - Introducing story-beat methods or method-only goals.
 - Performance regression gates.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Passed Gates
 
 1. Autonomous `ProduceCommodity` method trace records `MethodSchemaId(5)` from generated candidate evidence.
 2. Disabled-method flat fallback remains covered by `golden_htn_methods.rs`.
@@ -84,15 +86,25 @@ If reassessment shows the full six-narrative D10 contract needs further splittin
 3. Flat GOAP fallback remains available when methods are disabled or no method preconditions match.
 4. Any incomplete original D10 narrative is assigned to a named follow-up rather than silently dropped.
 
-## Test Plan
+## Verification Result
 
-### New/Modified Tests
+1. Passed: `cargo test -p worldwake-ai --lib remote_recipe_produce_goal_carries_input_source_place_evidence`
+2. Passed: `cargo test -p worldwake-ai --lib htn::selector -- --nocapture`
+3. Passed: `cargo test -p worldwake-ai --test golden_htn_methods`
+4. Passed: `python3 scripts/golden_inventory.py --write --check-docs`
+5. Passed: `cargo test -p worldwake-ai`
 
-1. `crates/worldwake-ai/tests/golden_htn_methods.rs` — extend with autonomous method-trace coverage and any stable full-D10 scenarios.
-2. Focused lower-layer test near the evidence producer if candidate evidence propagation changes.
+## Outcome
 
-### Commands
+Completed: 2026-05-17
 
-1. `cargo test -p worldwake-ai --test golden_htn_methods`
-2. `python3 scripts/golden_inventory.py --write --check-docs`
-3. `cargo test -p worldwake-ai`
+- Added snapshot-backed recipe-registry support to HTN method selection through `select_method_with_recipes(...)`, and wired strategic planning to pass its live `RecipeRegistry`.
+- Kept method resource-source preconditions belief/evidence-backed by checking generated `GoalOffer` evidence entities and their believed places instead of adding global world reads.
+- Added focused candidate-generation proof that remote recipe input source evidence is present on generated `ProduceCommodity` offers.
+- Added autonomous `golden_htn_methods.rs` production scenarios for generated-offer evidence, snapshot-backed selection, method-trace recording, and deterministic replay.
+- Regenerated golden inventory/docs for the new HTN scenario block.
+- Truth-synced `specs/S147-htn-method-decomposition.md` and `specs/IMPLEMENTATION-ORDER.md`; remaining non-production D10 narratives are owned by `tickets/S147HTNMETDEC-014.md`.
+
+Deviations:
+
+- The ticket did not force the remaining bounty/investigation/escort/failure narratives into this implementation. Those require separate stable fixtures over their own action/legal/failure substrates and are split to `tickets/S147HTNMETDEC-014.md`.
