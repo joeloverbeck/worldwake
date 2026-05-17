@@ -3031,6 +3031,15 @@ fn failed_plan_target_beliefs(attempt: &PlanAttemptTrace) -> &'static str {
     }
 }
 
+fn failed_plan_budget_label(attempt: &PlanAttemptTrace) -> String {
+    format!(
+        "{} (depth {}, expansions {})",
+        attempt.goal_budget.preset_name().unwrap_or("CUSTOM"),
+        attempt.goal_budget.max_depth,
+        attempt.goal_budget.max_node_expansions
+    )
+}
+
 fn action_timeline_bins_for_agent<'a>(
     action_trace: &'a ActionTraceSink,
     agent_id: EntityId,
@@ -4774,12 +4783,12 @@ fn format_report(
                 .unwrap();
                 writeln!(
                     out,
-                    "| Tick | Goal | Outcome | Expansions | Max Depth | Candidates | Location | Had Target Beliefs |"
+                    "| Tick | Goal | Outcome | Budget | Expansions | Max Depth | Candidates | Location | Had Target Beliefs |"
                 )
                 .unwrap();
                 writeln!(
                     out,
-                    "|------|------|---------|------------|-----------|------------|----------|--------------------|"
+                    "|------|------|---------|--------|------------|-----------|------------|----------|--------------------|"
                 )
                 .unwrap();
                 let mut shown = 0u32;
@@ -4799,10 +4808,11 @@ fn format_report(
                     };
                     writeln!(
                         out,
-                        "| {} | {:?} | {} | {} | {} | {} | {} | {} |",
+                        "| {} | {:?} | {} | {} | {} | {} | {} | {} | {} |",
                         tick,
                         attempt.goal.kind,
                         failed_plan_outcome_label(attempt),
+                        failed_plan_budget_label(attempt),
                         expansions,
                         failed_plan_max_depth(attempt),
                         failed_plan_candidates(attempt),
@@ -6639,6 +6649,61 @@ mod tests {
         assert_eq!(breakdown.budget_exhausted, 1);
         assert_eq!(breakdown.max_depth_zero, 1);
         assert_eq!(breakdown.target_beliefs_false, 1);
+    }
+
+    #[test]
+    fn format_report_renders_goal_budget_for_failed_plan_attempts() {
+        let mut driver = AgentTickDriver::new();
+        driver.enable_tracing();
+        let registry = RecipeRegistry::new();
+        let agent = entity(1);
+        let mut trace = planning_affordance_trace(
+            agent,
+            12,
+            affordance_trace(Some(entity(10)), &[("sleep", 1)]),
+        );
+        let DecisionOutcome::Planning(planning) = &mut trace.outcome else {
+            panic!("expected planning trace");
+        };
+        planning.planning.attempts.push(PlanAttemptTrace {
+            outcome: PlanSearchOutcome::BudgetExhausted { expansions_used: 7 },
+            goal_budget: worldwake_core::GoalPlanningBudget::PRODUCTION,
+            ..sample_attempt(vec![sample_summary(4, 12)])
+        });
+        driver.trace_sink_mut().expect("trace sink").record(trace);
+
+        let world = World::new(build_prototype_world()).expect("world");
+        let report = format_report(
+            "scenario.ron",
+            7,
+            20,
+            &[(agent, "Guard Theron".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &ActionDefRegistry::new(),
+            &registry,
+            &world,
+            &driver,
+            &[],
+            false,
+            &[],
+            0,
+            5,
+            None,
+            None,
+            &DiagnosticsRenderOptions::default(),
+        );
+
+        assert!(report.contains(
+            "| Tick | Goal | Outcome | Budget | Expansions | Max Depth | Candidates | Location | Had Target Beliefs |"
+        ));
+        assert!(report.contains(
+            "| 12 | Sleep | budget-exhausted | PRODUCTION (depth 16, expansions 384) | 7 | 4 | 12 | e10g0 | n/a |"
+        ));
     }
 
     #[test]

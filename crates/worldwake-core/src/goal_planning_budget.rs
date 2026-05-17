@@ -44,6 +44,22 @@ impl GoalPlanningBudget {
         repair_budget_fraction: Permille::new_unchecked(500),
         max_strategic_expansions: 96,
     };
+
+    pub fn preset_name(&self) -> Option<&'static str> {
+        if *self == Self::SELF_CARE {
+            Some("SELF_CARE")
+        } else if *self == Self::TRAVEL_PURCHASE {
+            Some("TRAVEL_PURCHASE")
+        } else if *self == Self::PRODUCTION {
+            Some("PRODUCTION")
+        } else if *self == Self::INVESTIGATION {
+            Some("INVESTIGATION")
+        } else if *self == Self::BOUNTY_ESCORT {
+            Some("BOUNTY_ESCORT")
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -101,5 +117,37 @@ mod tests {
         let roundtrip: GoalPlanningBudget = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, budget);
+    }
+
+    #[test]
+    fn preset_name_returns_canonical_names() {
+        assert_eq!(
+            GoalPlanningBudget::SELF_CARE.preset_name(),
+            Some("SELF_CARE")
+        );
+        assert_eq!(
+            GoalPlanningBudget::TRAVEL_PURCHASE.preset_name(),
+            Some("TRAVEL_PURCHASE")
+        );
+        assert_eq!(
+            GoalPlanningBudget::PRODUCTION.preset_name(),
+            Some("PRODUCTION")
+        );
+        assert_eq!(
+            GoalPlanningBudget::INVESTIGATION.preset_name(),
+            Some("INVESTIGATION")
+        );
+        assert_eq!(
+            GoalPlanningBudget::BOUNTY_ESCORT.preset_name(),
+            Some("BOUNTY_ESCORT")
+        );
+
+        let custom = GoalPlanningBudget {
+            max_depth: 99,
+            max_node_expansions: 999,
+            repair_budget_fraction: Permille::new_unchecked(123),
+            max_strategic_expansions: 17,
+        };
+        assert_eq!(custom.preset_name(), None);
     }
 }

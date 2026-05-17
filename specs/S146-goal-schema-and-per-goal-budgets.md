@@ -24,7 +24,7 @@ Phase 12: AI Architecture Evolution — Draft
 - `worldwake-core` — adds `GoalPlanningBudget` (concrete struct with preset constants) and `AgentSchemaContextProfile` (new universal ECS component on `EntityKind::Agent`). Registers the component in `component_schema.rs`. No change to authoritative world state shape beyond the new component.
 - `worldwake-sim` — extends `GoalBeliefView` with a single accessor for `AgentSchemaContextProfile` so the AI crate can read it through the belief-view layer (Pattern: New Component Read by AI Crate).
 - `worldwake-systems` — no change.
-- `worldwake-cli` — observer Section 7 (planning) renders the per-goal budget preset that bounded each plan attempt. Scenario loader (`scenario/types.rs` + `scenario/mod.rs`) gains `AgentDef.agent_schema_context_profile` field and the corresponding `spawn_agent` universal-application call.
+- `worldwake-cli` — observer Section 8's failed-plan attempt table renders the per-goal budget preset that bounded each failed plan attempt. Scenario loader (`scenario/types.rs` + `scenario/mod.rs`) gains `AgentDef.agent_schema_context_profile` field and the corresponding `spawn_agent` universal-application call.
 
 ## Dependencies
 
@@ -65,7 +65,7 @@ Phase 12: AI Architecture Evolution — Draft
 | FND-22 (Agent Diversity Through Concrete Variation) | `AgentSchemaContextProfile` lets per-agent profiles disable extractor families and override budget tiers, supporting later archetype work. |
 | FND-26 (Systems Interact Through State, Not Through Each Other) | Extractors read belief views and snapshot state; the schema registry is shared build-time data, not cross-system commands. |
 | FND-28 (No Backward Compatibility in Live Authority Paths) | `GoalDispatchDeclaration` is renamed in place (no parallel `GoalSchema`); the 20 `emit_*` functions are migrated and deleted; no shim layer. Fields backed only by speculative future systems are explicitly NOT added (no fossilized scaffolding). |
-| FND-29 (Debuggability Is a Product Feature) | `PlanAttemptTrace.goal_budget` records which budget tier bounded each plan attempt; observer Section 7 renders the preset name. |
+| FND-29 (Debuggability Is a Product Feature) | `PlanAttemptTrace.goal_budget` records which budget tier bounded each plan attempt; observer Section 8 renders the preset name for failed plan attempts. |
 | FND-30 (Every New System Spec Must Declare Its Causal Hooks) | Schema additions and `AgentSchemaContextProfile` introduce no new world-information flows; Section H covers the (limited) scope below. |
 
 ## Deliverables
@@ -269,7 +269,7 @@ pub struct PlanAttemptTrace {
 
 ### D10: Observer rendering
 
-Observer Section 7 (planning, `crates/worldwake-cli/src/bin/observer.rs` — uses the existing `## Section N — Title` markdown header convention) extends to surface the `GoalPlanningBudget` preset name (`SELF_CARE`, `TRAVEL_PURCHASE`, `PRODUCTION`, `INVESTIGATION`, `BOUNTY_ESCORT`, or `CUSTOM` when a profile override doesn't match a preset) and the actual `max_depth` / `max_node_expansions` applied per plan attempt (read from D8's `goal_budget` field). S144's `PlanningMetrics` aggregates exhaustion-by-preset using the same field.
+Observer Section 8's per-agent failed-plan attempt table (`crates/worldwake-cli/src/bin/observer.rs`) extends to surface the `GoalPlanningBudget` preset name (`SELF_CARE`, `TRAVEL_PURCHASE`, `PRODUCTION`, `INVESTIGATION`, `BOUNTY_ESCORT`, or `CUSTOM` when a profile override doesn't match a preset) and the actual `max_depth` / `max_node_expansions` applied to each rendered failed plan attempt (read from D8's `goal_budget` field). S144's `PlanningMetrics` aggregates exhaustion-by-preset using the same field.
 
 Preset-name rendering is performed by a small `GoalPlanningBudget::preset_name() -> Option<&'static str>` method that returns `Some("SELF_CARE")` etc. when the budget matches a defined preset and `None` otherwise — no separate `ExplanationTemplateId` indirection is introduced.
 
