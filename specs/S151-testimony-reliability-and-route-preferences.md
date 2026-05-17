@@ -56,7 +56,7 @@ Phase 12: AI Architecture Evolution — Draft
 - **No HabitMemory.** Deferred per scope-down.
 - **No `SourceReliabilityDiscount` generalization.** `crates/worldwake-ai/src/decision_trace.rs:694-700` already carries commodity-extraction reliability discounting (S131/S133); `TestimonyReliability` is a parallel structure for witness-claim reliability, not a generalization.
 - **No global reputation system.** Each agent has their own reliability view.
-- **No new event tag.** Updates flow through existing testimony-confirm and route-traversal events (`EventTag::ActionCommitted` with `ActionState::Travel` payload; `EventTag::Combat`, `Escalation`, `WildernessRelief` for threat observation during travel; belief overwrite sites in `crates/worldwake-core/src/belief.rs:129-150` and `163-193`).
+- **No new event tag.** Updates flow through existing testimony-confirm and route-experience events (`AgentBeliefStore` and `RouteExperience` component deltas; `EventTag::Combat`, `Escalation`, `WildernessRelief` for same-tick threat provenance; belief overwrite sites in `crates/worldwake-core/src/belief.rs:129-150` and `163-193`).
 - **No automatic reliability propagation through gossip.** If agent A trusts witness W, A's friend B does not automatically trust W. (S139's existing ShareBelief substrate already lets agents share trust through testimony if a scenario authors it.)
 - **No new `Discrepancy` variant.** Testimony-source unreliability is a candidate-emission omission concern (per the Discrepancy-as-Failure-Attribution Surface pattern, option 1), not a typed plan-failure surface.
 
@@ -228,16 +228,16 @@ Universal per FND-22A — registered on `EntityKind::Agent` with default impl.
 
 S151 introduces **no new event tag**. Updates fire from existing event-log emissions and existing belief-store overwrite sites:
 
-**Testimony reliability updates** fire from a new observation-phase hook in the AI tick (likely a sibling of the existing perception-import phase, residing in `crates/worldwake-ai/src/agent_tick/` and reading `AgentDecisionRuntime.dirty` + the current tick's perception diff):
+**Testimony reliability updates** fire from the observation-phase hook in `crates/worldwake-ai/src/agent_tick/learned_state_observation.rs`, reading per-agent `AgentBeliefStore` component deltas for the current tick:
 
 - **AskWitness commit + later belief confirmation**: When S139's AskWitness produces a `Report { from: EntityId, chain_len }` claim (per `crates/worldwake-core/src/belief.rs:2481-2486` `PerceptionSource`), and a subsequent direct observation overwrites that claim via `import_entity_snapshot()` (`crates/worldwake-core/src/belief.rs:163-193`), the hook compares the prior claim's value against the new direct observation. Match → `direct_confirmations += 1`; mismatch → `direct_refutations += 1`. The confirming/refuting observation's `EventId` enters `provenance_events`. The mapping from claim's `TellTopic` / aspect to `TopicScope` flows through D2's `belief_topic_to_topic_scope`.
 - **Stale claim observation**: When `refute_entity_claims()` (`crates/worldwake-core/src/belief.rs:129-150`) clears a stale claim whose `PerceptionSource` was a `Report { from: witness }`, the hook increments `stale_claims` for `(witness, mapped_topic)`.
 - **Contradiction observation**: When two simultaneous Reports about the same `(subject, aspect)` conflict and the agent picks one (per S109's `Discrepancy::BeliefContradicted` emission path), the loser's witness gets `contradicted_claims += 1` for the mapped topic.
 
-**Route preference updates** fire from a new post-action hook in the AI tick observation phase, reading `EventTag::ActionCommitted` entries from the current tick's event log and filtering for entries whose action is `TravelTo`:
+**Route preference updates** fire from the same AI tick observation hook, reading per-agent `RouteExperience` component deltas from the current tick's event log:
 
-- **Safe traversal**: When a `TravelTo` action completes (commits to destination place) and no `EventTag::Combat`, `EventTag::Escalation`, `EventTag::WildernessRelief`, or `EventTag::Wound` (or successor) was observed against the traveling agent during the action's tick window, `safe_traversals += 1` and `last_safe_tick = current_tick` for the relevant `RouteSegment::new(from, to)`.
-- **Dangerous traversal**: When a `TravelTo` action commits or is interrupted, AND a threat-class event was observed against the traveler during the action's tick window, `dangerous_traversals += 1` and `last_dangerous_tick = current_tick`. The `EventId` of the dangerous event enters `last_traversal_event`.
+- **Safe traversal**: When the agent's `RouteExperience` delta increases `safe_trips` for a topology edge, `safe_traversals += 1` and `last_safe_tick = current_tick` for `RouteSegment::new(edge.from(), edge.to())`.
+- **Dangerous traversal**: When the agent's `RouteExperience` delta increases `hostile_encounters` for a topology edge, `dangerous_traversals += 1` and `last_dangerous_tick = current_tick`. A same-tick `Combat`, `Escalation`, or `WildernessRelief` event involving the agent supplies `last_traversal_event` when present; otherwise the route-experience mutation event ID is used.
 
 All updates are deterministic and tick-aligned.
 
@@ -391,7 +391,7 @@ Save/load round-trip tests cover the new runtime fields per the existing pattern
 `golden_route_preferences.rs`:
 
 - Agent traverses route A→B safely 5 times → `preference` positive → `perceived_direct_travel_cost_from_memory` returns reduced cost.
-- Agent ambushed on A→B (threat events fire in TravelTo's tick window) → `dangerous_traversals` increments → travel cost increased.
+- Agent ambushed on A->B (`RouteExperience.hostile_encounters` increases, with same-tick threat provenance when available) → `dangerous_traversals` increments → travel cost increased.
 - Route preference decays after `days_to_decay_observations` → falls to neutral.
 - `RoutePreference` + `BlockerScope::RouteSegment` (S150) compose: blocker is hard suppression; preference is soft bias.
 
@@ -401,7 +401,7 @@ Save/load round-trip tests cover the new runtime fields per the existing pattern
 
 **Testimony reliability**: updates fire from belief-store overwrite events (`refute_entity_claims`, `import_entity_snapshot` in `belief.rs`), and from `Discrepancy::BeliefContradicted` emission in the AI tick. All belief overwrites originate from local perception or testimony per FND-15 (`PerceptionSource::Report { from }` carries the witness identity). The `TellTopic → TopicScope` mapping (D2) collapses the rich belief topic carrier into the reliability key without losing the witness identity.
 
-**Route preferences**: updates fire from `EventTag::ActionCommitted` entries (TravelTo action commits) and threat-class event observations (`Combat`, `Escalation`, `WildernessRelief`, `Wound`) within the TravelTo action's tick window. All come through the existing append-only event log.
+**Route preferences**: updates fire from `RouteExperience` component deltas that record safe trips and hostile encounters per topology edge. Same-tick threat-class event observations (`Combat`, `Escalation`, `WildernessRelief`) provide dangerous-traversal provenance when available. All come through the existing append-only event log.
 
 No global truth queried.
 
@@ -448,7 +448,7 @@ Covered by D11. Summary: two new universal components (`TestimonyTrustProfile`, 
 
 ## Cross-System Interactions
 
-- The AI tick's new observation-phase hook (D7) reads belief-store overwrite events (`refute_entity_claims`, `import_entity_snapshot` in `crates/worldwake-core/src/belief.rs`) and tick-scoped event-log entries (`EventTag::ActionCommitted` for TravelTo, threat-class tags during the action's tick window).
+- The AI tick's observation-phase hook (D7) reads belief-store overwrite events (`refute_entity_claims`, `import_entity_snapshot` in `crates/worldwake-core/src/belief.rs`) and `RouteExperience` component deltas with same-tick threat-class events for dangerous-route provenance.
 - Ranking (`crates/worldwake-ai/src/ranking.rs`) and candidate emission (`crates/worldwake-ai/src/candidate_generation.rs`) consume `TestimonyTrustProfile` and `RoutePreferenceProfile` through `GoalBeliefView` accessors (D12).
 - `crates/worldwake-ai/src/route_threat.rs` consumes `RoutePreference` and `RoutePreferenceProfile` through additional function parameters threaded by the planner caller (D8).
 - Observer (`crates/worldwake-cli/src/bin/observer.rs`) renders embedded payload contexts via the existing `decision_payload_summary()` path (D9).

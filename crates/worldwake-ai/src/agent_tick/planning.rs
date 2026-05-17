@@ -38,11 +38,12 @@ use std::time::Instant;
 use worldwake_core::{
     ActionDefId, BlockerMemory, CognitiveProfile, DecisionEventPayload, DiscrepancyMemory,
     EntityId, EventLog, EventTag, ExecutionBudget, GoalKind, IntentionFrame, OpportunityAnchor,
-    Permille, PlanAdoptedPayload, RepairKind, Tick,
+    Permille, PlanAdoptedPayload, RepairKind, RoutePreferenceSummary, RouteSegment,
+    TestimonyReliabilityKey, TestimonyTrustSummary, Tick, belief_topic_to_topic_scope,
 };
 use worldwake_sim::{
-    ActionHandlerRegistry, ActionPayload, GoalBeliefView, RecipeRegistry, RuntimeBeliefView,
-    Scheduler, SpatialBeliefView, get_affordances_for_defs,
+    ActionHandlerRegistry, ActionPayload, GoalBeliefView, ProfileBeliefView, RecipeRegistry,
+    RuntimeBeliefView, Scheduler, SpatialBeliefView, get_affordances_for_defs,
 };
 
 use super::frame::plan_completion_tick_for_adoption;
@@ -91,6 +92,10 @@ type PlanningStepTraceResult = (
     Option<PlanningStateCacheCounters>,
     BTreeSet<worldwake_core::HomeostaticNeedId>,
 );
+
+trait DecisionHistoryContextView: ProfileBeliefView + SpatialBeliefView {}
+
+impl<T: ProfileBeliefView + SpatialBeliefView + ?Sized> DecisionHistoryContextView for T {}
 
 #[derive(Clone, Debug)]
 pub(super) struct CandidatePlanningPass {
@@ -1169,6 +1174,8 @@ fn emit_plan_selection_events(
     event_log: &mut EventLog,
     tick: Tick,
     agent: EntityId,
+    runtime: &AgentDecisionRuntime,
+    view: &dyn DecisionHistoryContextView,
     ranked_candidates: &OrderedRanked<'_>,
     portfolio: &Portfolio,
     current_goal_before_selection: Option<worldwake_core::GoalKey>,
@@ -1204,8 +1211,19 @@ fn emit_plan_selection_events(
                     max_alternatives,
                     Some(selected_plan),
                 ),
-                testimony_trust_context: Vec::new(),
-                route_preference_context: Vec::new(),
+                testimony_trust_context: testimony_trust_context_for_plan(
+                    runtime,
+                    view,
+                    agent,
+                    selected_plan,
+                ),
+                route_preference_context: route_preference_context_for_plan(
+                    runtime,
+                    view,
+                    agent,
+                    selected_plan,
+                    tick,
+                ),
             }),
         );
     }
@@ -1225,6 +1243,76 @@ fn emit_plan_selection_events(
             assumptions: assumptions_to_refs(assumptions, max_alternatives, Some(selected_plan)),
         }),
     );
+}
+
+fn testimony_trust_context_for_plan(
+    runtime: &AgentDecisionRuntime,
+    view: &dyn DecisionHistoryContextView,
+    agent: EntityId,
+    selected_plan: &PlannedPlan,
+) -> Vec<TestimonyTrustSummary> {
+    let GoalKind::AskWitness { witness, topic } = &selected_plan.goal.kind else {
+        return Vec::new();
+    };
+    let Some(profile) = view.testimony_trust_profile(agent) else {
+        return Vec::new();
+    };
+    let topic = belief_topic_to_topic_scope(topic);
+    let key = TestimonyReliabilityKey {
+        source: *witness,
+        topic,
+    };
+    runtime
+        .testimony_reliability
+        .get(&key)
+        .map(|entry| {
+            vec![TestimonyTrustSummary {
+                source: *witness,
+                topic,
+                trust: entry.trust(&profile, topic),
+                observations: entry.observations(),
+            }]
+        })
+        .unwrap_or_default()
+}
+
+fn route_preference_context_for_plan(
+    runtime: &AgentDecisionRuntime,
+    view: &dyn DecisionHistoryContextView,
+    agent: EntityId,
+    selected_plan: &PlannedPlan,
+    tick: Tick,
+) -> Vec<RoutePreferenceSummary> {
+    let Some(profile) = view.route_preference_profile(agent) else {
+        return Vec::new();
+    };
+    let mut current_place = SpatialBeliefView::effective_place(view, agent);
+    let mut summaries = BTreeMap::new();
+
+    for step in &selected_plan.steps {
+        if step.op_kind != crate::PlannerOpKind::Travel {
+            continue;
+        }
+        let Some(from) = current_place else {
+            continue;
+        };
+        let Some(to) = step.primary_target() else {
+            continue;
+        };
+        let segment = RouteSegment::new(from, to);
+        current_place = Some(to);
+        let Some(entry) = runtime.route_preference.get(&segment) else {
+            continue;
+        };
+        summaries.entry(segment).or_insert(RoutePreferenceSummary {
+            segment,
+            preference: entry.preference(&profile, tick),
+            last_safe_tick: entry.last_safe_tick,
+            last_dangerous_tick: entry.last_dangerous_tick,
+        });
+    }
+
+    summaries.into_values().collect()
 }
 
 fn clear_committed_plan_state(
@@ -1947,6 +2035,8 @@ fn plan_and_validate_next_step_with_opportunity_index(
                         event_log,
                         tick,
                         agent,
+                        runtime,
+                        &refreshed_view,
                         ranked_candidates,
                         &plans.portfolio,
                         active_goal_key,
@@ -2417,6 +2507,8 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
                     event_log,
                     tick,
                     agent,
+                    runtime,
+                    &refreshed_view,
                     ranked_candidates,
                     &plans.portfolio,
                     current_goal_before_selection,
@@ -2651,19 +2743,21 @@ mod tests {
     use worldwake_core::{
         AcquisitionQuantity, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef,
         CognitiveProfile, CommodityKind, CommodityPurpose, ContentionIntents, ControlSource,
-        DecisionEventPayload, EntityId, EventLog, EventTag, EventView, ExecutionBudget,
+        DecisionEventPayload, EntityId, EventId, EventLog, EventTag, EventView, ExecutionBudget,
         FrameAssumption, GoalCommittedPayload, GoalRejectionReason, HomeostaticNeedId,
         HomeostaticNeeds, MerchandiseProfile, PerceptionSource, Permille, Place,
-        PlanAdoptedPayload, Quantity, RankedGoalComparisonDimensionTag, RepairKind, SourceKey,
-        Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationTag,
-        World, WorldTxn, build_believed_entity_state, build_prototype_world,
+        PlanAdoptedPayload, Quantity, RankedGoalComparisonDimensionTag, RepairKind,
+        RoutePreferenceProfile, RoutePreferenceSummary, RouteSegment, SourceKey, TellTopic,
+        TestimonyTrustProfile, TestimonyTrustSummary, Tick, TopicScope, Topology, TravelEdge,
+        TravelEdgeId, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        build_believed_entity_state, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandler,
         ActionHandlerId, ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState,
         BindingStrictness, CommitOutcome, DeterministicRng, DurationExpr, Interruptibility,
-        PerAgentBeliefView, Precondition, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
-        Scheduler, SystemManifest, TargetSpec,
+        PerAgentBeliefView, Precondition, ProfileBeliefView, RecipeDefinition, RecipeRegistry,
+        RuntimeBeliefView, Scheduler, SpatialBeliefView, SystemManifest, TargetSpec,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -2703,6 +2797,71 @@ mod tests {
             Vec::new(),
             PlanTerminalKind::GoalSatisfied,
         )
+    }
+
+    #[derive(Default)]
+    struct SelectionContextView {
+        effective_places: BTreeMap<EntityId, EntityId>,
+        testimony_profile: Option<TestimonyTrustProfile>,
+        route_profile: Option<RoutePreferenceProfile>,
+    }
+
+    impl ProfileBeliefView for SelectionContextView {
+        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
+            None
+        }
+
+        fn drive_thresholds(&self, _agent: EntityId) -> Option<worldwake_core::DriveThresholds> {
+            None
+        }
+
+        fn metabolism_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::MetabolismProfile> {
+            None
+        }
+
+        fn testimony_trust_profile(&self, _agent: EntityId) -> Option<TestimonyTrustProfile> {
+            self.testimony_profile.clone()
+        }
+
+        fn route_preference_profile(&self, _agent: EntityId) -> Option<RoutePreferenceProfile> {
+            self.route_profile.clone()
+        }
+    }
+
+    impl SpatialBeliefView for SelectionContextView {
+        fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
+            self.effective_places.get(&entity).copied()
+        }
+
+        fn is_in_transit(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+            false
+        }
+
+        fn in_transit_state(&self, _entity: EntityId) -> Option<worldwake_core::InTransitOnEdge> {
+            None
+        }
+
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            _place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            Vec::new()
+        }
     }
 
     fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
@@ -3986,6 +4145,8 @@ mod tests {
         let mut event_log = EventLog::new();
         let agent = entity(1);
         let tick = Tick(9);
+        let runtime = AgentDecisionRuntime::default();
+        let view = SelectionContextView::default();
         let frame = worldwake_core::IntentionFrame {
             goal: selected_goal,
             domain: worldwake_core::IntentionDomain::Generic,
@@ -4004,6 +4165,8 @@ mod tests {
             &mut event_log,
             tick,
             agent,
+            &runtime,
+            &view,
             &ordered(&ranked_candidates),
             &Portfolio {
                 slots: BTreeMap::new(),
@@ -4066,6 +4229,131 @@ mod tests {
                     introduced_at_step: 1,
                 }],
             }))
+        );
+    }
+
+    #[test]
+    fn emit_plan_selection_events_records_learned_contexts_for_committed_goal() {
+        let agent = entity(1);
+        let witness = entity(2);
+        let subject = entity(3);
+        let first_place = entity(50);
+        let second_place = entity(51);
+        let topic = TellTopic::EntityBelief { subject };
+        let selected_goal = GoalKey::from(GoalKind::AskWitness { witness, topic });
+        let runner_up = GoalKey::from(GoalKind::Sleep);
+        let ranked_candidates = vec![
+            ranked_goal(GoalOffer {
+                key: selected_goal,
+                anchor: OpportunityAnchor::None,
+                evidence_entities: BTreeSet::new(),
+                evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
+                motive_sources: Vec::new(),
+                acquisition_quantity: None,
+            }),
+            ranked_goal(GoalOffer {
+                key: runner_up,
+                anchor: OpportunityAnchor::None,
+                evidence_entities: BTreeSet::new(),
+                evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
+                motive_sources: Vec::new(),
+                acquisition_quantity: None,
+            }),
+        ];
+        let selected_plan = PlannedPlan::new(
+            opportunity(selected_goal),
+            selected_goal,
+            vec![PlannedStep {
+                def_id: ActionDefId(1),
+                targets: vec![PlanningEntityRef::Authoritative(second_place)],
+                target_place: Some(second_place),
+                payload_override: None,
+                op_kind: PlannerOpKind::Travel,
+                estimated_ticks: 1,
+                is_materialization_barrier: false,
+                expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
+            }],
+            PlanTerminalKind::ProgressBarrier,
+        );
+
+        let tick = Tick(20);
+        let mut runtime = AgentDecisionRuntime::default();
+        runtime.testimony_reliability.record_refutation(
+            worldwake_core::TestimonyReliabilityKey {
+                source: witness,
+                topic: TopicScope::GeneralFact,
+            },
+            EventId(77),
+            Tick(19),
+        );
+        runtime
+            .route_preference
+            .record_safe(RouteSegment::new(first_place, second_place), tick);
+        let mut effective_places = BTreeMap::new();
+        effective_places.insert(agent, first_place);
+        let view = SelectionContextView {
+            effective_places,
+            testimony_profile: Some(TestimonyTrustProfile {
+                minimum_observations: 1,
+                ..TestimonyTrustProfile::default()
+            }),
+            route_profile: Some(RoutePreferenceProfile {
+                minimum_traversals: 1,
+                ..RoutePreferenceProfile::default()
+            }),
+        };
+        let mut event_log = EventLog::new();
+
+        super::emit_plan_selection_events(
+            &mut event_log,
+            tick,
+            agent,
+            &runtime,
+            &view,
+            &ordered(&ranked_candidates),
+            &Portfolio {
+                slots: BTreeMap::new(),
+            },
+            None,
+            &selected_plan,
+            2,
+            None,
+        );
+
+        let tick_events = event_log.events_at_tick(tick);
+        let commit = event_log.get(tick_events[0]).unwrap();
+        let Some(DecisionEventPayload::GoalCommitted(payload)) = commit.decision_payload() else {
+            panic!("first decision event should be a goal commit");
+        };
+        assert_eq!(
+            payload.testimony_trust_context,
+            vec![TestimonyTrustSummary {
+                source: witness,
+                topic: TopicScope::GeneralFact,
+                trust: Permille::new_unchecked(300),
+                observations: 1,
+            }]
+        );
+        assert_eq!(
+            payload.route_preference_context,
+            vec![RoutePreferenceSummary {
+                segment: RouteSegment::new(first_place, second_place),
+                preference: Permille::new_unchecked(700),
+                last_safe_tick: Some(tick),
+                last_dangerous_tick: None,
+            }]
         );
     }
 

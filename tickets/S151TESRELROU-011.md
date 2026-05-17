@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: None — new golden test scenarios only
-**Deps**: archive/tickets/S151TESRELROU-001.md, archive/tickets/S151TESRELROU-002.md, archive/tickets/S151TESRELROU-003.md, archive/tickets/S151TESRELROU-004.md, archive/tickets/S151TESRELROU-005.md, S151TESRELROU-006, S151TESRELROU-007, S151TESRELROU-008, S151TESRELROU-009
+**Deps**: archive/tickets/S151TESRELROU-001.md, archive/tickets/S151TESRELROU-002.md, archive/tickets/S151TESRELROU-003.md, archive/tickets/S151TESRELROU-004.md, archive/tickets/S151TESRELROU-005.md, archive/tickets/S151TESRELROU-006.md, S151TESRELROU-007, S151TESRELROU-008, S151TESRELROU-009
 
 ## Problem
 

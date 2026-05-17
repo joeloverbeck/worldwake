@@ -2,6 +2,7 @@ mod active_action;
 mod candidates;
 mod execution;
 mod frame;
+mod learned_state_observation;
 mod observation;
 mod planning;
 pub(crate) mod portfolio;
@@ -22,6 +23,7 @@ use frame::{
     record_assumption_failure, record_source_invalidation, update_frame_for_adopted_plan,
 };
 pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
+use learned_state_observation::record_learned_state_updates;
 use observation::{
     CompletedPlanSummary, ExpectationMismatchContext, InFlightReconciliation, ReadPhaseContext,
     emit_expectation_mismatch, reconcile_in_flight_state,
@@ -1425,6 +1427,8 @@ fn process_agent(
         &mut discrepancy_memory,
         agent,
     )?;
+
+    record_learned_state_updates(runtime, agent, ctx.event_log, ctx.world.topology(), tick);
 
     // Detect progress recorded during reconciliation (advance_completed_step).
     if let Some(ref mut ft) = frame_transitions {
