@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implemented-S150-cross-goal-blocker-scoping",
   "base_head": "7e7f3542a2483243f860b794f833426c647217cd",
-  "last_ticket": "archive/tickets/S150CROGOABLO-001.md",
+  "last_ticket": "archive/tickets/S150CROGOABLO-002.md",
   "last_result": "completed_archived",
-  "last_work_commit": "da56d94935b93da466d3f4168429fb4e1273e7df",
-  "last_state_commit": "0932ac18e6d34dff1bdd56cb9f358e4731b73522",
+  "last_work_commit": "2fb24245e75109b35df333d1f03cdf80e1af92e6",
+  "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S150CROGOABLO-002.md",
+  "next_target": "tickets/S150CROGOABLO-003.md",
   "queue": [
-    "tickets/S150CROGOABLO-002.md",
     "tickets/S150CROGOABLO-003.md",
     "tickets/S150CROGOABLO-004.md",
     "tickets/S150CROGOABLO-005.md",
@@ -22,6 +21,6 @@
   "post_ticket_review_audit": "not_required",
   "blocked": false,
   "blocker": null,
-  "dirty_state": "clean after state commit",
+  "dirty_state": "clean",
   "updated_at": "2026-05-17"
 }
