@@ -28,10 +28,11 @@ pub(crate) struct ProbeContext<'a> {
 
 pub(crate) fn probe(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> FeasibilityVerdict {
     let blocker_key = blocker_key_for_probe(ranked);
+    let blocker_scope = worldwake_core::BlockerScope::Exact(blocker_key);
     if let Some(entry) = context
         .discrepancy_memory
         .entries
-        .get(&blocker_key)
+        .get(&blocker_scope)
         .filter(|entry| entry.expires_tick > context.current_tick)
     {
         return FeasibilityVerdict::RejectedBeforeSearch {
@@ -39,15 +40,32 @@ pub(crate) fn probe(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> Feasibi
         };
     }
 
-    if context.blocker_memory.is_blocked(
-        &blocker_key.goal_key,
-        blocker_key.place,
-        blocker_key.target,
-        blocker_key.action_def,
-        context.current_tick,
-    ) {
+    if context
+        .blocker_memory
+        .is_blocked(&blocker_scope, context.current_tick)
+    {
         return FeasibilityVerdict::RejectedBeforeSearch {
             reason: Discrepancy::PartialExecutionDrift,
+        };
+    }
+    if let Some(anchor) = counterparty_anchor(ranked)
+        && context
+            .blocker_memory
+            .counterparty_blocked(anchor, context.current_tick)
+            .is_some()
+    {
+        return FeasibilityVerdict::RejectedBeforeSearch {
+            reason: Discrepancy::NoWillingCounterparty,
+        };
+    }
+    if let (Some(from), OpportunityAnchor::Place(to)) = (context.agent_place, ranked.offer.anchor)
+        && context
+            .blocker_memory
+            .route_segment_blocked(from, to, context.current_tick)
+            .is_some()
+    {
+        return FeasibilityVerdict::RejectedBeforeSearch {
+            reason: Discrepancy::RouteUnknown,
         };
     }
 
@@ -67,6 +85,16 @@ pub(crate) fn probe(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> Feasibi
     }
 
     FeasibilityVerdict::Plausible
+}
+
+fn counterparty_anchor(ranked: &AgendaEntry) -> Option<EntityId> {
+    ranked.offer.obligation_source.or_else(|| {
+        if let OpportunityAnchor::Entity(anchor) = ranked.offer.anchor {
+            Some(anchor)
+        } else {
+            ranked.offer.evidence_entities.iter().next().copied()
+        }
+    })
 }
 
 fn blocker_key_for_probe(ranked: &AgendaEntry) -> BlockerKey {
@@ -565,14 +593,16 @@ mod tests {
         view.places.insert(agent, place);
 
         let key = blocker_key_for_probe(&ranked);
+        let scope = key.into();
         let discrepancy_memory = DiscrepancyMemory {
             entries: BTreeMap::from([(
-                key,
+                scope,
                 DiscrepancyEntry {
-                    blocker_key: key,
+                    scope,
                     discrepancy: Discrepancy::RouteUnknown,
                     observed_tick: Tick(4),
                     expires_tick: Tick(10),
+                    source_event: worldwake_core::EventId(0),
                     clearing_condition: DiscrepancyClearing::TtlExpiry,
                 },
             )]),
@@ -610,17 +640,19 @@ mod tests {
         view.places.insert(agent, place);
 
         let key = blocker_key_for_probe(&ranked);
+        let scope = key.into();
         let blocker_memory = BlockerMemory {
             intents: BTreeMap::from([(
-                key,
+                scope,
                 Blocker {
-                    blocker_key: key,
+                    scope,
                     blocking_fact: BlockingFact::PatienceExhausted,
                     diagnostic_context: None,
                     observed_tick: Tick(4),
                     expires_tick: Tick(10),
                     clearing_condition: BlockerClearingCondition::TtlOnly,
                     baseline_snapshot: None,
+                    source_event: worldwake_core::EventId(0),
                 },
             )]),
         };

@@ -5,7 +5,7 @@
 
 use crate::{
     AcquisitionQuantity, ActionDefId, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory,
-    BlockingFact, BreachSignature, ClearingBaseline, CommodityKind, CommodityPurpose,
+    BlockerScope, BlockingFact, BreachSignature, ClearingBaseline, CommodityKind, CommodityPurpose,
     CommodityValuationProfile, ContentionDispositionProfile, DemandMemory, DemandObservation,
     DemandObservationReason, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
     EdgeExperience, EntityId, GoalKey, GoalKind, InvalidatorTag, LearnedOpportunityMemory,
@@ -193,10 +193,15 @@ pub fn sample_blocker_key() -> BlockerKey {
     }
 }
 
+/// Returns a representative blocker scope fixture for blocked-intent tests.
+pub fn sample_blocker_scope() -> BlockerScope {
+    BlockerScope::Exact(sample_blocker_key())
+}
+
 /// Returns a representative blocked intent fixture for decision-memory tests.
 pub fn sample_blocker() -> Blocker {
     Blocker {
-        blocker_key: sample_blocker_key(),
+        scope: sample_blocker_scope(),
         blocking_fact: BlockingFact::SellerOutOfStock,
         diagnostic_context: None,
         observed_tick: Tick(10),
@@ -208,6 +213,7 @@ pub fn sample_blocker() -> Blocker {
         baseline_snapshot: Some(ClearingBaseline::CommodityQuantity {
             quantity: Quantity(2),
         }),
+        source_event: crate::EventId(1),
     }
 }
 
@@ -215,21 +221,22 @@ pub fn sample_blocker() -> Blocker {
 pub fn sample_blocker_memory() -> BlockerMemory {
     let intent = sample_blocker();
     let mut intents = std::collections::BTreeMap::new();
-    intents.insert(intent.blocker_key, intent);
+    intents.insert(intent.scope, intent);
     BlockerMemory { intents }
 }
 
 /// Returns a representative discrepancy memory fixture for authoritative component tests.
 pub fn sample_discrepancy_memory() -> DiscrepancyMemory {
     let entry = DiscrepancyEntry {
-        blocker_key: sample_blocker_key(),
+        scope: sample_blocker_scope(),
         discrepancy: Discrepancy::BeliefContradicted,
         observed_tick: Tick(12),
         expires_tick: Tick(18),
         clearing_condition: DiscrepancyClearing::TtlExpiry,
+        source_event: crate::EventId(1),
     };
     let mut entries = BTreeMap::new();
-    entries.insert(entry.blocker_key, entry);
+    entries.insert(entry.scope, entry);
     DiscrepancyMemory { entries }
 }
 

@@ -5,7 +5,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
-    BlockerKey, CommodityKind, DriveThresholds, EntityId, GoalKey, HomeostaticNeedId,
+    BlockerScope, CommodityKind, DriveThresholds, EntityId, GoalKey, HomeostaticNeedId,
     HomeostaticNeeds, Permille, PlaceTag, Quantity, Tick, WorkstationTag, World,
 };
 use worldwake_sim::{ActionInstance, ActionInstanceId, ActionTraceEvent, ActionTraceSink};
@@ -64,7 +64,7 @@ pub enum ExhaustionSummary {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BlockerSummary {
     pub blocker_count: u16,
-    pub top_blocker: Option<BlockerKey>,
+    pub top_blocker: Option<BlockerScope>,
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -421,7 +421,7 @@ fn blocker_summary(
     let matching = planning
         .discrepancy_trace
         .iter()
-        .filter(|discrepancy| discrepancy.blocker_key.goal_key == selected_goal)
+        .filter(|discrepancy| discrepancy.scope.exact_goal_key().unwrap() == selected_goal)
         .collect::<Vec<_>>();
     if matching.is_empty() {
         return None;
@@ -429,7 +429,7 @@ fn blocker_summary(
     let top = matching[0];
     Some(BlockerSummary {
         blocker_count: matching.len() as u16,
-        top_blocker: Some(top.blocker_key),
+        top_blocker: Some(top.scope),
     })
 }
 
@@ -625,12 +625,15 @@ mod tests {
             frame.blocker_summary,
             Some(BlockerSummary {
                 blocker_count: 1,
-                top_blocker: Some(BlockerKey {
-                    goal_key: goal,
-                    place: Some(entity(40)),
-                    target: Some(entity(41)),
-                    action_def: Some(ActionDefId(5)),
-                }),
+                top_blocker: Some(
+                    worldwake_core::BlockerKey {
+                        goal_key: goal,
+                        place: Some(entity(40)),
+                        target: Some(entity(41)),
+                        action_def: Some(ActionDefId(5)),
+                    }
+                    .into()
+                ),
             })
         );
         assert_eq!(
@@ -855,12 +858,13 @@ mod tests {
             PlanSearchOutcome::BudgetExhausted { expansions_used: 7 };
         planning.discrepancy_trace.push(DiscrepancyTrace {
             discrepancy: worldwake_core::Discrepancy::ImproperPlanningState,
-            blocker_key: BlockerKey {
+            scope: worldwake_core::BlockerKey {
                 goal_key: goal,
                 place: Some(entity(40)),
                 target: Some(entity(41)),
                 action_def: Some(ActionDefId(5)),
-            },
+            }
+            .into(),
             expires_tick: Tick(9),
         });
         trace

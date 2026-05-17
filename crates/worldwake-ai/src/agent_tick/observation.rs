@@ -414,7 +414,7 @@ fn apply_pending_discrepancies(
 ) {
     for pending in pending_discrepancies {
         discrepancy_memory.record(worldwake_core::DiscrepancyEntry {
-            blocker_key: pending.blocker_key,
+            scope: pending.scope,
             discrepancy: pending.discrepancy,
             observed_tick: pending.observed_tick,
             expires_tick: Tick(
@@ -424,6 +424,7 @@ fn apply_pending_discrepancies(
                     .saturating_add(u64::from(structural_block_ticks)),
             ),
             clearing_condition: pending.clearing_condition,
+            source_event: worldwake_core::EventId(0),
         });
     }
 }
@@ -624,18 +625,20 @@ pub(super) fn handle_facility_queue_transitions(
                     .or(fallback_intent)
                 {
                     blocked_memory.record(Blocker {
-                        blocker_key: BlockerKey {
+                        scope: BlockerKey {
                             goal_key: intent.goal_key,
                             place: current_place,
                             target: Some(facility),
                             action_def: Some(intent.intended_action),
-                        },
+                        }
+                        .into(),
                         blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
                         diagnostic_context: None,
                         observed_tick: tick,
                         expires_tick: tick + u64::from(phase.structural_block_ticks),
                         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
                         baseline_snapshot: None,
+                        source_event: worldwake_core::EventId(0),
                     });
                     changed = true;
                 }
@@ -1132,7 +1135,7 @@ mod tests {
             action_def: None,
         };
         let pending = PendingDiscrepancyRecord {
-            blocker_key,
+            scope: blocker_key.into(),
             discrepancy: Discrepancy::ArtifactNotActionable {
                 artifact,
                 reason: BlockerReason::LegalEffectExpired,
@@ -1146,7 +1149,7 @@ mod tests {
 
         let entry = memory
             .entries
-            .get(&blocker_key)
+            .get(&blocker_key.into())
             .expect("pending discrepancy should be recorded");
         assert_eq!(entry.discrepancy, pending.discrepancy);
         assert_eq!(entry.observed_tick, Tick(7));

@@ -31,6 +31,7 @@ pub mod bandit_camp;
 pub mod belief;
 pub mod belief_claim_key;
 pub mod blocker_memory;
+pub mod blocker_scope;
 pub mod canonical;
 pub mod causal_link;
 pub mod cause;
@@ -137,6 +138,7 @@ pub use blocker_memory::{
     Blocker, BlockerClearingCondition, BlockerDiagnostic, BlockerKey, BlockerMemory, BlockingFact,
     ClearingBaseline,
 };
+pub use blocker_scope::{BlockerScope, RouteSegment};
 pub use canonical::{
     CanonicalError, StateHash, canonical_bytes, hash_bytes, hash_event_log, hash_serializable,
     hash_world,

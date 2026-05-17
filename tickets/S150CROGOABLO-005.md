@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `ScenarioDiagnosticsReport.belief` extension; new `BlockerScopeVariantId` enum; aggregator extension
-**Deps**: S150CROGOABLO-002
+**Deps**: archive/tickets/S150CROGOABLO-002.md
 
 ## Problem
 

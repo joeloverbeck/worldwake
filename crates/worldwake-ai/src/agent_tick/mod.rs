@@ -225,12 +225,12 @@ pub(super) fn decisive_evidence_from_blocker(blocker: &Blocker, cap: u8) -> Deci
     let tick = blocker.observed_tick;
     match blocker.blocking_fact {
         BlockingFact::TargetGone => {
-            if let Some(target) = blocker.blocker_key.target {
+            if let Some(target) = blocker.scope.exact_target() {
                 refs.push_observation(target, EntityBeliefAspect::Alive, tick);
             }
         }
         BlockingFact::MissingInput(_) => {
-            if let Some(place) = blocker.blocker_key.place
+            if let Some(place) = blocker.scope.exact_place()
                 && let Some(aspect) = blocking_fact_commodity_aspect(blocker.blocking_fact)
             {
                 refs.push_observation(place, aspect, tick);
@@ -239,12 +239,12 @@ pub(super) fn decisive_evidence_from_blocker(blocker: &Blocker, cap: u8) -> Deci
         BlockingFact::WorkstationBusy
         | BlockingFact::ReservationConflict { .. }
         | BlockingFact::ExclusiveFacilityUnavailable => {
-            if let Some(place) = blocker.blocker_key.place {
+            if let Some(place) = blocker.scope.exact_place() {
                 refs.push_observation(place, EntityBeliefAspect::ContentionState, tick);
             }
         }
         BlockingFact::NoKnownPath => {
-            if let Some(target) = blocker.blocker_key.target {
+            if let Some(target) = blocker.scope.exact_target() {
                 refs.push_observation(target, EntityBeliefAspect::Location, tick);
             }
         }
@@ -284,7 +284,7 @@ pub(super) fn decisive_evidence_from_discrepancy_entry(
             }
         }
         Discrepancy::MissingObservation | Discrepancy::Omission(_) => {
-            if let Some(target) = entry.blocker_key.target {
+            if let Some(target) = entry.scope.exact_target() {
                 refs.push_observation(target, EntityBeliefAspect::Location, entry.observed_tick);
             }
         }
@@ -306,7 +306,7 @@ pub(super) fn decisive_evidence_from_discrepancy_entry(
 fn discrepancy_claim_key(entry: &DiscrepancyEntry) -> Option<BeliefClaimKey> {
     match entry.clearing_condition {
         DiscrepancyClearing::BeliefUpdate { claim_key } => Some(claim_key),
-        _ => entry.blocker_key.target.map(|target| BeliefClaimKey {
+        _ => entry.scope.exact_target().map(|target| BeliefClaimKey {
             subject: target,
             aspect: EntityBeliefAspect::Location,
         }),
@@ -2085,7 +2085,7 @@ fn process_agent(
                     .filter(|entry| entry.expires_tick > tick)
                     .map(|entry| DiscrepancyTrace {
                         discrepancy: entry.discrepancy,
-                        blocker_key: entry.blocker_key,
+                        scope: entry.scope,
                         expires_tick: entry.expires_tick,
                     })
                     .collect(),

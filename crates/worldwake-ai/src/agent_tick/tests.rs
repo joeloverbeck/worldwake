@@ -2061,8 +2061,8 @@ fn abandoned_queue_then_records_standard_exclusive_facility_blocker() {
         intent.blocking_fact,
         BlockingFact::ExclusiveFacilityUnavailable
     );
-    assert_eq!(intent.blocker_key.target, Some(facility));
-    assert_eq!(intent.blocker_key.action_def, Some(ActionDefId(77)));
+    assert_eq!(intent.scope.exact_target(), Some(facility));
+    assert_eq!(intent.scope.exact_action_def(), Some(ActionDefId(77)));
     assert!(
         harness
             .world
@@ -2258,8 +2258,8 @@ fn same_place_queue_invalidation_records_exclusive_facility_blocker() {
         intent.blocking_fact,
         BlockingFact::ExclusiveFacilityUnavailable
     );
-    assert_eq!(intent.blocker_key.target, Some(facility));
-    assert_eq!(intent.blocker_key.action_def, Some(ActionDefId(77)));
+    assert_eq!(intent.scope.exact_target(), Some(facility));
+    assert_eq!(intent.scope.exact_action_def(), Some(ActionDefId(77)));
     assert!(facility_intents.intents.is_empty());
 }
 
@@ -2834,10 +2834,10 @@ fn blocked_leg_patience_exhaustion_clears_commitment_and_records_blocker() {
     );
     assert_eq!(blocked_memory.intents.len(), 1);
     let intent = blocked_memory.intents.values().next().unwrap();
-    assert_eq!(intent.blocker_key.goal_key, goal);
+    assert_eq!(intent.scope.exact_goal_key().unwrap(), goal);
     assert_eq!(intent.blocking_fact, BlockingFact::NoKnownPath);
-    assert_eq!(intent.blocker_key.target, None);
-    assert_eq!(intent.blocker_key.place, Some(destination));
+    assert_eq!(intent.scope.exact_target(), None);
+    assert_eq!(intent.scope.exact_place(), Some(destination));
     assert_eq!(intent.observed_tick, Tick(9));
     assert_eq!(
         intent.expires_tick,
@@ -5048,18 +5048,20 @@ fn persist_blocked_memory_commits_changed_component() {
     let mut blocked = BlockerMemory::default();
     let assumptions = vec![FrameAssumption::NoCriticalThreat];
     blocked.record(Blocker {
-        blocker_key: BlockerKey {
+        scope: BlockerKey {
             goal_key: GoalKey::from(GoalKind::Sleep),
             place: None,
             target: Some(target),
             action_def: None,
-        },
+        }
+        .into(),
         blocking_fact: BlockingFact::TargetGone,
         diagnostic_context: None,
         observed_tick: Tick(2),
         expires_tick: Tick(7),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
+        source_event: worldwake_core::EventId(0),
     });
 
     persist_blocked_memory(
@@ -5073,7 +5075,23 @@ fn persist_blocked_memory_commits_changed_component() {
     )
     .unwrap();
 
-    assert_eq!(world.get_component_blocker_memory(agent), Some(&blocked));
+    let persisted = world
+        .get_component_blocker_memory(agent)
+        .expect("changed blocker memory should be persisted");
+    let source_event = persisted
+        .intents
+        .values()
+        .next()
+        .expect("persisted blocker memory should contain entry")
+        .source_event;
+    assert_ne!(source_event, worldwake_core::EventId(0));
+    assert!(event_log.get(source_event).is_some());
+    let mut expected_blocked = blocked.clone();
+    expected_blocked
+        .intents
+        .values_mut()
+        .for_each(|blocker| blocker.source_event = source_event);
+    assert_eq!(persisted, &expected_blocked);
     assert_eq!(event_log.len(), 3);
     let blocker_events = event_log.events_by_tag(EventTag::BlockerRecorded);
     assert_eq!(blocker_events.len(), 1);
@@ -5084,12 +5102,13 @@ fn persist_blocked_memory_commits_changed_component() {
         Some(&DecisionEventPayload::BlockerRecorded(
             BlockerRecordedPayload {
                 agent,
-                blocker_key: BlockerKey {
+                scope: BlockerKey {
                     goal_key: GoalKey::from(GoalKind::Sleep),
                     place: None,
                     target: Some(target),
                     action_def: None,
-                },
+                }
+                .into(),
                 discrepancy: None,
                 blocking_fact: Some(BlockingFact::TargetGone),
                 expires_tick: Tick(7),
@@ -5245,10 +5264,11 @@ fn persist_discrepancy_memory_emits_blocker_recorded_for_discrepancy_entries() {
     };
     let mut discrepancy_memory = DiscrepancyMemory::default();
     discrepancy_memory.record(DiscrepancyEntry {
-        blocker_key: key,
+        scope: key.into(),
         discrepancy: Discrepancy::BeliefContradicted,
         observed_tick: Tick(2),
         expires_tick: Tick(9),
+        source_event: worldwake_core::EventId(0),
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
 
@@ -5263,10 +5283,23 @@ fn persist_discrepancy_memory_emits_blocker_recorded_for_discrepancy_entries() {
     )
     .unwrap();
 
-    assert_eq!(
-        world.get_component_discrepancy_memory(agent),
-        Some(&discrepancy_memory)
-    );
+    let persisted = world
+        .get_component_discrepancy_memory(agent)
+        .expect("changed discrepancy memory should be persisted");
+    let source_event = persisted
+        .entries
+        .values()
+        .next()
+        .expect("persisted discrepancy memory should contain entry")
+        .source_event;
+    assert_ne!(source_event, worldwake_core::EventId(0));
+    assert!(event_log.get(source_event).is_some());
+    let mut expected_discrepancy_memory = discrepancy_memory.clone();
+    expected_discrepancy_memory
+        .entries
+        .values_mut()
+        .for_each(|entry| entry.source_event = source_event);
+    assert_eq!(persisted, &expected_discrepancy_memory);
     let blocker_events = event_log.events_by_tag(EventTag::BlockerRecorded);
     assert_eq!(blocker_events.len(), 1);
     assert_eq!(
@@ -5276,7 +5309,7 @@ fn persist_discrepancy_memory_emits_blocker_recorded_for_discrepancy_entries() {
         Some(&DecisionEventPayload::BlockerRecorded(
             BlockerRecordedPayload {
                 agent,
-                blocker_key: key,
+                scope: key.into(),
                 discrepancy: Some(Discrepancy::BeliefContradicted),
                 blocking_fact: None,
                 expires_tick: Tick(9),
@@ -5321,10 +5354,11 @@ fn persist_discrepancy_memory_captures_belief_snapshot_for_target_belief_discrep
     };
     let mut discrepancy_memory = DiscrepancyMemory::default();
     discrepancy_memory.record(DiscrepancyEntry {
-        blocker_key: key,
+        scope: key.into(),
         discrepancy: Discrepancy::BeliefStale,
         observed_tick: Tick(80),
         expires_tick: Tick(90),
+        source_event: worldwake_core::EventId(0),
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
 
@@ -5389,18 +5423,20 @@ fn read_phase_emits_goal_offered_and_goal_suppressed_events_from_candidate_prove
     run_same_place_observation(&mut harness, Tick(1), origin, bread);
     let mut memory = BlockerMemory::default();
     memory.record(Blocker {
-        blocker_key: BlockerKey {
+        scope: BlockerKey {
             goal_key,
             place: Some(origin),
             target: None,
             action_def: None,
-        },
+        }
+        .into(),
         blocking_fact: BlockingFact::NoKnownSeller,
         diagnostic_context: None,
         observed_tick: Tick(0),
         expires_tick: Tick(10),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
+        source_event: worldwake_core::EventId(0),
     });
     let mut txn = new_txn(&mut harness.world, 0);
     txn.set_component_blocker_memory(harness.actor, memory)
@@ -6039,8 +6075,9 @@ fn planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons() {
             .values()
             .next()
             .unwrap()
-            .blocker_key
-            .goal_key,
+            .scope
+            .exact_goal_key()
+            .unwrap(),
         goal
     );
     assert!(
@@ -7891,10 +7928,10 @@ fn check_patience_exhaustion_creates_blocked_intent() {
     assert_eq!(blocked_memory.intents.len(), 1);
     let intent = blocked_memory.intents.values().next().unwrap();
     assert_eq!(intent.blocking_fact, BlockingFact::PatienceExhausted);
-    assert_eq!(intent.blocker_key.goal_key, goal);
-    assert_eq!(intent.blocker_key.place, Some(place));
-    assert_eq!(intent.blocker_key.target, Some(destination));
-    assert!(intent.blocker_key.action_def.is_none());
+    assert_eq!(intent.scope.exact_goal_key().unwrap(), goal);
+    assert_eq!(intent.scope.exact_place(), Some(place));
+    assert_eq!(intent.scope.exact_target(), Some(destination));
+    assert!(intent.scope.exact_action_def().is_none());
     assert_eq!(intent.observed_tick, Tick(10));
     assert_eq!(
         intent.expires_tick,
@@ -7971,7 +8008,7 @@ fn patience_exhaustion_care_domain_uses_patient_as_target() {
 
     let intent = blocked_memory.intents.values().next().unwrap();
     assert_eq!(
-        intent.blocker_key.target,
+        intent.scope.exact_target(),
         Some(patient),
         "Care domain should use patient as target"
     );
@@ -8006,7 +8043,8 @@ fn patience_exhaustion_generic_domain_uses_none_target() {
 
     let intent = blocked_memory.intents.values().next().unwrap();
     assert_eq!(
-        intent.blocker_key.target, None,
+        intent.scope.exact_target(),
+        None,
         "Generic domain should use None as target"
     );
 }
@@ -8047,10 +8085,10 @@ fn assumption_failure_creates_discrepancy_memory_entry() {
     assert_eq!(discrepancy_memory.entries.len(), 1);
     let entry = discrepancy_memory.entries.values().next().unwrap();
     assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
-    assert_eq!(entry.blocker_key.goal_key, goal);
-    assert_eq!(entry.blocker_key.place, Some(place));
-    assert_eq!(entry.blocker_key.target, Some(patient));
-    assert!(entry.blocker_key.action_def.is_none());
+    assert_eq!(entry.scope.exact_goal_key().unwrap(), goal);
+    assert_eq!(entry.scope.exact_place(), Some(place));
+    assert_eq!(entry.scope.exact_target(), Some(patient));
+    assert!(entry.scope.exact_action_def().is_none());
     assert_eq!(entry.observed_tick, Tick(5));
     assert_eq!(
         entry.expires_tick,
@@ -8130,9 +8168,9 @@ fn committed_source_invalidation_records_source_invalidated_and_forces_replan() 
     assert!(facility_intents.intents.is_empty());
     let entry = discrepancy_memory.entries.values().next().unwrap();
     assert_eq!(entry.discrepancy, Discrepancy::SourceInvalidated);
-    assert_eq!(entry.blocker_key.goal_key, goal);
-    assert_eq!(entry.blocker_key.place, None);
-    assert_eq!(entry.blocker_key.target, Some(source.entity));
+    assert_eq!(entry.scope.exact_goal_key().unwrap(), goal);
+    assert_eq!(entry.scope.exact_place(), None);
+    assert_eq!(entry.scope.exact_target(), Some(source.entity));
 }
 
 #[test]
@@ -8172,7 +8210,7 @@ fn commodity_assumption_failure_records_suppression() {
         .next()
         .expect("suppression entry should be present");
     assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
-    assert_eq!(entry.blocker_key.goal_key, fixture.goal);
+    assert_eq!(entry.scope.exact_goal_key().unwrap(), fixture.goal);
     assert_eq!(
         entry.clearing_condition,
         DiscrepancyClearing::CommodityAvailabilityChanged {
@@ -8401,7 +8439,7 @@ fn commodity_assumption_failure_suppresses_readoption() {
         .expect("assumption failure should record discrepancy memory")
         .entries
         .values()
-        .find(|entry| entry.blocker_key.goal_key == fixture.goal)
+        .find(|entry| entry.scope.exact_goal_key().unwrap() == fixture.goal)
         .expect("suppression entry should be present")
         .expires_tick;
     let window_start_tick = fixture.harness.scheduler.current_tick();
@@ -8452,7 +8490,7 @@ fn commodity_assumption_failure_suppresses_readoption() {
         if planning
             .discrepancy_trace
             .iter()
-            .any(|entry| entry.blocker_key.goal_key == fixture.goal)
+            .any(|entry| entry.scope.exact_goal_key().unwrap() == fixture.goal)
         {
             saw_active_discrepancy = true;
         }
@@ -8480,7 +8518,7 @@ fn fresh_local_commodity_clears_assumption_discrepancy_before_ttl_expiry() {
         .expect("assumption failure should record discrepancy memory")
         .entries
         .values()
-        .find(|entry| entry.blocker_key.goal_key == fixture.goal)
+        .find(|entry| entry.scope.exact_goal_key().unwrap() == fixture.goal)
         .expect("suppression entry should be present")
         .expires_tick;
 
@@ -8517,12 +8555,17 @@ fn fresh_local_commodity_clears_assumption_discrepancy_before_ttl_expiry() {
             .harness
             .world
             .get_component_discrepancy_memory(fixture.harness.actor)
-            .is_none_or(|memory| !memory.entries.contains_key(&BlockerKey {
-                goal_key: fixture.goal,
-                place: Some(fixture.destination),
-                target: Some(fixture.stale_lot),
-                action_def: None,
-            })),
+            .is_none_or(|memory| {
+                !memory.entries.contains_key(
+                    &BlockerKey {
+                        goal_key: fixture.goal,
+                        place: Some(fixture.destination),
+                        target: Some(fixture.stale_lot),
+                        action_def: None,
+                    }
+                    .into(),
+                )
+            }),
         "fresh local commodity evidence should clear the stale assumption discrepancy early"
     );
     assert!(
@@ -8661,17 +8704,19 @@ fn discrepancy_trace_populated_from_discrepancy_memory() {
     };
     let mut memory = DiscrepancyMemory::default();
     memory.record(DiscrepancyEntry {
-        blocker_key: first,
+        scope: first.into(),
         discrepancy: Discrepancy::BeliefContradicted,
         observed_tick: Tick(0),
         expires_tick: Tick(5),
+        source_event: worldwake_core::EventId(0),
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
     memory.record(DiscrepancyEntry {
-        blocker_key: second,
+        scope: second.into(),
         discrepancy: Discrepancy::RouteUnknown,
         observed_tick: Tick(0),
         expires_tick: Tick(6),
+        source_event: worldwake_core::EventId(0),
         clearing_condition: DiscrepancyClearing::WorldStructureChange,
     });
     let mut txn = new_txn(&mut harness.world, 0);
@@ -8693,12 +8738,12 @@ fn discrepancy_trace_populated_from_discrepancy_memory() {
     assert_eq!(planning.discrepancy_trace.len(), 2);
     assert!(planning.discrepancy_trace.iter().any(|trace| {
         trace.discrepancy == Discrepancy::BeliefContradicted
-            && trace.blocker_key == first
+            && trace.scope == first.into()
             && trace.expires_tick == Tick(5)
     }));
     assert!(planning.discrepancy_trace.iter().any(|trace| {
         trace.discrepancy == Discrepancy::RouteUnknown
-            && trace.blocker_key == second
+            && trace.scope == second.into()
             && trace.expires_tick == Tick(6)
     }));
 }
@@ -8715,13 +8760,14 @@ fn blocker_memory_entries_not_in_discrepancy_trace() {
     };
     let mut memory = BlockerMemory::default();
     memory.record(Blocker {
-        blocker_key,
+        scope: blocker_key.into(),
         blocking_fact: BlockingFact::SellerOutOfStock,
         diagnostic_context: None,
         observed_tick: Tick(0),
         expires_tick: Tick(5),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
+        source_event: worldwake_core::EventId(0),
     });
     let mut txn = new_txn(&mut harness.world, 0);
     txn.set_component_blocker_memory(harness.actor, memory)
@@ -8764,17 +8810,19 @@ fn discrepancy_trace_excludes_expired_entries() {
     };
     let mut memory = DiscrepancyMemory::default();
     memory.record(DiscrepancyEntry {
-        blocker_key: expired_key,
+        scope: expired_key.into(),
         discrepancy: Discrepancy::MissingObservation,
         observed_tick: Tick(0),
         expires_tick: Tick(0),
+        source_event: worldwake_core::EventId(0),
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
     memory.record(DiscrepancyEntry {
-        blocker_key: live_key,
+        scope: live_key.into(),
         discrepancy: Discrepancy::ImproperPlanningState,
         observed_tick: Tick(0),
         expires_tick: Tick(3),
+        source_event: worldwake_core::EventId(0),
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
     let mut txn = new_txn(&mut harness.world, 0);
@@ -8798,7 +8846,7 @@ fn discrepancy_trace_excludes_expired_entries() {
         planning.discrepancy_trace[0].discrepancy,
         Discrepancy::ImproperPlanningState
     );
-    assert_eq!(planning.discrepancy_trace[0].blocker_key, live_key);
+    assert_eq!(planning.discrepancy_trace[0].scope, live_key.into());
 }
 
 #[test]

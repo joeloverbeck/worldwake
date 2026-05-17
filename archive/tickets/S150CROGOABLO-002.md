@@ -1,6 +1,6 @@
 # S150CROGOABLO-002: BlockerScope substrate + cross-store key migration + recording-site source_event
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `worldwake-core` substrate (`BlockerScope`, `RouteSegment`, `BlockerMemory`, `DiscrepancyMemory`, `BlockerRecordedPayload`); `worldwake-ai` consumer migrations (3 read sites + 3 record sites + 17 dependent modules); `worldwake-sim` save-format bump; `worldwake-systems` trade-action recording; `worldwake-cli` observer rendering preservation
@@ -222,3 +222,28 @@ In `blocker_memory.rs` `#[cfg(test)]`, extend `blocker_types_satisfy_required_bo
 5. `./scripts/verify.sh` for the full pre-PR gate.
 
 Merge note: Ticket 002 bumps `SAVE_FORMAT_VERSION` 85→86; no sibling ticket in this spec bumps the value. Tickets 003-006 are additive against the new payload shape and do not re-bump.
+
+## Implementation Notes
+
+- Added `BlockerScope` and `RouteSegment` in `worldwake-core`, re-exported them, and migrated `BlockerMemory`, `DiscrepancyMemory`, and `BlockerRecordedPayload` to carry `scope: BlockerScope`.
+- Preserved legacy exact-scope behavior through `BlockerScope::Exact(BlockerKey)` while adding route-segment and counterparty lookup helpers for blocker memory.
+- Updated AI read sites to use scope-keyed suppression. Candidate filtering now handles exact, route-segment, and counterparty scopes; feasibility/search paths check the practical route/counterparty lanes available before or during search.
+- Added `source_event` to blocker/discrepancy records. When an upstream source event is unavailable at construction time, the persistence boundary replaces the default id with the append-only component-update event id before storing the component, so persisted learned state points to a real event-log record.
+- Bumped `SAVE_FORMAT_VERSION` to 86 and extended save/load coverage to include non-Exact blocker scopes.
+
+## Verification
+
+- `cargo fmt --all`
+- `cargo test -p worldwake-core --lib blocker_memory`
+- `cargo test -p worldwake-core --lib blocker_scope`
+- `cargo test -p worldwake-core --lib discrepancy`
+- `cargo test -p worldwake-core --lib decision_event_payload`
+- `cargo test -p worldwake-ai --lib feasibility_probe`
+- `cargo test -p worldwake-ai --lib persist_`
+- `cargo test -p worldwake-sim --lib save_load`
+- `cargo test -p worldwake-ai --test golden_portfolio_planning --test golden_plan_repair --test golden_contention_inspectability --test golden_need_projection`
+- `cargo test --workspace --no-run`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `rg -n 'BTreeMap<\s*BlockerKey|blocker_key:' crates -g '*.rs'` (only `blocker_key` parameter names remain; no map-key or struct-field consumers)
+- `rg -n '\.scope\.goal_key|\.scope\.place|\.scope\.target|\.scope\.action_def|scope\.goal_key' crates -g '*.rs'` (no direct field reads remain)

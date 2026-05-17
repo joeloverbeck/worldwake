@@ -242,7 +242,7 @@ pub(crate) struct PendingViolationRecord {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct PendingDiscrepancyRecord {
-    pub blocker_key: worldwake_core::BlockerKey,
+    pub scope: worldwake_core::BlockerScope,
     pub discrepancy: Discrepancy,
     pub observed_tick: Tick,
     pub clearing_condition: DiscrepancyClearing,
@@ -723,24 +723,18 @@ fn find_matching_suppression(
 ) -> Option<SuppressionMatch> {
     if discrepancies.entries.values().any(|entry| {
         entry.expires_tick > current_tick
-            && entry.blocker_key.goal_key == candidate.key
-            && candidate_matches_blocker(candidate, &entry.blocker_key, None)
+            && candidate_matches_blocker(candidate, &entry.scope, None)
     }) {
         return Some(SuppressionMatch::Discrepancy);
     }
 
     blocked.intents.values().find_map(|intent| {
-        let matches = intent.blocker_key.goal_key == candidate.key
-            && intent.expires_tick > current_tick
+        let matches = intent.expires_tick > current_tick
             && intent.blocks_goal_generation()
-            && candidate_matches_blocker(
-                candidate,
-                &intent.blocker_key,
-                Some(intent.blocking_fact),
-            );
+            && candidate_matches_blocker(candidate, &intent.scope, Some(intent.blocking_fact));
         matches.then_some(SuppressionMatch::Blocker(Box::new(
             crate::decision_trace::BlockerMatchDetail {
-                blocker_key: intent.blocker_key,
+                scope: intent.scope,
                 blocking_fact: intent.blocking_fact,
                 expires_tick: intent.expires_tick,
             },
@@ -755,30 +749,44 @@ fn goal_is_suppressed(
     target: Option<EntityId>,
     action_def: Option<worldwake_core::ActionDefId>,
 ) -> bool {
-    ctx.blocked
-        .is_blocked(goal_key, place, target, action_def, ctx.current_tick)
-        || ctx.discrepancies.is_suppressed(
-            &worldwake_core::BlockerKey {
-                goal_key: *goal_key,
-                place,
-                target,
-                action_def,
-            },
-            ctx.current_tick,
-        )
+    ctx.blocked.is_blocked(
+        &worldwake_core::BlockerScope::exact(*goal_key, place, target, action_def),
+        ctx.current_tick,
+    ) || ctx.discrepancies.is_suppressed(
+        &worldwake_core::BlockerScope::exact(*goal_key, place, target, action_def),
+        ctx.current_tick,
+    )
 }
 
 fn candidate_matches_blocker(
     candidate: &GoalOffer,
-    blocker: &worldwake_core::BlockerKey,
+    blocker: &worldwake_core::BlockerScope,
     blocking_fact: Option<worldwake_core::BlockingFact>,
 ) -> bool {
-    if blocker.place.is_none() && blocker.target.is_none() && blocker.action_def.is_none() {
+    let blocker_key = match blocker {
+        worldwake_core::BlockerScope::Exact(key) => *key,
+        worldwake_core::BlockerScope::RouteSegment(segment) => {
+            return candidate.evidence_places.contains(&segment.from)
+                && candidate.evidence_places.contains(&segment.to);
+        }
+        worldwake_core::BlockerScope::Counterparty(counterparty) => {
+            return candidate.obligation_source == Some(*counterparty)
+                || matches!(candidate.anchor, OpportunityAnchor::Entity(anchor) if anchor == *counterparty)
+                || candidate.evidence_entities.contains(counterparty);
+        }
+    };
+    if blocker_key.goal_key != candidate.key {
+        return false;
+    }
+    if blocker_key.place.is_none()
+        && blocker_key.target.is_none()
+        && blocker_key.action_def.is_none()
+    {
         return true;
     }
 
-    if blocker.action_def.is_some()
-        && blocker.target.is_none()
+    if blocker_key.action_def.is_some()
+        && blocker_key.target.is_none()
         && matches!(candidate.key.kind, GoalKind::AcquireCommodity { .. })
         && matches!(
             blocking_fact,
@@ -788,20 +796,20 @@ fn candidate_matches_blocker(
         return false;
     }
 
-    if let Some(place) = blocker.place {
+    if let Some(place) = blocker_key.place {
         let anchor_matches =
             matches!(candidate.anchor, OpportunityAnchor::Place(anchor) if anchor == place);
         if !anchor_matches && !candidate.evidence_places.contains(&place) {
             return false;
         }
-        if blocker.action_def.is_some()
+        if blocker_key.action_def.is_some()
             && !matches!(candidate.key.kind, GoalKind::AcquireCommodity { .. })
         {
             return true;
         }
     }
 
-    if let Some(target) = blocker.target {
+    if let Some(target) = blocker_key.target {
         let anchor_matches =
             matches!(candidate.anchor, OpportunityAnchor::Entity(anchor) if anchor == target);
         if !anchor_matches && !candidate.evidence_entities.contains(&target) {
@@ -871,12 +879,13 @@ fn emit_bounty_candidates(
         if let Some(reason) = artifact_not_actionable_reason(artifact.actionability) {
             let goal_key = GoalKey::from(GoalKind::FulfillBounty { bounty: *bounty });
             pending_discrepancies.push(PendingDiscrepancyRecord {
-                blocker_key: worldwake_core::BlockerKey {
+                scope: worldwake_core::BlockerKey {
                     goal_key,
                     place: None,
                     target: Some(*bounty),
                     action_def: None,
-                },
+                }
+                .into(),
                 discrepancy: Discrepancy::ArtifactNotActionable {
                     artifact: *bounty,
                     reason,
@@ -8750,7 +8759,7 @@ mod tests {
             }
         );
         assert_eq!(
-            pending.blocker_key,
+            pending.scope,
             BlockerKey {
                 goal_key: GoalKey::from(GoalKind::FulfillBounty {
                     bounty: fulfilled_bounty,
@@ -8759,6 +8768,7 @@ mod tests {
                 target: Some(fulfilled_bounty),
                 action_def: None,
             }
+            .into()
         );
     }
 
@@ -10506,18 +10516,20 @@ mod tests {
 
         let mut blocked = BlockerMemory::default();
         blocked.record(Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: key,
                 place: Some(orchard),
                 target: None,
                 action_def: None,
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::NoKnownSeller,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
 
         let candidates =
@@ -10562,18 +10574,20 @@ mod tests {
 
         let mut blocked = BlockerMemory::default();
         blocked.record(Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: key,
                 place: Some(orchard),
                 target: None,
                 action_def: Some(worldwake_core::ActionDefId(9)),
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::TargetGone,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
 
         let candidates =
@@ -10618,12 +10632,13 @@ mod tests {
 
         let mut blocked = BlockerMemory::default();
         blocked.record(Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: key,
                 place: Some(orchard),
                 target: None,
                 action_def: Some(worldwake_core::ActionDefId(9)),
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::ReservationConflict {
                 affordance: worldwake_core::AffordanceKey {
                     facility: orchard,
@@ -10636,6 +10651,7 @@ mod tests {
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
 
         let candidates =
@@ -10683,18 +10699,20 @@ mod tests {
 
         let mut blocked = BlockerMemory::default();
         blocked.record(Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: key,
                 place: Some(camp),
                 target: Some(witness),
                 action_def: Some(worldwake_core::ActionDefId(9)),
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::TargetGone,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
 
         let candidates =
@@ -10740,18 +10758,20 @@ mod tests {
 
         let mut blocked = BlockerMemory::default();
         blocked.record(Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: key,
                 place: Some(market),
                 target: Some(bread_lot),
                 action_def: Some(worldwake_core::ActionDefId(7)),
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::TargetGone,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(20),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
 
         let candidates =
@@ -10807,18 +10827,20 @@ mod tests {
         let mut blocked = BlockerMemory::default();
         for place in [orchard, market] {
             blocked.record(Blocker {
-                blocker_key: BlockerKey {
+                scope: BlockerKey {
                     goal_key: key,
                     place: Some(place),
                     target: None,
                     action_def: None,
-                },
+                }
+                .into(),
                 blocking_fact: BlockingFact::NoKnownSeller,
                 diagnostic_context: None,
                 observed_tick: Tick(1),
                 expires_tick: Tick(10),
                 clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
                 baseline_snapshot: None,
+                source_event: worldwake_core::EventId(0),
             });
         }
 
@@ -10919,18 +10941,20 @@ mod tests {
 
         let mut blocked = BlockerMemory::default();
         blocked.record(Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: key,
                 place: Some(orchard),
                 target: None,
                 action_def: None,
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::NoKnownSeller,
             diagnostic_context: None,
             observed_tick: Tick(490),
             expires_tick: Tick(600),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
 
         let result = generate_candidates_with_travel_horizon(
@@ -10995,18 +11019,20 @@ mod tests {
 
         let mut blocked = BlockerMemory::default();
         blocked.record(Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: key,
                 place: Some(orchard),
                 target: None,
                 action_def: None,
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::NoKnownSeller,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
 
         let result = generate_candidates_with_travel_horizon(
@@ -11054,18 +11080,20 @@ mod tests {
 
         let mut blocked = BlockerMemory::default();
         blocked.record(Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key,
                 place: Some(place),
                 target: None,
                 action_def: None,
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::NoKnownSeller,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(8),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
 
         let result = generate_candidates_with_travel_horizon(
@@ -11162,15 +11190,17 @@ mod tests {
         };
         let mut discrepancies = DiscrepancyMemory::default();
         discrepancies.record(DiscrepancyEntry {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: GoalKey::from(water_goal),
                 place: Some(orchard),
                 target: Some(water_source),
                 action_def: None,
-            },
+            }
+            .into(),
             discrepancy: Discrepancy::BeliefContradicted,
             observed_tick: Tick(1),
             expires_tick: Tick(20),
+            source_event: worldwake_core::EventId(0),
             clearing_condition: worldwake_core::DiscrepancyClearing::CommodityAvailabilityChanged {
                 commodity: CommodityKind::Water,
                 place: orchard,
@@ -12162,18 +12192,20 @@ mod tests {
 
         let mut blocked = BlockerMemory::default();
         blocked.record(Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: GoalKey::from(goal),
                 place: Some(place),
                 target: Some(traveler),
                 action_def: None,
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::CombatTooRisky,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
 
         let candidates =
@@ -16086,7 +16118,7 @@ mod tests {
         );
         let mut blocked = BlockerMemory::default();
         blocked.record(Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::ShareBelief {
                     listener,
                     topic: TellTopic::EntityBelief { subject },
@@ -16095,13 +16127,15 @@ mod tests {
                 place: None,
                 target: None,
                 action_def: None,
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::NoKnownPath,
             diagnostic_context: None,
             observed_tick: Tick(10),
             expires_tick: Tick(20),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
 
         let blocked_candidates =
@@ -18765,18 +18799,20 @@ mod tests {
             last_seen: Some(last_seen_place),
         });
         blocked.record(Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key,
                 place: Some(last_seen_place),
                 target: None,
                 action_def: None,
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::NoKnownPath,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(20),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
 
         let result = generate_candidates_with_travel_horizon(
@@ -19661,7 +19697,7 @@ mod tests {
         // Block the investigation goal.
         let mut blocked = BlockerMemory::default();
         blocked.record(Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::InvestigateViolation {
                     violation_id: worldwake_core::ViolationId(0),
                     place,
@@ -19669,13 +19705,15 @@ mod tests {
                 place: None,
                 target: None,
                 action_def: None,
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::NoKnownPath,
             diagnostic_context: None,
             observed_tick: Tick(3),
             expires_tick: Tick(100),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
 
         let vm = ViolationMemory::default();
@@ -20039,18 +20077,20 @@ mod tests {
 
         let mut blocked = BlockerMemory::default();
         blocked.record(Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::RaidTarget { target }),
                 place: Some(remote_place),
                 target: Some(target),
                 action_def: None,
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::TargetGone,
             diagnostic_context: None,
             observed_tick: Tick(99),
             expires_tick: Tick(200),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
 
         let candidates = generate_candidates_with_travel_horizon(
@@ -20560,18 +20600,20 @@ mod tests {
         // Block EstablishBanditCamp for the faction at this place.
         let mut blocked = BlockerMemory::default();
         blocked.record(Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::EstablishBanditCamp { faction }),
                 place: Some(place),
                 target: None,
                 action_def: None,
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::NoKnownPath,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(100),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
 
         let candidates =

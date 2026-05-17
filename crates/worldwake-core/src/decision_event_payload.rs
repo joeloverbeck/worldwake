@@ -1,5 +1,5 @@
 use crate::{
-    ActionDefId, BeliefClaimKey, BlockerKey, BlockingFact, CommodityKind, Discrepancy,
+    ActionDefId, BeliefClaimKey, BlockerScope, BlockingFact, CommodityKind, Discrepancy,
     EntityBeliefAspect, EntityId, ExpectationKindTag, FrameAssumption, FrameClearReason, GoalKey,
     HomeostaticNeedId, HypothesisKind, MaterializationTag, MismatchDetail, MotiveSourceRef,
     OpportunityKey, Permille, RecipeId, SleepRecoveryModifier, SuspensionReason, Tick,
@@ -476,7 +476,7 @@ pub enum ActionInterruptReasonTag {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BlockerRecordedPayload {
     pub agent: EntityId,
-    pub blocker_key: BlockerKey,
+    pub scope: BlockerScope,
     pub discrepancy: Option<Discrepancy>,
     pub blocking_fact: Option<BlockingFact>,
     pub expires_tick: Tick,
@@ -727,7 +727,7 @@ mod tests {
             }),
             DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
                 agent: entity_id(13, 0),
-                blocker_key: sample_blocker_key(),
+                scope: sample_blocker_key().into(),
                 discrepancy: Some(Discrepancy::BeliefContradicted),
                 blocking_fact: Some(BlockingFact::TargetGone),
                 expires_tick: Tick(99),
@@ -971,7 +971,7 @@ mod tests {
     fn blocker_recorded_payload_roundtrips_with_belief_snapshot_some() {
         let payload = BlockerRecordedPayload {
             agent: entity_id(1, 0),
-            blocker_key: sample_blocker_key(),
+            scope: sample_blocker_key().into(),
             discrepancy: Some(Discrepancy::BeliefStale),
             blocking_fact: Some(BlockingFact::NoKnownPath),
             expires_tick: Tick(33),
@@ -992,7 +992,7 @@ mod tests {
     fn blocker_recorded_payload_roundtrips_with_belief_snapshot_none() {
         let payload = BlockerRecordedPayload {
             agent: entity_id(1, 0),
-            blocker_key: sample_blocker_key(),
+            scope: sample_blocker_key().into(),
             discrepancy: Some(Discrepancy::BeliefStale),
             blocking_fact: Some(BlockingFact::NoKnownPath),
             expires_tick: Tick(33),

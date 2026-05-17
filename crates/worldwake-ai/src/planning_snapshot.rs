@@ -1280,7 +1280,12 @@ fn blocked_facility_uses(
         .values()
         .filter(|intent| intent.expires_tick > current_tick)
         .filter(|intent| intent.blocking_fact == BlockingFact::ExclusiveFacilityUnavailable)
-        .filter_map(|intent| intent.blocker_key.target.zip(intent.blocker_key.action_def))
+        .filter_map(|intent| {
+            intent
+                .scope
+                .exact_target()
+                .zip(intent.scope.exact_action_def())
+        })
         .collect()
 }
 

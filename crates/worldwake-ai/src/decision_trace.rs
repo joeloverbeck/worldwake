@@ -8,10 +8,10 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use worldwake_core::{
     ActionDefId, ActionDomain, ArtifactActionability, ArtifactCredibility, ArtifactExistence,
-    ArtifactLegalEffect, ArtifactVisibility, BelievedArtifactState, BlockerKey, BlockingFact,
-    CommodityKind, EntityId, FrameAssumption, FrameClearReason, GoalKey, HypothesisKind,
-    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, MotiveSourceRef,
-    OmissionReason, OpportunityAnchor, OpportunityKey, PatrolRoute, PerceptionSource, Permille,
+    ArtifactLegalEffect, ArtifactVisibility, BelievedArtifactState, BlockingFact, CommodityKind,
+    EntityId, FrameAssumption, FrameClearReason, GoalKey, HypothesisKind, InstitutionalClaim,
+    InstitutionalKnowledgeSource, IntentionDomainTag, MotiveSourceRef, OmissionReason,
+    OpportunityAnchor, OpportunityKey, PatrolRoute, PerceptionSource, Permille,
     PunishmentFineSelectionTrace, RepairKind, SuspensionReason, TellTopic, Tick,
 };
 use worldwake_sim::{
@@ -394,7 +394,7 @@ pub struct ActionStartFailureSummary {
 #[derive(Clone, Debug)]
 pub struct DiscrepancyTrace {
     pub discrepancy: worldwake_core::Discrepancy,
-    pub blocker_key: BlockerKey,
+    pub scope: worldwake_core::BlockerScope,
     pub expires_tick: Tick,
 }
 
@@ -526,7 +526,7 @@ pub struct DesireFullyBlocked {
 /// Records which blocker matched a specific filtered candidate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BlockerMatchDetail {
-    pub blocker_key: BlockerKey,
+    pub scope: worldwake_core::BlockerScope,
     pub blocking_fact: BlockingFact,
     pub expires_tick: Tick,
 }
@@ -1969,16 +1969,16 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 );
                 for detail in &blocked.blocker_matches {
                     let action_name = detail
-                        .blocker_key
-                        .action_def
+                        .scope
+                        .exact_action_def()
                         .and_then(|id| action_defs.get(id))
                         .map_or("none".to_string(), |d| d.name.clone());
                     let _ = write!(
                         out,
                         "\n    blocker: goal={}, place={:?}, target={:?}, action={}, fact={:?}, expires={}",
-                        format_goal_key(&detail.blocker_key.goal_key),
-                        detail.blocker_key.place,
-                        detail.blocker_key.target,
+                        format_goal_key(&detail.scope.exact_goal_key().unwrap()),
+                        detail.scope.exact_place(),
+                        detail.scope.exact_target(),
                         action_name,
                         detail.blocking_fact,
                         detail.expires_tick.0,
@@ -2074,16 +2074,16 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 let _ = write!(out, "\n  Discrepancies active:");
                 for discrepancy in &planning.discrepancy_trace {
                     let def_name = discrepancy
-                        .blocker_key
-                        .action_def
+                        .scope
+                        .exact_action_def()
                         .and_then(|action_def| action_defs.get(action_def))
                         .map_or("unknown", |d| d.name.as_str());
                     let _ = write!(
                         out,
                         "\n    goal={} discrepancy={:?} action={def_name} place={:?} expires_tick={}",
-                        format_goal_key(&discrepancy.blocker_key.goal_key),
+                        format_goal_key(&discrepancy.scope.exact_goal_key().unwrap()),
                         discrepancy.discrepancy,
-                        discrepancy.blocker_key.place,
+                        discrepancy.scope.exact_place(),
                         discrepancy.expires_tick.0,
                     );
                 }
@@ -5135,12 +5135,13 @@ mod tests {
     fn discrepancy_trace_struct_carries_typed_discrepancy() {
         let trace = DiscrepancyTrace {
             discrepancy: worldwake_core::Discrepancy::BeliefContradicted,
-            blocker_key: BlockerKey {
+            scope: worldwake_core::BlockerKey {
                 goal_key: GoalKey::new(GoalKind::Sleep),
                 place: Some(entity(4)),
                 target: Some(entity(5)),
                 action_def: Some(ActionDefId(6)),
-            },
+            }
+            .into(),
             expires_tick: Tick(12),
         };
 
@@ -5148,10 +5149,13 @@ mod tests {
             trace.discrepancy,
             worldwake_core::Discrepancy::BeliefContradicted
         );
-        assert_eq!(trace.blocker_key.goal_key, GoalKey::new(GoalKind::Sleep));
-        assert_eq!(trace.blocker_key.place, Some(entity(4)));
-        assert_eq!(trace.blocker_key.target, Some(entity(5)));
-        assert_eq!(trace.blocker_key.action_def, Some(ActionDefId(6)));
+        assert_eq!(
+            trace.scope.exact_goal_key().unwrap(),
+            GoalKey::new(GoalKind::Sleep)
+        );
+        assert_eq!(trace.scope.exact_place(), Some(entity(4)));
+        assert_eq!(trace.scope.exact_target(), Some(entity(5)));
+        assert_eq!(trace.scope.exact_action_def(), Some(ActionDefId(6)));
         assert_eq!(trace.expires_tick, Tick(12));
     }
 

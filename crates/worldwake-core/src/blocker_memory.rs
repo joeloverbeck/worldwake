@@ -1,13 +1,13 @@
 //! Authoritative blocker memory stored on agents.
 
 use crate::{
-    ActionDefId, AffordanceKey, CommodityKind, Component, EntityId, EventId, GoalKey, Permille,
-    Quantity, Tick, UniqueItemKind,
+    ActionDefId, AffordanceKey, BlockerScope, CommodityKind, Component, EntityId, EventId, GoalKey,
+    Permille, Quantity, RouteSegment, Tick, UniqueItemKind,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct BlockerKey {
     pub goal_key: GoalKey,
     pub place: Option<EntityId>,
@@ -22,58 +22,36 @@ pub struct BlockerDiagnostic {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BlockerMemory {
-    pub intents: BTreeMap<BlockerKey, Blocker>,
+    pub intents: BTreeMap<BlockerScope, Blocker>,
 }
 
 impl BlockerMemory {
-    pub fn is_blocked(
-        &self,
-        goal_key: &GoalKey,
-        place: Option<EntityId>,
-        target: Option<EntityId>,
-        action_def: Option<ActionDefId>,
-        current_tick: Tick,
-    ) -> bool {
-        let global_query = place.is_none() && target.is_none() && action_def.is_none();
+    pub fn is_blocked(&self, scope: &BlockerScope, current_tick: Tick) -> bool {
         self.intents.values().any(|intent| {
-            intent.blocker_key.goal_key == *goal_key
-                && intent.expires_tick > current_tick
+            intent.expires_tick > current_tick
                 && intent.blocks_goal_generation()
-                && (global_query || matches_scope(&intent.blocker_key, place, target, action_def))
+                && matches_scope(&intent.scope, scope)
         })
     }
 
-    pub fn is_blocked_for_search(
-        &self,
-        goal_key: &GoalKey,
-        place: Option<EntityId>,
-        target: Option<EntityId>,
-        action_def: Option<ActionDefId>,
-        current_tick: Tick,
-    ) -> bool {
-        self.find_blocked_for_search(goal_key, place, target, action_def, current_tick)
-            .is_some()
+    pub fn is_blocked_for_search(&self, scope: &BlockerScope, current_tick: Tick) -> bool {
+        self.find_blocked_for_search(scope, current_tick).is_some()
     }
 
     /// Like `is_blocked_for_search` but returns the matching `Blocker`
     /// reference so callers can inspect the `blocking_fact` for trace recording.
     pub fn find_blocked_for_search(
         &self,
-        goal_key: &GoalKey,
-        place: Option<EntityId>,
-        target: Option<EntityId>,
-        action_def: Option<ActionDefId>,
+        scope: &BlockerScope,
         current_tick: Tick,
     ) -> Option<&Blocker> {
         self.intents.values().find(|intent| {
-            intent.blocker_key.goal_key == *goal_key
-                && intent.expires_tick > current_tick
-                && matches_scope(&intent.blocker_key, place, target, action_def)
+            intent.expires_tick > current_tick && matches_scope(&intent.scope, scope)
         })
     }
 
     pub fn record(&mut self, intent: Blocker) {
-        self.intents.insert(intent.blocker_key, intent);
+        self.intents.insert(intent.scope, intent);
     }
 
     pub fn expire(&mut self, current_tick: Tick) {
@@ -85,44 +63,86 @@ impl BlockerMemory {
         self.intents.retain(|_, intent| !is_cleared(intent));
     }
 
-    pub fn clear_for(&mut self, key: &BlockerKey) {
-        self.intents.remove(key);
+    pub fn clear_for(&mut self, scope: &BlockerScope) {
+        self.intents.remove(scope);
     }
 
     pub fn clear_all_for_goal(&mut self, goal_key: &GoalKey) {
-        self.intents.retain(|k, _| k.goal_key != *goal_key);
+        self.intents.retain(|scope, _| match scope {
+            BlockerScope::Exact(key) => key.goal_key != *goal_key,
+            BlockerScope::RouteSegment(_) | BlockerScope::Counterparty(_) => true,
+        });
+    }
+
+    pub fn route_segment_blocked(
+        &self,
+        from: EntityId,
+        to: EntityId,
+        current_tick: Tick,
+    ) -> Option<&Blocker> {
+        self.find_blocked_for_search(
+            &BlockerScope::RouteSegment(RouteSegment::new(from, to)),
+            current_tick,
+        )
+    }
+
+    pub fn counterparty_blocked(&self, other: EntityId, current_tick: Tick) -> Option<&Blocker> {
+        self.find_blocked_for_search(&BlockerScope::Counterparty(other), current_tick)
+    }
+
+    pub fn any_blocker_on_path(&self, path: &[EntityId], current_tick: Tick) -> Option<&Blocker> {
+        path.windows(2).find_map(|pair| {
+            let [from, to] = pair else {
+                return None;
+            };
+            self.route_segment_blocked(*from, *to, current_tick)
+        })
     }
 }
 
-fn matches_scope(
-    blocker: &BlockerKey,
-    query_place: Option<EntityId>,
-    query_target: Option<EntityId>,
-    query_action: Option<ActionDefId>,
-) -> bool {
+fn matches_exact_scope(blocker: &BlockerKey, query: &BlockerKey) -> bool {
     // Goal-scoped blocker (place=None, target=None, action=None) matches everything
     if blocker.place.is_none() && blocker.target.is_none() && blocker.action_def.is_none() {
-        return true;
+        return blocker.goal_key == query.goal_key;
+    }
+    if blocker.goal_key != query.goal_key {
+        return false;
     }
     // Place must match if blocker has one
     if let Some(blocker_place) = blocker.place
-        && query_place != Some(blocker_place)
+        && query.place.is_some()
+        && query.place != Some(blocker_place)
     {
         return false;
     }
     // Target must match if blocker has one
     if let Some(blocker_target) = blocker.target
-        && query_target != Some(blocker_target)
+        && query.target != Some(blocker_target)
     {
         return false;
     }
     // Action must match if blocker has one
     if let Some(blocker_action) = blocker.action_def
-        && query_action != Some(blocker_action)
+        && query.action_def != Some(blocker_action)
     {
         return false;
     }
     true
+}
+
+fn matches_scope(blocker: &BlockerScope, query: &BlockerScope) -> bool {
+    match (blocker, query) {
+        (BlockerScope::Exact(blocker), BlockerScope::Exact(query)) => {
+            matches_exact_scope(blocker, query)
+        }
+        (BlockerScope::RouteSegment(blocker), BlockerScope::RouteSegment(query)) => {
+            blocker == query
+        }
+        (BlockerScope::Counterparty(blocker), BlockerScope::Counterparty(query)) => {
+            blocker == query
+        }
+        _ => false,
+    }
 }
 
 impl Component for BlockerMemory {}
@@ -167,13 +187,14 @@ pub enum ClearingBaseline {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Blocker {
-    pub blocker_key: BlockerKey,
+    pub scope: BlockerScope,
     pub blocking_fact: BlockingFact,
     pub diagnostic_context: Option<BlockerDiagnostic>,
     pub observed_tick: Tick,
     pub expires_tick: Tick,
     pub clearing_condition: BlockerClearingCondition,
     pub baseline_snapshot: Option<ClearingBaseline>,
+    pub source_event: EventId,
 }
 
 impl Blocker {
@@ -217,8 +238,8 @@ mod tests {
         BlockingFact, ClearingBaseline,
     };
     use crate::{
-        AcquisitionQuantity, ActionDefId, AffordanceKey, CommodityKind, EventId, GoalKind,
-        Quantity, Tick, UniqueItemKind,
+        AcquisitionQuantity, ActionDefId, AffordanceKey, BlockerScope, CommodityKind, EventId,
+        GoalKind, Quantity, RouteSegment, Tick, UniqueItemKind,
         test_utils::{entity_id, sample_blocker, sample_blocker_key, sample_goal_key},
         traits::Component,
     };
@@ -233,13 +254,14 @@ mod tests {
 
     fn make_intent(key: BlockerKey, fact: BlockingFact, expires: Tick) -> Blocker {
         Blocker {
-            blocker_key: key,
+            scope: key.into(),
             blocking_fact: fact,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: expires,
             clearing_condition: BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: EventId(1),
         }
     }
 
@@ -251,6 +273,8 @@ mod tests {
         assert_copy_value_bounds::<BlockerClearingCondition>();
         assert_copy_value_bounds::<ClearingBaseline>();
         assert_copy_value_bounds::<BlockingFact>();
+        assert_copy_value_bounds::<BlockerScope>();
+        assert_copy_value_bounds::<RouteSegment>();
         assert_value_bounds::<BlockerKey>();
         assert_value_bounds::<BlockerDiagnostic>();
     }
@@ -299,11 +323,11 @@ mod tests {
         memory.record(blocker2);
 
         // Live at tick 9
-        assert!(memory.is_blocked(&key, None, None, None, Tick(9)));
+        assert!(memory.is_blocked(&BlockerScope::exact(key, None, None, None), Tick(9)));
         // Expired at tick 10
-        assert!(!memory.is_blocked(&key, None, None, None, Tick(10)));
+        assert!(!memory.is_blocked(&BlockerScope::exact(key, None, None, None), Tick(10)));
         // Expired at tick 20
-        assert!(!memory.is_blocked(&stale_key, None, None, None, Tick(20)));
+        assert!(!memory.is_blocked(&BlockerScope::exact(stale_key, None, None, None), Tick(20)));
 
         memory.expire(Tick(10));
         assert_eq!(memory.intents.len(), 1);
@@ -326,11 +350,8 @@ mod tests {
 
         // SourceDepleted does not block goal generation (blocks_goal_generation returns false)
         assert!(!memory.is_blocked(
-            &key,
-            Some(entity_id(2, 0)),
-            Some(entity_id(4, 0)),
-            None,
-            Tick(9)
+            &BlockerScope::exact(key, Some(entity_id(2, 0)), Some(entity_id(4, 0)), None),
+            Tick(9),
         ));
     }
 
@@ -339,20 +360,21 @@ mod tests {
         let bk = sample_blocker_key();
         let original = sample_blocker();
         let replacement = Blocker {
-            blocker_key: bk,
+            scope: bk.into(),
             blocking_fact: BlockingFact::MissingTool(UniqueItemKind::SimpleTool),
             diagnostic_context: None,
             observed_tick: Tick(11),
             expires_tick: Tick(19),
             clearing_condition: BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: EventId(2),
         };
         let mut memory = BlockerMemory::default();
         memory.record(original);
         memory.record(replacement);
 
         assert_eq!(memory.intents.len(), 1);
-        assert_eq!(memory.intents[&bk], replacement);
+        assert_eq!(memory.intents[&bk.into()], replacement);
     }
 
     #[test]
@@ -406,7 +428,7 @@ mod tests {
         memory.expire(Tick(14));
 
         assert_eq!(memory.intents.len(), 1);
-        assert!(memory.intents.contains_key(&bk2));
+        assert!(memory.intents.contains_key(&bk2.into()));
     }
 
     #[test]
@@ -426,10 +448,10 @@ mod tests {
             Tick(30),
         ));
 
-        memory.clear_for(&bk);
+        memory.clear_for(&bk.into());
 
         assert_eq!(memory.intents.len(), 1);
-        assert!(memory.intents.contains_key(&other_bk));
+        assert!(memory.intents.contains_key(&other_bk.into()));
     }
 
     #[test]
@@ -475,7 +497,14 @@ mod tests {
 
         assert_eq!(memory.intents.len(), 1);
         assert_eq!(
-            memory.intents.values().next().unwrap().blocker_key.goal_key,
+            memory
+                .intents
+                .values()
+                .next()
+                .unwrap()
+                .scope
+                .exact_goal_key()
+                .unwrap(),
             other_goal
         );
     }
@@ -497,6 +526,44 @@ mod tests {
         let roundtrip: BlockerMemory = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, memory);
+    }
+
+    #[test]
+    fn blocker_memory_roundtrips_non_exact_scope_entries() {
+        let mut memory = BlockerMemory::default();
+        let route_scope =
+            BlockerScope::RouteSegment(RouteSegment::new(entity_id(10, 0), entity_id(11, 0)));
+        let counterparty_scope = BlockerScope::Counterparty(entity_id(12, 0));
+        memory.record(Blocker {
+            scope: route_scope,
+            blocking_fact: BlockingFact::NoKnownPath,
+            diagnostic_context: None,
+            observed_tick: Tick(2),
+            expires_tick: Tick(20),
+            clearing_condition: BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+            source_event: EventId(7),
+        });
+        memory.record(Blocker {
+            scope: counterparty_scope,
+            blocking_fact: BlockingFact::NoBuyer,
+            diagnostic_context: None,
+            observed_tick: Tick(3),
+            expires_tick: Tick(30),
+            clearing_condition: BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+            source_event: EventId(8),
+        });
+
+        let bytes = bincode::serialize(&memory).unwrap();
+        let roundtrip: BlockerMemory = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, memory);
+        assert_eq!(roundtrip.intents[&route_scope].source_event, EventId(7));
+        assert_eq!(
+            roundtrip.intents[&counterparty_scope].source_event,
+            EventId(8)
+        );
     }
 
     #[test]
@@ -531,11 +598,13 @@ mod tests {
         ));
 
         assert!(!memory.is_blocked(
-            &key,
-            Some(entity_id(2, 0)),
-            Some(entity_id(4, 0)),
-            Some(ActionDefId(9)),
-            Tick(11)
+            &BlockerScope::exact(
+                key,
+                Some(entity_id(2, 0)),
+                Some(entity_id(4, 0)),
+                Some(ActionDefId(9)),
+            ),
+            Tick(11),
         ));
     }
 
@@ -556,9 +625,81 @@ mod tests {
         ));
 
         // is_blocked returns false (SourceDepleted doesn't block goal generation)
-        assert!(!memory.is_blocked(&key, Some(place), None, None, Tick(9)));
+        assert!(!memory.is_blocked(&BlockerScope::exact(key, Some(place), None, None), Tick(9)));
         // is_blocked_for_search returns true (no blocks_goal_generation gate)
-        assert!(memory.is_blocked_for_search(&key, Some(place), None, None, Tick(9)));
+        assert!(
+            memory
+                .is_blocked_for_search(&BlockerScope::exact(key, Some(place), None, None), Tick(9))
+        );
+    }
+
+    #[test]
+    fn route_segment_blocked_matches_canonical_segment() {
+        let from = entity_id(20, 0);
+        let to = entity_id(21, 0);
+        let mut memory = BlockerMemory::default();
+        memory.record(Blocker {
+            scope: BlockerScope::RouteSegment(RouteSegment::new(from, to)),
+            blocking_fact: BlockingFact::NoKnownPath,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(10),
+            clearing_condition: BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+            source_event: EventId(4),
+        });
+
+        assert!(memory.route_segment_blocked(to, from, Tick(5)).is_some());
+        assert!(memory.route_segment_blocked(from, to, Tick(10)).is_none());
+    }
+
+    #[test]
+    fn counterparty_blocked_matches_counterparty_scope_only() {
+        let counterparty = entity_id(30, 0);
+        let mut memory = BlockerMemory::default();
+        memory.record(Blocker {
+            scope: BlockerScope::Counterparty(counterparty),
+            blocking_fact: BlockingFact::NoBuyer,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(10),
+            clearing_condition: BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+            source_event: EventId(5),
+        });
+
+        assert!(memory.counterparty_blocked(counterparty, Tick(5)).is_some());
+        assert!(
+            memory
+                .counterparty_blocked(entity_id(31, 0), Tick(5))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn any_blocker_on_path_returns_first_blocked_segment() {
+        let a = entity_id(40, 0);
+        let b = entity_id(41, 0);
+        let c = entity_id(42, 0);
+        let mut memory = BlockerMemory::default();
+        memory.record(Blocker {
+            scope: BlockerScope::RouteSegment(RouteSegment::new(b, c)),
+            blocking_fact: BlockingFact::DangerTooHigh,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(10),
+            clearing_condition: BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+            source_event: EventId(6),
+        });
+
+        assert_eq!(
+            memory
+                .any_blocker_on_path(&[a, b, c], Tick(5))
+                .map(|blocker| blocker.scope),
+            Some(BlockerScope::RouteSegment(RouteSegment::new(b, c)))
+        );
+        assert!(memory.any_blocker_on_path(&[a, b], Tick(5)).is_none());
     }
 
     #[test]
@@ -577,9 +718,12 @@ mod tests {
         ));
 
         // Global blocker matches query with a specific place
-        assert!(memory.is_blocked(&key, Some(entity_id(5, 0)), None, None, Tick(9)));
+        assert!(memory.is_blocked(
+            &BlockerScope::exact(key, Some(entity_id(5, 0)), None, None),
+            Tick(9),
+        ));
         // Global blocker matches query with no place
-        assert!(memory.is_blocked(&key, None, None, None, Tick(9)));
+        assert!(memory.is_blocked(&BlockerScope::exact(key, None, None, None), Tick(9)));
     }
 
     #[test]
@@ -600,9 +744,15 @@ mod tests {
         ));
 
         // Matches at place_a
-        assert!(memory.is_blocked(&key, Some(place_a), None, None, Tick(9)));
+        assert!(memory.is_blocked(
+            &BlockerScope::exact(key, Some(place_a), None, None),
+            Tick(9)
+        ));
         // Does NOT match at place_b
-        assert!(!memory.is_blocked(&key, Some(place_b), None, None, Tick(9)));
+        assert!(!memory.is_blocked(
+            &BlockerScope::exact(key, Some(place_b), None, None),
+            Tick(9)
+        ));
     }
 
     #[test]
@@ -623,7 +773,7 @@ mod tests {
 
         // Global query (None place) matches any goal-generation-blocking fact
         // regardless of key scope — candidate generation uses global queries
-        assert!(memory.is_blocked(&key, None, None, None, Tick(9)));
+        assert!(memory.is_blocked(&BlockerScope::exact(key, None, None, None), Tick(9)));
     }
 
     #[test]
@@ -643,19 +793,20 @@ mod tests {
         ));
 
         // SourceDepleted does not block goal generation, so global query does not match
-        assert!(!memory.is_blocked(&key, None, None, None, Tick(9)));
+        assert!(!memory.is_blocked(&BlockerScope::exact(key, None, None, None), Tick(9)));
     }
 
     #[test]
     fn patience_exhausted_blocks_goal_generation() {
         let intent = Blocker {
-            blocker_key: sample_blocker_key(),
+            scope: sample_blocker_key().into(),
             blocking_fact: BlockingFact::PatienceExhausted,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(100),
             clearing_condition: BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: EventId(3),
         };
         assert!(intent.blocks_goal_generation());
     }
@@ -684,7 +835,7 @@ mod tests {
         });
 
         assert_eq!(memory.intents.len(), 1);
-        assert!(memory.intents.contains_key(&retained_key));
+        assert!(memory.intents.contains_key(&retained_key.into()));
     }
 
     #[test]
@@ -722,8 +873,14 @@ mod tests {
         ));
 
         // Blocked at place_a for this target.
-        assert!(memory.is_blocked(&key, Some(place_a), Some(target), None, Tick(5)));
+        assert!(memory.is_blocked(
+            &BlockerScope::exact(key, Some(place_a), Some(target), None),
+            Tick(5)
+        ));
         // NOT blocked at place_b — pursuit to a different believed place is allowed.
-        assert!(!memory.is_blocked(&key, Some(place_b), Some(target), None, Tick(5)));
+        assert!(!memory.is_blocked(
+            &BlockerScope::exact(key, Some(place_b), Some(target), None),
+            Tick(5)
+        ));
     }
 }

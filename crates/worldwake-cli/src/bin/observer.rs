@@ -614,9 +614,13 @@ fn decision_payload_summary(payload: &DecisionEventPayload) -> String {
                 (None, Some(blocking_fact)) => format!("BlockingFact({blocking_fact:?})"),
                 _ => "Unclassified".to_string(),
             };
+            let key = match inner.scope {
+                worldwake_core::BlockerScope::Exact(key) => format!("{key:?}"),
+                scope => format!("{scope:?}"),
+            };
             let mut summary = format!(
-                "key={:?} class={} expires={}",
-                inner.blocker_key, class, inner.expires_tick.0
+                "key={} class={} expires={}",
+                key, class, inner.expires_tick.0
             );
             append_decisive_counts(
                 &mut summary,
@@ -6076,12 +6080,13 @@ mod tests {
             EventTag::BlockerRecorded,
             DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
                 agent,
-                blocker_key: BlockerKey {
+                scope: BlockerKey {
                     goal_key: move_goal,
                     place: Some(entity(21)),
                     target: Some(target),
                     action_def: Some(ActionDefId(6)),
-                },
+                }
+                .into(),
                 discrepancy: Some(worldwake_core::Discrepancy::RouteUnknown),
                 blocking_fact: None,
                 expires_tick: Tick(99),
@@ -7861,12 +7866,13 @@ mod tests {
         let populated = decision_payload_summary(&DecisionEventPayload::BlockerRecorded(
             BlockerRecordedPayload {
                 agent: entity(1),
-                blocker_key: BlockerKey {
+                scope: BlockerKey {
                     goal_key: GoalKey::from(GoalKind::Patrol { place: entity(9) }),
                     place: Some(entity(9)),
                     target: Some(entity(2)),
                     action_def: Some(ActionDefId(6)),
-                },
+                }
+                .into(),
                 discrepancy: Some(worldwake_core::Discrepancy::BeliefStale),
                 blocking_fact: None,
                 expires_tick: Tick(99),
@@ -7888,12 +7894,13 @@ mod tests {
         let empty = decision_payload_summary(&DecisionEventPayload::BlockerRecorded(
             BlockerRecordedPayload {
                 agent: entity(1),
-                blocker_key: BlockerKey {
+                scope: BlockerKey {
                     goal_key: GoalKey::from(GoalKind::Patrol { place: entity(9) }),
                     place: Some(entity(9)),
                     target: Some(entity(2)),
                     action_def: Some(ActionDefId(6)),
-                },
+                }
+                .into(),
                 discrepancy: Some(worldwake_core::Discrepancy::BeliefStale),
                 blocking_fact: None,
                 expires_tick: Tick(99),

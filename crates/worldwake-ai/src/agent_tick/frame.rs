@@ -173,18 +173,20 @@ pub(super) fn handle_recoverable_travel_step_blockage(
                 .expect("active frame travel must retain a current goal")
         });
         blocked_memory.record(Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key,
                 place: blocked_leg_target(step),
                 target: None,
                 action_def: Some(step.def_id),
-            },
+            }
+            .into(),
             blocking_fact: worldwake_core::BlockingFact::NoKnownPath,
             diagnostic_context: None,
             observed_tick: tick,
             expires_tick: tick + u64::from(cognitive.structural_block_ticks),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
         runtime.last_frame_clear_reason = Some(FrameClearReason::PatienceExhausted);
         None
@@ -562,18 +564,20 @@ pub(super) fn check_patience_exhaustion(
         return false;
     }
     blocked_memory.record(Blocker {
-        blocker_key: BlockerKey {
+        scope: BlockerKey {
             goal_key: frame.goal,
             place: agent_place,
             target: frame_blocker_target(&frame.domain),
             action_def: None,
-        },
+        }
+        .into(),
         blocking_fact: BlockingFact::PatienceExhausted,
         diagnostic_context: None,
         observed_tick: tick,
         expires_tick: tick + u64::from(structural_block_ticks),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
+        source_event: worldwake_core::EventId(0),
     });
     runtime.last_frame_clear_reason = Some(FrameClearReason::PatienceExhausted);
     runtime.current_plan = None;
@@ -628,16 +632,18 @@ pub(super) fn record_assumption_failure(
             (discrepancy, clearing)
         };
     discrepancy_memory.record(DiscrepancyEntry {
-        blocker_key: BlockerKey {
+        scope: BlockerKey {
             goal_key: frame.goal,
             place: agent_place,
             target,
             action_def: None,
-        },
+        }
+        .into(),
         discrepancy,
         observed_tick: tick,
         expires_tick: tick + u64::from(structural_block_ticks),
         clearing_condition,
+        source_event: worldwake_core::EventId(0),
     });
 }
 
@@ -649,16 +655,18 @@ pub(super) fn record_source_invalidation(
     structural_block_ticks: u32,
 ) {
     discrepancy_memory.record(DiscrepancyEntry {
-        blocker_key: BlockerKey {
+        scope: BlockerKey {
             goal_key: frame.goal,
             place: None,
             target: Some(source.entity),
             action_def: None,
-        },
+        }
+        .into(),
         discrepancy: Discrepancy::SourceInvalidated,
         observed_tick: tick,
         expires_tick: tick + u64::from(structural_block_ticks),
         clearing_condition: DiscrepancyClearing::TtlExpiry,
+        source_event: worldwake_core::EventId(0),
     });
 }
 
@@ -2111,8 +2119,8 @@ mod tests {
              that the failed plan-level assumption is now resolved"
         );
         assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
-        assert_eq!(entry.blocker_key.target, Some(target));
-        assert_eq!(entry.blocker_key.place, Some(agent_place));
+        assert_eq!(entry.scope.exact_target(), Some(target));
+        assert_eq!(entry.scope.exact_place(), Some(agent_place));
     }
 
     #[test]
@@ -2164,8 +2172,8 @@ mod tests {
             }
         );
         assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
-        assert_eq!(entry.blocker_key.target, Some(source));
-        assert_eq!(entry.blocker_key.place, Some(destination));
+        assert_eq!(entry.scope.exact_target(), Some(source));
+        assert_eq!(entry.scope.exact_place(), Some(destination));
     }
 
     #[test]
@@ -2197,7 +2205,7 @@ mod tests {
             worldwake_core::DiscrepancyClearing::TtlExpiry
         );
         assert_eq!(entry.discrepancy, Discrepancy::PartialExecutionDrift);
-        assert_eq!(entry.blocker_key.target, None);
+        assert_eq!(entry.scope.exact_target(), None);
     }
 
     #[test]
@@ -2272,8 +2280,8 @@ mod tests {
         );
         assert_eq!(entry.clearing_condition, DiscrepancyClearing::TtlExpiry);
         assert_eq!(entry.expires_tick, Tick(tick.0 + u64::from(ttl)));
-        assert_eq!(entry.blocker_key.target, Some(target));
-        assert_eq!(entry.blocker_key.place, Some(agent_place));
+        assert_eq!(entry.scope.exact_target(), Some(target));
+        assert_eq!(entry.scope.exact_place(), Some(agent_place));
     }
 
     #[test]
@@ -2363,9 +2371,9 @@ mod tests {
 
         let entry = memory.entries.values().next().unwrap();
         assert_eq!(entry.discrepancy, Discrepancy::SourceInvalidated);
-        assert_eq!(entry.blocker_key.goal_key, goal);
-        assert_eq!(entry.blocker_key.place, None);
-        assert_eq!(entry.blocker_key.target, Some(source.entity));
+        assert_eq!(entry.scope.exact_goal_key().unwrap(), goal);
+        assert_eq!(entry.scope.exact_place(), None);
+        assert_eq!(entry.scope.exact_target(), Some(source.entity));
         assert_eq!(entry.observed_tick, tick);
         assert_eq!(entry.expires_tick, Tick(12 + u64::from(ttl)));
         assert_eq!(entry.clearing_condition, DiscrepancyClearing::TtlExpiry);

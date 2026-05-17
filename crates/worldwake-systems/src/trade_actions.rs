@@ -7,10 +7,10 @@ use std::{
     num::NonZeroU32,
 };
 use worldwake_core::{
-    ActionDefId, Blocker, BlockerKey, BlockingFact, BodyCostPerTick, CommodityKind, DemandMemory,
-    DemandObservation, DemandObservationReason, Discrepancy, EntityId, EntityKind, EventTag,
-    GoalKey, GoalKind, MerchandiseProfile, Quantity, SourceKey, Tick, VisibilitySpec, WorldTxn,
-    WoundList,
+    ActionDefId, Blocker, BlockerScope, BlockingFact, BodyCostPerTick, CauseRef, CommodityKind,
+    DemandMemory, DemandObservation, DemandObservationReason, Discrepancy, EntityId, EntityKind,
+    EventId, EventTag, GoalKey, GoalKind, MerchandiseProfile, Quantity, SourceKey, Tick,
+    VisibilitySpec, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
@@ -1916,19 +1916,24 @@ fn record_sell_blocked_intent(
         .get_component_blocker_memory(actor)
         .cloned()
         .unwrap_or_default();
+    let source_event = match txn.cause() {
+        CauseRef::Event(event_id) => event_id,
+        CauseRef::SystemTick(_) | CauseRef::Bootstrap | CauseRef::ExternalInput(_) => EventId(0),
+    };
     memory.record(Blocker {
-        blocker_key: BlockerKey {
-            goal_key: GoalKey::from(GoalKind::SellCommodity { commodity }),
-            place: Some(place),
-            target: None,
-            action_def: None,
-        },
+        scope: BlockerScope::exact(
+            GoalKey::from(GoalKind::SellCommodity { commodity }),
+            Some(place),
+            None,
+            None,
+        ),
         blocking_fact: BlockingFact::NoBuyer,
         diagnostic_context: None,
         observed_tick: current_tick,
         expires_tick: Tick(current_tick.0 + u64::from(blocking_period)),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
+        source_event,
     });
     let _ = txn.set_component_blocker_memory(actor, memory);
 }
@@ -4532,11 +4537,11 @@ mod tests {
             .expect("blocked intent memory should exist after unproductive cycle");
         let sell_blocker = blocked.intents.values().find(|intent| {
             intent.blocking_fact == BlockingFact::NoBuyer
-                && intent.blocker_key.goal_key.kind
+                && intent.scope.exact_goal_key().unwrap().kind
                     == GoalKind::SellCommodity {
                         commodity: CommodityKind::Bread,
                     }
-                && intent.blocker_key.place == Some(h.place)
+                && intent.scope.exact_place() == Some(h.place)
         });
         assert!(
             sell_blocker.is_some(),

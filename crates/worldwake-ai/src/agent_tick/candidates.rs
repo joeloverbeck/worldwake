@@ -79,18 +79,20 @@ pub(super) fn abandon_expired_facility_queues_with_limit(
         facility_queue_intents.intents.remove(&facility);
         if let Some(intent) = queued_intent {
             blocked_memory.record(Blocker {
-                blocker_key: BlockerKey {
+                scope: BlockerKey {
                     goal_key: intent.goal_key,
                     place: world.effective_place(agent),
                     target: Some(facility),
                     action_def: Some(intent.intended_action),
-                },
+                }
+                .into(),
                 blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
                 diagnostic_context: None,
                 observed_tick: tick,
                 expires_tick: tick + u64::from(structural_block_ticks),
                 clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
                 baseline_snapshot: None,
+                source_event: worldwake_core::EventId(0),
             });
         }
 

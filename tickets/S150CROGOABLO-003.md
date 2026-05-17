@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `BlockerClearingCondition` enum in `worldwake-core`; recording-path clearing logic in `worldwake-ai` and `worldwake-systems`
-**Deps**: S150CROGOABLO-002
+**Deps**: archive/tickets/S150CROGOABLO-002.md
 
 ## Problem
 

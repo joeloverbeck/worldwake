@@ -4,7 +4,7 @@
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: None — tooling-only (observer binary)
-**Deps**: S150CROGOABLO-002
+**Deps**: archive/tickets/S150CROGOABLO-002.md
 
 ## Problem
 
