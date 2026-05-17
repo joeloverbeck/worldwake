@@ -26,6 +26,7 @@
 
 pub mod action_domain;
 pub mod agenda_profile;
+pub mod agent_schema_context_profile;
 pub mod allocator;
 pub mod bandit_camp;
 pub mod belief;
@@ -68,6 +69,8 @@ pub mod experience;
 pub mod exploration;
 pub mod factions;
 pub mod goal;
+pub mod goal_dispatch_key;
+pub mod goal_planning_budget;
 pub mod ids;
 pub mod institutional;
 pub mod intention_disposition;
@@ -114,6 +117,7 @@ pub mod wounds;
 
 pub use action_domain::ActionDomain;
 pub use agenda_profile::AgendaProfile;
+pub use agent_schema_context_profile::{AgentSchemaContextProfile, CandidateExtractorId};
 pub use allocator::EntityAllocator;
 pub use bandit_camp::{BanditCamp, BanditFactionPolicy};
 pub use belief::{
@@ -217,6 +221,8 @@ pub use goal::{
     AcquisitionQuantity, CommodityPurpose, ExplorationMotivation, GoalKey, GoalKind,
     HypothesisKind, OpportunityAnchor, OpportunityKey,
 };
+pub use goal_dispatch_key::GoalDispatchKey;
+pub use goal_planning_budget::GoalPlanningBudget;
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
 pub use institutional::{
     BelievedInstitutionalClaim, InstitutionalBeliefKey, InstitutionalBeliefRead,

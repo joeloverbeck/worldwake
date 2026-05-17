@@ -1,4 +1,7 @@
-use crate::{ExhaustionEntry, GoalDispatchKey, InvalidationStrategy, OpportunityKey};
+use crate::{
+    ExhaustionEntry, GoalDispatchKey, InvalidationStrategy, OpportunityKey,
+    goal_schema::GoalDispatchKeySchemaExt,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{

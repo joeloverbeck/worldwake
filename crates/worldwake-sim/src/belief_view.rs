@@ -7,9 +7,9 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDomain, AgentBeliefStore, ArtifactPostingProfile, BeliefConfidencePolicy,
-    BelievedActivity, BelievedEntityState, BelievedInstitutionalClaim, ClaimValue,
-    CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
+    ActionDomain, AgentBeliefStore, AgentSchemaContextProfile, ArtifactPostingProfile,
+    BeliefConfidencePolicy, BelievedActivity, BelievedEntityState, BelievedInstitutionalClaim,
+    ClaimValue, CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
     CommodityTreatmentProfile, CommodityValuationProfile, ContentionGrant, DemandObservation,
     DeprivationExposure, DisposalProfile, DiversificationProfile, DriveEscalationProfile,
     DriveThresholds, EffectiveRight, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind,
@@ -573,6 +573,10 @@ pub trait GoalBeliefView: BelievedAuthorityView + LocalPhysicalObservationView {
         let _ = agent;
         None
     }
+    fn agent_schema_context_profile(&self, agent: EntityId) -> Option<AgentSchemaContextProfile> {
+        let _ = agent;
+        None
+    }
     fn perception_profile(&self, agent: EntityId) -> Option<PerceptionProfile> {
         let _ = agent;
         None
@@ -1044,6 +1048,10 @@ pub trait ProfileBeliefView {
         ObligationExecutionTracker::default()
     }
     fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
+        let _ = agent;
+        None
+    }
+    fn agent_schema_context_profile(&self, agent: EntityId) -> Option<AgentSchemaContextProfile> {
         let _ = agent;
         None
     }
@@ -2153,6 +2161,13 @@ where
         agent: worldwake_core::EntityId,
     ) -> Option<worldwake_core::CognitiveProfile> {
         ProfileBeliefView::cognitive_profile(self, agent)
+    }
+
+    fn agent_schema_context_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::AgentSchemaContextProfile> {
+        ProfileBeliefView::agent_schema_context_profile(self, agent)
     }
 
     fn perception_profile(

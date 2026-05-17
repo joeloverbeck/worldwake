@@ -27,7 +27,7 @@ Phase 12: AI Architecture Evolution — Draft
 - S111 (Scenario Homogeneity Lints, archived) — provides the homogeneity detection lint S152 substitutes a positive remedy for. The lint stays; S152 makes scenarios less likely to trip it by default.
 - S148 (Portfolio Slot Expansion, Phase 12) — `PortfolioWeightsProfile` is one of the archetype-modulated profiles.
 - S151 (Testimony Reliability and Route Preferences, Phase 12) — `TestimonyTrustProfile` and `RoutePreferenceProfile` are archetype-modulated.
-- S146 (Goal Schema and Per-Goal Budgets, Phase 12) — `AgentSchemaContextProfile.budget_overrides` may be archetype-driven.
+- S146 (Goal Schema and Per-Goal Budgets, archived at `archive/specs/S146-goal-schema-and-per-goal-budgets.md`) — `AgentSchemaContextProfile.budget_overrides` may be archetype-driven.
 
 ## Design Goals
 
@@ -237,7 +237,7 @@ In `crates/worldwake-cli/src/scenario/mod.rs` `spawn_agent()`:
 1. Determine archetype: consult `ArchetypeAssignmentPolicy` via deterministic seeded RNG derived from `ScenarioDef.seed + agent_index`.
 2. Look up `ArchetypeProfileTemplate` for that archetype.
 3. Apply deltas to each universal profile (starting from default values or scenario-author overrides). Clamp results to legal `Permille` ranges.
-4. Apply `method_enable` / `method_disable` to `AgentSchemaContextProfile.enabled_methods` (S146).
+4. Apply `method_enable` / `method_disable` to `AgentSchemaContextProfile.enabled_methods` (S147).
 5. Emit `PersonalityAssigned` event with the resolved snapshot.
 
 Explicit scenario-author overrides on individual profile fields (e.g., a scenario specifying `cognitive_profile.max_plan_depth = 14` for a specific agent) take precedence over archetype deltas. The archetype provides defaults; authors can still tune.

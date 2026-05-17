@@ -640,11 +640,16 @@ fn spawn_agent(
     let tell = agent_def.tell_profile.unwrap_or_default();
     txn.set_component_tell_profile(agent_id, tell)?;
     let cognitive = agent_def.cognitive_profile.unwrap_or_default();
+    let schema_context = agent_def
+        .agent_schema_context_profile
+        .clone()
+        .unwrap_or_default();
     let risk_weight = agent_def.risk_weight_profile.unwrap_or_default();
     let law_abiding = agent_def.law_abiding_profile.unwrap_or_default();
     let agenda_profile = agent_def.agenda_profile.unwrap_or_default();
     let execution_budget = agent_def.execution_budget.unwrap_or_default();
     txn.set_component_cognitive_profile(agent_id, cognitive)?;
+    txn.set_component_agent_schema_context_profile(agent_id, schema_context)?;
     txn.set_component_risk_weight_profile(agent_id, risk_weight)?;
     txn.set_component_law_abiding_profile(agent_id, law_abiding)?;
     txn.set_component_agenda_profile(agent_id, agenda_profile)?;
@@ -1520,19 +1525,20 @@ mod tests {
     use worldwake_core::SuccessionLaw;
     use worldwake_core::topology::PlaceTag;
     use worldwake_core::{
-        AgendaProfile, ArtifactPostingProfile, BeliefConfidencePolicy, CarryCapacity,
-        CognitiveProfile, CommodityDecayMap, CommodityKind, CommodityValuationProfile,
-        CommunicationProfile, ContentionDispositionProfile, ContentionPolicy, ControlSource,
-        DisposalProfile, DiversificationProfile, DriveEscalationParams, DriveEscalationProfile,
-        DriveThresholds, EpistemicDispositionProfile, ExecutionBudget, ExpectationStore,
-        GroundComfortTag, HomeostaticNeedId, HomeostaticNeeds, IntentionDispositionProfile,
-        JusticeDispositionProfile, LastProactiveExplorationTick, LastSeenMemory, LatrineFullness,
-        LawAbidingProfile, LoadUnits, MultiplierPermille, ObligationSatiationProfile,
-        PatrolProfile, PatrolRoute, PerceptionProfile, Permille, PlaceDirtiness,
-        PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, RiskWeightProfile,
-        ShelterTag, SleepQualityProfile, SleepRecoveryModifier, SubstitutePreferences, TellProfile,
-        TheftDispositionProfile, ThresholdBand, TradeCategory, ViolationDispositionProfile,
-        WashBasinState, WorkstationTag, default_commodity_decay_map,
+        AgendaProfile, AgentSchemaContextProfile, ArtifactPostingProfile, BeliefConfidencePolicy,
+        CandidateExtractorId, CarryCapacity, CognitiveProfile, CommodityDecayMap, CommodityKind,
+        CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile,
+        ContentionPolicy, ControlSource, DisposalProfile, DiversificationProfile,
+        DriveEscalationParams, DriveEscalationProfile, DriveThresholds,
+        EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, GoalDispatchKey,
+        GoalPlanningBudget, GroundComfortTag, HomeostaticNeedId, HomeostaticNeeds,
+        IntentionDispositionProfile, JusticeDispositionProfile, LastProactiveExplorationTick,
+        LastSeenMemory, LatrineFullness, LawAbidingProfile, LoadUnits, MultiplierPermille,
+        ObligationSatiationProfile, PatrolProfile, PatrolRoute, PerceptionProfile, Permille,
+        PlaceDirtiness, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity,
+        RiskWeightProfile, ShelterTag, SleepQualityProfile, SleepRecoveryModifier,
+        SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
+        ViolationDispositionProfile, WashBasinState, WorkstationTag, default_commodity_decay_map,
     };
     use worldwake_sim::{BeliefRead, BelievedAuthorityView, PerAgentBeliefView};
 
@@ -1550,6 +1556,7 @@ mod tests {
             perception_profile: None,
             tell_profile: None,
             cognitive_profile: None,
+            agent_schema_context_profile: None,
             risk_weight_profile: None,
             law_abiding_profile: None,
             agenda_profile: None,
@@ -3551,6 +3558,10 @@ mod tests {
             Some(&CognitiveProfile::default())
         );
         assert_eq!(
+            world.get_component_agent_schema_context_profile(agent),
+            Some(&AgentSchemaContextProfile::default())
+        );
+        assert_eq!(
             world.get_component_risk_weight_profile(agent),
             Some(&RiskWeightProfile::default())
         );
@@ -3638,6 +3649,32 @@ mod tests {
         assert_eq!(
             world.get_component_law_abiding_profile(agent),
             Some(&law_abiding)
+        );
+    }
+
+    #[test]
+    fn test_spawn_agent_applies_authored_schema_context_profile() {
+        let mut def = minimal_def();
+        let mut schema_context = AgentSchemaContextProfile::default();
+        schema_context
+            .disabled_extractors
+            .insert(CandidateExtractorId::Enterprise);
+        schema_context.budget_overrides.insert(
+            GoalDispatchKey::InvestigateViolation,
+            GoalPlanningBudget::INVESTIGATION,
+        );
+        def.agents[0].agent_schema_context_profile = Some(schema_context.clone());
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("spawned scenario should contain one agent");
+
+        assert_eq!(
+            world.get_component_agent_schema_context_profile(agent),
+            Some(&schema_context)
         );
     }
 

@@ -19,14 +19,14 @@ Phase 12: AI Architecture Evolution — Draft
 ## Crates
 
 - `worldwake-ai` — owns `htn` module: `MethodSchema`, `MethodSchemaId`, `MethodSelector`, the method registry, and the planner integration point in `search/strategic.rs`.
-- `worldwake-core` — exposes `MethodSchemaId` newtype and shared `SubgoalTemplate` types referenced by `GoalSchema.methods`.
+- `worldwake-core` — exposes `MethodSchemaId` newtype and shared `SubgoalTemplate` types referenced by the `GoalSchema.methods` field added in this spec.
 - `worldwake-sim` — no change.
 - `worldwake-systems` — no change.
 - `worldwake-cli` — observer Section 7 extends to surface the method chosen per plan attempt and its decomposition trace.
 
 ## Dependencies
 
-- S146 (Goal Schema and Per-Goal Budgets, hard dep) — provides `GoalSchema.methods: Vec<MethodSchemaId>`, the registry slot S147 populates.
+- S146 (Goal Schema and Per-Goal Budgets, archived at `archive/specs/S146-goal-schema-and-per-goal-budgets.md`, hard dep) — provides the `GoalSchema` registry substrate and `AgentSchemaContextProfile`; this S147 spec adds `GoalSchema.methods: Vec<MethodSchemaId>` and `AgentSchemaContextProfile.enabled_methods`.
 - S138 (Opportunity Compiler, archived, hard dep) — `MethodSchema.required_claims` references `Opportunity` matches.
 - S141 (Motive Source Ledger, archived, hard dep) — method selection consumes `MotiveSourceRef`s to bias method choice (Loyalty → group hunt, Revenge → direct hunt).
 - S134 (Canonical Effect Schema, archived, hard dep) — `MethodSchema.expected_artifacts` references `EffectSchema` post-conditions for verifying method completion.
@@ -39,14 +39,14 @@ Phase 12: AI Architecture Evolution — Draft
 2. **Methods are data, not behavior.** The registry is build-time `MethodSchema` entries; per-tick computation is a deterministic method selector.
 3. **GOAP remains the executor.** Method leaves are ordinary `ActionDef`s; the strategic + tactical search remains the runtime engine.
 4. **No silent privilege.** Methods cannot read off-place world state or invoke other systems. They only constrain *which* subgoals get attempted.
-5. **Per-agent method enablement.** Some agents naturally know more methods than others (a hunter knows GroupHunt; a peasant does not). `AgentSchemaContextProfile.enabled_methods` (per S146) gates which methods apply.
+5. **Per-agent method enablement.** Some agents naturally know more methods than others (a hunter knows GroupHunt; a peasant does not). `AgentSchemaContextProfile.enabled_methods` (added by S147 on the S146 profile) gates which methods apply.
 6. **Deterministic method selection.** Same belief state, same enabled methods, same motive sources → same method choice. No randomness in method dispatch.
 
 ## Non-Goals
 
 - **No method authoring DSL.** Methods are Rust structs; LLM-driven method generation is out of scope (per the assessment's explicit guardrail).
 - **No story-beat methods.** "Hero answers the call" or "merchant betrays guard" are not methods; they would violate FND-20.
-- **No new top-level reasoning framework.** Methods sit *under* `GoalSchema` (per S146), not above it.
+- **No new top-level reasoning framework.** Methods sit *under* the archived S146 `GoalSchema` registry, not above it.
 - **No method-only goals.** Every method-decomposed goal must also have a fallback GOAP path. Removing all methods returns the goal to today's behavior.
 - **No method learning.** Methods are author-written. Per-method learning (PR-8 / habit memory) is deferred.
 - **No method-internal scheduling.** Sub-goals execute through the agenda manager (S115); methods do not have internal tick loops.
@@ -261,7 +261,7 @@ Method timeouts (`MethodFailureMode::Timeout(u32)`) and `planning_budget_hint` c
 ### Stored State vs. Derived Read-Model List
 
 **Stored state**:
-- `AgentSchemaContextProfile.enabled_methods` — universal per-agent (per S146).
+- `AgentSchemaContextProfile.enabled_methods` — universal per-agent field added by S147 on the archived S146 profile.
 - `MethodPlanAttemptTrace` on `PlanAttemptTrace` — per-tick trace; not authoritative.
 
 **Derived read-model**:
@@ -274,11 +274,11 @@ No new `SystemFn`. Method selection runs inside the existing agent tick's planni
 
 ## Component Registration
 
-No new ECS component. `AgentSchemaContextProfile.enabled_methods` lives on the universal profile registered by S146.
+No new ECS component. `AgentSchemaContextProfile.enabled_methods` is added by S147 to the universal profile registered by archived S146.
 
 ## Cross-System Interactions
 
-- Method selector reads `BeliefView` (existing), `MotiveSourceRef`s (S141), `AgentSchemaContextProfile` (S146).
+- Method selector reads `BeliefView` (existing), `MotiveSourceRef`s (S141), and `AgentSchemaContextProfile` (archived S146 profile, extended by S147).
 - Method-driven subgoals execute through existing `ActionDef`s.
 - Method failure modes flow through S109's typed-discrepancy chain.
 
@@ -286,7 +286,7 @@ All interactions are state-mediated per FND-26.
 
 ## Profile-Driven Parameters
 
-- `AgentSchemaContextProfile.enabled_methods` — per-agent method enablement.
+- `AgentSchemaContextProfile.enabled_methods` — per-agent method enablement added by S147.
 - `MethodSchema.motive_bias[].weight` — `Permille`-bounded.
 - `MethodSchema.planning_budget_hint` — optional per-method override of `GoalPlanningBudget` (per S146).
 

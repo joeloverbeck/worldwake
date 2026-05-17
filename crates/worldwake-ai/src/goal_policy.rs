@@ -2,6 +2,7 @@
 //! penalty-interrupt eligibility, and free-interrupt role per `GoalKind`.
 
 use crate::goal_model::GoalPriorityClass;
+use crate::goal_schema::GoalDispatchKeySchemaExt;
 use crate::interrupts::InterruptTrigger;
 use worldwake_core::GoalKind;
 

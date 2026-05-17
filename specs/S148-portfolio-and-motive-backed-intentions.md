@@ -12,7 +12,7 @@ S148 expands the portfolio to **seven slots** matching the assessment's motive-c
 
 PR-1's BDI extension is folded in by giving `IntentionFrame` (`crates/worldwake-core/src/intention_frame.rs:138`) the missing fields the assessment flags: `motive_refs: Vec<MotiveSourceRef>` (backed by S141), `resume_conditions: Vec<ResumeCondition>`, `abandon_conditions: Vec<AbandonCondition>`, `explicit_claims: Vec<EntityId>` (artifact references — queue tickets, reservations, contracts), and `causal_links: Vec<EventId>` (which events produced this intention). The agenda manager (S115) already handles `Suspended/Pending` lifecycles; S148 adds the *why* and the *what holds it* alongside.
 
-This spec consumes substrate from S141 (motive sources), S146 (per-goal extractor registry and budgets), and S115 (agenda manager) without changing their identity.
+This spec consumes substrate from S141 (motive sources), archived S146 (per-goal extractor registry and budgets), and S115 (agenda manager) without changing their identity.
 
 ## Phase and Status
 
@@ -32,11 +32,11 @@ Phase 12: AI Architecture Evolution — Draft
 - S115 (Agenda Manager, archived, hard dep) — provides the lifecycle (`committed/pending/suspended`) the enriched `IntentionFrame` plugs into.
 - S141 (Motive Source Ledger, archived, hard dep) — provides `MotiveSourceRef` for `IntentionFrame.motive_refs`.
 - S140 (Multi-Axis Artifact Lifecycle, archived) — `explicit_claims` references existing artifacts; lifecycle-aware reference invalidation.
-- S146 (Goal Schema, Phase 12 wave 2, hard dep) — provides `MotiveSourceVariantId` → slot-kind mapping per `GoalSchema.motive_source_hints`.
+- S146 (Goal Schema, archived at `archive/specs/S146-goal-schema-and-per-goal-budgets.md`, hard dep) — provides the `GoalSchema` registry substrate; this S148 spec adds the motive-source-to-slot mapping consumed by portfolio assembly.
 
 ## Design Goals
 
-1. **Slot taxonomy matches motive taxonomy.** Each `MotiveSource` variant maps to a deterministic `SlotKind` per `GoalSchema.motive_source_hints` (S146). Survival motives → Survival slot; ImmediateSafety motives → ImmediateSafety slot; Loyalty / OfficeDuty / Revenge → ObligationDuty; Greed → EconomicMaintenance; SocialEpistemic motives → SocialEpistemic; opportunity-driven Local motives → OpportunisticLocal.
+1. **Slot taxonomy matches motive taxonomy.** Each `MotiveSource` variant maps to a deterministic `SlotKind` through the S148 motive-source-to-slot mapping attached to the archived S146 `GoalSchema` registry substrate. Survival motives → Survival slot; ImmediateSafety motives → ImmediateSafety slot; Loyalty / OfficeDuty / Revenge → ObligationDuty; Greed → EconomicMaintenance; SocialEpistemic motives → SocialEpistemic; opportunity-driven Local motives → OpportunisticLocal.
 2. **Operating modes adjust slot enablement, not slot identity.** Emergency mode disables OpportunisticLocal and EconomicMaintenance; idle mode enables all seven.
 3. **Plan-attempt cap rises with breadth.** Default `max_candidates_to_plan = 6`. Single-slot fallback (one winner per slot) keeps planning bounded.
 4. **Intentions carry their full evidence record.** `IntentionFrame.motive_refs`, `resume_conditions`, `abandon_conditions`, `explicit_claims`, `causal_links` make every commitment traceable.
@@ -143,7 +143,7 @@ Universal per FND-22A. Registered on `EntityKind::Agent` with default impl.
 
 `portfolio.rs::assemble_slots()` extends to:
 1. Determine `OperatingMode` from motive severity.
-2. For each goal candidate, look up its primary `MotiveSourceRef` and map to `SlotKind` via `GoalSchema.motive_source_hints` (S146).
+2. For each goal candidate, look up its primary `MotiveSourceRef` and map to `SlotKind` via the S148 motive-source-to-slot mapping attached to the archived S146 `GoalSchema` registry substrate.
 3. Within each slot, pick one winner via existing ranking (S123's `compare_ranked_goals`).
 4. Cap the total to `PortfolioWeightsProfile.max_plans_<mode>`.
 5. If fewer than max-plans slots have winners, do not pad — fewer plans is correct.
@@ -270,7 +270,7 @@ Both per `docs/spec-drafting-rules.md` Section 5.
 
 ## Cross-System Interactions
 
-- Reads `MotiveSourceRef` (S141), `GoalSchema.motive_source_hints` (S146), `BeliefView` (S143).
+- Reads `MotiveSourceRef` (S141), S148's motive-source-to-slot mapping on the archived S146 `GoalSchema` registry substrate, and `BeliefView` (S143).
 - Writes extended `IntentionFrame` state through agenda manager (S115).
 - Surfaced through observer (S110/S136 payload chain) and S144 diagnostics.
 

@@ -39,6 +39,7 @@ When shared types, serialized carriers, or persisted components change, sweep th
 - CLI handlers, diagnostic bins, renderers, and inspect/output code that read moved fields directly
 - When a new shared type is defined under a submodule, verify the actual public import path before patching downstream crates.
 - When a flat internal carrier becomes nested or decomposed into sub-structs, sweep both the type name and moved field names across the owning crate.
+- When replacing a placeholder tuple newtype with an enum, record struct, or other non-tuple shape, run a tuple-constructor sweep such as `rg 'TypeName\(' crates` before broad verification. Test fixtures, save/load examples, and scenario helpers can compile only in test targets, so focused owner-crate tests may miss this fallout.
 
 **Shared rename checklist (types, modules, generated accessors):**
 - Run a repo-wide symbol sweep for the old type/module/accessor names across all workspace crates before trusting the ticket's file list.

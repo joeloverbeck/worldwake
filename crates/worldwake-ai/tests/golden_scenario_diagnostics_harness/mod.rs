@@ -4,7 +4,7 @@
 #[path = "../golden_harness/mod.rs"]
 mod golden_harness;
 
-use std::{path::PathBuf, sync::OnceLock};
+use std::{fs, path::PathBuf, sync::OnceLock};
 
 use golden_harness::GoldenHarness;
 use worldwake_ai::{
@@ -20,6 +20,7 @@ use worldwake_cli::{
 use worldwake_core::Tick;
 
 const SURVIVAL_TICKS: u64 = 1440;
+const EXPECTED_DIAGNOSTICS_PATH: &str = "tests/fixtures/expected-scenario-diagnostics.json";
 const EXPECTED_DIAGNOSTICS_JSON: &str =
     include_str!("../fixtures/expected-scenario-diagnostics.json");
 static SURVIVAL_BASELINE_DIAGNOSTICS: OnceLock<ScenarioDiagnosticsReport> = OnceLock::new();
@@ -107,6 +108,15 @@ pub fn assert_survival_baseline_fixture_is_stable() {
     assert_eq!(decoded, *report, "observer JSON should round-trip");
 
     let expected = EXPECTED_DIAGNOSTICS_JSON.trim_end_matches('\n');
+    if std::env::var_os("WORLDWAKE_UPDATE_SCENARIO_DIAGNOSTICS_FIXTURE").is_some() {
+        fs::write(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(EXPECTED_DIAGNOSTICS_PATH),
+            format!("{encoded}\n"),
+        )
+        .expect("scenario diagnostics fixture should be writable");
+        return;
+    }
+
     assert_eq!(
         encoded, expected,
         "scenario diagnostics fixture drifted; regenerate expected-scenario-diagnostics.json intentionally"

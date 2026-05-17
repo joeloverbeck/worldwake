@@ -2,12 +2,13 @@
 
 use crate::LatrineFullness;
 use crate::{
-    AcquisitionExhaustionTracker, AgendaProfile, AgentBeliefStore, AgentData, ArtifactHeader,
-    ArtifactPostingProfile, BanditCamp, BanditFactionPolicy, BlockerMemory, BountyTerms,
-    CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityDecayMap, CommodityKind,
-    CommodityValuationProfile, CommunicationProfile, ComponentTables, ComponentValue, Container,
-    ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt,
-    DemandMemory, DeprivationExposure, DiscrepancyMemory, DisposalProfile, DiversificationProfile,
+    AcquisitionExhaustionTracker, AgendaProfile, AgentBeliefStore, AgentData,
+    AgentSchemaContextProfile, ArtifactHeader, ArtifactPostingProfile, BanditCamp,
+    BanditFactionPolicy, BlockerMemory, BountyTerms, CarryCapacity, CognitiveProfile,
+    CombatProfile, CombatStance, CommodityDecayMap, CommodityKind, CommodityValuationProfile,
+    CommunicationProfile, ComponentTables, ComponentValue, Container, ContentionDispositionProfile,
+    ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt, DemandMemory,
+    DeprivationExposure, DiscrepancyMemory, DisposalProfile, DiversificationProfile,
     DriveEscalationProfile, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
     EpistemicDispositionProfile, EventId, ExecutionBudget, ExpectationStore, ExplorationProfile,
     FactionData, GroundSince, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile,
@@ -200,6 +201,10 @@ impl World {
             world.insert_component_perception_profile(entity, PerceptionProfile::default())?;
             world.insert_component_tell_profile(entity, TellProfile::default())?;
             world.insert_component_cognitive_profile(entity, CognitiveProfile::default())?;
+            world.insert_component_agent_schema_context_profile(
+                entity,
+                AgentSchemaContextProfile::default(),
+            )?;
             world.insert_component_agenda_profile(entity, AgendaProfile::default())?;
             world.insert_component_acquisition_exhaustion_tracker(
                 entity,
@@ -668,22 +673,23 @@ impl World {
 mod tests {
     use super::World;
     use crate::{
-        AgendaProfile, AgentBeliefStore, AgentData, ArtifactPostingProfile, BanditCamp,
-        BanditFactionPolicy, BeliefConfidencePolicy, BelievedEntityState, BodyPart, CarryCapacity,
-        CombatProfile, CommodityKind, CommunicationProfile, Container, ControlSource, DeadAt,
-        DemandMemory, DeprivationExposure, DeprivationKind, DisposalProfile, DriveThresholds,
-        EffectiveRight, EntityId, EntityKind, EpistemicDispositionProfile, EventId, FactionData,
-        FactionPurpose, GroundSince, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim,
-        InstitutionalRecordEntry, ItemLot, JusticeDispositionProfile, KnownRecipes,
-        LawAbidingProfile, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
-        OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute,
-        PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, PlaceVisitRecord,
-        ProductionJob, ProvenanceEntry, PursuitProfile, Quantity, RecordData, RecordEntryId,
-        RecordKind, ReservationId, ReservationRecord, ResourceSource, RightKind, RiskWeightProfile,
-        SubstitutePreferences, SuccessionLaw, SurveyMemory, TellProfile, TheftDispositionProfile,
-        Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId, UniqueItem,
-        UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound, WoundCause,
-        WoundList, build_prototype_world,
+        AgendaProfile, AgentBeliefStore, AgentData, AgentSchemaContextProfile,
+        ArtifactPostingProfile, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
+        BelievedEntityState, BodyPart, CarryCapacity, CombatProfile, CommodityKind,
+        CommunicationProfile, Container, ControlSource, DeadAt, DemandMemory, DeprivationExposure,
+        DeprivationKind, DisposalProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind,
+        EpistemicDispositionProfile, EventId, FactionData, FactionPurpose, GroundSince,
+        HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry, ItemLot,
+        JusticeDispositionProfile, KnownRecipes, LawAbidingProfile, LoadUnits, LotOperation,
+        MerchandiseProfile, MetabolismProfile, Name, OfficeData, OfficeForceProfile,
+        OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource,
+        Permille, Place, PlaceTag, PlaceVisitRecord, ProductionJob, ProvenanceEntry,
+        PursuitProfile, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
+        ReservationRecord, ResourceSource, RightKind, RiskWeightProfile, SubstitutePreferences,
+        SuccessionLaw, SurveyMemory, TellProfile, TheftDispositionProfile, Tick, TickRange,
+        Topology, TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind,
+        WorkstationMarker, WorkstationTag, WorldError, Wound, WoundCause, WoundList,
+        build_prototype_world,
         test_utils::{
             sample_blocker_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
@@ -1317,6 +1323,10 @@ mod tests {
         assert_eq!(
             world.get_component_law_abiding_profile(id),
             Some(&LawAbidingProfile::default())
+        );
+        assert_eq!(
+            world.get_component_agent_schema_context_profile(id),
+            Some(&AgentSchemaContextProfile::default())
         );
     }
 

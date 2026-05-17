@@ -5294,7 +5294,7 @@
         "count": 157
       }
     ],
-    "heuristic_helpful_action_hit_rate": 31
+    "heuristic_helpful_action_hit_rate": 146
   },
   "revalidation_repair": {
     "invalidation_reasons": [
@@ -5401,21 +5401,21 @@
       "mean": 5
     },
     "search_expansions": {
-      "n": 38297,
+      "n": 8329,
       "min": 0,
       "p50": 7,
-      "p95": 26,
-      "p99": 29,
+      "p95": 28,
+      "p99": 34,
       "max": 48,
       "mean": 9
     },
-    "cache_hit_count": 21898,
+    "cache_hit_count": 21650,
     "cache_miss_count": 0,
     "cache_invalidation_count": 0,
-    "planning_state_cache_entities_at_hits": 2456,
-    "planning_state_cache_entities_at_misses": 35124,
-    "planning_state_cache_effective_place_hits": 3140656,
-    "planning_state_cache_effective_place_misses": 1345744,
-    "planning_state_cache_invalidations": 130575
+    "planning_state_cache_entities_at_hits": 914,
+    "planning_state_cache_entities_at_misses": 6286,
+    "planning_state_cache_effective_place_hits": 724947,
+    "planning_state_cache_effective_place_misses": 255823,
+    "planning_state_cache_invalidations": 28916
   }
 }

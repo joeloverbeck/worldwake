@@ -28,8 +28,8 @@ use worldwake_core::{
     CommodityKind, ContentionGrant, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
     DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
     DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EventLog, ExecutionBudget,
-    HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, NoticeTopic, ObservationOmission,
+    GoalPlanningBudget, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, KnownRecipes,
+    LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, ObservationOmission,
     ObservationOmissionLog, OmissionReason, OpportunityAnchor, OpportunityKey, PatrolProfile,
     PatrolRoute, PerceptionSource, Permille, Place, PlaceTag, PortfolioSlotWeights,
     ProofRequirement, PrototypePlace, Quantity, RecipeId, RecordedViolation, ResourceSource,
@@ -102,6 +102,229 @@ fn execution_budget(reasoning: &ProfileFixture) -> ExecutionBudget {
         reasoning.max_prerequisite_locations,
         ExecutionBudget::default().preferred_operator_boost(),
     )
+}
+
+#[test]
+fn per_goal_budget_caps_below_cognitive_ceiling() {
+    let cognitive = CognitiveProfile {
+        max_plan_depth: 8,
+        max_node_expansions: 224,
+        ..CognitiveProfile::default()
+    };
+    let execution_budget = ExecutionBudget::default();
+
+    let cases = [
+        (GoalPlanningBudget::SELF_CARE, 6, 96),
+        (GoalPlanningBudget::TRAVEL_PURCHASE, 8, 224),
+        (GoalPlanningBudget::PRODUCTION, 8, 224),
+        (GoalPlanningBudget::INVESTIGATION, 8, 224),
+        (GoalPlanningBudget::BOUNTY_ESCORT, 8, 224),
+    ];
+
+    for (schema_budget, expected_depth, expected_expansions) in cases {
+        let effective =
+            super::compose_effective_goal_budget(schema_budget, &cognitive, execution_budget, 1);
+
+        assert_eq!(effective.max_depth, expected_depth);
+        assert_eq!(effective.max_node_expansions, expected_expansions);
+        assert_eq!(
+            effective.repair_budget_fraction,
+            schema_budget.repair_budget_fraction
+        );
+    }
+}
+
+#[test]
+fn per_goal_budget_used_at_elevated_cognitive_ceiling() {
+    let cognitive = CognitiveProfile {
+        max_plan_depth: 24,
+        max_node_expansions: 768,
+        ..CognitiveProfile::default()
+    };
+    let execution_budget = ExecutionBudget::default();
+
+    for schema_budget in [
+        GoalPlanningBudget::SELF_CARE,
+        GoalPlanningBudget::TRAVEL_PURCHASE,
+        GoalPlanningBudget::PRODUCTION,
+        GoalPlanningBudget::INVESTIGATION,
+        GoalPlanningBudget::BOUNTY_ESCORT,
+    ] {
+        let effective =
+            super::compose_effective_goal_budget(schema_budget, &cognitive, execution_budget, 1);
+
+        assert_eq!(effective.max_depth, schema_budget.max_depth);
+        assert_eq!(
+            effective.max_node_expansions,
+            schema_budget.max_node_expansions
+        );
+    }
+}
+
+#[test]
+fn s146_goal_kind_budget_examples_map_to_expected_presets() {
+    assert_eq!(
+        super::schema_budget_for_goal(&GoalKind::ProduceCommodity {
+            recipe_id: RecipeId(0),
+        }),
+        GoalPlanningBudget::PRODUCTION
+    );
+    assert_eq!(
+        super::schema_budget_for_goal(&GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Bread,
+        }),
+        GoalPlanningBudget::SELF_CARE
+    );
+    assert_eq!(
+        super::schema_budget_for_goal(&GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        }),
+        GoalPlanningBudget::SELF_CARE
+    );
+}
+
+#[test]
+fn s146_search_trace_records_per_goal_budget_under_elevated_cognitive_ceiling() {
+    let fixture = build_remote_produce_commodity_fixture();
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let reasoning = ProfileFixture {
+        max_plan_depth: 24,
+        max_node_expansions: 768,
+        ..ProfileFixture::default()
+    };
+    let cognitive = cognitive(&reasoning);
+    let execution_budget = execution_budget(&reasoning);
+
+    let production_goal = GoalOffer {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::ProduceCommodity {
+            recipe_id: fixture.recipe_id,
+        }),
+        evidence_entities: BTreeSet::from([fixture.mill, fixture.firewood]),
+        evidence_places: BTreeSet::from([
+            prototype_place_entity(PrototypePlace::VillageSquare),
+            prototype_place_entity(PrototypePlace::OrchardFarm),
+        ]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
+        acquisition_quantity: None,
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &production_goal.evidence_entities,
+        &production_goal.evidence_places,
+        reasoning.snapshot_travel_horizon,
+    );
+    let mut production_metadata = super::SearchTraceMetadata::default();
+
+    let production_result = super::search_plan_with_trace_metadata(
+        &snapshot,
+        &production_goal,
+        &fixture.semantics,
+        &fixture.registry,
+        &fixture.handlers,
+        &cognitive,
+        &execution_budget,
+        &fixture.recipes,
+        &BlockerMemory::default(),
+        Tick(1),
+        None,
+        None,
+        Some(&mut production_metadata),
+    );
+
+    assert!(
+        production_result.is_found(),
+        "remote production fixture should still find a plan"
+    );
+    assert_eq!(
+        production_metadata.goal_budget.max_depth,
+        GoalPlanningBudget::PRODUCTION.max_depth
+    );
+    assert_eq!(
+        production_metadata.goal_budget.max_node_expansions,
+        GoalPlanningBudget::PRODUCTION.max_node_expansions
+    );
+
+    let self_care_goal = GoalOffer {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::new(),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
+        acquisition_quantity: Some(AcquisitionQuantity::single()),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &self_care_goal.evidence_entities,
+        &self_care_goal.evidence_places,
+        reasoning.snapshot_travel_horizon,
+    );
+    let mut self_care_metadata = super::SearchTraceMetadata::default();
+
+    let _ = super::search_plan_with_trace_metadata(
+        &snapshot,
+        &self_care_goal,
+        &fixture.semantics,
+        &fixture.registry,
+        &fixture.handlers,
+        &cognitive,
+        &execution_budget,
+        &fixture.recipes,
+        &BlockerMemory::default(),
+        Tick(1),
+        None,
+        None,
+        Some(&mut self_care_metadata),
+    );
+
+    assert_eq!(
+        self_care_metadata.goal_budget.max_depth,
+        GoalPlanningBudget::SELF_CARE.max_depth
+    );
+    assert_eq!(
+        self_care_metadata.goal_budget.max_node_expansions,
+        GoalPlanningBudget::SELF_CARE.max_node_expansions
+    );
+}
+
+#[test]
+fn strategic_expansions_clamp_against_stage_count() {
+    let cognitive = CognitiveProfile {
+        max_plan_depth: 24,
+        max_node_expansions: 768,
+        ..CognitiveProfile::default()
+    };
+    let execution_budget = ExecutionBudget::new(8, 3, 2);
+    let schema_budget = GoalPlanningBudget::BOUNTY_ESCORT;
+
+    let one_stage =
+        super::compose_effective_goal_budget(schema_budget, &cognitive, execution_budget, 1);
+    assert_eq!(one_stage.max_strategic_expansions, 6);
+
+    let many_stages =
+        super::compose_effective_goal_budget(schema_budget, &cognitive, execution_budget, 20);
+    assert_eq!(
+        many_stages.max_strategic_expansions,
+        schema_budget.max_strategic_expansions
+    );
 }
 
 fn candidate_search_context<'a>(

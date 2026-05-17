@@ -23,6 +23,7 @@ pub(crate) struct StrategicPlan {
 pub(crate) struct StrategicSearchResult {
     pub plan: Option<StrategicPlan>,
     pub budget_trace: Option<StrategicBudgetTrace>,
+    pub stages_count: u16,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -84,7 +85,7 @@ pub(crate) fn plan(
     execution_budget: &ExecutionBudget,
     recipes: &RecipeRegistry,
 ) -> Option<StrategicPlan> {
-    plan_with_budget_trace(snapshot, goal, execution_budget, recipes).plan
+    plan_with_budget_trace(snapshot, goal, execution_budget, u16::MAX, recipes).plan
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -92,6 +93,7 @@ pub(crate) fn plan_with_budget_trace(
     snapshot: &PlanningSnapshot,
     goal: &GoalOffer,
     execution_budget: &ExecutionBudget,
+    max_strategic_expansions: u16,
     recipes: &RecipeRegistry,
 ) -> StrategicSearchResult {
     let state = PlanningState::new(snapshot);
@@ -99,6 +101,7 @@ pub(crate) fn plan_with_budget_trace(
         return StrategicSearchResult {
             plan: Some(StrategicPlan { steps: Vec::new() }),
             budget_trace: None,
+            stages_count: 0,
         };
     }
 
@@ -107,6 +110,7 @@ pub(crate) fn plan_with_budget_trace(
         return StrategicSearchResult {
             plan: None,
             budget_trace: None,
+            stages_count: 0,
         };
     };
     let goal_places = goal_places(goal, &state, recipes);
@@ -127,6 +131,7 @@ pub(crate) fn plan_with_budget_trace(
             return StrategicSearchResult {
                 plan: Some(StrategicPlan { steps: Vec::new() }),
                 budget_trace: None,
+                stages_count: 0,
             };
         }
         let plan = exploration_plan(snapshot, actor_place, &goal.key.kind)
@@ -134,6 +139,7 @@ pub(crate) fn plan_with_budget_trace(
         return StrategicSearchResult {
             plan,
             budget_trace: None,
+            stages_count: 0,
         };
     }
 
@@ -144,10 +150,14 @@ pub(crate) fn plan_with_budget_trace(
         return StrategicSearchResult {
             plan: Some(StrategicPlan { steps: local_steps }),
             budget_trace: None,
+            stages_count: stages.len().min(usize::from(u16::MAX)) as u16,
         };
     }
 
-    let search_budget = execution_budget.strategic_budget_for_stages(stages.len());
+    let stages_count = stages.len().min(usize::from(u16::MAX)) as u16;
+    let search_budget = execution_budget
+        .strategic_budget_for_stages(stages.len())
+        .min(usize::from(max_strategic_expansions));
     let mut frontier = BinaryHeap::new();
     frontier.push(SearchNode {
         stage_index: 0,
@@ -168,6 +178,7 @@ pub(crate) fn plan_with_budget_trace(
                     expansions,
                     false,
                 )),
+                stages_count,
             };
         }
         if expansions >= search_budget {
@@ -214,6 +225,7 @@ pub(crate) fn plan_with_budget_trace(
             expansions,
             expansions >= search_budget,
         )),
+        stages_count,
     }
 }
 
@@ -1327,8 +1339,13 @@ mod tests {
             acquisition_quantity: None,
         };
 
-        let result =
-            super::plan_with_budget_trace(&snapshot, &goal, &base_budget(), &RecipeRegistry::new());
+        let result = super::plan_with_budget_trace(
+            &snapshot,
+            &goal,
+            &base_budget(),
+            u16::MAX,
+            &RecipeRegistry::new(),
+        );
 
         assert_eq!(result.plan.expect("strategic plan").steps.len(), 1);
         assert_eq!(

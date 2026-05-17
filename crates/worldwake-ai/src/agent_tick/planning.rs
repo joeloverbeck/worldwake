@@ -1,3 +1,4 @@
+use crate::GoalDispatchKey;
 use crate::GoalKindPlannerExt;
 use crate::agenda_manager::{RejectionLifecycle, classify_rejection};
 use crate::agent_tick::portfolio::{FeasibilityVerdict, Portfolio, SlotKind, assemble_portfolio};
@@ -13,8 +14,7 @@ use crate::decision_trace::{
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
 use crate::feasibility_probe;
-use crate::goal_dispatch_decl::FrontierExhaustionStrategy;
-use crate::goal_dispatch_key::GoalDispatchKey;
+use crate::goal_schema::{FrontierExhaustionStrategy, GoalDispatchKeySchemaExt};
 use crate::opportunity_compiler::PerceivedOpportunityIndex;
 use crate::perf_telemetry::record_planning_phase_duration;
 use crate::plan_selection::SelectionCandidatePlan;
@@ -2579,6 +2579,7 @@ pub(super) fn plan_search_result_to_trace(
         goal,
         opportunity_anchor,
         outcome,
+        goal_budget: trace_metadata.goal_budget,
         strategic_budget: trace_metadata.strategic_budget.clone(),
         strategic_plan: trace_metadata.strategic_plan.as_ref().map(|plan| {
             plan.steps
@@ -2628,10 +2629,10 @@ mod tests {
     use crate::{
         AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
         ExhaustionInvalidationCondition, ExhaustionRetryState, ExpectationFailureCause,
-        ExpectationFailurePhase, GoalKey, GoalKind, GoalOffer, GoalPriorityClass, KillCondition,
-        OpportunityAnchor, OpportunityExpectationKind, OpportunityKey, PlanSearchResult,
-        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
-        ProfileFixture, RevivalTrigger, SourceCompositeRank,
+        ExpectationFailurePhase, GoalDispatchKey, GoalKey, GoalKind, GoalOffer, GoalPriorityClass,
+        KillCondition, OpportunityAnchor, OpportunityExpectationKind, OpportunityKey,
+        PlanSearchResult, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
+        PlanningEntityRef, ProfileFixture, RevivalTrigger, SourceCompositeRank,
         agent_tick::portfolio::{FeasibilityVerdict, Portfolio, PortfolioSlot, SlotKind},
         build_semantics_table,
         decision_trace::{
@@ -2639,8 +2640,7 @@ mod tests {
             TargetBeliefPresence,
         },
         feasibility::FeasibilityHint,
-        goal_dispatch_decl::FrontierExhaustionStrategy,
-        goal_dispatch_key::GoalDispatchKey,
+        goal_schema::{FrontierExhaustionStrategy, GoalDispatchKeySchemaExt},
         plan_selection::SelectionCandidatePlan,
         search::SearchTraceMetadata,
     };
@@ -4545,6 +4545,7 @@ mod tests {
                     budget_used: 2,
                     exhausted: false,
                 }),
+                goal_budget: worldwake_core::GoalPlanningBudget::PRODUCTION,
                 planning_state_cache_counters: None,
                 tactical_goal: Some(
                     "AcquirePrerequisite { commodity: Firewood, destination: EntityId(55) }"
@@ -4559,6 +4560,10 @@ mod tests {
 
         assert_eq!(trace.landmarks_extracted, 3);
         assert_eq!(trace.landmark_orderings, 2);
+        assert_eq!(
+            trace.goal_budget,
+            worldwake_core::GoalPlanningBudget::PRODUCTION
+        );
         assert_eq!(
             trace
                 .strategic_budget

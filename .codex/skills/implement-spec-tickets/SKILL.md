@@ -228,6 +228,7 @@ Before committing:
 3. Verify all dirty paths are either owned by this iteration, previously approved for inclusion, or generated/ignored artifacts that should remain unstaged.
 4. Run `git diff --check` or the child skills' stronger equivalent over tracked and newly created owned files.
 5. Stage only approved owned paths plus any pre-existing dirty paths the user explicitly allowed this harness to include.
+   - If `.codex/run-state/implement-spec-tickets.json` is dirty from intake or resume refresh, do not stage it for the iteration work commit unless it already contains the final post-iteration state, including the correct `last_work_commit` shape. If it is already staged prematurely, unstage it before committing implementation, review, archive, follow-up, or skill-hardening changes.
 6. Re-run `git diff --cached --name-status` after staging and confirm every staged path is owned by this iteration, explicitly approved, or intentional same-family state needed for the queue/handoff.
 7. Commit with a concise message that names the ticket id and whether the iteration included implementation, review/archive, follow-up creation, and skill hardening.
 
@@ -237,7 +238,7 @@ If non-destructive git index commands needed for this harness step fail because 
 
 If nothing changed after an iteration, do not create an empty commit. Record that there was no commit for that iteration and why.
 
-For broad expected-pass proof commands such as `scripts/verify.sh`, keep command output compact where the tool surface allows it. Preserve complete failure diagnostics when a command fails, but for passing broad gates prefer capped output plus a concise recorded gate list so successful verification does not saturate the context before the required handoff/reset boundary.
+For broad expected-pass proof commands such as `scripts/verify.sh`, keep command output compact where the tool surface allows it. Preserve complete failure diagnostics when a command fails, but for passing broad gates prefer capped output plus a concise recorded gate list so successful verification does not saturate the context before the required handoff/reset boundary. For broad Cargo proof that is expected to pass, prefer capped tool output and quiet Cargo output when compatible with the command, such as `cargo test --workspace --quiet`; if the broad command fails or quiet output hides the useful cause, rerun the failing narrow command or same command without quiet/capping as needed to capture actionable diagnostics.
 
 ### 6. Persist State And Prepare Context Reset
 

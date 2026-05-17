@@ -791,6 +791,7 @@ mod tests {
                             steps: Vec::new(),
                             terminal_kind: crate::PlanTerminalKind::GoalSatisfied,
                         },
+                        goal_budget: worldwake_core::GoalPlanningBudget::TRAVEL_PURCHASE,
                         strategic_budget: None,
                         strategic_plan: None,
                         tactical_goal: None,

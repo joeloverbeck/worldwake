@@ -18,11 +18,11 @@ pub mod failure_handling;
 pub mod feasibility;
 pub(crate) mod feasibility_probe;
 mod frame_switch_policy;
-mod goal_dispatch_decl;
-mod goal_dispatch_key;
 pub mod goal_explanation;
 pub mod goal_model;
 pub mod goal_policy;
+mod goal_schema;
+pub mod goal_schema_registry;
 mod goal_switching;
 mod institutional_queries;
 pub mod interrupts;
@@ -96,11 +96,6 @@ pub use effect_sink_hypothetical::HypotheticalEffectSink;
 pub use exhaustion::{ExhaustionBaseline, ExhaustionInvalidationCondition};
 pub use failure_handling::{PlanFailureContext, clear_resolved_failures, handle_plan_failure};
 pub use feasibility::{FeasibilityHint, feasibility_hint};
-pub use goal_dispatch_decl::{
-    Authority, FeasibilityStrategy, FrontierExhaustionStrategy, GoalDispatchDeclaration,
-    InvalidationStrategy,
-};
-pub use goal_dispatch_key::GoalDispatchKey;
 pub use goal_model::{
     GoalKindPlannerExt, GoalOffer, GoalPriorityClass, RankedDriveGoalProvenance, RankedDriveKind,
     RankedDriveMotiveInput, RankedGoalProvenance, RankedGoalProvenanceFamily,
@@ -108,6 +103,10 @@ pub use goal_model::{
 };
 pub use goal_policy::{
     DecisionContext, FreeInterruptRole, GoalFamilyPolicy, GoalPolicyOutcome, evaluate_suppression,
+};
+pub use goal_schema::{
+    Authority, FeasibilityStrategy, FrontierExhaustionStrategy, GoalDispatchKeySchemaExt,
+    GoalSchema, InvalidationStrategy,
 };
 pub use goal_switching::GoalSwitchKind;
 pub use interrupts::{InterruptDecision, InterruptTrigger, evaluate_interrupt};
@@ -159,6 +158,7 @@ pub use survival_forensics::{
     CriticalWindowFrame, CriticalWindowReport, ExhaustionSummary, LocalSurvivalStateSummary,
     SurvivalForensicExtractor,
 };
+pub use worldwake_core::GoalDispatchKey;
 pub use worldwake_core::{
     CognitiveProfile, CommodityPurpose, ExecutionBudget, GoalKey, GoalKind, OpportunityAnchor,
     OpportunityKey,

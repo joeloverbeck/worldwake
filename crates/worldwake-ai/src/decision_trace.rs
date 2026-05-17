@@ -3,15 +3,16 @@
 //! Records per-agent per-tick decision reasoning for diagnostic
 //! and test query purposes. See spec S08 for design rationale.
 
+use crate::goal_schema::GoalDispatchKeySchemaExt;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use worldwake_core::{
     ActionDefId, ActionDomain, ArtifactActionability, ArtifactCredibility, ArtifactExistence,
     ArtifactLegalEffect, ArtifactVisibility, BelievedArtifactState, BlockingFact, CommodityKind,
-    EntityId, FrameAssumption, FrameClearReason, GoalKey, HypothesisKind, InstitutionalClaim,
-    InstitutionalKnowledgeSource, IntentionDomainTag, MotiveSourceRef, OmissionReason,
-    OpportunityAnchor, OpportunityKey, PatrolRoute, PerceptionSource, Permille,
+    EntityId, FrameAssumption, FrameClearReason, GoalKey, GoalPlanningBudget, HypothesisKind,
+    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, MotiveSourceRef,
+    OmissionReason, OpportunityAnchor, OpportunityKey, PatrolRoute, PerceptionSource, Permille,
     PunishmentFineSelectionTrace, RepairKind, SuspensionReason, TellTopic, Tick,
 };
 use worldwake_sim::{
@@ -1158,6 +1159,9 @@ pub struct PlanAttemptTrace {
     pub goal: GoalKey,
     pub opportunity_anchor: OpportunityAnchor,
     pub outcome: PlanSearchOutcome,
+    /// Effective per-goal budget applied during this attempt after composing
+    /// the schema preset with the agent's cognitive and execution ceilings.
+    pub goal_budget: GoalPlanningBudget,
     /// Strategic-search budget provenance, when this attempt entered the
     /// stage-budgeted strategic expansion loop.
     pub strategic_budget: Option<StrategicBudgetTrace>,
@@ -4549,6 +4553,7 @@ mod tests {
                     goal: GoalKey::new(GoalKind::Sleep),
                     opportunity_anchor: OpportunityAnchor::Place(entity(42)),
                     outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 2 },
+                    goal_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
                     strategic_budget: None,
                     target_belief_presence: TargetBeliefPresence::NotApplicable,
                     strategic_plan: None,
@@ -4984,6 +4989,7 @@ mod tests {
                     goal: GoalKey::new(GoalKind::ClaimOffice { office: entity(4) }),
                     opportunity_anchor: OpportunityAnchor::None,
                     outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 1 },
+                    goal_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
                     strategic_budget: None,
                     strategic_plan: Some(vec![StrategicStepTrace {
                         destination: entity(8),
@@ -5178,6 +5184,7 @@ mod tests {
             goal: GoalKey::new(GoalKind::Sleep),
             opportunity_anchor: OpportunityAnchor::Place(entity(9)),
             outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 5 },
+            goal_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
             strategic_budget: None,
             strategic_plan: None,
             tactical_goal: None,
