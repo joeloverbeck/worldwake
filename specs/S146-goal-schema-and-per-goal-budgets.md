@@ -263,9 +263,9 @@ pub struct PlanAttemptTrace {
 ### D9: Migration validation tests
 
 - `goal_schema_registry_covers_all_keys()` — runtime `#[test]` asserting every variant in `GoalDispatchKey::ALL` has a corresponding `GoalSchema` entry. This is a runtime test, not a compile-time enforcement; achieving compile-time enforcement would require a `match key { ... }` in a const context and is deferred.
-- `extractor_outputs_match_legacy_emit_*()` — for each migrated extractor, a parity test against a captured fixture from the pre-S146 emit path on `scenarios/survival-baseline.ron`. **Parity-fixture capture protocol**: before any code migration, run the existing emit pipeline on `survival-baseline.ron` and serialize the per-tick `GoalOffer` outputs per extractor family into JSON fixtures committed under `crates/worldwake-ai/tests/fixtures/s146_extractor_parity/`. After migration, the parity tests deserialize and compare against the post-migration outputs. The fixtures are removed (or replaced with golden-style assertions) after the migration is verified stable.
+- `schema_derived_extractor_order_covers_every_registered_extractor_once()` — runtime `#[test]` asserting `build_extractor_registry()` covers every `CandidateExtractorId::ALL` entry, the schema-derived dispatch sequence preserves the legacy top-level extractor order, and schema-shared extractor IDs are deduped before dispatch. This replaced the originally drafted JSON parity fixture plan because no pre-migration fixture capture target or committed fixture set exists on the live branch; capturing fixtures after migration would be circular evidence.
 - `per_goal_budget_caps_below_cognitive_ceiling()` — for every preset, verify `effective_budget` correctly clamps depth/expansions against `CognitiveProfile.max_plan_depth`/`max_node_expansions` for the default-8 cognitive ceiling AND for an elevated 24-depth ceiling.
-- `golden_per_goal_budget.rs` — golden test using an explicit `CognitiveProfile { max_plan_depth: 24, max_node_expansions: 768, ... }` agent profile: prove a `ProduceCommodity` goal gets `PRODUCTION` budget (effective depth 16); prove an `Eat` goal gets `SELF_CARE` budget (effective depth 6).
+- `s146_goal_kind_budget_examples_map_to_expected_presets()` and `s146_search_trace_records_per_goal_budget_under_elevated_cognitive_ceiling()` — focused search tests using an explicit `CognitiveProfile { max_plan_depth: 24, max_node_expansions: 768, ... }` profile. They prove `ProduceCommodity` maps to `PRODUCTION`, self-care consume/acquire goals map to `SELF_CARE`, and the applied search trace records those depth/node-expansion limits. This replaced the originally drafted autonomous `golden_per_goal_budget.rs` because the search metadata handoff is the strongest stable proof seam for the per-goal budget contract.
 
 ### D10: Observer rendering
 
@@ -360,9 +360,9 @@ All `Permille` values (where present in `GoalPlanningBudget` presets) are bound 
 
 ## Test Plan
 
-- D9 migration validation tests (registry coverage, extractor parity, budget clamping, golden).
+- D9 migration validation tests (registry coverage, schema-derived extractor dispatch order/deduping, budget clamping, concrete per-goal search trace examples).
 - Existing goldens regress unchanged on default profiles (per Q3 / Issue 2 resolution: cognitive defaults unchanged → `min(8, preset.max_depth)` for every preset above 8 → existing-golden-effective depth identical to pre-S146).
-- New `golden_per_goal_budget.rs`: prove a `BakeBread`-style `ProduceCommodity` goal gets `PRODUCTION` budget (effective depth 16 under elevated cognitive profile); prove an `Eat` goal gets `SELF_CARE` budget (effective depth 6).
+- Focused search trace regression: prove a `BakeBread`-style `ProduceCommodity` goal gets `PRODUCTION` budget depth/expansions under elevated cognitive profile; prove self-care consume/acquire goals get `SELF_CARE` budget depth/expansions.
 - Registry-coverage runtime test (workspace integration test).
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
 
@@ -371,9 +371,9 @@ All `Permille` values (where present in `GoalPlanningBudget` presets) are bound 
 D6 restructures candidate emission and D7 changes the budget input source. The seven `AGENTS.md` Authoritative-To-AI Impact Rule points:
 
 1. `get_affordances` — N/A (unchanged).
-2. `generate_candidates` — restructured into extractor dispatch. D9's parity tests verify equivalent output on `survival-baseline.ron`.
+2. `generate_candidates` — restructured into extractor dispatch. D9 verifies registry coverage, legacy-order schema-derived dispatch, extractor-ID deduping, and existing candidate-generation regression coverage rather than a stale pre-migration JSON fixture set.
 3. `search_plan` — budget input source changes. Terminal ordering may shift if effective budget differs from the previous uniform value. Under Q3=(a)'s resolution (cognitive defaults unchanged, every preset clamped to 8 by default), effective budget for default agents is identical to pre-S146; goldens with elevated cognitive ceilings see the new differentiated budgets.
 4. `BestEffort` action start — N/A (unchanged).
 5. `handle_plan_failure` — N/A (unchanged).
 6. Payload revalidation — N/A (unchanged).
-7. Golden tests — must pass post-migration; D9 covers parity and the new `golden_per_goal_budget.rs`.
+7. Golden tests — must pass post-migration under the existing default-profile golden suites; D9 covers the per-goal budget handoff at the stronger focused search-trace layer.

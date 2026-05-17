@@ -17331,6 +17331,28 @@ mod tests {
     }
 
     #[test]
+    fn schema_derived_extractor_order_covers_every_registered_extractor_once() {
+        let registry = super::build_extractor_registry();
+        let ordered = super::ordered_candidate_extractors_from_goal_schemas();
+        let expected = CandidateExtractorId::ALL.to_vec();
+
+        assert_eq!(
+            registry.keys().copied().collect::<Vec<_>>(),
+            expected,
+            "extractor registry should cover every CandidateExtractorId"
+        );
+        assert_eq!(
+            ordered, expected,
+            "schema-derived dispatch should preserve the legacy top-level extractor order"
+        );
+        assert_eq!(
+            ordered.iter().copied().collect::<BTreeSet<_>>().len(),
+            ordered.len(),
+            "schema-derived dispatch should dedupe extractor IDs shared across goal schemas"
+        );
+    }
+
+    #[test]
     fn political_candidates_emit_claim_and_support_for_visible_vacant_office() {
         let agent = entity(1);
         let office = entity(2);

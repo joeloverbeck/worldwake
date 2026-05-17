@@ -162,6 +162,150 @@ fn per_goal_budget_used_at_elevated_cognitive_ceiling() {
 }
 
 #[test]
+fn s146_goal_kind_budget_examples_map_to_expected_presets() {
+    assert_eq!(
+        super::schema_budget_for_goal(&GoalKind::ProduceCommodity {
+            recipe_id: RecipeId(0),
+        }),
+        GoalPlanningBudget::PRODUCTION
+    );
+    assert_eq!(
+        super::schema_budget_for_goal(&GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Bread,
+        }),
+        GoalPlanningBudget::SELF_CARE
+    );
+    assert_eq!(
+        super::schema_budget_for_goal(&GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        }),
+        GoalPlanningBudget::SELF_CARE
+    );
+}
+
+#[test]
+fn s146_search_trace_records_per_goal_budget_under_elevated_cognitive_ceiling() {
+    let fixture = build_remote_produce_commodity_fixture();
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let reasoning = ProfileFixture {
+        max_plan_depth: 24,
+        max_node_expansions: 768,
+        ..ProfileFixture::default()
+    };
+    let cognitive = cognitive(&reasoning);
+    let execution_budget = execution_budget(&reasoning);
+
+    let production_goal = GoalOffer {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::ProduceCommodity {
+            recipe_id: fixture.recipe_id,
+        }),
+        evidence_entities: BTreeSet::from([fixture.mill, fixture.firewood]),
+        evidence_places: BTreeSet::from([
+            prototype_place_entity(PrototypePlace::VillageSquare),
+            prototype_place_entity(PrototypePlace::OrchardFarm),
+        ]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
+        acquisition_quantity: None,
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &production_goal.evidence_entities,
+        &production_goal.evidence_places,
+        reasoning.snapshot_travel_horizon,
+    );
+    let mut production_metadata = super::SearchTraceMetadata::default();
+
+    let production_result = super::search_plan_with_trace_metadata(
+        &snapshot,
+        &production_goal,
+        &fixture.semantics,
+        &fixture.registry,
+        &fixture.handlers,
+        &cognitive,
+        &execution_budget,
+        &fixture.recipes,
+        &BlockerMemory::default(),
+        Tick(1),
+        None,
+        None,
+        Some(&mut production_metadata),
+    );
+
+    assert!(
+        production_result.is_found(),
+        "remote production fixture should still find a plan"
+    );
+    assert_eq!(
+        production_metadata.goal_budget.max_depth,
+        GoalPlanningBudget::PRODUCTION.max_depth
+    );
+    assert_eq!(
+        production_metadata.goal_budget.max_node_expansions,
+        GoalPlanningBudget::PRODUCTION.max_node_expansions
+    );
+
+    let self_care_goal = GoalOffer {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::new(),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
+        acquisition_quantity: Some(AcquisitionQuantity::single()),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &self_care_goal.evidence_entities,
+        &self_care_goal.evidence_places,
+        reasoning.snapshot_travel_horizon,
+    );
+    let mut self_care_metadata = super::SearchTraceMetadata::default();
+
+    let _ = super::search_plan_with_trace_metadata(
+        &snapshot,
+        &self_care_goal,
+        &fixture.semantics,
+        &fixture.registry,
+        &fixture.handlers,
+        &cognitive,
+        &execution_budget,
+        &fixture.recipes,
+        &BlockerMemory::default(),
+        Tick(1),
+        None,
+        None,
+        Some(&mut self_care_metadata),
+    );
+
+    assert_eq!(
+        self_care_metadata.goal_budget.max_depth,
+        GoalPlanningBudget::SELF_CARE.max_depth
+    );
+    assert_eq!(
+        self_care_metadata.goal_budget.max_node_expansions,
+        GoalPlanningBudget::SELF_CARE.max_node_expansions
+    );
+}
+
+#[test]
 fn strategic_expansions_clamp_against_stage_count() {
     let cognitive = CognitiveProfile {
         max_plan_depth: 24,

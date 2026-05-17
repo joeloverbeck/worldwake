@@ -714,7 +714,7 @@ S153 (hard deps on archived S143, S148, archived S150, S151)
 - [x] S143 trait separation archived: grep-CI blocks `DebugWorldView` imports from `worldwake-ai/src/`; compile-fail doctest keeps debug-world reads outside `RuntimeBeliefView`; belief-wall trap golden passes
 - [x] S144 archived: `ScenarioDiagnosticsReport` produces byte-stable output across reruns on `survival-baseline.ron`; observer Section 13 renders text + JSON formats
 - [x] S145 archived: 5-stage production chain records complete strategic itinerary and non-exhausted stage-aware budget provenance; cache invariant regression suite (3 tests) passes
-- [ ] S146 goal-schema registry covers every `GoalKindDiscriminant` variant (workspace-level coverage test); per-goal budget regression proves PRODUCTION-tier `BakeBread` depth 16 vs SELF_CARE-tier `Eat` depth 6
+- [ ] S146 goal-schema registry covers every `GoalDispatchKey` variant (workspace-level coverage test); per-goal search-trace regression proves PRODUCTION-tier `BakeBread` depth 16 vs SELF_CARE-tier self-care depth 6
 - [ ] S147 HTN method goldens prove method selection + flat-GOAP fallback + method-failure → `Discrepancy::PartialExecutionDrift`
 - [ ] S148 7-slot portfolio golden proves slot occupancy under Normal/Emergency/Idle modes; default `max_plans_normal=6` replaces legacy `max_candidates_to_plan=2`
 - [ ] S149 typed-terminal goldens prove each of the 7 terminal kinds with concrete observability + resume conditions
