@@ -21,6 +21,38 @@ pub enum MotiveSource {
     Revenge { violation: ViolationId },
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum MotiveSourceDiscriminant {
+    NeedPressure,
+    Pain,
+    OfficeDuty,
+    Loyalty,
+    Greed,
+    Shame,
+    Revenge,
+}
+
+impl From<&MotiveSource> for MotiveSourceDiscriminant {
+    fn from(source: &MotiveSource) -> Self {
+        match source {
+            MotiveSource::NeedPressure { .. } => Self::NeedPressure,
+            MotiveSource::Pain { .. } => Self::Pain,
+            MotiveSource::OfficeDuty { .. } => Self::OfficeDuty,
+            MotiveSource::Loyalty { .. } => Self::Loyalty,
+            MotiveSource::Greed { .. } => Self::Greed,
+            MotiveSource::Shame { .. } => Self::Shame,
+            MotiveSource::Revenge { .. } => Self::Revenge,
+        }
+    }
+}
+
+impl MotiveSource {
+    #[must_use]
+    pub fn discriminant(&self) -> MotiveSourceDiscriminant {
+        self.into()
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MotiveSourceRef {
     pub source: MotiveSource,

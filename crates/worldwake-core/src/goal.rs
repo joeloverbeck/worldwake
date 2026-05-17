@@ -182,6 +182,134 @@ pub enum GoalKind {
     },
 }
 
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub enum GoalKindDiscriminant {
+    ConsumeOwnedCommodity,
+    AcquireCommodity,
+    Sleep,
+    Relieve,
+    Wash,
+    FreeCarryCapacity,
+    EngageHostile,
+    RaidTarget,
+    ReduceDanger,
+    RegroupWithFaction,
+    EstablishBanditCamp,
+    TreatWounds,
+    SearchForMissing,
+    ReportMissing,
+    ReportFound,
+    EscortToSafety,
+    ProduceCommodity,
+    SellCommodity,
+    RestockCommodity,
+    MoveCargo,
+    LootCorpse,
+    BuryCorpse,
+    FulfillBounty,
+    PostBounty,
+    PostNotice,
+    ShareBelief,
+    AskWitness,
+    ClaimOffice,
+    SupportCandidateForOffice,
+    InvestigateViolation,
+    Patrol,
+    ExploreLocation,
+    StealItem,
+    Accuse,
+    PunishAccused,
+}
+
+impl GoalKindDiscriminant {
+    pub const ALL: &'static [Self] = &[
+        Self::ConsumeOwnedCommodity,
+        Self::AcquireCommodity,
+        Self::Sleep,
+        Self::Relieve,
+        Self::Wash,
+        Self::FreeCarryCapacity,
+        Self::EngageHostile,
+        Self::RaidTarget,
+        Self::ReduceDanger,
+        Self::RegroupWithFaction,
+        Self::EstablishBanditCamp,
+        Self::TreatWounds,
+        Self::SearchForMissing,
+        Self::ReportMissing,
+        Self::ReportFound,
+        Self::EscortToSafety,
+        Self::ProduceCommodity,
+        Self::SellCommodity,
+        Self::RestockCommodity,
+        Self::MoveCargo,
+        Self::LootCorpse,
+        Self::BuryCorpse,
+        Self::FulfillBounty,
+        Self::PostBounty,
+        Self::PostNotice,
+        Self::ShareBelief,
+        Self::AskWitness,
+        Self::ClaimOffice,
+        Self::SupportCandidateForOffice,
+        Self::InvestigateViolation,
+        Self::Patrol,
+        Self::ExploreLocation,
+        Self::StealItem,
+        Self::Accuse,
+        Self::PunishAccused,
+    ];
+}
+
+impl From<&GoalKind> for GoalKindDiscriminant {
+    fn from(kind: &GoalKind) -> Self {
+        match kind {
+            GoalKind::ConsumeOwnedCommodity { .. } => Self::ConsumeOwnedCommodity,
+            GoalKind::AcquireCommodity { .. } => Self::AcquireCommodity,
+            GoalKind::Sleep => Self::Sleep,
+            GoalKind::Relieve => Self::Relieve,
+            GoalKind::Wash => Self::Wash,
+            GoalKind::FreeCarryCapacity => Self::FreeCarryCapacity,
+            GoalKind::EngageHostile { .. } => Self::EngageHostile,
+            GoalKind::RaidTarget { .. } => Self::RaidTarget,
+            GoalKind::ReduceDanger => Self::ReduceDanger,
+            GoalKind::RegroupWithFaction { .. } => Self::RegroupWithFaction,
+            GoalKind::EstablishBanditCamp { .. } => Self::EstablishBanditCamp,
+            GoalKind::TreatWounds { .. } => Self::TreatWounds,
+            GoalKind::SearchForMissing { .. } => Self::SearchForMissing,
+            GoalKind::ReportMissing { .. } => Self::ReportMissing,
+            GoalKind::ReportFound { .. } => Self::ReportFound,
+            GoalKind::EscortToSafety { .. } => Self::EscortToSafety,
+            GoalKind::ProduceCommodity { .. } => Self::ProduceCommodity,
+            GoalKind::SellCommodity { .. } => Self::SellCommodity,
+            GoalKind::RestockCommodity { .. } => Self::RestockCommodity,
+            GoalKind::MoveCargo { .. } => Self::MoveCargo,
+            GoalKind::LootCorpse { .. } => Self::LootCorpse,
+            GoalKind::BuryCorpse { .. } => Self::BuryCorpse,
+            GoalKind::FulfillBounty { .. } => Self::FulfillBounty,
+            GoalKind::PostBounty { .. } => Self::PostBounty,
+            GoalKind::PostNotice { .. } => Self::PostNotice,
+            GoalKind::ShareBelief { .. } => Self::ShareBelief,
+            GoalKind::AskWitness { .. } => Self::AskWitness,
+            GoalKind::ClaimOffice { .. } => Self::ClaimOffice,
+            GoalKind::SupportCandidateForOffice { .. } => Self::SupportCandidateForOffice,
+            GoalKind::InvestigateViolation { .. } => Self::InvestigateViolation,
+            GoalKind::Patrol { .. } => Self::Patrol,
+            GoalKind::ExploreLocation { .. } => Self::ExploreLocation,
+            GoalKind::StealItem { .. } => Self::StealItem,
+            GoalKind::Accuse { .. } => Self::Accuse,
+            GoalKind::PunishAccused { .. } => Self::PunishAccused,
+        }
+    }
+}
+
+impl GoalKind {
+    #[must_use]
+    pub fn discriminant(&self) -> GoalKindDiscriminant {
+        self.into()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct GoalKey {
     pub kind: GoalKind,

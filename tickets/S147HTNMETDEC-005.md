@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — extends `GoalSchema` with a per-goal-kind method list. Touches 41 static `DECL_*` initializers in `goal_schema.rs`.
-**Deps**: 001 (MethodSchemaId)
+**Deps**: `archive/tickets/S147HTNMETDEC-001.md` (MethodSchemaId)
 
 ## Problem
 

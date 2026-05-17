@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — adds the `MethodSelector` and `select_method()` function. Not yet wired into the planner (ticket 008).
-**Deps**: 001 (MotiveSourceDiscriminant), 004 (MethodSchema + supporting types), 006 (MethodRegistry)
+**Deps**: `archive/tickets/S147HTNMETDEC-001.md` (MotiveSourceDiscriminant), 004 (MethodSchema + supporting types), 006 (MethodRegistry)
 
 ## Problem
 
@@ -14,7 +14,7 @@ S147 D3 defines the deterministic method-selection algorithm: filter methods by 
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. `MethodRegistry` and `methods_for(goal_kind)` exist after ticket 006 lands at `crates/worldwake-ai/src/htn/registry.rs`. `MotiveSourceDiscriminant` and `From<&MotiveSource>` exist after ticket 001 lands at `crates/worldwake-core/src/motive_source.rs`. `MotiveSourceRef` at `crates/worldwake-core/src/motive_source.rs:25` carries `source: MotiveSource` (line 26) and `weight: Permille` (referenced from line 30) — both consumed by the ranking formula.
+1. `MethodRegistry` and `methods_for(goal_kind)` exist after ticket 006 lands at `crates/worldwake-ai/src/htn/registry.rs`. `MotiveSourceDiscriminant` and `From<&MotiveSource>` exist after `archive/tickets/S147HTNMETDEC-001.md` lands at `crates/worldwake-core/src/motive_source.rs`. `MotiveSourceRef` in the same file carries `source: MotiveSource` and `weight: Permille` — both consumed by the ranking formula.
 2. `RuntimeBeliefView` trait exists at `crates/worldwake-sim/src/belief_view.rs:1588` (verified during S147 reassessment). The selector reads via `&dyn RuntimeBeliefView` — no new trait accessor is required because `BeliefPredicate` variants (ticket 004) compose existing reads.
 3. `AgentSchemaContextProfile.disabled_methods` exists after ticket 003 lands at `crates/worldwake-core/src/agent_schema_context_profile.rs:54`.
 4. Shared boundary: `select_method()` is the only function the planner integration (ticket 008) calls into the htn module. The function signature is the contract; the planner does not reach into the registry or supporting types directly.

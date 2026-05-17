@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — extends typed-discrepancy taxonomy with `Discrepancy::MethodFailure(MethodFailureContext)`; touches the workspace `Discrepancy`-match surface; bumps `SAVE_FORMAT_VERSION`.
-**Deps**: 001 (MethodSchemaId)
+**Deps**: `archive/tickets/S147HTNMETDEC-001.md` (MethodSchemaId)
 
 ## Problem
 
@@ -15,7 +15,7 @@ S147 D6 routes method-failure attribution through the existing typed-discrepancy
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
 1. `Discrepancy` enum lives at `crates/worldwake-core/src/discrepancy.rs:9`. All variants currently cited by S147 D6's mapping table are **unit variants** with no payload: `BeliefStale:11`, `BeliefContradicted:13`, `NoLegalBinding:21`, `SearchBudgetExhausted:27`, `PartialExecutionDrift:29`. Workspace-wide use sites: 474 total `Discrepancy::` references across ~50 files (most are construction sites in action handlers and effect sinks). Genuine destructuring match arms: 16 sites (across `failure_handling.rs`, `agenda_manager.rs`, and others). Existing focused coverage in `crates/worldwake-ai/src/failure_handling.rs` tests exercises every existing variant's TTL/backoff arm at `failure_handling.rs:1522-1534`; this is the most-likely-to-break match.
-2. `MethodSchemaId` exists after ticket 001 lands at `crates/worldwake-core/src/method_schema_id.rs`. `SAVE_FORMAT_VERSION` is currently `88` at `crates/worldwake-sim/src/save_load.rs:6`. Adding a new variant to a serde-derived enum is structurally backwards-compatible for *reading* old saves (the new variant simply never appears in pre-bump byte streams), but forward-incompatible: new saves with the new variant fail to load on old code. The project bumps `SAVE_FORMAT_VERSION` on schema additions as a forward-compat signal.
+2. `MethodSchemaId` exists after `archive/tickets/S147HTNMETDEC-001.md` lands at `crates/worldwake-core/src/method_schema_id.rs`. `SAVE_FORMAT_VERSION` is currently `88` at `crates/worldwake-sim/src/save_load.rs:6`. Adding a new variant to a serde-derived enum is structurally backwards-compatible for *reading* old saves (the new variant simply never appears in pre-bump byte streams), but forward-incompatible: new saves with the new variant fail to load on old code. The project bumps `SAVE_FORMAT_VERSION` on schema additions as a forward-compat signal.
 3. Shared boundary: the `Discrepancy` typed channel between authoritative action handlers (which construct `Discrepancy` values) and AI-side blocker memory / agenda manager / failure handler (which destructure `Discrepancy` values to drive backoff and replan decisions). This ticket extends both sides of the channel symmetrically.
 4. Existing tests exercising `Discrepancy` match arms (named per Step 2 spot-check (f)): `failure_handling.rs::discrepancy_ttl_resolves_per_variant` (anchor — verify exact name on implementation), the inline tests around `failure_handling.rs:1522-1534`, and `agenda_manager.rs:96+119` arms within `cognitive_reaction_for_discrepancy`. Verify exact test names during implementation via `cargo test -p worldwake-ai -- --list | grep -i discrepancy`.
 5. The audit scope is the workspace exhaustive-match audit listed as a D6 deliverable: grep `match` sites that destructure `Discrepancy` (16 candidates) and add a `Discrepancy::MethodFailure(_) => …` arm to each genuinely-exhaustive match. Sites using `_ =>` catch-all do not require a new arm but should be reviewed for whether method-failure context is meaningfully different from the catch-all default.

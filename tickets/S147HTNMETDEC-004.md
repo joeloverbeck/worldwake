@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — introduces the `htn` module in worldwake-ai with `MethodSchema` and 15 supporting types. No runtime behavior yet (consumed by tickets 006, 007).
-**Deps**: 001 (MethodSchemaId, MotiveSourceDiscriminant, GoalKindDiscriminant), 002 (MethodFailureKind)
+**Deps**: `archive/tickets/S147HTNMETDEC-001.md` (MethodSchemaId, MotiveSourceDiscriminant, GoalKindDiscriminant), 002 (MethodFailureKind)
 
 ## Problem
 
