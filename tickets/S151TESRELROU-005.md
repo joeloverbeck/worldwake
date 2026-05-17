@@ -14,7 +14,7 @@ S151's decision history needs to surface why a goal commit involved a particular
 
 1. `DecisionEventPayload` at `crates/worldwake-core/src/decision_event_payload.rs:13` has 16 always-on always-emitted variants (lines 14-30 per Step 2 spot-check). `BeliefSnapshot` at lines 250-254 is the precedent for embedded summary types — `#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]`, embedded under `PlanInvalidatedPayload:298` and `BlockerRecordedPayload:484`.
 2. `GoalCommittedPayload` at `decision_event_payload.rs:159-168` already carries `#[serde(default)] pub assumptions: Vec<PlanAssumptionRef>` (line 167) from S136 — the precedent for `#[serde(default)] Vec<_>` payload extensions.
-3. `GoalCommittedPayload` construction sites (13 across `decision_event_payload.rs:582,917`, `save_load.rs:1087`, `agent_tick/planning.rs:1190,4023`, `golden_decision_payload.rs:100`, `golden_motive_sources.rs:42,172`, `observer.rs:6026,7817,7922,7949`). `GoalSuppressedPayload` construction: 1 site in `agent_tick/tests.rs:5477`. All need `testimony_trust_context: vec![]` (or equivalent) additions; `#[serde(default)]` means save deserialization stays compatible.
+3. `GoalCommittedPayload` construction sites (13 across `decision_event_payload.rs:582,917`, `save_load.rs:1087`, `agent_tick/planning.rs:1190,4023`, `golden_decision_payload.rs:100`, `golden_motive_sources.rs:42,172`, `observer.rs:6026,7817,7922,7949`). `GoalSuppressedPayload` construction: 1 site in `agent_tick/tests.rs:5477`. All need `testimony_trust_context: vec![]` (or equivalent) additions; save-format compatibility is coordinated by ticket 010.
 4. Observer Section 3b at `crates/worldwake-cli/src/bin/observer.rs:932` renders decision history as a markdown table at lines 939-940 with header `| Tick | Agent | Event | Payload Summary |`. Rendering hook at line 959 (`decision_payload_summary(payload, Some(world))`). Multi-line detail continuation pattern exists at lines 962-971 for `GoalCommitted` motive sources and `RepairApplied` breach details — new contexts follow the same continuation pattern.
 5. Both summary types are core-resident; field types (`EntityId`, `TopicScope` from ticket 001, `Permille`, `Tick`, `RouteSegment` from `blocker_scope.rs:67`) all resolve to `worldwake-core` — no cross-crate-residence issue.
 
@@ -22,13 +22,13 @@ S151's decision history needs to surface why a goal commit involved a particular
 
 1. Per FND-29: decision history surfaces the *why* of commits and suppressions. Embedding contexts on existing payloads (instead of new top-level variants) avoids inflating always-on event volume — `BeliefSnapshot` precedent.
 2. `Vec<_>` rather than `Option<_>` because a single goal commit may reference multiple witnesses or multiple traversed segments — vector shape matches the multi-context reality.
-3. `#[serde(default)]` on every new field means existing save streams deserialize cleanly into empty vecs — no `SAVE_FORMAT_VERSION` bump needed in this ticket (deferred to ticket 010 alongside the runtime-store and component bumps).
+3. `#[serde(default)]` on every new field documents omitted-field defaults for serde-compatible struct inputs, but current bincode save-stream compatibility is not claimed by this ticket. `SAVE_FORMAT_VERSION` and any old-save omission/compatibility decision remain deferred to ticket 010 alongside the runtime-store and component bumps.
 4. Both summary types are `Copy + Eq + Hash + Ord + Serialize + Deserialize` per the `BeliefSnapshot` derive set — satisfies the existing payload struct's derive requirements.
 
 ## Verification Layers
 
 1. Payload structural extension → focused unit tests in `decision_event_payload.rs#[cfg(test)]` constructing `GoalCommittedPayload` with non-empty contexts and asserting serde roundtrip preserves both contexts.
-2. Save-load compatibility → `#[serde(default)]` round-trip test: serialize a `GoalCommittedPayload` without the new contexts (using the pre-S151 byte format), then deserialize and assert empty vecs.
+2. Payload defaulting boundary → focused serde-compatible omitted-field test if the live serializer can represent omitted fields; otherwise document why bincode-only payload bytes cannot prove omitted-field compatibility and leave save-stream compatibility to ticket 010.
 3. Observer rendering → unit test that calls `decision_payload_summary` on a `GoalCommittedPayload` with both contexts populated, asserts the table cell + continuation rows match the expected markdown layout.
 
 ## What to Change
@@ -117,20 +117,20 @@ Use `↳` (or the file's existing continuation prefix — preserve the conventio
 
 1. `TestimonyTrustSummary` and `RoutePreferenceSummary` satisfy `Copy + Hash + Ord + Serialize + Deserialize` at compile time.
 2. `GoalCommittedPayload` with non-empty contexts round-trips through bincode without loss.
-3. A pre-S151 byte payload (constructed without the new contexts) deserializes into a `GoalCommittedPayload` with empty `testimony_trust_context` and `route_preference_context` (verifying `#[serde(default)]`).
+3. Omitted-field default behavior is either proved with a serde-compatible fixture or explicitly documented as not representable through current bincode-only payload bytes; ticket 010 owns save-stream compatibility.
 4. `decision_payload_summary` produces the expected continuation-row format when contexts are non-empty.
 5. Existing suite: `cargo test --workspace`.
 
 ### Invariants
 
-1. `#[serde(default)]` on every new field — pre-bump save streams deserialize cleanly.
+1. `#[serde(default)]` on every added field — omitted-field defaults are explicit at the payload struct boundary; pre-bump save-stream compatibility remains ticket 010 scope.
 2. Contexts are populated only by their owning tickets (006, 007); this ticket leaves all sites with `vec![]`.
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. `crates/worldwake-core/src/decision_event_payload.rs#[cfg(test)]` — payload round-trip and `#[serde(default)]` backward-compat tests for both extended payloads.
+1. `crates/worldwake-core/src/decision_event_payload.rs#[cfg(test)]` — payload round-trip plus omitted-field default tests when representable by the live serializer.
 2. `crates/worldwake-cli/src/bin/observer.rs` test (or sibling integration test) — rendering of populated contexts.
 
 ### Commands
@@ -141,4 +141,4 @@ Use `↳` (or the file's existing continuation prefix — preserve the conventio
 4. `cargo clippy --workspace --all-targets -- -D warnings`
 5. `./scripts/verify.sh`
 
-Merge note: Ticket 010 bumps SAVE_FORMAT_VERSION 87→88 after this ticket lands; this ticket avoids its own bump via `#[serde(default)]` on all new payload fields.
+Merge note: Ticket 010 bumps SAVE_FORMAT_VERSION 87→88 after this ticket lands; this ticket does not independently claim old bincode save-stream compatibility.

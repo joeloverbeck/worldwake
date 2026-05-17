@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, CognitiveProfile, CommodityKind, EntityId, FrameClearReason, FrameState, GoalKey,
     HomeostaticNeeds, IntentionDomain, IntentionFrame, OpportunityKey, PatrolRoute, Quantity,
-    RepairKind, Tick, UniqueItemKind, Wound,
+    RepairKind, RoutePreference, TestimonyReliability, Tick, UniqueItemKind, Wound,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -182,6 +182,10 @@ pub struct AgentDecisionRuntime {
     #[serde(default)]
     pub agenda_state: AgendaState,
     #[serde(default)]
+    pub testimony_reliability: TestimonyReliability,
+    #[serde(default)]
+    pub route_preference: RoutePreference,
+    #[serde(default)]
     pub pending_repair_context: Option<PendingRepairContext>,
     #[serde(default)]
     pub accepted_repair: Option<AcceptedRepairProvenance>,
@@ -310,9 +314,10 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::ActionDefId;
     use worldwake_core::{
-        AcquisitionQuantity, BodyPart, CognitiveProfile, CommodityKind, EntityId, FrameClearReason,
-        FrameState, HomeostaticNeeds, IntentionDomain, IntentionFrame, PatrolRoute, Quantity,
-        RepairKind, Tick, UniqueItemKind, Wound, WoundCause, WoundId,
+        AcquisitionQuantity, BodyPart, CognitiveProfile, CommodityKind, EntityId, EventId,
+        FrameClearReason, FrameState, HomeostaticNeeds, IntentionDomain, IntentionFrame,
+        PatrolRoute, Quantity, RepairKind, RouteSegment, TestimonyReliabilityKey, Tick, TopicScope,
+        UniqueItemKind, Wound, WoundCause, WoundId,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -547,6 +552,15 @@ mod tests {
             worldwake_core::Permille::new(300).unwrap(),
             worldwake_core::Permille::new(100).unwrap(),
         );
+        let testimony_key = TestimonyReliabilityKey {
+            source: entity(71),
+            topic: TopicScope::RouteHazard,
+        };
+        let route_segment = RouteSegment::new(entity(30), entity(31));
+        let mut testimony_reliability = worldwake_core::TestimonyReliability::default();
+        testimony_reliability.record_refutation(testimony_key, EventId(44), Tick(15));
+        let mut route_preference = worldwake_core::RoutePreference::default();
+        route_preference.record_dangerous(route_segment, EventId(45), Tick(16));
         let runtime = AgentDecisionRuntime {
             current_plan: Some(
                 sample_plan(vec![
@@ -690,6 +704,8 @@ mod tests {
                     consecutive_failures: 3,
                 },
             )]),
+            testimony_reliability,
+            route_preference,
         };
 
         let encoded =
@@ -723,6 +739,8 @@ mod tests {
         );
         assert_eq!(decoded.exhaustion_cache, runtime.exhaustion_cache);
         assert_eq!(decoded.agenda_state, runtime.agenda_state);
+        assert_eq!(decoded.testimony_reliability, runtime.testimony_reliability);
+        assert_eq!(decoded.route_preference, runtime.route_preference);
 
         // Previously-skipped fields are now serialized for lossless save/load.
         assert_eq!(
@@ -737,6 +755,14 @@ mod tests {
             runtime.pending_repair_context
         );
         assert_eq!(decoded.accepted_repair, runtime.accepted_repair);
+    }
+
+    #[test]
+    fn agent_decision_runtime_default_starts_with_empty_s151_stores() {
+        let runtime = AgentDecisionRuntime::default();
+
+        assert!(runtime.testimony_reliability.is_empty());
+        assert!(runtime.route_preference.is_empty());
     }
 
     #[test]

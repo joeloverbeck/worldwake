@@ -375,7 +375,7 @@ Ranking (D8) and candidate emission (D8) consume the profiles through these acce
 
 - New `TestimonyReliability` and `RoutePreference` fields on `AgentDecisionRuntime`.
 - New `testimony_trust_profile` and `route_preference_profile` components on `EntityKind::Agent`.
-- New `testimony_trust_context` and `route_preference_context` fields on `GoalCommittedPayload` and `GoalSuppressedPayload` (both `#[serde(default)]` so older saves deserialize cleanly into empty vecs).
+- New `testimony_trust_context` and `route_preference_context` fields on `GoalCommittedPayload` and `GoalSuppressedPayload` (with explicit omitted-field defaults where the live serializer can represent omitted fields; bincode save-stream compatibility is verified or documented by the D13 ticket).
 
 Save/load round-trip tests cover the new runtime fields per the existing pattern.
 
