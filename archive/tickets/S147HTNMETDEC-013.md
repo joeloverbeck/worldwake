@@ -46,7 +46,7 @@ Added autonomous generated-candidate coverage proving `ProduceCommodity` records
 
 ### 3. S147 handoff truthed
 
-The full non-production D10 narrative set was split to `archive/tickets/S147HTNMETDEC-014.md`, which landed report-backed `FulfillBountyInvestigation`; the remaining direct-bounty, escort/failure, and typed `Discrepancy::MethodFailure(MethodFailureContext)` goldens now live in `tickets/S147HTNMETDEC-015.md`.
+The full non-production D10 narrative set was split to `archive/tickets/S147HTNMETDEC-014.md`, which landed report-backed `FulfillBountyInvestigation`; the remaining direct-bounty, escort/failure, and typed `Discrepancy::MethodFailure(MethodFailureContext)` goldens later landed through `archive/tickets/S147HTNMETDEC-015.md` and `archive/tickets/S147HTNMETDEC-016.md`.
 
 ## Landed Files
 
@@ -59,7 +59,7 @@ The full non-production D10 narrative set was split to `archive/tickets/S147HTNM
 - `docs/generated/golden-scenario-index.md` (regenerated)
 - `docs/generated/golden-scenario-details/htn-methods.md` (regenerated)
 - `docs/generated/golden-coverage-matrix.md` (regenerated)
-- `specs/S147-htn-method-decomposition.md` (truth-sync)
+- `archive/specs/S147-htn-method-decomposition.md` (truth-sync)
 - `specs/IMPLEMENTATION-ORDER.md` (truth-sync)
 
 ## Out of Scope
@@ -103,8 +103,8 @@ Completed: 2026-05-17
 - Added focused candidate-generation proof that remote recipe input source evidence is present on generated `ProduceCommodity` offers.
 - Added autonomous `golden_htn_methods.rs` production scenarios for generated-offer evidence, snapshot-backed selection, method-trace recording, and deterministic replay.
 - Regenerated golden inventory/docs for the new HTN scenario block.
-- Truth-synced `specs/S147-htn-method-decomposition.md` and `specs/IMPLEMENTATION-ORDER.md`; after `archive/tickets/S147HTNMETDEC-014.md`, remaining direct-bounty, escort/failure, and typed method-failure narratives are owned by `tickets/S147HTNMETDEC-015.md`.
+- Truth-synced `archive/specs/S147-htn-method-decomposition.md` and `specs/IMPLEMENTATION-ORDER.md`; after `archive/tickets/S147HTNMETDEC-014.md`, remaining direct-bounty, escort/failure, and typed method-failure narratives later landed through `archive/tickets/S147HTNMETDEC-015.md` and `archive/tickets/S147HTNMETDEC-016.md`.
 
 Deviations:
 
-- The ticket did not force the remaining bounty/investigation/escort/failure narratives into this implementation. Those required separate stable fixtures over their own action/legal/failure substrates; report-backed bounty investigation later landed in `archive/tickets/S147HTNMETDEC-014.md`, and the remaining direct-bounty, escort/failure, and typed method-failure narratives now live in `tickets/S147HTNMETDEC-015.md`.
+- The ticket did not force the remaining bounty/investigation/escort/failure narratives into this implementation. Those required separate stable fixtures over their own action/legal/failure substrates; report-backed bounty investigation later landed in `archive/tickets/S147HTNMETDEC-014.md`, and the remaining direct-bounty, escort/failure, and typed method-failure narratives later landed through `archive/tickets/S147HTNMETDEC-015.md` and `archive/tickets/S147HTNMETDEC-016.md`.

@@ -34,7 +34,7 @@ Phase 12: AI Architecture Evolution — Completed
 - S145 (Planning Substrate Hardening, archived at `archive/specs/S145-planning-substrate-hardening.md`) — provides `ExecutionBudget::strategic_budget_for_stages`; composed into D7's `effective_budget` computation.
 - S109 (Typed Discrepancy Taxonomy, archived at `archive/specs/S109-typed-discrepancy-taxonomy.md`) — `Discrepancy` substrate emitted by extractors on assumption failure (existing mechanism, no new field on `GoalSchema`).
 - S144 (Aggregate Scenario Diagnostics, archived at `archive/specs/S144-aggregate-scenario-diagnostics.md`) — provides `PlanningMetrics` for D10 observer aggregation of exhaustion-by-preset.
-- S147 (HTN Method Decomposition, draft at `specs/S147-htn-method-decomposition.md`) — will add `methods: Vec<MethodSchemaId>` to `GoalSchema` and `enabled_methods: BTreeSet<MethodSchemaId>` to `AgentSchemaContextProfile` when it lands. Not a hard dependency for S146.
+- S147 (HTN Method Decomposition, archived at `archive/specs/S147-htn-method-decomposition.md`) — added `methods: &'static [MethodSchemaId]` to `GoalSchema` and `disabled_methods: BTreeSet<MethodSchemaId>` to `AgentSchemaContextProfile`. Not a hard dependency for S146.
 
 ## Design Goals
 

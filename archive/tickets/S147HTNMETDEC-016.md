@@ -51,7 +51,7 @@ The golden inventory/docs were regenerated. The generated totals are now `53 fil
 - `docs/generated/golden-scenario-index.md` (regenerated)
 - `docs/generated/golden-scenario-details/htn-methods.md` (regenerated)
 - `docs/generated/golden-coverage-matrix.md` (regenerated)
-- `specs/S147-htn-method-decomposition.md` (truth-sync)
+- `archive/specs/S147-htn-method-decomposition.md` (truth-sync)
 - `specs/IMPLEMENTATION-ORDER.md` (truth-sync)
 
 ## Out of Scope

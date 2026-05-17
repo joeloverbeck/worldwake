@@ -62,7 +62,7 @@ Added `crates/worldwake-ai/tests/goal_schema_methods.rs`:
 
 - `crates/worldwake-ai/src/goal_schema.rs` (modified — added field and updated 41 static initializers)
 - `crates/worldwake-ai/tests/goal_schema_methods.rs` (added)
-- `specs/S147-htn-method-decomposition.md` (modified — truth-synced `GoalSchema.methods` from `Vec` to const slice)
+- `archive/specs/S147-htn-method-decomposition.md` (modified — truth-synced `GoalSchema.methods` from `Vec` to const slice)
 
 ## Out of Scope
 

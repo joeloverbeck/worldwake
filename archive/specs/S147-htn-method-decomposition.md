@@ -1,6 +1,6 @@
 # S147: HTN Method Decomposition for Long Lawful Pursuits
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
@@ -14,7 +14,7 @@ The first ship covers `FulfillBounty`, `ProduceCommodity`, `RestockCommodity`, `
 
 ## Phase and Status
 
-Phase 12: AI Architecture Evolution — Draft
+Phase 12: AI Architecture Evolution — Completed and archived
 
 ## Crates
 
@@ -729,3 +729,12 @@ No floats.
 - D6 workspace exhaustive-match audit — `cargo build --workspace` proves all match sites resolved; per-arm content tested by failure-mode goldens.
 - Existing goldens unchanged (default scenarios have empty `disabled_methods` and the flat-GOAP fallback covers all current behavior).
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
+
+## Outcome
+
+Completed on 2026-05-17.
+
+- Landed the HTN method substrate across `worldwake-core`, `worldwake-ai`, `worldwake-cli`, and save/load surfaces: method ids and discriminant mirrors, `AgentSchemaContextProfile.disabled_methods`, `GoalSchema.methods`, method schemas/registry/selector, strategic planner integration, method traces/metrics, observer rendering, and typed `Discrepancy::MethodFailure(MethodFailureContext)`.
+- Landed D10 golden coverage in stages: selector/fallback (`archive/tickets/S147HTNMETDEC-011.md`), autonomous production trace (`archive/tickets/S147HTNMETDEC-013.md`), report-backed bounty investigation (`archive/tickets/S147HTNMETDEC-014.md`), direct bounty and escort selector coverage plus selected-method runtime provenance (`archive/tickets/S147HTNMETDEC-015.md`), and hybrid typed method-failure coverage (`archive/tickets/S147HTNMETDEC-016.md`).
+- Final observed verification for the closing tickets: `cargo test -p worldwake-ai --test golden_htn_methods`, `python3 scripts/golden_inventory.py --write --check-docs`, `cargo test -p worldwake-ai`, and `cargo test -p worldwake-sim`.
+- The final method-failure proof is hybrid rather than a fully autonomous action-start scenario: it starts from generated `EscortToSafety` method selection, carries `EscortToHome` through `PlannedPlan.method_id`, and exercises the public runtime failure producer directly.

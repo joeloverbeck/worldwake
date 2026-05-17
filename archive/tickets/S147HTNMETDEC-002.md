@@ -8,7 +8,7 @@
 
 ## Problem
 
-S147 D6 routes method-failure attribution through the existing typed-discrepancy chain (per FND-29A: causal history is authoritative). Without a new `Discrepancy::MethodFailure(MethodFailureContext)` variant, method failures would only surface in the optional `MethodPlanAttemptTrace` (introduced in ticket 009) and fail FND-29A's test — "later state changes can only be explained by reading ad hoc logs". The chosen mechanism (single new variant rather than payload-widening each existing variant or pure trace-only surfacing) was approved during reassessment via soft-criterion FND lensing — see `specs/S147-htn-method-decomposition.md` D6 rationale.
+S147 D6 routes method-failure attribution through the existing typed-discrepancy chain (per FND-29A: causal history is authoritative). Without a new `Discrepancy::MethodFailure(MethodFailureContext)` variant, method failures would only surface in the optional `MethodPlanAttemptTrace` (introduced in ticket 009) and fail FND-29A's test — "later state changes can only be explained by reading ad hoc logs". The chosen mechanism (single new variant rather than payload-widening each existing variant or pure trace-only surfacing) was approved during reassessment via soft-criterion FND lensing — see `archive/specs/S147-htn-method-decomposition.md` D6 rationale.
 
 ## Assumption Reassessment (2026-05-17)
 

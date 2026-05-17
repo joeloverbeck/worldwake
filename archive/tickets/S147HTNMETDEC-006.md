@@ -143,7 +143,7 @@ New file `crates/worldwake-ai/tests/htn_registry_validation.rs`:
 - `crates/worldwake-ai/src/htn/method_schema.rs` (modify — add explicit binding templates and retarget dynamic fields to them)
 - `crates/worldwake-ai/src/htn/mod.rs` (modify — add `pub mod methods; pub mod registry;` and re-exports)
 - `crates/worldwake-ai/tests/htn_registry_validation.rs` (new)
-- `specs/S147-htn-method-decomposition.md` (modify — truth-sync D1/D2 binding-template contract)
+- `archive/specs/S147-htn-method-decomposition.md` (modified — truth-sync D1/D2 binding-template contract)
 
 ## Out of Scope
 

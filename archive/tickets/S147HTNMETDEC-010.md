@@ -49,13 +49,13 @@ Scenario Diagnostics now prints a Method usage block from `PlanningMetrics.metho
 
 ### 4. Spec truth sync
 
-`specs/S147-htn-method-decomposition.md` now names the real Section 8/13 observer surfaces instead of the stale Section 7 claim.
+`archive/specs/S147-htn-method-decomposition.md` now names the real Section 8/13 observer surfaces instead of the stale Section 7 claim.
 
 ## Landed Files
 
 - `crates/worldwake-cli/src/bin/observer.rs`
 - `crates/worldwake-cli/src/diagnostics_json.rs`
-- `specs/S147-htn-method-decomposition.md`
+- `archive/specs/S147-htn-method-decomposition.md`
 
 ## Outcome
 

@@ -35,7 +35,7 @@ S147 needs golden coverage for the first stable HTN method seam. The component t
 1. Method choice is belief-backed and evidence-place gated → selector-level golden assertion using `PerAgentBeliefView`, `MethodSelector`, and a concrete `GoalOffer`.
 2. Flat-GOAP fallback remains available when produce methods are disabled → agent-tick decision trace with `PlanAttemptTrace.method_trace == None` and a preserved missing-input strategic subgoal.
 3. Determinism → replay companion tests for selector selection and disabled-method fallback observations.
-4. Full autonomous method trace was deferred to the now-archived `archive/tickets/S147HTNMETDEC-013.md`; report-backed bounty investigation later landed in `archive/tickets/S147HTNMETDEC-014.md`; direct bounty, escort action lifecycle, and typed method-failure aftermath now remain deferred to `tickets/S147HTNMETDEC-015.md`.
+4. Full autonomous method trace was deferred to the now-archived `archive/tickets/S147HTNMETDEC-013.md`; report-backed bounty investigation later landed in `archive/tickets/S147HTNMETDEC-014.md`; direct bounty, escort action lifecycle, and typed method-failure aftermath later landed through `archive/tickets/S147HTNMETDEC-015.md` and `archive/tickets/S147HTNMETDEC-016.md`.
 
 ## Landed Changes
 
@@ -72,7 +72,7 @@ No authored `scenarios/*.ron` fixture is required. The landed proof is a program
 - Adding new `PlannerOpKind` variants (would be a separate spec — first-ship uses only existing variants).
 - Per-method TTL/backoff tuning in `failure_handling.rs` (`archive/tickets/S147HTNMETDEC-002.md`'s moderate defaults are sufficient; tuning is future work).
 - Performance regression guards — S147 is not a performance-optimization spec; goldens cover correctness, not wall-clock metrics.
-- Full autonomous method-trace propagation from generated production candidates — deferred to the now-archived `archive/tickets/S147HTNMETDEC-013.md`; report-backed bounty investigation later landed in `archive/tickets/S147HTNMETDEC-014.md`; remaining direct-bounty, escort/failure, and typed method-failure narratives now live in `tickets/S147HTNMETDEC-015.md`.
+- Full autonomous method-trace propagation from generated production candidates — deferred to the now-archived `archive/tickets/S147HTNMETDEC-013.md`; report-backed bounty investigation later landed in `archive/tickets/S147HTNMETDEC-014.md`; remaining direct-bounty, escort/failure, and typed method-failure narratives later landed through `archive/tickets/S147HTNMETDEC-015.md` and `archive/tickets/S147HTNMETDEC-016.md`.
 
 ## Acceptance Result
 
@@ -111,11 +111,11 @@ Completed on 2026-05-17.
 
 - Added the first S147 HTN golden owner, `crates/worldwake-ai/tests/golden_htn_methods.rs`, with two scenario metadata blocks and four tests.
 - Regenerated golden inventory/index/detail/matrix docs for the added `golden_htn_methods.rs` coverage.
-- Created the now-archived `archive/tickets/S147HTNMETDEC-013.md` for the remaining autonomous method-trace propagation and original full-D10 narratives; after `archive/tickets/S147HTNMETDEC-014.md`, the remaining direct-bounty, escort/failure, and typed method-failure narratives now live in `tickets/S147HTNMETDEC-015.md`.
+- Created the now-archived `archive/tickets/S147HTNMETDEC-013.md` for the remaining autonomous method-trace propagation and original full-D10 narratives; after `archive/tickets/S147HTNMETDEC-014.md`, the remaining direct-bounty, escort/failure, and typed method-failure narratives later landed through `archive/tickets/S147HTNMETDEC-015.md` and `archive/tickets/S147HTNMETDEC-016.md`.
 
 ## Deviations
 
-- The original six-scenario D10 draft was narrowed. The live autonomous production probe fell back to flat planning even with known firewood source beliefs, while the direct selector proof selected `ProduceWithGather` when the `GoalOffer` carried the source place as evidence. This ticket therefore lands the stable selector/fallback golden seam and hands the candidate-evidence bridge plus full autonomous D10 coverage to the now-archived `archive/tickets/S147HTNMETDEC-013.md`; after `archive/tickets/S147HTNMETDEC-014.md`, remaining direct-bounty, escort/failure, and typed method-failure narratives now live in `tickets/S147HTNMETDEC-015.md`.
+- The original six-scenario D10 draft was narrowed. The live autonomous production probe fell back to flat planning even with known firewood source beliefs, while the direct selector proof selected `ProduceWithGather` when the `GoalOffer` carried the source place as evidence. This ticket therefore lands the stable selector/fallback golden seam and hands the candidate-evidence bridge plus full autonomous D10 coverage to the now-archived `archive/tickets/S147HTNMETDEC-013.md`; after `archive/tickets/S147HTNMETDEC-014.md`, remaining direct-bounty, escort/failure, and typed method-failure narratives later landed through `archive/tickets/S147HTNMETDEC-015.md` and `archive/tickets/S147HTNMETDEC-016.md`.
 - No authored `scenarios/*.ron` fixture landed; the proof uses a programmatic golden fixture to isolate the exact selector evidence and disabled-method profile boundary.
 - `./scripts/verify.sh` was not run for this ticket iteration. The completed proof used the focused golden binary, the golden inventory generator, the full `worldwake-ai` test suite, and CI-matching all-target workspace clippy. The harness still owns `./scripts/verify.sh` before final branch push.
 

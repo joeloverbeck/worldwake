@@ -67,7 +67,7 @@ pub struct MethodSchema {
 }
 
 // MethodPrecondition, SubgoalTemplate, MotiveBias, MethodFailureMode + 10
-// supporting enums per spec D1. See ../../specs/S147-htn-method-decomposition.md D1
+// supporting enums per spec D1. See ../../archive/specs/S147-htn-method-decomposition.md D1
 // for the full variant lists.
 ```
 
@@ -106,7 +106,7 @@ New focused tests in `method_schema.rs`:
 - `crates/worldwake-ai/src/htn/mod.rs` (new)
 - `crates/worldwake-ai/src/htn/method_schema.rs` (new)
 - `crates/worldwake-ai/src/lib.rs` (modify — add `pub mod htn;`)
-- `specs/S147-htn-method-decomposition.md` (modify — truth-sync D1 snippet to the landed `GoalPlanningBudget` import and no office-kind discriminator)
+- `archive/specs/S147-htn-method-decomposition.md` (modified — truth-sync D1 snippet to the landed `GoalPlanningBudget` import and no office-kind discriminator)
 
 ## Out of Scope
 

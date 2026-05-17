@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — adds `MethodSchemaId` newtype, `MotiveSourceDiscriminant`, and `GoalKindDiscriminant` mirror enums in `worldwake-core`. No runtime behavior change.
-**Deps**: spec `specs/S147-htn-method-decomposition.md` (D12 + MethodSchemaId sub-deliverable)
+**Deps**: spec `archive/specs/S147-htn-method-decomposition.md` (D12 + MethodSchemaId sub-deliverable)
 
 ## Problem
 
@@ -17,7 +17,7 @@ S147 introduces HTN method decomposition. Method definitions need to key biases 
 1. Before this ticket, `MotiveSource` existed as a payload-bearing enum in `crates/worldwake-core/src/motive_source.rs` with 7 variants (`NeedPressure { need }`, `Pain { wound }`, `OfficeDuty { office }`, `Loyalty { other }`, `Greed { opportunity }`, `Shame { reputation_record }`, `Revenge { violation }`). `MotiveSourceRef` lived in the same file. No `MotiveSourceDiscriminant` or `MotiveSourceVariantId` existed before this ticket.
 2. Before this ticket, `GoalKind` existed in `crates/worldwake-core/src/goal.rs` with 35 payload-bearing variants. No `GoalKindDiscriminant` existed before this ticket. The closest pre-existing analog was `GoalDispatchKey` (`crates/worldwake-ai/src/goal_dispatch_key.rs`), but it lives in ai (cannot serve as a core-side key) and carries dispatch-routing semantics rather than being a clean discriminant mirror.
 3. No `MethodSchemaId` existed before this ticket. The newtype added here is the first method identifier surface.
-4. Spec `specs/S147-htn-method-decomposition.md` D12 and the spec's Crates section call out `worldwake-core` as the residence for all three types and specifies derives (`Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize`) following the `BeliefStatusTag` precedent at `crates/worldwake-core/src/decision_event_payload.rs:231`.
+4. Spec `archive/specs/S147-htn-method-decomposition.md` D12 and the spec's Crates section call out `worldwake-core` as the residence for all three types and specifies derives (`Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize`) following the `BeliefStatusTag` precedent at `crates/worldwake-core/src/decision_event_payload.rs:231`.
 5. Sibling specs forward-reference these types: `specs/S148-portfolio-and-motive-backed-intentions.md:44` references `GoalKindDiscriminant`, `specs/S152-cognitive-archetypes-seeded-diversity.md:116-117` references `MethodSchemaId`. Both are downstream of this ticket and depend on its delivery; no shape negotiation with them is needed in this ticket.
 
 ## Architecture Check

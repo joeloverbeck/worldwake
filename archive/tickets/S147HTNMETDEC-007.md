@@ -63,7 +63,7 @@ Inline tests in `htn/selector.rs`:
 
 - `crates/worldwake-ai/src/htn/selector.rs` (new)
 - `crates/worldwake-ai/src/htn/mod.rs` (modified)
-- `specs/S147-htn-method-decomposition.md` (truth-synced selector signature and ranking formula)
+- `archive/specs/S147-htn-method-decomposition.md` (truth-synced selector signature and ranking formula)
 - `archive/tickets/S147HTNMETDEC-007.md` (truth-synced, closed out, and archived)
 
 ## Out of Scope

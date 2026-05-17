@@ -66,7 +66,7 @@ This ticket landed the direct-bounty and escort generated-candidate selector gol
 - `docs/generated/golden-scenario-details/htn-methods.md` (regenerated)
 - `docs/generated/golden-coverage-matrix.md` (regenerated)
 - `archive/tickets/S147HTNMETDEC-016.md` (new follow-up)
-- `specs/S147-htn-method-decomposition.md` (truth-sync)
+- `archive/specs/S147-htn-method-decomposition.md` (truth-sync)
 - `specs/IMPLEMENTATION-ORDER.md` (truth-sync)
 
 ## Out of Scope
