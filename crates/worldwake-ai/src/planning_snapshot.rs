@@ -3,17 +3,18 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDefId, AgentBeliefStore, ArtifactPostingProfile, BeliefConfidencePolicy,
-    BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory, BlockingFact, CombatProfile,
-    CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation, DisposalProfile,
-    DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, ExpectationStore,
-    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile,
-    LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
-    PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecordData, RecordedViolation,
-    ResourceSource, RoutePreference, RoutePreferenceProfile, SocialObservation, StockStoragePolicy,
-    SuccessionLaw, TellMemoryKey, TellProfile, TheftDispositionProfile, Tick, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile,
-    WashBasinState, WorkstationTag, Wound,
+    ActionDefId, AgentBeliefStore, AgentSchemaContextProfile, ArtifactPostingProfile,
+    BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory,
+    BlockingFact, CombatProfile, CommodityConsumableProfile, CommodityKind, ContentionGrant,
+    DemandObservation, DisposalProfile, DriveThresholds, EntityId, EntityKind,
+    EpistemicDispositionProfile, ExpectationStore, HomeostaticNeeds, InTransitOnEdge,
+    InstitutionalBeliefRead, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille,
+    PlaceTag, Quantity, RecipeId, RecordData, RecordedViolation, ResourceSource, RoutePreference,
+    RoutePreferenceProfile, SocialObservation, StockStoragePolicy, SuccessionLaw, TellMemoryKey,
+    TellProfile, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WashBasinState,
+    WorkstationTag, Wound,
 };
 use worldwake_sim::{BeliefRead, RuntimeBeliefView};
 
@@ -190,6 +191,7 @@ pub(crate) struct SnapshotProfiles {
     pub(crate) metabolism_profile: Option<MetabolismProfile>,
     pub(crate) disposal_profile: Option<DisposalProfile>,
     pub(crate) artifact_posting_profile: Option<ArtifactPostingProfile>,
+    pub(crate) agent_schema_context_profile: Option<AgentSchemaContextProfile>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -285,6 +287,7 @@ impl Default for SnapshotEntity {
                 metabolism_profile: None,
                 disposal_profile: None,
                 artifact_posting_profile: None,
+                agent_schema_context_profile: None,
             },
             facility: SnapshotFacility {
                 workstation_tag: None,
@@ -1110,6 +1113,7 @@ fn build_snapshot_entity(
     let metabolism_profile = view.metabolism_profile(entity);
     let disposal_profile = view.disposal_profile(entity);
     let artifact_posting_profile = view.artifact_posting_profile(entity);
+    let agent_schema_context_profile = view.agent_schema_context_profile(entity);
     let theft_disposition_profile = view.theft_disposition_profile(entity);
     let trade_disposition_profile = view.trade_disposition_profile(entity);
     let justice_disposition_profile = view.justice_disposition_profile(entity);
@@ -1183,6 +1187,7 @@ fn build_snapshot_entity(
             metabolism_profile,
             disposal_profile,
             artifact_posting_profile,
+            agent_schema_context_profile,
         },
         facility: SnapshotFacility {
             workstation_tag,

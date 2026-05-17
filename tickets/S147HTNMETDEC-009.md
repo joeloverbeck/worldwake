@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — extends `PlanAttemptTrace` with `method_trace` field, defines `MethodPlanAttemptTrace`, extends `PlanningMetrics` with `method_usage` aggregation. ~10 construction sites updated workspace-wide.
-**Deps**: 004 (MethodFailureMode), 008 (planner integration emits method_trace)
+**Deps**: `archive/tickets/S147HTNMETDEC-004.md` (MethodFailureMode), `archive/tickets/S147HTNMETDEC-008.md` (planner integration emits method_trace)
 
 ## Problem
 

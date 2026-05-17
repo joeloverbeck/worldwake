@@ -32,15 +32,16 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use worldwake_core::{
-    ActionDefId, ActionDomain, ArtifactPostingProfile, BelievedEntityState,
-    BelievedInstitutionalClaim, CombatProfile, CommodityKind, ContentionGrant, DemandObservation,
-    DisposalProfile, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MetabolismProfile, OfficeData,
-    PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus,
-    RecordData, ResourceSource, SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey,
-    TellProfile, TellTopic, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
-    load_per_unit, to_shared_belief_snapshot,
+    ActionDefId, ActionDomain, AgentSchemaContextProfile, ArtifactPostingProfile,
+    BelievedEntityState, BelievedInstitutionalClaim, CombatProfile, CommodityKind, ContentionGrant,
+    DemandObservation, DisposalProfile, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
+    InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits,
+    MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity,
+    RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource, SharedTellState,
+    SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
+    TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound, load_per_unit,
+    to_shared_belief_snapshot,
 };
 use worldwake_sim::belief_view::{BeliefStatus, BeliefValue};
 use worldwake_sim::{
@@ -1320,6 +1321,13 @@ impl ProfileBeliefView for PlanningState<'_> {
             .entities
             .get(&agent)
             .and_then(|snapshot| snapshot.profiles.artifact_posting_profile.clone())
+    }
+
+    fn agent_schema_context_profile(&self, agent: EntityId) -> Option<AgentSchemaContextProfile> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.profiles.agent_schema_context_profile.clone())
     }
 }
 
