@@ -5601,6 +5601,7 @@ mod tests {
             goal: GoalKey::from(GoalKind::Sleep),
             opportunity_anchor: OpportunityAnchor::None,
             outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 3 },
+            goal_budget: worldwake_core::GoalPlanningBudget::TRAVEL_PURCHASE,
             target_belief_presence: TargetBeliefPresence::NotApplicable,
             strategic_budget: None,
             strategic_plan: None,

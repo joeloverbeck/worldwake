@@ -1,6 +1,6 @@
 # S146GOASCHGOA-006: Per-goal budget application in search + `PlanAttemptTrace.goal_budget` provenance
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `search/mod.rs` reads per-goal budget from registry; `PlanAttemptTrace` gains provenance field (decision-trace layer)
@@ -32,98 +32,43 @@ S146 PR-17's per-goal budgets only matter at the search-dispatch boundary, where
 3. FND-12 (performance compresses computation, not causality): per-goal budget changes the planner's expansion budget for goals authored with deeper presets, but only when the agent's cognitive ceiling allows it. The compose-via-`min()` rule ensures world meaning never changes — only how deep the search explores.
 4. `AGENTS.md` determinism: no float, no `HashMap`. All budget values are integer-typed.
 
-## Verification Layers
+## Verified Layers
 
-1. `effective_budget` correctly clamps depth/expansions against `CognitiveProfile` ceiling → focused unit test in `search/mod.rs::#[cfg(test)]` covering each preset under default-8 ceiling and under elevated-24 ceiling
-2. `effective_budget.max_strategic_expansions` correctly composes via `strategic_budget_for_stages` → focused unit test asserting the composition formula
-3. `PlanAttemptTrace.goal_budget` records the applied budget at every construction site → decision-trace assertion in existing `agent_tick/planning.rs` tests (extend `consume_goal`-pattern tests starting line 2668)
-4. Existing trace tests (`repair_attempt_trace_roundtrips_through_bincode:2715`, etc.) continue to pass with new field — `Clone, Debug` derive already covers the field; no save-format bump needed because trace is not serialized
-5. AI-regression layer: runtime `agent_tick` decision-trace coverage (extended planning.rs inline tests). Local needs-only harness is sufficient for the unit-level budget composition; full action registries needed for the trace-population assertions.
+1. `effective_budget` depth and node-expansion clamping against `CognitiveProfile` ceiling is covered by `search::tests::per_goal_budget_caps_below_cognitive_ceiling` and `search::tests::per_goal_budget_used_at_elevated_cognitive_ceiling`.
+2. `effective_budget.max_strategic_expansions` composition against `ExecutionBudget::strategic_budget_for_stages` is covered by `search::tests::strategic_expansions_clamp_against_stage_count`.
+3. `PlanAttemptTrace.goal_budget` provenance is covered by `agent_tick::planning::tests::plan_search_trace_converts_two_phase_trace_metadata`.
+4. Shared `PlanAttemptTrace` constructor fallout is covered by `cargo test -p worldwake-ai`, `cargo test --workspace`, and CI-matching all-target clippy.
+5. `PlanAttemptTrace` remains a non-save trace model; no save-format bump was required.
 
-## What to Change
+## Landed Changes
 
 ### 1. `effective_budget` computation in `search/mod.rs`
 
-In the dispatch boundary that currently reads `cognitive.max_plan_depth` and `cognitive.max_node_expansions`:
+`search_plan_with_trace_metadata_and_source` now derives the schema preset from `GoalDispatchKey::from_goal_kind(...).declaration().planning_budget`, composes it with the agent cognitive ceiling, and applies the resulting `GoalPlanningBudget` to tactical search depth and node-expansion limits.
 
-```rust
-let goal_dispatch_key = GoalDispatchKey::from_goal_kind(&candidate.goal_kind);
-let goal_schema = registry.get(&goal_dispatch_key)
-    .expect("registry covers every GoalDispatchKey variant");
-let stage_count = candidate.prerequisite_stages.len();
-let effective_budget = GoalPlanningBudget {
-    max_depth: goal_schema.planning_budget.max_depth.min(cognitive.max_plan_depth),
-    max_node_expansions: goal_schema.planning_budget.max_node_expansions
-        .min(cognitive.max_node_expansions),
-    repair_budget_fraction: goal_schema.planning_budget.repair_budget_fraction,
-    max_strategic_expansions: goal_schema.planning_budget.max_strategic_expansions
-        .min(execution_budget.strategic_budget_for_stages(stage_count) as u16),
-};
-```
+### 2. Strategic budget cap integration
 
-Subsequent search dispatch reads `effective_budget.max_depth` and `effective_budget.max_node_expansions` instead of `cognitive.*` directly.
+`search/strategic.rs::plan_with_budget_trace` now accepts the schema-level `max_strategic_expansions` cap, records the stage count in `StrategicSearchResult`, and caps its stage-aware strategic loop with `min(schema cap, ExecutionBudget::strategic_budget_for_stages(stage_count))`.
 
-Likely site: search/mod.rs near current `cognitive.max_plan_depth`/`max_node_expansions` reads (named in Step 2 spot-checks but exact lines vary; confirm during implementation via `grep -n "max_plan_depth\|max_node_expansions" crates/worldwake-ai/src/search/mod.rs`).
+### 3. `PlanAttemptTrace.goal_budget`
 
-### 2. Add `goal_budget` field to `PlanAttemptTrace`
+`PlanAttemptTrace` now carries `goal_budget: GoalPlanningBudget`. The production conversion path in `agent_tick/planning.rs::plan_search_result_to_trace` copies the applied search metadata into the trace, while manual trace fixtures in AI diagnostics, survival forensics, golden harnesses, and observer tests were updated for the new shared shape.
 
-In `crates/worldwake-ai/src/decision_trace.rs:1157`:
+### 4. Focused tests
 
-```rust
-#[derive(Clone, Debug)]
-pub struct PlanAttemptTrace {
-    pub goal: GoalKey,
-    pub opportunity_anchor: OpportunityAnchor,
-    pub outcome: PlanSearchOutcome,
-    pub strategic_budget: Option<StrategicBudgetTrace>,
-    // ... existing remaining fields ...
-    /// Per-goal planning budget applied during this attempt — composed from
-    /// the goal's GoalSchema preset, the agent's CognitiveProfile ceiling,
-    /// and ExecutionBudget::strategic_budget_for_stages.
-    pub goal_budget: GoalPlanningBudget,
-}
-```
+Added three `search::tests` budget-composition tests and extended the existing two-phase trace conversion test to assert that `goal_budget` is preserved.
 
-### 3. Populate `goal_budget` at every PlanAttemptTrace construction site
+## Landed Files
 
-During implementation, run `rg 'PlanAttemptTrace\s*\{' crates/worldwake-ai/src/` to enumerate construction sites. Each site receives `goal_budget: effective_budget` (or the equivalent derived value at that call boundary). Sites that don't already have access to `effective_budget` are extended to receive it via parameter.
-
-### 4. Focused unit tests
-
-In `crates/worldwake-ai/src/search/mod.rs::#[cfg(test)]` (or a new `crates/worldwake-ai/src/search/budget_composition.rs` if the search module is large):
-
-```rust
-#[test]
-fn per_goal_budget_caps_below_cognitive_ceiling() {
-    let cognitive = CognitiveProfile { max_plan_depth: 8, max_node_expansions: 224, .. };
-    let presets = [
-        (GoalPlanningBudget::SELF_CARE, 6, 96),
-        (GoalPlanningBudget::TRAVEL_PURCHASE, 8, 224),  // depth 10 clamps to 8
-        (GoalPlanningBudget::PRODUCTION, 8, 224),       // depth 16 clamps to 8
-        (GoalPlanningBudget::INVESTIGATION, 8, 224),
-        (GoalPlanningBudget::BOUNTY_ESCORT, 8, 224),
-    ];
-    // assert each composes to (expected_depth, expected_expansions)
-}
-
-#[test]
-fn per_goal_budget_used_at_elevated_cognitive_ceiling() {
-    let cognitive = CognitiveProfile { max_plan_depth: 24, max_node_expansions: 768, .. };
-    // assert each preset composes to its preset values
-}
-
-#[test]
-fn strategic_expansions_clamp_against_stage_count() {
-    // assert min(preset.max_strategic_expansions, exec_budget.strategic_budget_for_stages(N))
-}
-```
-
-## Files to Touch
-
-- `crates/worldwake-ai/src/search/mod.rs` (modify — replace direct cognitive reads with `effective_budget` computation; thread the budget into search dispatch)
-- `crates/worldwake-ai/src/decision_trace.rs` (modify — add `goal_budget` field to `PlanAttemptTrace` at `:1157`)
-- `crates/worldwake-ai/src/agent_tick/planning.rs` (modify — every `PlanAttemptTrace` constructor populates `goal_budget` from the search-computed `effective_budget`; inline tests starting line 2602+ extended where they assert on attempt traces)
-- Likely: any other site that constructs `PlanAttemptTrace` — discover via `rg 'PlanAttemptTrace\s*\{' crates/worldwake-ai/src/`
+- `crates/worldwake-ai/src/search/mod.rs`
+- `crates/worldwake-ai/src/search/strategic.rs`
+- `crates/worldwake-ai/src/search/tests.rs`
+- `crates/worldwake-ai/src/decision_trace.rs`
+- `crates/worldwake-ai/src/agent_tick/planning.rs`
+- `crates/worldwake-ai/src/scenario_diagnostics/aggregator.rs`
+- `crates/worldwake-ai/src/survival_forensics.rs`
+- `crates/worldwake-ai/tests/golden_harness/survival_forensics_assertions.rs`
+- `crates/worldwake-cli/src/bin/observer.rs`
 
 ## Out of Scope
 
@@ -132,17 +77,17 @@ fn strategic_expansions_clamp_against_stage_count() {
 - Parity fixtures or new goldens — owned by ticket 007.
 - Per-agent `budget_overrides` from `AgentSchemaContextProfile` — the schema-level `planning_budget` is read in this ticket; the per-agent override path is a sibling feature deliberately deferred (no S146 ticket implements override reads yet; sub-spec or future ticket can add). Document this absence in Out of Scope so reviewers know it's intentional.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests Passed
 
-1. `per_goal_budget_caps_below_cognitive_ceiling()` — new unit test
-2. `per_goal_budget_used_at_elevated_cognitive_ceiling()` — new unit test
-3. `strategic_expansions_clamp_against_stage_count()` — new unit test
-4. Existing trace tests (`repair_attempt_trace_roundtrips_through_bincode:2715`, etc.) pass with the new field populated
+1. `per_goal_budget_caps_below_cognitive_ceiling()`
+2. `per_goal_budget_used_at_elevated_cognitive_ceiling()`
+3. `strategic_expansions_clamp_against_stage_count()`
+4. `agent_tick::planning::tests::plan_search_trace_converts_two_phase_trace_metadata`
 5. `cargo test -p worldwake-ai`
 6. `cargo test --workspace`
-7. Clippy clean: `cargo clippy --workspace --all-targets -- -D warnings`
+7. `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Invariants
 
@@ -153,17 +98,41 @@ fn strategic_expansions_clamp_against_stage_count() {
 5. No new save-format bump (PlanAttemptTrace is `Clone, Debug` only, not `Serialize/Deserialize`).
 6. `AGENTS.md` determinism: no `HashMap` or floats introduced.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
-1. `crates/worldwake-ai/src/search/mod.rs` `#[cfg(test)]` (or `search/budget_composition.rs` if new) — 3 unit tests per "Focused unit tests" above
-2. `crates/worldwake-ai/src/agent_tick/planning.rs` `#[cfg(test)]` — extend existing trace-assertion tests to cover `goal_budget` population
+1. `crates/worldwake-ai/src/search/tests.rs` — added three budget-composition unit tests.
+2. `crates/worldwake-ai/src/agent_tick/planning.rs` — extended two-phase trace metadata conversion coverage to assert `goal_budget`.
 
-### Commands
+### Commands Run
 
 1. `cargo test -p worldwake-ai per_goal_budget`
-2. `cargo test -p worldwake-ai`
-3. `cargo test --workspace`
-4. `cargo clippy --workspace --all-targets -- -D warnings`
-5. `scripts/verify.sh`
+2. `cargo test -p worldwake-ai strategic_expansions_clamp_against_stage_count`
+3. `cargo test -p worldwake-ai --lib agent_tick::planning::tests::plan_search_trace_converts_two_phase_trace_metadata -- --exact`
+4. `cargo test -p worldwake-ai`
+5. `cargo test --workspace`
+6. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-17.
+
+- Landed schema-driven per-goal budget application at the search boundary.
+- Recorded the applied effective budget on every `PlanAttemptTrace`.
+- Extended strategic-search budget tracing so the schema cap and stage-aware execution cap compose in one place.
+- Updated shared trace fixtures in diagnostics, observer, and golden helper code for the new trace shape.
+
+## Deviations
+
+- The implementation records `StrategicSearchResult.stages_count` from the live strategic planner instead of relying on a non-existent `candidate.prerequisite_stages` field from the ticket sketch.
+- `SearchTraceMetadata::default()` uses `GoalPlanningBudget::TRAVEL_PURCHASE` for test-only/manual fixture construction; production search metadata overwrites it with the computed effective budget before trace conversion.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai per_goal_budget`
+- Passed `cargo test -p worldwake-ai strategic_expansions_clamp_against_stage_count`
+- Passed `cargo test -p worldwake-ai --lib agent_tick::planning::tests::plan_search_trace_converts_two_phase_trace_metadata -- --exact`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

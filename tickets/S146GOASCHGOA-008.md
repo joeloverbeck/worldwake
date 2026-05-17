@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — observer-only rendering extension; `preset_name()` helper added to existing core type
-**Deps**: tickets/S146GOASCHGOA-006.md
+**Deps**: archive/tickets/S146GOASCHGOA-006.md
 
 ## Problem
 

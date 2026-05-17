@@ -2579,6 +2579,7 @@ pub(super) fn plan_search_result_to_trace(
         goal,
         opportunity_anchor,
         outcome,
+        goal_budget: trace_metadata.goal_budget,
         strategic_budget: trace_metadata.strategic_budget.clone(),
         strategic_plan: trace_metadata.strategic_plan.as_ref().map(|plan| {
             plan.steps
@@ -4544,6 +4545,7 @@ mod tests {
                     budget_used: 2,
                     exhausted: false,
                 }),
+                goal_budget: worldwake_core::GoalPlanningBudget::PRODUCTION,
                 planning_state_cache_counters: None,
                 tactical_goal: Some(
                     "AcquirePrerequisite { commodity: Firewood, destination: EntityId(55) }"
@@ -4558,6 +4560,10 @@ mod tests {
 
         assert_eq!(trace.landmarks_extracted, 3);
         assert_eq!(trace.landmark_orderings, 2);
+        assert_eq!(
+            trace.goal_budget,
+            worldwake_core::GoalPlanningBudget::PRODUCTION
+        );
         assert_eq!(
             trace
                 .strategic_budget

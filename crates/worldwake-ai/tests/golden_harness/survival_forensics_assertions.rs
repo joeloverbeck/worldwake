@@ -236,6 +236,7 @@ pub fn synthetic_planning_trace(
                     goal: selected_goal,
                     opportunity_anchor: OpportunityAnchor::None,
                     outcome: attempt_outcome,
+                    goal_budget: worldwake_core::GoalPlanningBudget::TRAVEL_PURCHASE,
                     strategic_budget: None,
                     strategic_plan: None,
                     tactical_goal: None,

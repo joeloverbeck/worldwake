@@ -28,8 +28,8 @@ use worldwake_core::{
     CommodityKind, ContentionGrant, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
     DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
     DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EventLog, ExecutionBudget,
-    HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, NoticeTopic, ObservationOmission,
+    GoalPlanningBudget, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, KnownRecipes,
+    LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, ObservationOmission,
     ObservationOmissionLog, OmissionReason, OpportunityAnchor, OpportunityKey, PatrolProfile,
     PatrolRoute, PerceptionSource, Permille, Place, PlaceTag, PortfolioSlotWeights,
     ProofRequirement, PrototypePlace, Quantity, RecipeId, RecordedViolation, ResourceSource,
@@ -102,6 +102,85 @@ fn execution_budget(reasoning: &ProfileFixture) -> ExecutionBudget {
         reasoning.max_prerequisite_locations,
         ExecutionBudget::default().preferred_operator_boost(),
     )
+}
+
+#[test]
+fn per_goal_budget_caps_below_cognitive_ceiling() {
+    let cognitive = CognitiveProfile {
+        max_plan_depth: 8,
+        max_node_expansions: 224,
+        ..CognitiveProfile::default()
+    };
+    let execution_budget = ExecutionBudget::default();
+
+    let cases = [
+        (GoalPlanningBudget::SELF_CARE, 6, 96),
+        (GoalPlanningBudget::TRAVEL_PURCHASE, 8, 224),
+        (GoalPlanningBudget::PRODUCTION, 8, 224),
+        (GoalPlanningBudget::INVESTIGATION, 8, 224),
+        (GoalPlanningBudget::BOUNTY_ESCORT, 8, 224),
+    ];
+
+    for (schema_budget, expected_depth, expected_expansions) in cases {
+        let effective =
+            super::compose_effective_goal_budget(schema_budget, &cognitive, execution_budget, 1);
+
+        assert_eq!(effective.max_depth, expected_depth);
+        assert_eq!(effective.max_node_expansions, expected_expansions);
+        assert_eq!(
+            effective.repair_budget_fraction,
+            schema_budget.repair_budget_fraction
+        );
+    }
+}
+
+#[test]
+fn per_goal_budget_used_at_elevated_cognitive_ceiling() {
+    let cognitive = CognitiveProfile {
+        max_plan_depth: 24,
+        max_node_expansions: 768,
+        ..CognitiveProfile::default()
+    };
+    let execution_budget = ExecutionBudget::default();
+
+    for schema_budget in [
+        GoalPlanningBudget::SELF_CARE,
+        GoalPlanningBudget::TRAVEL_PURCHASE,
+        GoalPlanningBudget::PRODUCTION,
+        GoalPlanningBudget::INVESTIGATION,
+        GoalPlanningBudget::BOUNTY_ESCORT,
+    ] {
+        let effective =
+            super::compose_effective_goal_budget(schema_budget, &cognitive, execution_budget, 1);
+
+        assert_eq!(effective.max_depth, schema_budget.max_depth);
+        assert_eq!(
+            effective.max_node_expansions,
+            schema_budget.max_node_expansions
+        );
+    }
+}
+
+#[test]
+fn strategic_expansions_clamp_against_stage_count() {
+    let cognitive = CognitiveProfile {
+        max_plan_depth: 24,
+        max_node_expansions: 768,
+        ..CognitiveProfile::default()
+    };
+    let execution_budget = ExecutionBudget::new(8, 3, 2);
+    let schema_budget = GoalPlanningBudget::BOUNTY_ESCORT;
+
+    let one_stage =
+        super::compose_effective_goal_budget(schema_budget, &cognitive, execution_budget, 1);
+    assert_eq!(one_stage.max_strategic_expansions, 6);
+
+    let many_stages =
+        super::compose_effective_goal_budget(schema_budget, &cognitive, execution_budget, 20);
+    assert_eq!(
+        many_stages.max_strategic_expansions,
+        schema_budget.max_strategic_expansions
+    );
 }
 
 fn candidate_search_context<'a>(

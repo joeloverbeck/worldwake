@@ -5,6 +5,7 @@ pub(crate) mod landmarks;
 pub(crate) mod strategic;
 mod transition;
 
+use crate::goal_schema::GoalDispatchKeySchemaExt;
 use crate::opportunity_compiler::PerceivedOpportunityIndex;
 use crate::{
     GoalKindPlannerExt, GoalOffer, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpSemantics,
@@ -43,21 +44,36 @@ use transition::build_successor;
 use transition::build_successor_detailed;
 use worldwake_core::{
     ActionDefId, BlockerMemory, CognitiveProfile, CommodityKind, EntityKind, ExecutionBudget,
-    OpportunityKey, Tick,
+    GoalDispatchKey, GoalKind, GoalPlanningBudget, OpportunityKey, Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, EconomicBeliefView, EntityBeliefView,
     InventoryBeliefView, RecipeRegistry, SpatialBeliefView, get_affordances_for_defs,
 };
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct SearchTraceMetadata {
     pub(crate) strategic_plan: Option<strategic::StrategicPlan>,
     pub(crate) strategic_budget: Option<crate::decision_trace::StrategicBudgetTrace>,
+    pub(crate) goal_budget: GoalPlanningBudget,
     pub(crate) planning_state_cache_counters: Option<PlanningStateCacheCounters>,
     pub(crate) tactical_goal: Option<String>,
     pub(crate) landmarks_extracted: u16,
     pub(crate) landmark_orderings: u16,
+}
+
+impl Default for SearchTraceMetadata {
+    fn default() -> Self {
+        Self {
+            strategic_plan: None,
+            strategic_budget: None,
+            goal_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
+            planning_state_cache_counters: None,
+            tactical_goal: None,
+            landmarks_extracted: 0,
+            landmark_orderings: 0,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -587,8 +603,20 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
     // Pre-compute goal-relevant action defs once — invariant across expansions.
     let relevant_defs = candidates::relevant_action_defs(goal, semantics_table);
 
-    let strategic_result =
-        strategic::plan_with_budget_trace(snapshot, goal, execution_budget, recipes);
+    let schema_budget = schema_budget_for_goal(&goal.key.kind);
+    let strategic_result = strategic::plan_with_budget_trace(
+        snapshot,
+        goal,
+        execution_budget,
+        schema_budget.max_strategic_expansions,
+        recipes,
+    );
+    let effective_budget = compose_effective_goal_budget(
+        schema_budget,
+        cognitive,
+        *execution_budget,
+        strategic_result.stages_count,
+    );
     let mut trace_state = SearchTraceMetadata {
         strategic_plan: strategic_result
             .plan
@@ -596,6 +624,7 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
             .filter(|plan| !plan.steps.is_empty())
             .cloned(),
         strategic_budget: strategic_result.budget_trace,
+        goal_budget: effective_budget,
         ..SearchTraceMetadata::default()
     };
     let first_strategic_step = strategic_result
@@ -622,7 +651,6 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
     frontier.push_regular(FrontierEntry::new(root));
     let mut landmark_set = LandmarkSet::empty();
     let mut expansions = 0u16;
-    let effective_budget = cognitive.max_node_expansions;
     let mut best_barrier: Option<PlannedPlan> = None;
 
     while let Some(node) = frontier.pop() {
@@ -650,10 +678,10 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
                 .as_ref()
                 .filter(|goal| !goal.progress_barrier_satisfied(&node.state))
         };
-        if node.steps.len() >= usize::from(cognitive.max_plan_depth) {
+        if node.steps.len() >= usize::from(effective_budget.max_depth) {
             continue;
         }
-        if expansions >= effective_budget {
+        if expansions >= effective_budget.max_node_expansions {
             trace_state.planning_state_cache_counters = Some(cache_counter_source.cache_counters());
             if let Some(ref mut meta) = trace_metadata {
                 **meta = trace_state.clone();
@@ -1103,6 +1131,32 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
     }
     PlanSearchResult::FrontierExhausted {
         expansions_used: expansions,
+    }
+}
+
+fn schema_budget_for_goal(goal: &GoalKind) -> GoalPlanningBudget {
+    GoalDispatchKey::from_goal_kind(goal)
+        .declaration()
+        .planning_budget
+}
+
+fn compose_effective_goal_budget(
+    schema_budget: GoalPlanningBudget,
+    cognitive: &CognitiveProfile,
+    execution_budget: ExecutionBudget,
+    strategic_stage_count: u16,
+) -> GoalPlanningBudget {
+    let strategic_expansion_ceiling =
+        execution_budget.strategic_budget_for_stages(usize::from(strategic_stage_count));
+    GoalPlanningBudget {
+        max_depth: schema_budget.max_depth.min(cognitive.max_plan_depth),
+        max_node_expansions: schema_budget
+            .max_node_expansions
+            .min(cognitive.max_node_expansions),
+        repair_budget_fraction: schema_budget.repair_budget_fraction,
+        max_strategic_expansions: schema_budget
+            .max_strategic_expansions
+            .min(u16::try_from(strategic_expansion_ceiling).unwrap_or(u16::MAX)),
     }
 }
 
