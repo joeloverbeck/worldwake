@@ -6,15 +6,17 @@
 
 Folds in PR-7 (SourceReliabilityMemory for testimony) and PR-8 (RoutePreference; HabitMemory scope-down) from `reports/ai-architecture-improvements.md`.
 
-The current `ReliabilityRecord` in `crates/worldwake-core/src/experience.rs` is narrow: it tracks `successful_acquisitions`, `failed_attempts`, `average_wait_ticks`, `wait_observation_count`, `last_available_quantity` keyed by `(commodity, purpose)` — i.e. only commodity-extraction reliability per S131/S133. It does not track testimony reliability (whether a witness was right about route hazards), accusation credibility (whether a prior accuser's claim panned out), or rumor reliability (whether reported events actually occurred).
+The current `ReliabilityRecord` in `crates/worldwake-core/src/experience.rs:77-95` is narrow: it tracks `successful_acquisitions`, `failed_attempts`, `last_attempt_tick`, `average_wait_ticks`, `wait_observation_count`, `last_observed_capacity`, and `last_observed_capacity_tick`, keyed by `SourceKey { entity: EntityId, commodity: CommodityKind }` — i.e. only commodity-extraction reliability per S131/S133. It does not track testimony reliability (whether a witness was right about route hazards), accusation credibility (whether a prior accuser's claim panned out), or rumor reliability (whether reported events actually occurred).
 
-The current `route_threat.rs` estimates dynamic route danger from witnessed/believed threats but does not track per-agent learned route preferences (which routes the agent has personally found safe vs. dangerous over time, independent of currently-active threats).
+The current `crates/worldwake-ai/src/route_threat.rs` estimates dynamic route danger from witnessed/believed threats (`route_threat_estimate_from_memory`, `perceived_direct_travel_cost_from_memory`) but does not track per-agent learned route preferences (which routes the agent has personally found safe vs. dangerous over time, independent of currently-active threats).
 
 S151 lands two new per-agent learned-state stores:
 
-1. **`TestimonyReliability`** keyed by `(EntityId, TopicScope)`: tracks per-witness reliability for each topic category. When a witness reports something and the agent later confirms it (true or false), the record updates. Used to dampen ranking on testimony from unreliable sources and to boost candidate emission from reliable ones. Enables Scenario G (false rumor → wrongful accusation → correction) by giving agents a concrete record of who has been right or wrong before.
+1. **`TestimonyReliability`** keyed by `(source: EntityId, topic: TopicScope)`: tracks per-witness reliability for each topic category. When a witness reports something and the agent later confirms it (true or false), the record updates. Used to dampen ranking on testimony from unreliable sources and to suppress candidate emission from sources well below trust threshold. Enables Scenario G (false rumor → wrongful accusation → correction) by giving agents a concrete record of who has been right or wrong before.
 
-2. **`RoutePreference`** keyed by `RouteSegment` (shared with S150): tracks per-segment safe-traversal count, dangerous-traversal count, and the last witnessed danger event. Used to bias travel candidates toward known-safe routes and away from known-dangerous ones, independent of currently-active threat beliefs.
+2. **`RoutePreference`** keyed by `RouteSegment` (shared with archived S150, `crates/worldwake-core/src/blocker_scope.rs:67-81`): tracks per-segment safe-traversal count, dangerous-traversal count, and the last witnessed danger event. Used to bias travel-cost estimation toward known-safe routes and away from known-dangerous ones, independent of currently-active threat beliefs.
+
+Both stores live as fields on the existing `AgentDecisionRuntime` struct (`crates/worldwake-ai/src/decision_runtime.rs:153`), alongside `agenda_state` and `exhaustion_cache` — they are runtime-only AI state, not ECS components.
 
 `HabitMemory` (the assessment's broader proposal — preferred goal-schema / method / place per trigger) is **deferred** until a specific habit-relevant pathology surfaces in S144 diagnostics. The scope-down rationale: per-method habit learning has no concrete failure scenario today; the existing `LearnedOpportunityMemory` (S109) and `DiversificationProfile` (S107) cover the present needs. If S144 reports method-thrash patterns, a follow-up spec lands HabitMemory.
 
@@ -24,47 +26,51 @@ Phase 12: AI Architecture Evolution — Draft
 
 ## Crates
 
-- `worldwake-ai` — owns `TestimonyReliability` and `RoutePreference` runtime structures; updates ranking and candidate-generation paths to consume them.
-- `worldwake-core` — exposes `TopicScope`, `TestimonyReliabilityKey`, `RoutePreferenceEntry` types.
-- `worldwake-sim` — no change.
+- `worldwake-ai` — owns `TestimonyReliability` and `RoutePreference` runtime structures on `AgentDecisionRuntime`; updates ranking damping, candidate-emission suppression, and travel-cost paths to consume them; owns the new `TestimonyOmissionReason` enum on `decision_trace.rs`.
+- `worldwake-core` — exposes `TopicScope`, `TestimonyReliabilityKey`, `TestimonyReliabilityEntry`, `RoutePreferenceEntry`, `TestimonyTrustProfile`, `RoutePreferenceProfile`, `TestimonyTrustSummary`, `RoutePreferenceSummary`, and the `belief_topic_to_topic_scope` mapping function.
+- `worldwake-sim` — extends `GoalBeliefView` with accessor methods for the two new universal profiles; provides the `RuntimeBeliefView` impl and the `impl_goal_belief_view!` macro forwarding; bumps `SAVE_FORMAT_VERSION` for the new runtime fields.
 - `worldwake-systems` — no change.
-- `worldwake-cli` — observer renders reliability and preference snapshots; S144 diagnostics aggregate reliability changes.
+- `worldwake-cli` — observer renders reliability and preference snapshots from decision-history payloads; `AgentDef` and `spawn_agent()` set the two new universal profiles; S144 diagnostics aggregate reliability changes.
 
 ## Dependencies
 
-- S109 (Typed Discrepancy Taxonomy, archived) — `Discrepancy::BeliefStale` and `Discrepancy::BeliefContradicted` carry the substrate that surfaces "this source was wrong before."
+- S109 (Typed Discrepancy Taxonomy, archived) — `Discrepancy::BeliefStale` and `Discrepancy::BeliefContradicted` (`crates/worldwake-core/src/discrepancy.rs:11,13`) participate in stale/contradiction observation paths that feed reliability updates.
 - S131 (Source Reliability Wait/Capacity, archived) and S133 (Source Composite Tiebreaker, archived) — provide the precedent for per-source learned state and `ReliabilityRecord` shape.
-- S139 (AskWitness Goal Layer, archived) — provides the testimony-acquisition path that feeds testimony-reliability updates.
+- S139 (AskWitness Goal Layer, archived) — provides the testimony-acquisition path (`GoalKind::AskWitness { witness: EntityId, topic: TellTopic }` at `crates/worldwake-core/src/goal.rs:145-148`) that feeds testimony-reliability updates.
 - S150 (Cross-Goal Blocker Scoping, archived at `archive/specs/S150-cross-goal-blocker-scoping.md`) — `RouteSegment` newtype shared; route preferences and route blockers compose (blockers say "currently bad," preferences say "historically [un]safe").
 - S130 (Survey Records and Frontier Disconfirmation, archived) — provides confirmation-event substrate for testimony validation.
+- S136 (Decision Event Payload Extension, archived) — provides the always-on `DecisionEventPayload` infrastructure and the precedent for embedding summary types (e.g., `BeliefSnapshot` at `crates/worldwake-core/src/decision_event_payload.rs:250-254`).
+- S144 (Aggregate Scenario Diagnostics, archived) — provides the `ScenarioDiagnosticsReport.belief` substruct (`crates/worldwake-ai/src/scenario_diagnostics/mod.rs:57-64`) the new fields extend.
 
 ## Design Goals
 
 1. **Two narrow stores, not one omnibus.** TestimonyReliability and RoutePreference are conceptually distinct and update through different paths.
-2. **Per-agent learned state, not world truth.** Both stores live on the agent's AI runtime; they reflect *what this agent has learned*, not authoritative reliability scores.
+2. **Per-agent learned state, not world truth.** Both stores live on the agent's AI runtime (`AgentDecisionRuntime`); they reflect *what this agent has learned*, not authoritative reliability scores.
 3. **Concrete update events.** Every update has an `EventId` provenance — what observation produced the trust adjustment.
 4. **Decay built in.** Both stores age out stale records per FND-22A.
-5. **Inspectable.** Observer surfaces top reliable and unreliable sources per agent; top-preferred and avoided routes.
-6. **Composable with existing systems.** Testimony reliability dampens AskWitness ranking; route preferences modify travel cost in route_threat.rs's existing infrastructure.
+5. **Inspectable.** Observer surfaces top reliable and unreliable sources per agent; top-preferred and avoided routes — via embedded payloads on existing always-on decision events (no new event tag).
+6. **Composable with existing systems.** Testimony reliability extends the existing AskWitness damping site (`apply_ask_witness_learned_damping` at `crates/worldwake-ai/src/ranking.rs:1494-1517`); route preferences add an additive modifier to `perceived_direct_travel_cost_from_memory` (`crates/worldwake-ai/src/route_threat.rs:187-212`).
 
 ## Non-Goals
 
 - **No HabitMemory.** Deferred per scope-down.
-- **No SellerReliabilityMemory.** S131/S133 already cover this for commodity extraction sources; testimony reliability does not duplicate.
+- **No `SourceReliabilityDiscount` generalization.** `crates/worldwake-ai/src/decision_trace.rs:694-700` already carries commodity-extraction reliability discounting (S131/S133); `TestimonyReliability` is a parallel structure for witness-claim reliability, not a generalization.
 - **No global reputation system.** Each agent has their own reliability view.
-- **No new event tag.** Updates flow through existing testimony-confirm and route-traversal events.
+- **No new event tag.** Updates flow through existing testimony-confirm and route-traversal events (`EventTag::ActionCommitted` with `ActionState::Travel` payload; `EventTag::Combat`, `Escalation`, `WildernessRelief` for threat observation during travel; belief overwrite sites in `crates/worldwake-core/src/belief.rs:129-150` and `163-193`).
 - **No automatic reliability propagation through gossip.** If agent A trusts witness W, A's friend B does not automatically trust W. (S139's existing ShareBelief substrate already lets agents share trust through testimony if a scenario authors it.)
+- **No new `Discrepancy` variant.** Testimony-source unreliability is a candidate-emission omission concern (per the Discrepancy-as-Failure-Attribution Surface pattern, option 1), not a typed plan-failure surface.
 
 ## FOUNDATIONS Alignment
 
 | Principle | How Satisfied |
 |-----------|---------------|
-| FND-3 (Concrete State Over Abstract Scores) | Both stores hold concrete counts and event references, not abstract trust scores; the `trust: Permille` field is a derived view per FND-27. |
-| FND-15 (Knowledge Is Acquired Locally and Travels Physically) | Updates come from local observation events (route traversal, testimony confirmation/refutation); no global truth read. |
-| FND-22A (Learning, Habits, and Preference Shifts Are Concrete State) | Both stores are explicit concrete state with accountable origin (`EventId`), scope (per-agent), and decay (`DecayPolicy`). |
-| FND-26 (Systems Interact Through State, Not Through Each Other) | Reliability and preference are consumed by ranking and candidate generation as state reads. |
-| FND-28 (No Backward Compatibility in Live Authority Paths) | The new stores live alongside existing `ReliabilityRecord`; the old (commodity-extraction) reliability path is unchanged in identity, not deprecated. |
-| FND-29 (Debuggability Is a Product Feature) | Observer surfaces both stores; S144 aggregates reliability-change counts and route-preference distributions. |
+| FND-3 (Concrete State Over Abstract Scores) | Both stores hold concrete counts and event references, not abstract trust scores; the `trust: Permille` and `preference: Permille` fields are derived views per FND-27. The new `TestimonyOmissionReason::SourceUnreliable { source, topic, trust, threshold }` carries concrete state for failure attribution. |
+| FND-15 (Knowledge Is Acquired Locally and Travels Physically) | Updates come from local observation events (route traversal, testimony confirmation/refutation via belief-store overwrites that read `PerceptionSource::Report { from: EntityId }` provenance at `crates/worldwake-core/src/belief.rs:2481-2486`); no global truth read. |
+| FND-22A (Learning, Habits, and Preference Shifts Are Concrete State) | Both stores are explicit concrete state with accountable origin (`EventId`), scope (per-agent on `AgentDecisionRuntime`), and decay (`stale_decay_per_tick`, `days_to_decay_observations`). |
+| FND-26 (Systems Interact Through State, Not Through Each Other) | New universal profiles are read by the AI crate through the existing `GoalBeliefView` accessor surface (`crates/worldwake-sim/src/belief_view.rs`); reliability and preference are consumed by ranking and candidate generation as state reads. |
+| FND-28 (No Backward Compatibility in Live Authority Paths) | The new stores live alongside existing `ReliabilityRecord`; the old (commodity-extraction) reliability path is unchanged in identity, not deprecated. `TestimonyOmissionReason` is net-new (no shim around a fictional `SuppressionReason`). |
+| FND-29 (Debuggability Is a Product Feature) | Observer surfaces both stores via embedded payload summaries on existing decision events; S144 aggregates reliability-change counts and route-preference distributions. |
+| FND-30 (Causal Hooks Declaration) | Section H below enumerates information path, dampeners, stored state, and (per item 10) the agent-local learning origin/scope/decay surface. |
 
 ## Deliverables
 
@@ -85,9 +91,37 @@ pub enum TopicScope {
 }
 ```
 
-Seven categories matching the assessment's "expertise tags" concept. Closed enum (extending requires a spec); per FND-22A "agent-local learned summaries are legal even when abstract — they are not world truth."
+Eight categories matching the assessment's "expertise tags" concept. Payload-free (`Copy`, `Hash`, `Ord`) so it is safe to use as a histogram key and a `BTreeMap` key per the Aggregation-key-fidelity rule. Closed enum (extending requires a spec); per FND-22A "agent-local learned summaries are legal even when abstract — they are not world truth."
 
-### D2: `TestimonyReliability` store
+### D2: `belief_topic_to_topic_scope` mapping function
+
+```rust
+// crates/worldwake-core/src/topic_scope.rs (alongside the enum)
+pub fn belief_topic_to_topic_scope(topic: &TellTopic) -> TopicScope {
+    match topic {
+        TellTopic::EntityBelief { subject: _ } => topic_scope_for_entity_aspect(/* aspect lookup */),
+        TellTopic::SocialObservation { observation } => topic_scope_for_social_observation(observation),
+        TellTopic::InstitutionalClaim { claim } => topic_scope_for_institutional_claim(claim),
+    }
+}
+```
+
+Because `TellTopic` (`crates/worldwake-core/src/belief.rs:1737`) is payload-bearing — its three variants carry `EntityId`, `SocialObservation`, and `InstitutionalClaim` — keying `TestimonyReliability` directly by `TellTopic` would fragment a per-witness histogram by subject identity, observation variant, and claim variant. The mapping function collapses the rich `TellTopic` carrier into the coarser payload-free `TopicScope` used as the reliability key.
+
+The internal helpers `topic_scope_for_entity_aspect`, `topic_scope_for_social_observation`, and `topic_scope_for_institutional_claim` are exhaustive matches over the existing `EntityBeliefAspect` (`crates/worldwake-core/src/entity_belief_claim.rs:17-32`), `SocialObservation`, and `InstitutionalClaim` (`crates/worldwake-core/src/institutional.rs:26`) enums. Example mappings:
+
+- `EntityBeliefAspect::Location` / `Holder` / `Activity` → `EntityWhereabouts`
+- `EntityBeliefAspect::Inventory(_)` / `ResourceAvailable(_)` → `ResourceAvailability`
+- `EntityBeliefAspect::Alive` / `Wounded` / `Courage` → `EntityWhereabouts`
+- `EntityBeliefAspect::WorkstationPresent` / `ContentionState` / `WashBasinState` → `ResourceAvailability`
+- `EntityBeliefAspect::Owner` / `Artifact` → `GeneralFact`
+- `EntityBeliefAspect::Evidence` → `AccusationCredibility`
+- `SocialObservation::*` referencing accusations → `AccusationCredibility`; referencing offices → `OfficeHolder`
+- `InstitutionalClaim::*` referencing bounties → `BountyValidity`; referencing office holders → `OfficeHolder`; otherwise → `GeneralFact`
+
+The exhaustive table is asserted by a workspace test that fails compilation if a new `EntityBeliefAspect`, `SocialObservation`, or `InstitutionalClaim` variant lands without an explicit mapping arm.
+
+### D3: `TestimonyReliability` runtime store
 
 ```rust
 // crates/worldwake-core/src/testimony_reliability.rs (new)
@@ -117,15 +151,15 @@ impl TestimonyReliabilityEntry {
 }
 ```
 
-`trust` is a derived view per FND-27 — it never lives as authoritative state. The provenance ring buffer is bounded (default 8 entries) to prevent unbounded growth.
+`TestimonyReliability` is stored as a new field on `AgentDecisionRuntime` (per D11). `trust` is a derived view per FND-27 — it never lives as authoritative state. The provenance ring buffer is bounded (default 8 entries) to prevent unbounded growth. The keying shape mirrors `ReliabilityRecord`'s precedent (`SourceKey { entity: EntityId, commodity: CommodityKind }`) — both are `(source-entity, topic-discriminator)` pairs.
 
-### D3: `RoutePreference` store
+### D4: `RoutePreference` runtime store
 
 ```rust
 // crates/worldwake-core/src/route_preference.rs (new)
 #[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
 pub struct RoutePreference {
-    entries: BTreeMap<RouteSegment, RoutePreferenceEntry>,    // RouteSegment from S150
+    entries: BTreeMap<RouteSegment, RoutePreferenceEntry>,    // RouteSegment from archived S150
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -142,9 +176,9 @@ impl RoutePreferenceEntry {
 }
 ```
 
-`preference` is derived. Higher = more preferred.
+`RouteSegment` is the canonical-form struct `{ from: EntityId, to: EntityId }` from `crates/worldwake-core/src/blocker_scope.rs:67-81`; its `.new(from, to)` constructor normalizes endpoint order so `RoutePreference` is direction-independent. `RoutePreference` is stored as a new field on `AgentDecisionRuntime` (per D11). `preference` is derived. Higher = more preferred.
 
-### D4: `TestimonyTrustProfile` (universal)
+### D5: `TestimonyTrustProfile` (universal)
 
 ```rust
 // crates/worldwake-core/src/testimony_trust_profile.rs (new)
@@ -155,6 +189,7 @@ pub struct TestimonyTrustProfile {
     pub stale_decay_per_tick: Permille,      // default 1 (slow decay)
     pub contradicted_penalty: Permille,      // default 350
     pub minimum_observations: u8,            // default 2 (below threshold → no derived trust signal)
+    pub trust_threshold: Permille,           // default 400 (below → emission suppressed)
     pub topic_weight_route_hazard: Permille,
     pub topic_weight_resource_availability: Permille,
     pub topic_weight_office_holder: Permille,
@@ -168,11 +203,12 @@ pub struct TestimonyTrustProfile {
 impl Default for TestimonyTrustProfile { fn default() -> Self { /* see field defaults */ } }
 ```
 
-Per-agent topic weights enable "officialist" / "gullible" / "empiricist" variation per the assessment's archetype hints (S152 substrate).
+Universal per FND-22A — registered on `EntityKind::Agent` with default impl. Per-agent topic weights enable "officialist" / "gullible" / "empiricist" variation per the assessment's archetype hints (S152 substrate).
 
-### D5: `RoutePreferenceProfile` (universal)
+### D6: `RoutePreferenceProfile` (universal)
 
 ```rust
+// crates/worldwake-core/src/route_preference_profile.rs (new)
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RoutePreferenceProfile {
     pub safe_traversal_weight: Permille,        // default 200
@@ -180,43 +216,76 @@ pub struct RoutePreferenceProfile {
     pub days_to_decay_observations: u32,        // default 30 (in tick days)
     pub minimum_traversals: u8,                 // default 2
 }
+
+impl Default for RoutePreferenceProfile { fn default() -> Self { /* see field defaults */ } }
 ```
 
-### D6: Update paths
+Universal per FND-22A — registered on `EntityKind::Agent` with default impl.
 
-**Testimony reliability updates** fire from:
+### D7: Update paths (explicit hook sites)
 
-- **AskWitness commit + later belief confirmation**: when S139's AskWitness produces a belief, and a subsequent direct observation or trusted-source observation confirms or refutes the original testimony, `direct_confirmations` or `direct_refutations` increments. The confirming observation's `EventId` enters `provenance_events`.
-- **Stale claim observation**: when a belief from witness W expires through age and is replaced by a fresh observation (direct or otherwise), `stale_claims` increments. The agent learns that W's claims age fast.
-- **Contradiction observation**: when two simultaneous claims about the same topic conflict and the agent picks one, the loser's source gets `contradicted_claims` incremented.
+S151 introduces **no new event tag**. Updates fire from existing event-log emissions and existing belief-store overwrite sites:
 
-**Route preference updates** fire from:
+**Testimony reliability updates** fire from a new observation-phase hook in the AI tick (likely a sibling of the existing perception-import phase, residing in `crates/worldwake-ai/src/agent_tick/` and reading `AgentDecisionRuntime.dirty` + the current tick's perception diff):
 
-- **Safe traversal**: when an agent completes a `TravelTo` action across `RouteSegment(A, B)` without taking damage or witnessing threats, `safe_traversals` increments and `last_safe_tick = current_tick`.
-- **Dangerous traversal**: when a `TravelTo` is interrupted by an ambush, hazard observation, or wound event, `dangerous_traversals` increments and `last_dangerous_tick = current_tick`. The `EventId` of the dangerous event enters `last_traversal_event`.
+- **AskWitness commit + later belief confirmation**: When S139's AskWitness produces a `Report { from: EntityId, chain_len }` claim (per `crates/worldwake-core/src/belief.rs:2481-2486` `PerceptionSource`), and a subsequent direct observation overwrites that claim via `import_entity_snapshot()` (`crates/worldwake-core/src/belief.rs:163-193`), the hook compares the prior claim's value against the new direct observation. Match → `direct_confirmations += 1`; mismatch → `direct_refutations += 1`. The confirming/refuting observation's `EventId` enters `provenance_events`. The mapping from claim's `TellTopic` / aspect to `TopicScope` flows through D2's `belief_topic_to_topic_scope`.
+- **Stale claim observation**: When `refute_entity_claims()` (`crates/worldwake-core/src/belief.rs:129-150`) clears a stale claim whose `PerceptionSource` was a `Report { from: witness }`, the hook increments `stale_claims` for `(witness, mapped_topic)`.
+- **Contradiction observation**: When two simultaneous Reports about the same `(subject, aspect)` conflict and the agent picks one (per S109's `Discrepancy::BeliefContradicted` emission path), the loser's witness gets `contradicted_claims += 1` for the mapped topic.
+
+**Route preference updates** fire from a new post-action hook in the AI tick observation phase, reading `EventTag::ActionCommitted` entries from the current tick's event log and filtering for entries whose action is `TravelTo`:
+
+- **Safe traversal**: When a `TravelTo` action completes (commits to destination place) and no `EventTag::Combat`, `EventTag::Escalation`, `EventTag::WildernessRelief`, or `EventTag::Wound` (or successor) was observed against the traveling agent during the action's tick window, `safe_traversals += 1` and `last_safe_tick = current_tick` for the relevant `RouteSegment::new(from, to)`.
+- **Dangerous traversal**: When a `TravelTo` action commits or is interrupted, AND a threat-class event was observed against the traveler during the action's tick window, `dangerous_traversals += 1` and `last_dangerous_tick = current_tick`. The `EventId` of the dangerous event enters `last_traversal_event`.
 
 All updates are deterministic and tick-aligned.
 
-### D7: Consumer integration
+### D8: Consumer integration
 
 **Ranking damping** (`crates/worldwake-ai/src/ranking.rs`):
 
-- `AskWitness` candidates ranked against witnesses with `trust < threshold` receive damping proportional to `(threshold - trust)`.
-- `AcquireCommodity` candidates whose route traverses a `RouteSegment` with negative `preference` receive damping proportional to `-preference`.
+The existing `apply_ask_witness_learned_damping` function at lines 1494-1517 already implements the damping shape S151 needs (look up agent-local memory, apply Permille damping factor, record via `CandidateDampingEntry`). S151 extends this site:
 
-**Candidate emission** (S146 extractors):
+1. Within `apply_ask_witness_learned_damping`, additionally consult `TestimonyReliability` for the AskWitness candidate's `witness` entity and the topic mapped from `AskWitness.topic` via D2.
+2. If the derived `trust` is below `TestimonyTrustProfile.trust_threshold` but above any hard-suppression floor (handled separately at emission per below), apply damping proportional to `(trust_threshold - trust)`.
+3. Record the damping via a new `CandidateDampingReason::TestimonySourceUnreliable { source: EntityId, topic: TopicScope, trust: Permille, threshold: Permille }` variant added to the existing enum at `crates/worldwake-ai/src/decision_trace.rs:416`.
 
-- Testimony-derived candidates from sources with very low trust (below `minimum_observations` threshold = no signal; below trust threshold = suppressed) are emitted with `SuppressionReason::SourceUnreliable` and dropped pre-rank.
+**Candidate emission suppression** (S146 extractors, primarily `extract_ask_witness_candidates` at `crates/worldwake-ai/src/candidate_generation.rs:2877-3045`):
 
-**Travel cost** (`route_threat.rs`):
-
-- `route_traversal_cost` returns an additive modifier from `RoutePreferenceEntry.preference()`. Existing threat estimation continues to dominate near-term hazards; route preferences add a learned bias on top.
-
-### D8: Decision-history surface
-
-Two new payload variants on always-on decision events (S136 substrate):
+For testimony-derived candidates from sources well below threshold (specifically: `TestimonyReliabilityEntry.observations >= minimum_observations` AND `trust < trust_threshold * suppression_floor_factor`), the extractor suppresses emission outright and records the reason through a new domain-specific omission enum:
 
 ```rust
+// crates/worldwake-ai/src/decision_trace.rs (new, parallel to PoliticalCandidateOmissionReason at line 545)
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum TestimonyOmissionReason {
+    SourceUnreliable {
+        source: EntityId,
+        topic: TopicScope,
+        trust: Permille,
+        threshold: Permille,
+    },
+}
+```
+
+This mirrors the three existing domain-omission enums (`PoliticalCandidateOmissionReason`, `BanditCandidateOmissionReason`, `ViolationDetectionOmissionReason`). The omission entry is recorded via the existing diagnostic surface attached to `extract_ask_witness_candidates`'s `CandidateGenerationDiagnostics`.
+
+Sources with `observations < minimum_observations` produce no signal (neither damping nor suppression — they pass through unchanged).
+
+**Travel cost** (`crates/worldwake-ai/src/route_threat.rs:187-212`):
+
+`perceived_direct_travel_cost_from_memory` returns `u32` ticks adjusted by a threat penalty. S151 extends it with a `RoutePreference` lookup AFTER the threat penalty is computed:
+
+1. Look up the segment in `RoutePreference.entries` (the segment is constructed canonically from `(edge_from, edge_to)` via `RouteSegment::new`).
+2. Compute `preference: Permille` via `RoutePreferenceEntry::preference(profile)`.
+3. Apply preference as an additive cost adjustment: positive preference (more safe traversals than dangerous) reduces cost by `base_ticks * preference / 1000`; negative preference (preference value below the neutral midpoint) increases cost proportionally.
+4. The function signature gains a `route_preference: Option<&RoutePreference>` parameter and a `route_preference_profile: Option<&RoutePreferenceProfile>` parameter, both threaded from the caller through the planner's existing belief-view surface. Existing threat estimation continues to dominate near-term hazards; route preferences add a learned bias on top.
+
+### D9: Decision-history surface
+
+Two new optional payload fields are embedded on existing always-on `DecisionEventPayload` variants (`crates/worldwake-core/src/decision_event_payload.rs:14-30`) — following the `BeliefSnapshot` precedent at lines 250-254. No new top-level variants on the enum.
+
+```rust
+// crates/worldwake-core/src/decision_event_payload.rs (new types)
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TestimonyTrustSummary {
     pub source: EntityId,
     pub topic: TopicScope,
@@ -224,6 +293,7 @@ pub struct TestimonyTrustSummary {
     pub observations: u32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RoutePreferenceSummary {
     pub segment: RouteSegment,
     pub preference: Permille,
@@ -232,89 +302,168 @@ pub struct RoutePreferenceSummary {
 }
 ```
 
-Observer Section 3b surfaces these when a goal commit involves testimony or route traversal.
+Embed targets:
 
-### D9: S144 diagnostics extension
+- `GoalCommittedPayload` (`decision_event_payload.rs:159-168`) gains `#[serde(default)] pub testimony_trust_context: Vec<TestimonyTrustSummary>` (for goals whose commit depends on one or more witness sources) and `#[serde(default)] pub route_preference_context: Vec<RoutePreferenceSummary>` (for goals whose plan crosses tracked route segments).
+- `GoalSuppressedPayload` gains `#[serde(default)] pub testimony_trust_context: Vec<TestimonyTrustSummary>` for the `TestimonyOmissionReason::SourceUnreliable` suppression path.
 
-`ScenarioDiagnosticsReport.belief`:
-- `source_reliability_changes_by_topic: BTreeMap<TopicScope, u64>` (existing field from S144's D1; this spec populates the data).
-- `route_preference_updates: u64` (new).
+`Vec` rather than `Option<_>` because a single goal commit may reference multiple witnesses or multiple segments. Both types are `Copy` (4-5 small fields each) and satisfy the existing `Eq/Hash/Ord/Serialize` derives on the parent payload structs.
 
-### D10: Golden coverage
+Observer Section 3b (Decision History, `crates/worldwake-cli/src/bin/observer.rs:932`) extends its existing `decision_payload_summary()` rendering at line 959 to surface the embedded contexts as continuation rows below the goal-commit / goal-suppressed table entries, following the multi-line continuation pattern already used for `GoalCommitted` motive sources (lines 962-971).
+
+### D10: S144 diagnostics extension
+
+Two **net-new** fields on `ScenarioDiagnosticsReport.belief` (`crates/worldwake-ai/src/scenario_diagnostics/mod.rs:57-64`):
+
+- `source_reliability_changes_by_topic: BTreeMap<TopicScope, u64>` — per-topic breakdown of testimony-reliability updates. Replaces the existing flat `source_reliability_changes: u64` (per FND-28, no shim — the flat field is removed, callers migrate to the map).
+- `route_preference_changes: u64` — total route-preference update count across all agents per scenario run. Mirrors the `source_reliability_changes` naming convention.
+
+The archived S144's D1 explicitly fold-rejected the by-topic breakdown until `TopicScope` landed (`archive/specs/S144-aggregate-scenario-diagnostics.md:141-142`); D1 lands the substrate, so D10 lands the field.
+
+The aggregator (`crates/worldwake-ai/src/scenario_diagnostics/aggregator.rs`) gains the corresponding update sites in the testimony / route observation paths.
+
+### D11: Component registration
+
+Both new universal components (`TestimonyTrustProfile` from D5, `RoutePreferenceProfile` from D6) are registered per `docs/spec-drafting-rules.md` Section 5:
+
+1. **`component_schema.rs` entries**: Two new entries in the `with_component_schema_entries!` macro (`crates/worldwake-core/src/component_schema.rs`), each with the 13-method registration cluster (`insert_*`, `get_*`, `set_*`, `clear_*`, etc.). Predicate: `|kind| kind == EntityKind::Agent`. Strategy: `txn_simple_set`. Mirrors the `MetabolismProfile` entry at lines 1382-1406.
+2. **`AgentDef` fields**: Two new fields in `AgentDef` at `crates/worldwake-cli/src/scenario/types.rs:572-654`, appended to the trailing universal-profile cluster (after `substitute_preferences`):
+   ```rust
+   #[serde(default)]
+   pub testimony_trust_profile: Option<TestimonyTrustProfile>,
+   #[serde(default)]
+   pub route_preference_profile: Option<RoutePreferenceProfile>,
+   ```
+   `#[serde(default)]` so existing scenario files continue to deserialize unchanged.
+3. **`spawn_agent()` setters**: Two new `set_component_*` calls in `crates/worldwake-cli/src/scenario/mod.rs:617-656` cluster, each using the universal `.unwrap_or_default()` pattern:
+   ```rust
+   txn.set_component_testimony_trust_profile(agent_id, agent_def.testimony_trust_profile.unwrap_or_default())?;
+   txn.set_component_route_preference_profile(agent_id, agent_def.route_preference_profile.unwrap_or_default())?;
+   ```
+
+Per the "New Component on EntityKind::Agent" pattern (worldwake-validation-patterns.md), both components are core-resident (D5/D6 define them in `worldwake-core/src/`), classified as universal, and have `Default` impls.
+
+`TestimonyReliability` and `RoutePreference` themselves are **not** ECS components — they are runtime-only state on `AgentDecisionRuntime` (`crates/worldwake-ai/src/decision_runtime.rs:153`). Two new fields are added to that struct:
+
+```rust
+pub testimony_reliability: TestimonyReliability,
+pub route_preference: RoutePreference,
+```
+
+Following the precedent of `agenda_state: AgendaState` and `exhaustion_cache: BTreeMap<OpportunityKey, ExhaustionEntry>` already on the struct.
+
+### D12: `GoalBeliefView` accessor surface
+
+Per the "New Component Read by AI Crate" pattern, the new universal profiles must be exposed via `GoalBeliefView` so the AI crate consumes them through the trait surface (not via direct ECS reads):
+
+1. **Trait extension** (`crates/worldwake-sim/src/belief_view.rs`): Two new accessor methods on `GoalBeliefView`:
+   ```rust
+   fn testimony_trust_profile(&self, agent: EntityId) -> &TestimonyTrustProfile;
+   fn route_preference_profile(&self, agent: EntityId) -> &RoutePreferenceProfile;
+   ```
+   Following the existing universal-profile accessor convention (e.g., `metabolism_profile`, `cognitive_profile`).
+2. **`RuntimeBeliefView` impl**: Backing implementation reads the component via the existing `get_component_*` accessors and `expect()` on known agents (per Section 5 universal-profile contract).
+3. **`impl_goal_belief_view!` macro / blanket impl**: Forwarding entry for each new method.
+
+Ranking (D8) and candidate emission (D8) consume the profiles through these accessors. `TestimonyReliability` and `RoutePreference` themselves are read directly from `AgentDecisionRuntime` (they live on the ai-crate runtime structure, not on the sim-crate belief view).
+
+### D13: SAVE_FORMAT_VERSION bump
+
+`crates/worldwake-sim/src/save_load.rs:6` `SAVE_FORMAT_VERSION` increments from `87` to `88` to cover:
+
+- New `TestimonyReliability` and `RoutePreference` fields on `AgentDecisionRuntime`.
+- New `testimony_trust_profile` and `route_preference_profile` components on `EntityKind::Agent`.
+- New `testimony_trust_context` and `route_preference_context` fields on `GoalCommittedPayload` and `GoalSuppressedPayload` (both `#[serde(default)]` so older saves deserialize cleanly into empty vecs).
+
+Save/load round-trip tests cover the new runtime fields per the existing pattern.
+
+### D14: Golden coverage
 
 `golden_testimony_reliability.rs`:
-- Witness reports stale route hazard → agent travels, observes no hazard → `direct_refutations` increments → next AskWitness on same source receives damped ranking.
+
+- Witness reports stale route hazard → agent travels, observes no hazard → `direct_refutations` increments → next AskWitness on same source receives damped ranking via `CandidateDampingReason::TestimonySourceUnreliable`.
 - Witness reports accurate threat → agent observes confirmed threat → `direct_confirmations` increments → next AskWitness on same source preferred.
-- False accusation by repeated unreliable source → subsequent accusation suppressed at minimum-observations threshold.
+- False accusation by repeated unreliable source → subsequent accusation suppressed at trust-threshold via `TestimonyOmissionReason::SourceUnreliable`, recorded in `CandidateGenerationDiagnostics`.
+- `belief_topic_to_topic_scope` exhaustive mapping unit tests.
 
 `golden_route_preferences.rs`:
-- Agent traverses route A→B safely 5 times → `preference` positive → travel cost reduced.
-- Agent ambushed on A→B → `dangerous_traversals` increments → travel cost increased.
+
+- Agent traverses route A→B safely 5 times → `preference` positive → `perceived_direct_travel_cost_from_memory` returns reduced cost.
+- Agent ambushed on A→B (threat events fire in TravelTo's tick window) → `dangerous_traversals` increments → travel cost increased.
 - Route preference decays after `days_to_decay_observations` → falls to neutral.
-- RoutePreference + RouteSegment blocker (S150) compose: blocker is hard suppression; preference is soft bias.
+- `RoutePreference` + `BlockerScope::RouteSegment` (S150) compose: blocker is hard suppression; preference is soft bias.
 
 ## FND-01 Section H Analysis
 
 ### Information-Path Analysis
 
-**Testimony reliability**: updates from AskWitness commit events, observation events that confirm/refute prior testimony, contradiction-detection events. All come through existing perception or testimony carriers per FND-15.
+**Testimony reliability**: updates fire from belief-store overwrite events (`refute_entity_claims`, `import_entity_snapshot` in `belief.rs`), and from `Discrepancy::BeliefContradicted` emission in the AI tick. All belief overwrites originate from local perception or testimony per FND-15 (`PerceptionSource::Report { from }` carries the witness identity). The `TellTopic → TopicScope` mapping (D2) collapses the rich belief topic carrier into the reliability key without losing the witness identity.
 
-**Route preferences**: updates from `TravelTo` action commit events (safe traversals) and threat-event observation (dangerous traversals). All come through existing event log.
+**Route preferences**: updates fire from `EventTag::ActionCommitted` entries (TravelTo action commits) and threat-class event observations (`Combat`, `Escalation`, `WildernessRelief`, `Wound`) within the TravelTo action's tick window. All come through the existing append-only event log.
 
 No global truth queried.
 
 ### Positive-Feedback Analysis
 
-Potential loop: agent distrusts witness → asks elsewhere → confirms / refutes → trust adjusts further. The loop is self-limiting because (a) each tick produces at most one trust update per source/topic, (b) the `minimum_observations` threshold prevents noisy single-observation flipping, (c) `stale_decay_per_tick` slowly relaxes trust toward neutral when sources go silent.
+**Trust spiral**: agent distrusts witness → asks elsewhere → confirms / refutes → trust adjusts further. Self-limiting because (a) each tick produces at most one trust update per `(source, topic)`, (b) the `minimum_observations` threshold prevents single-observation flipping, (c) `stale_decay_per_tick` slowly relaxes trust toward neutral when sources go silent.
 
-Potential loop on routes: agent prefers safe routes → routes get used more → if they remain safe, preference grows. The dampener is the actual world threat state — if a preferred route becomes dangerous, the next traversal records `dangerous_traversals`, and trust falls.
+**Route preference loop**: agent prefers safe routes → routes get used more → if they remain safe, preference grows. Dampened by the actual world threat state — if a preferred route becomes dangerous, the next traversal records `dangerous_traversals`, and preference falls.
 
 ### Concrete Dampeners
 
-- `stale_decay_per_tick` on testimony reliability.
+- `stale_decay_per_tick` on testimony reliability (FND-11 — physical decay process, not numeric clamp).
 - `days_to_decay_observations` on route preferences.
 - `minimum_observations` threshold prevents single-observation cascades.
+- `minimum_traversals` threshold prevents single-traversal route-preference cascades.
 - Actual world threat state — preference is biased toward, not entitled to, safety.
 
 ### Stored State vs. Derived Read-Model List
 
 **Stored state**:
-- `TestimonyReliability` (per-agent runtime AI state).
-- `RoutePreference` (per-agent runtime AI state).
-- `TestimonyTrustProfile` (universal agent component).
-- `RoutePreferenceProfile` (universal agent component).
+- `TestimonyReliability` (per-agent runtime AI state on `AgentDecisionRuntime`).
+- `RoutePreference` (per-agent runtime AI state on `AgentDecisionRuntime`).
+- `TestimonyTrustProfile` (universal ECS component on `EntityKind::Agent`).
+- `RoutePreferenceProfile` (universal ECS component on `EntityKind::Agent`).
+- `TestimonyOmissionReason` enum (failure-attribution data carried in `CandidateGenerationDiagnostics`).
+- `CandidateDampingReason::TestimonySourceUnreliable` (failure-attribution data carried in `CandidateDampingEntry`).
+- `TestimonyTrustSummary` / `RoutePreferenceSummary` payloads embedded in `GoalCommittedPayload` and `GoalSuppressedPayload`.
 
 **Derived read-model**:
-- `trust: Permille` per entry (derived).
-- `preference: Permille` per segment (derived).
+- `trust: Permille` per entry (derived from confirmation/refutation counts and topic weights).
+- `preference: Permille` per segment (derived from safe/dangerous traversal counts and decay).
+
+### Agent-Local Learning Provenance (FND-30 item 10)
+
+Every TestimonyReliability and RoutePreference update carries an `EventId` provenance entry, scoped to the per-agent `AgentDecisionRuntime`. Updates are revised by subsequent observation events; entries decay via `stale_decay_per_tick` and `days_to_decay_observations`. Both are summaries (not authoritative truth); the authoritative substrate is the underlying event log entries that produced each provenance reference.
 
 ## SystemFn Integration
 
-No new top-level `SystemFn`. Updates fire from existing tick-level event consumers in the AI runtime.
+No new top-level `SystemFn`. Updates fire from a new observation-phase hook inside the existing agent tick (D7), and reads happen inside existing ranking and travel-cost paths (D8). Component registration (D11) integrates via the existing `with_component_schema_entries!` macro and `spawn_agent()` setter pattern.
 
 ## Component Registration
 
-- **New universal components**: `TestimonyTrustProfile` and `RoutePreferenceProfile` on `EntityKind::Agent`. Default impls. Per `docs/spec-drafting-rules.md` Section 5.
-- **No role-specific components.**
-
-`TestimonyReliability` and `RoutePreference` are runtime-only AI state (not ECS components; live on `AgentAiState`).
+Covered by D11. Summary: two new universal components (`TestimonyTrustProfile`, `RoutePreferenceProfile`) on `EntityKind::Agent` with `Default` impls, `AgentDef` `Option<_>` fields with `#[serde(default)]`, and `spawn_agent()` `.unwrap_or_default()` setters. `TestimonyReliability` and `RoutePreference` are runtime-only AI state, not ECS components (exempt per Section 5).
 
 ## Cross-System Interactions
 
-- Reads existing testimony-confirmation events (AskWitness commit, observation confirmation, contradiction detection — all per S139 / S130).
-- Reads existing travel-completion and threat-observation events.
-- Writes derived trust/preference into ranking and candidate-generation paths.
+- The AI tick's new observation-phase hook (D7) reads belief-store overwrite events (`refute_entity_claims`, `import_entity_snapshot` in `crates/worldwake-core/src/belief.rs`) and tick-scoped event-log entries (`EventTag::ActionCommitted` for TravelTo, threat-class tags during the action's tick window).
+- Ranking (`crates/worldwake-ai/src/ranking.rs`) and candidate emission (`crates/worldwake-ai/src/candidate_generation.rs`) consume `TestimonyTrustProfile` and `RoutePreferenceProfile` through `GoalBeliefView` accessors (D12).
+- `crates/worldwake-ai/src/route_threat.rs` consumes `RoutePreference` and `RoutePreferenceProfile` through additional function parameters threaded by the planner caller (D8).
+- Observer (`crates/worldwake-cli/src/bin/observer.rs`) renders embedded payload contexts via the existing `decision_payload_summary()` path (D9).
+- S144 aggregator (`crates/worldwake-ai/src/scenario_diagnostics/aggregator.rs`) increments the new fields in response to the same update events D7 hooks.
 
-State-mediated per FND-26.
+State-mediated per FND-26. No new cross-system command channels.
 
 ## Profile-Driven Parameters
 
-All profile fields are `Permille` or `u32`/`u8` integer counts. No floats.
+All profile fields are `Permille` or `u32`/`u8` integer counts. No floats. `TestimonyTrustProfile` and `RoutePreferenceProfile` are both universal per FND-22A; per-agent variation enables archetype expression (S152 substrate).
 
 ## Test Plan
 
-- D10 golden coverage (3 + 4 = 7 scenarios).
+- D14 golden coverage (3 testimony + 4 route-preference + exhaustive mapping unit tests).
 - Determinism: same observation sequence → identical trust/preference values.
 - Decay tests: aging without new observations → entries decay toward neutral.
-- Save/load coverage for both runtime stores.
+- Save/load coverage for both runtime stores under bumped `SAVE_FORMAT_VERSION = 88`.
+- Component-registration tests via the existing `with_component_schema_entries!` test surface.
+- `GoalBeliefView` accessor tests verifying `RuntimeBeliefView` resolves the new profiles.
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
