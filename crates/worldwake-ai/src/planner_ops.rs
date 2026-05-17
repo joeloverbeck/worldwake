@@ -5,7 +5,8 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
-    ActionDefId, ActionDomain, BeliefClaimKey, EntityBeliefAspect, EntityId, SourceKey, Tick,
+    ActionDefId, ActionDomain, BeliefClaimKey, EntityBeliefAspect, EntityId, MethodSchemaId,
+    SourceKey, Tick,
 };
 use worldwake_sim::{ActionDef, ActionDefRegistry, ActionPayload, MaterializationTag};
 
@@ -401,6 +402,8 @@ pub struct PlannedPlan {
     pub goal: GoalKey,
     pub opportunity: worldwake_core::OpportunityKey,
     #[serde(default)]
+    pub method_id: Option<MethodSchemaId>,
+    #[serde(default)]
     pub committed_source: Option<SourceKey>,
     #[serde(default)]
     pub expectation_kind: Option<OpportunityExpectationKind>,
@@ -420,12 +423,19 @@ impl PlannedPlan {
         Self {
             goal,
             opportunity,
+            method_id: None,
             committed_source: None,
             expectation_kind: None,
             total_estimated_ticks: total_estimated_ticks(&steps),
             steps,
             terminal_kind,
         }
+    }
+
+    #[must_use]
+    pub fn with_method_id(mut self, method_id: Option<MethodSchemaId>) -> Self {
+        self.method_id = method_id;
+        self
     }
 
     #[must_use]

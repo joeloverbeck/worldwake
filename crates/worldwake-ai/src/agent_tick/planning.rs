@@ -762,7 +762,7 @@ pub(super) fn build_candidate_plans_with_sources(
             candidate_source,
             opportunity_index,
         );
-        let result = match result {
+        let mut result = match result {
             PlanSearchResult::Found(plan)
                 if plan.steps.first().is_some_and(|step| {
                     step.op_kind == crate::PlannerOpKind::Harvest
@@ -789,6 +789,12 @@ pub(super) fn build_candidate_plans_with_sources(
             }
             other => other,
         };
+        if let PlanSearchResult::Found(plan) = &mut result {
+            plan.method_id = trace_metadata
+                .method_trace
+                .as_ref()
+                .and_then(|trace| trace.method_id);
+        }
         let found_blocks_later_goals = match &result {
             PlanSearchResult::Found(plan) => found_plan_blocks_later_goals(plan),
             PlanSearchResult::Unsupported

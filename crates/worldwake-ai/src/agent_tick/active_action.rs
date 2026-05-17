@@ -319,6 +319,10 @@ pub(super) fn handle_current_step_failure(
             agent,
             goal_key,
             failed_step: step,
+            method_id: runtime
+                .current_plan
+                .as_ref()
+                .and_then(|plan| plan.method_id),
             execution_failure,
             belief_discrepancy,
             current_tick: tick,

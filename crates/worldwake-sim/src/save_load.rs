@@ -3,8 +3,8 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-/// S147 D6 adds `Discrepancy::MethodFailure`.
-pub const SAVE_FORMAT_VERSION: u32 = 89;
+/// S147 D10 persists selected HTN method provenance on active plans.
+pub const SAVE_FORMAT_VERSION: u32 = 90;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -1348,8 +1348,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_89_after_s147_method_failure_landing() {
-        assert_eq!(SAVE_FORMAT_VERSION, 89);
+    fn save_format_version_is_90_after_s147_method_plan_provenance_landing() {
+        assert_eq!(SAVE_FORMAT_VERSION, 90);
     }
 
     #[test]
@@ -1360,7 +1360,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 89);
+        assert_eq!(SAVE_FORMAT_VERSION, 90);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1951,11 +1951,11 @@ mod tests {
     }
 
     #[test]
-    fn load_rejects_pre_s147_version_88_without_migration_shim() {
+    fn load_rejects_pre_s147_method_plan_provenance_version_89_without_migration_shim() {
         let (state, _, _, _) = populated_state();
         let mut bytes = save_to_bytes(&state, None).unwrap();
         bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
-            .copy_from_slice(&88_u32.to_le_bytes());
+            .copy_from_slice(&89_u32.to_le_bytes());
 
         let error = load_from_bytes(&bytes).unwrap_err();
 
@@ -1964,7 +1964,7 @@ mod tests {
             SaveError::UnsupportedVersion {
                 found,
                 expected: SAVE_FORMAT_VERSION
-            } if found == 88
+            } if found == 89
         ));
     }
 

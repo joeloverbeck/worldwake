@@ -21,7 +21,9 @@ use worldwake_sim::RecipeDefinition;
 use worldwake_sim::{PerAgentBeliefView, ProfileBeliefView};
 
 const PRODUCE_WITH_GATHER: MethodSchemaId = MethodSchemaId(5);
+const FULFILL_BOUNTY_DIRECT: MethodSchemaId = MethodSchemaId(1);
 const FULFILL_BOUNTY_INVESTIGATION: MethodSchemaId = MethodSchemaId(2);
+const ESCORT_TO_HOME: MethodSchemaId = MethodSchemaId(12);
 const PRODUCE_METHODS: [MethodSchemaId; 3] =
     [MethodSchemaId(4), MethodSchemaId(5), MethodSchemaId(6)];
 
@@ -47,6 +49,13 @@ struct GeneratedProduceOfferObservation {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct GeneratedBountyOfferObservation {
+    selected_method: Option<MethodSchemaId>,
+    evidence_entities: BTreeSet<EntityId>,
+    evidence_places: BTreeSet<EntityId>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct GeneratedEscortOfferObservation {
     selected_method: Option<MethodSchemaId>,
     evidence_entities: BTreeSet<EntityId>,
     evidence_places: BTreeSet<EntityId>,
@@ -135,6 +144,12 @@ fn setup_htn_production_harness(
 }
 
 fn setup_htn_bounty_harness() -> (GoldenHarness, EntityId, EntityId) {
+    setup_htn_bounty_harness_with_reported_source(true)
+}
+
+fn setup_htn_bounty_harness_with_reported_source(
+    reported: bool,
+) -> (GoldenHarness, EntityId, EntityId) {
     let mut h = GoldenHarness::new(Seed([147; 32]));
     let hunter = seed_agent(
         &mut h.world,
@@ -207,13 +222,75 @@ fn setup_htn_bounty_harness() -> (GoldenHarness, EntityId, EntityId) {
         bounty
     };
 
-    let source = PerceptionSource::Report {
-        from: issuer,
-        chain_len: 0,
+    let source = if reported {
+        PerceptionSource::Report {
+            from: issuer,
+            chain_len: 0,
+        }
+    } else {
+        PerceptionSource::DirectObservation
     };
     seed_actor_world_beliefs(&mut h.world, &mut h.event_log, hunter, Tick(0), source);
     h.driver.enable_tracing();
     (h, hunter, bounty)
+}
+
+fn setup_htn_direct_bounty_harness() -> (GoldenHarness, EntityId, EntityId) {
+    setup_htn_bounty_harness_with_reported_source(false)
+}
+
+fn setup_htn_escort_harness() -> (GoldenHarness, EntityId, EntityId) {
+    let mut h = GoldenHarness::new(Seed([147; 32]));
+    let caretaker = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "HTN Caretaker",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let ward = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Wounded Ward",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        caretaker,
+        worldwake_core::PerceptionProfile {
+            observation_buffer_capacity: 64,
+            observation_budget: 24,
+            ..worldwake_core::PerceptionProfile::default()
+        },
+    );
+    set_agent_execution_budget(
+        &mut h.world,
+        &mut h.event_log,
+        caretaker,
+        worldwake_core::ExecutionBudget::default(),
+    );
+    set_schema_context_profile(&mut h, caretaker, BTreeSet::new());
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_wound_list(ward, stable_wound_list(700))
+            .expect("golden harness should wound the escortee");
+        commit_txn(txn, &mut h.event_log);
+    }
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        caretaker,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    h.driver.enable_tracing();
+    (h, caretaker, ward)
 }
 
 fn set_schema_context_profile(
@@ -386,6 +463,113 @@ fn observe_generated_bounty_offer() -> GeneratedBountyOfferObservation {
     .map(|method| method.id);
 
     GeneratedBountyOfferObservation {
+        selected_method,
+        evidence_entities: offer.evidence_entities,
+        evidence_places: offer.evidence_places,
+    }
+}
+
+fn observe_generated_direct_bounty_offer() -> GeneratedBountyOfferObservation {
+    let (h, hunter, bounty) = setup_htn_direct_bounty_harness();
+    observe_bounty_offer_from_harness(&h, hunter, bounty)
+}
+
+fn observe_bounty_offer_from_harness(
+    h: &GoldenHarness,
+    hunter: EntityId,
+    bounty: EntityId,
+) -> GeneratedBountyOfferObservation {
+    let belief_store = h
+        .world
+        .get_component_agent_belief_store(hunter)
+        .expect("hunter should have seeded bounty beliefs");
+    let view = PerAgentBeliefView::new(hunter, &h.world, belief_store);
+    let candidates = generate_candidates(
+        &view,
+        hunter,
+        &BlockerMemory::default(),
+        &h.recipes,
+        Tick(0),
+    );
+    let offer = candidates
+        .into_iter()
+        .find(|offer| offer.key.kind == GoalKind::FulfillBounty { bounty })
+        .expect("autonomous candidate generation should emit FulfillBounty");
+    let snapshot = build_planning_snapshot(
+        &view,
+        hunter,
+        &offer.evidence_entities,
+        &offer.evidence_places,
+        6,
+    );
+    let state = PlanningState::new(&snapshot);
+    let registry = build_method_registry();
+    let profile = state
+        .agent_schema_context_profile(hunter)
+        .unwrap_or_default();
+    let selected_method = select_method(
+        hunter,
+        &offer,
+        &registry,
+        &profile,
+        &state,
+        &offer.motive_sources,
+    )
+    .map(|method| method.id);
+
+    GeneratedBountyOfferObservation {
+        selected_method,
+        evidence_entities: offer.evidence_entities,
+        evidence_places: offer.evidence_places,
+    }
+}
+
+fn observe_generated_escort_offer() -> GeneratedEscortOfferObservation {
+    let (h, caretaker, ward) = setup_htn_escort_harness();
+    let belief_store = h
+        .world
+        .get_component_agent_belief_store(caretaker)
+        .expect("caretaker should have seeded escort beliefs");
+    let view = PerAgentBeliefView::new(caretaker, &h.world, belief_store);
+    let candidates = generate_candidates(
+        &view,
+        caretaker,
+        &BlockerMemory::default(),
+        &h.recipes,
+        Tick(0),
+    );
+    let offer = candidates
+        .into_iter()
+        .find(|offer| {
+            matches!(
+                offer.key.kind,
+                GoalKind::EscortToSafety { subject, .. } if subject == ward
+            )
+        })
+        .expect("autonomous candidate generation should emit EscortToSafety");
+    let snapshot = build_planning_snapshot(
+        &view,
+        caretaker,
+        &offer.evidence_entities,
+        &offer.evidence_places,
+        6,
+    );
+    let state = PlanningState::new(&snapshot);
+    let registry = build_method_registry();
+    let profile = state
+        .agent_schema_context_profile(caretaker)
+        .unwrap_or_default();
+    let selected_method = select_method(
+        caretaker,
+        &offer,
+        &registry,
+        &profile,
+        &state,
+        &offer.motive_sources,
+    )
+    .map(|method| method.id);
+
+    GeneratedEscortOfferObservation {
         selected_method,
         evidence_entities: offer.evidence_entities,
         evidence_places: offer.evidence_places,
@@ -626,6 +810,97 @@ fn generated_bounty_candidate_selects_fulfill_bounty_investigation() {
 fn generated_bounty_candidate_selector_replays_deterministically() {
     let first = observe_generated_bounty_offer();
     let second = observe_generated_bounty_offer();
+
+    assert_eq!(first, second);
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 436: S147 FulfillBountyDirect Method Selection
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Search, SocialArtifact, Combat
+// GoalKinds: FulfillBounty
+// ActionDomains: Social, Combat, Travel
+// Places: Village Square, Orchard Farm
+// Principles: 7, 14, 20, 26, 28, 29
+//
+// Setup: a hunter directly observes a posted bounty and its target-location
+//   evidence, so no witness-report precondition is available.
+// Proves: generated FulfillBounty candidate evidence can select
+//   FulfillBountyDirect through TargetLastSeenKnown without a hand-built offer.
+// Cross-system chain: direct bounty artifact belief -> generated FulfillBounty
+//   candidate evidence -> snapshot-backed MethodSelector -> selected direct
+//   method id.
+#[test]
+fn generated_direct_bounty_candidate_selects_fulfill_bounty_direct() {
+    let observation = observe_generated_direct_bounty_offer();
+
+    assert_eq!(
+        observation.selected_method,
+        Some(FULFILL_BOUNTY_DIRECT),
+        "direct bounty candidate should select FulfillBountyDirect: {observation:?}"
+    );
+    assert!(
+        !observation.evidence_entities.is_empty(),
+        "generated direct bounty candidate should carry bounty and target evidence: {observation:?}"
+    );
+    assert!(
+        observation.evidence_places.contains(&ORCHARD_FARM),
+        "generated direct bounty candidate should carry target-location evidence: {observation:?}"
+    );
+}
+
+#[test]
+fn generated_direct_bounty_candidate_selector_replays_deterministically() {
+    let first = observe_generated_direct_bounty_offer();
+    let second = observe_generated_direct_bounty_offer();
+
+    assert_eq!(first, second);
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 437: S147 EscortToHome Method Selection
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Search, Care, Travel
+// GoalKinds: EscortToSafety
+// ActionDomains: Care, Travel
+// Places: Village Square, Orchard Farm
+// Principles: 7, 14, 20, 22, 26, 28, 29
+//
+// Setup: a caretaker directly observes a wounded co-located ward and a
+//   reachable adjacent destination.
+// Proves: generated EscortToSafety candidate evidence reaches MethodSelector
+//   and selects EscortToHome through the escortee-location belief path.
+// Cross-system chain: local wound observation -> generated EscortToSafety
+//   candidate evidence -> snapshot-backed MethodSelector -> selected escort
+//   method id.
+#[test]
+fn generated_escort_candidate_selects_escort_to_home() {
+    let observation = observe_generated_escort_offer();
+
+    assert_eq!(
+        observation.selected_method,
+        Some(ESCORT_TO_HOME),
+        "escort candidate should select EscortToHome: {observation:?}"
+    );
+    assert!(
+        !observation.evidence_entities.is_empty(),
+        "generated escort candidate should carry escortee evidence: {observation:?}"
+    );
+    assert!(
+        observation
+            .evidence_places
+            .iter()
+            .any(|place| *place != VILLAGE_SQUARE),
+        "generated escort candidate should carry destination evidence: {observation:?}"
+    );
+}
+
+#[test]
+fn generated_escort_candidate_selector_replays_deterministically() {
+    let first = observe_generated_escort_offer();
+    let second = observe_generated_escort_offer();
 
     assert_eq!(first, second);
 }

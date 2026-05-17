@@ -22,6 +22,7 @@ pub struct PlanFailureContext<'a> {
     pub agent: EntityId,
     pub goal_key: GoalKey,
     pub failed_step: &'a PlannedStep,
+    pub method_id: Option<worldwake_core::MethodSchemaId>,
     pub execution_failure: Option<ExecutionFailure<'a>>,
     pub belief_discrepancy: Option<Discrepancy>,
     pub current_tick: Tick,
@@ -55,6 +56,7 @@ pub fn handle_plan_failure(
         context.agent,
         &context.goal_key,
         context.failed_step,
+        context.method_id,
         context.execution_failure,
         context.belief_discrepancy,
     );
@@ -86,6 +88,7 @@ pub(crate) fn classify_discrepancy(
     agent: EntityId,
     goal_key: &GoalKey,
     step: &PlannedStep,
+    method_id: Option<worldwake_core::MethodSchemaId>,
     execution_failure: Option<ExecutionFailure<'_>>,
     belief_discrepancy: Option<Discrepancy>,
 ) -> FailureClassification {
@@ -170,6 +173,16 @@ pub(crate) fn classify_discrepancy(
         execution_failure.and_then(|failure| map_execution_failure(failure, step))
     {
         return classification;
+    }
+
+    if let Some(method_id) = method_id {
+        return FailureClassification::Discrepancy(Discrepancy::MethodFailure(
+            worldwake_core::MethodFailureContext {
+                method_id,
+                kind: worldwake_core::MethodFailureKind::SubgoalUnachievable,
+                subgoal_index: None,
+            },
+        ));
     }
 
     FailureClassification::Discrepancy(Discrepancy::ImproperPlanningState)
@@ -2197,6 +2210,7 @@ mod tests {
                 agent,
                 goal_key: goal,
                 failed_step: &step,
+                method_id: None,
                 execution_failure: None,
                 belief_discrepancy: None,
                 current_tick: Tick(20),
@@ -2259,12 +2273,54 @@ mod tests {
         failed_step: &PlannedStep,
         execution_failure: Option<ExecutionFailure<'_>>,
     ) -> BlockingFact {
-        match classify_discrepancy(view, agent, goal_key, failed_step, execution_failure, None) {
+        match classify_discrepancy(
+            view,
+            agent,
+            goal_key,
+            failed_step,
+            None,
+            execution_failure,
+            None,
+        ) {
             FailureClassification::Blocker(fact) => fact,
             FailureClassification::Discrepancy(discrepancy) => {
                 panic!("expected blocker classification, got discrepancy {discrepancy:?}")
             }
         }
+    }
+
+    #[test]
+    fn method_selected_unclassified_failure_records_method_failure_discrepancy() {
+        let view = TestBeliefView::default();
+        let agent = entity(1);
+        let goal = GoalKey::from(GoalKind::Sleep);
+        let step = PlannedStep {
+            def_id: ActionDefId(12),
+            targets: Vec::new(),
+            target_place: None,
+            payload_override: None,
+            op_kind: PlannerOpKind::Sleep,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
+        };
+        let method_id = worldwake_core::MethodSchemaId(12);
+
+        let classification =
+            classify_discrepancy(&view, agent, &goal, &step, Some(method_id), None, None);
+
+        assert_eq!(
+            classification,
+            FailureClassification::Discrepancy(Discrepancy::MethodFailure(
+                worldwake_core::MethodFailureContext {
+                    method_id,
+                    kind: worldwake_core::MethodFailureKind::SubgoalUnachievable,
+                    subgoal_index: None,
+                }
+            ))
+        );
     }
 
     fn clear_resolved_blockers(
@@ -2312,6 +2368,7 @@ mod tests {
                 agent,
                 goal_key: goal,
                 failed_step: &step,
+                method_id: None,
                 execution_failure: Some(ExecutionFailure::Start(&ActionStartFailure {
                     tick: Tick(20),
                     actor: agent,
@@ -2366,6 +2423,7 @@ mod tests {
                 agent,
                 goal_key: goal,
                 failed_step: &step,
+                method_id: None,
                 execution_failure: None,
                 belief_discrepancy: None,
                 current_tick: Tick(20),
@@ -2427,6 +2485,7 @@ mod tests {
                 agent,
                 goal_key: goal,
                 failed_step: &step,
+                method_id: None,
                 execution_failure: Some(ExecutionFailure::Start(&ActionStartFailure {
                     tick: Tick(20),
                     actor: agent,
@@ -2486,6 +2545,7 @@ mod tests {
                 agent,
                 goal_key: goal,
                 failed_step: &step,
+                method_id: None,
                 execution_failure: None,
                 belief_discrepancy: super::exact_target_belief_discrepancy(&view, agent, &step),
                 current_tick: Tick(20),
@@ -2531,6 +2591,7 @@ mod tests {
                 agent,
                 goal_key: goal,
                 failed_step: &step,
+                method_id: None,
                 execution_failure: None,
                 belief_discrepancy: super::exact_target_belief_discrepancy(&view, agent, &step),
                 current_tick: Tick(20),
@@ -3467,6 +3528,7 @@ mod tests {
                 agent,
                 goal_key: goal,
                 failed_step: &step,
+                method_id: None,
                 execution_failure: Some(ExecutionFailure::Start(&start_failure)),
                 belief_discrepancy: None,
                 current_tick: Tick(20),
@@ -3736,6 +3798,7 @@ mod tests {
                 agent,
                 goal_key: goal,
                 failed_step: &step,
+                method_id: None,
                 execution_failure: Some(ExecutionFailure::Start(&start_failure)),
                 belief_discrepancy: None,
                 current_tick: Tick(20),

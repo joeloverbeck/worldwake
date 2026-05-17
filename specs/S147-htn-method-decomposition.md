@@ -509,7 +509,8 @@ The format follows the existing observer conventions: compact table columns for 
 - Landed first seam (`archive/tickets/S147HTNMETDEC-011.md`): `ProduceWithGather` selector proof from the actor belief view plus `GoalOffer` evidence places; method-disabled `ProduceCommodity` fallback to flat GOAP; deterministic replay for both observations.
 - Landed production bridge (`archive/tickets/S147HTNMETDEC-013.md`): generated `ProduceCommodity` candidates carry method-required source evidence, snapshot-backed method selection resolves recipe-input preconditions through the strategic planner's recipe registry, and autonomous `MethodPlanAttemptTrace` records `ProduceWithGather`.
 - Landed non-production bounty investigation seam (`archive/tickets/S147HTNMETDEC-014.md`): generated/report-backed `FulfillBounty` candidates select `FulfillBountyInvestigation`, and autonomous planning records the method trace.
-- Active remainder (`tickets/S147HTNMETDEC-015.md`): remaining `FulfillBountyDirect`, escort/failure, and typed `Discrepancy::MethodFailure(MethodFailureContext)` goldens now that the production and bounty-investigation evidence bridges are truthful.
+- Landed direct/escort and producer seam (`archive/tickets/S147HTNMETDEC-015.md`): generated/direct-observation `FulfillBounty` candidates select `FulfillBountyDirect`; generated escort candidates select `EscortToHome`; active plans persist selected method provenance; and otherwise-unclassified method-selected failures emit `Discrepancy::MethodFailure(MethodFailureContext)`.
+- Active remainder (`tickets/S147HTNMETDEC-016.md`): end-to-end or hybrid golden coverage for a live method-selected action/start/revalidation failure that observes the typed method-failure producer without fabricated traces.
 - Determinism remains required for each landed scenario via repeated fixed-seed observations asserted against `MethodPlanAttemptTrace` and decision-trace output.
 
 ### D11: `GoalSchema.methods` field
@@ -720,7 +721,7 @@ No floats.
 
 ## Test Plan
 
-- D10 golden coverage: first selector/fallback seam landed in `archive/tickets/S147HTNMETDEC-011.md`; autonomous production method trace propagation landed in `archive/tickets/S147HTNMETDEC-013.md`; report-backed bounty-investigation coverage landed in `archive/tickets/S147HTNMETDEC-014.md`; remaining direct-bounty, escort/failure, and typed method-failure narratives are owned by `tickets/S147HTNMETDEC-015.md`.
+- D10 golden coverage: first selector/fallback seam landed in `archive/tickets/S147HTNMETDEC-011.md`; autonomous production method trace propagation landed in `archive/tickets/S147HTNMETDEC-013.md`; report-backed bounty-investigation coverage landed in `archive/tickets/S147HTNMETDEC-014.md`; direct-bounty and escort selector coverage plus typed method-failure producer substrate landed in `archive/tickets/S147HTNMETDEC-015.md`; the remaining end-to-end method-failure golden is owned by `tickets/S147HTNMETDEC-016.md`.
 - D8 registry validation tests (5 invariants).
 - D11 `GoalSchema.methods` resolution tests.
 - D12 discriminant-mirror completeness tests.

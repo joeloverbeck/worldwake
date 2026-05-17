@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 193
+- Scenario blocks: 195
 - Contributing golden test files: 49
-- Associated tests: 236
+- Associated tests: 240
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -671,7 +671,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 431: S147 ProduceWithGather Method Selection
 
-- Source: `golden_htn_methods.rs:495`
+- Source: `golden_htn_methods.rs:668`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -684,7 +684,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 433: S147 Autonomous Produce Method Trace Propagation
 
-- Source: `golden_htn_methods.rs:531`
+- Source: `golden_htn_methods.rs:704`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -697,7 +697,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 434: S147 FulfillBountyInvestigation Method Selection
 
-- Source: `golden_htn_methods.rs:605`
+- Source: `golden_htn_methods.rs:778`
 - Systems: AI, Search, SocialArtifact
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Travel
@@ -708,9 +708,35 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Proves**: generated FulfillBounty candidate evidence can select FulfillBountyInvestigation without a hand-constructed GoalOffer.
 
+### Scenario 436: S147 FulfillBountyDirect Method Selection
+
+- Source: `golden_htn_methods.rs:818`
+- Systems: AI, Search, SocialArtifact, Combat
+- GoalKinds: FulfillBounty
+- ActionDomains: Social, Combat, Travel
+- Places: Village Square, Orchard Farm
+- Principles: 7, 14, 20, 26, 28, 29
+
+**Setup**: a hunter directly observes a posted bounty and its target-location evidence, so no witness-report precondition is available.
+
+**Proves**: generated FulfillBounty candidate evidence can select FulfillBountyDirect through TargetLastSeenKnown without a hand-built offer.
+
+### Scenario 437: S147 EscortToHome Method Selection
+
+- Source: `golden_htn_methods.rs:862`
+- Systems: AI, Search, Care, Travel
+- GoalKinds: EscortToSafety
+- ActionDomains: Care, Travel
+- Places: Village Square, Orchard Farm
+- Principles: 7, 14, 20, 22, 26, 28, 29
+
+**Setup**: a caretaker directly observes a wounded co-located ward and a reachable adjacent destination.
+
+**Proves**: generated EscortToSafety candidate evidence reaches MethodSelector and selects EscortToHome through the escortee-location belief path.
+
 ### Scenario 435: S147 Autonomous FulfillBountyInvestigation Method Trace
 
-- Source: `golden_htn_methods.rs:645`
+- Source: `golden_htn_methods.rs:909`
 - Systems: AI, Search, SocialArtifact, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Combat, Travel
@@ -723,7 +749,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 432: S147 Disabled Methods Fall Back To Flat Strategic Search
 
-- Source: `golden_htn_methods.rs:695`
+- Source: `golden_htn_methods.rs:959`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel

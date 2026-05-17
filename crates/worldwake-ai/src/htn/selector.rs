@@ -125,10 +125,7 @@ fn evaluate_belief_predicate(
         }
         BeliefPredicate::TargetLastSeenKnown { target } => {
             resolve_entity(actor, goal, *target, belief_view).is_some_and(|target| {
-                belief_view
-                    .believed_target_location(actor, target)
-                    .value
-                    .is_some()
+                believed_entity_location(actor, target, belief_view).is_some()
             })
         }
         BeliefPredicate::WitnessNamesKnown { violation } => {
@@ -165,10 +162,7 @@ fn evaluate_belief_predicate(
             }),
         BeliefPredicate::EscorteeBelievedSafeAt { escortee } => {
             resolve_entity(actor, goal, *escortee, belief_view).is_some_and(|escortee| {
-                belief_view
-                    .believed_target_location(actor, escortee)
-                    .value
-                    .is_some()
+                believed_entity_location(actor, escortee, belief_view).is_some()
             })
         }
         BeliefPredicate::AllyOrBountyOfficeAvailable => {
@@ -181,6 +175,30 @@ fn evaluate_belief_predicate(
             })
         }
     }
+}
+
+fn believed_entity_location(
+    actor: EntityId,
+    entity: EntityId,
+    belief_view: &dyn RuntimeBeliefView,
+) -> Option<EntityId> {
+    belief_view
+        .believed_target_location(actor, entity)
+        .value
+        .or_else(|| {
+            belief_view
+                .known_entity_beliefs(actor)
+                .into_iter()
+                .find_map(|(known_entity, belief)| {
+                    (known_entity == entity
+                        && matches!(
+                            belief.source,
+                            worldwake_core::PerceptionSource::DirectObservation
+                        ))
+                    .then_some(belief.last_known_place)
+                    .flatten()
+                })
+        })
 }
 
 fn motive_score(method: &MethodSchema, motives: &[MotiveSourceRef]) -> u32 {
