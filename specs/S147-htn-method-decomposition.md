@@ -18,7 +18,7 @@ Phase 12: AI Architecture Evolution — Draft
 
 ## Crates
 
-- `worldwake-ai` — owns the `htn` module: `MethodSchema`, `MethodSelector`, the method registry, the planner integration in `search/strategic.rs::build_stages`, the per-trace `MethodPlanAttemptTrace` addition to `PlanAttemptTrace`, the `methods: Vec<MethodSchemaId>` field added to `GoalSchema`, and the inline-defined supporting types (`MethodPrecondition`, `SubgoalTemplate`, `MotiveBias`, `MethodFailureMode`, `BeliefPredicate`, `EntityCriterion`, `RoleTag`, `LocationTemplate`, `TopicTemplate`, `PayloadTemplate`, `ArtifactTemplate`, `ClaimRequirement`, `ExplanationTemplateId`). Reason for ai residence: `SubgoalTemplate::PerformAction(PlannerOpKind, …)` references `PlannerOpKind` at `crates/worldwake-ai/src/planner_ops.rs:13`, and `worldwake-core` cannot depend on `worldwake-ai` per the workspace layering `core → sim → systems → ai → cli`.
+- `worldwake-ai` — owns the `htn` module: `MethodSchema`, `MethodSelector`, the method registry, the planner integration in `search/strategic.rs::build_stages`, the per-trace `MethodPlanAttemptTrace` addition to `PlanAttemptTrace`, the `methods: &'static [MethodSchemaId]` field added to `GoalSchema`, and the inline-defined supporting types (`MethodPrecondition`, `SubgoalTemplate`, `MotiveBias`, `MethodFailureMode`, `BeliefPredicate`, `EntityCriterion`, `RoleTag`, `LocationTemplate`, `TopicTemplate`, `PayloadTemplate`, `ArtifactTemplate`, `ClaimRequirement`, `ExplanationTemplateId`). Reason for ai residence: `SubgoalTemplate::PerformAction(PlannerOpKind, …)` references `PlannerOpKind` at `crates/worldwake-ai/src/planner_ops.rs:13`, and `worldwake-core` cannot depend on `worldwake-ai` per the workspace layering `core → sim → systems → ai → cli`.
 - `worldwake-core` — exposes the `MethodSchemaId` newtype (so save/replay payloads can name methods), the two payload-free discriminant mirror enums `MotiveSourceDiscriminant` (mirror of `motive_source.rs:14` `MotiveSource`) and `GoalKindDiscriminant` (mirror of `goal.rs:62` `GoalKind`), the `disabled_methods: BTreeSet<MethodSchemaId>` field added to `AgentSchemaContextProfile` at `agent_schema_context_profile.rs:54`, and the new `Discrepancy::MethodFailure(MethodFailureContext)` variant at `discrepancy.rs:9`.
 - `worldwake-sim` — no change.
 - `worldwake-systems` — no change.
@@ -489,13 +489,13 @@ The format follows the existing observer Section 7 conventions (indented prose, 
 // crates/worldwake-ai/src/goal_schema.rs (struct extension at line 63)
 pub struct GoalSchema {
     // ... existing fields ...
-    pub methods: Vec<MethodSchemaId>,    // NEW: ordered list of methods this goal may decompose through
+    pub methods: &'static [MethodSchemaId],    // NEW: ordered list of methods this goal may decompose through
 }
 ```
 
-The field is populated at `GoalSchema` registry construction time from `MethodRegistry::methods_for(goal_kind)`. Method order in the vector is the discovery order for the selector's tie-break in D3 step 4. The field is `Vec` (not `BTreeSet`) so author-controlled ordering is preserved.
+The field is const-populated on each `static GoalSchema` declaration. Method order in the slice is the author-controlled tie-break order before D3 motive bias. Current declarations may use empty `&[]` anchors until the method registry deliverable installs real method IDs. The field is a slice (not `Vec`) so the existing const-static declaration pattern remains intact while preserving author-controlled ordering.
 
-A test in `crates/worldwake-ai/tests/goal_schema_methods.rs` asserts that every `GoalSchema.methods[i]` resolves to a real `MethodSchema` in the registry and that the `MethodSchema.goal_kind` matches the parent `GoalSchema`'s goal kind.
+A test in `crates/worldwake-ai/tests/goal_schema_methods.rs` asserts that a populated slice preserves iteration order and that current static declarations expose the field. Registry-resolution tests belong to the method registry deliverable that installs method IDs.
 
 ### D12: Core-side discriminant mirrors
 
@@ -670,7 +670,7 @@ No new `SystemFn`. Method selection runs inside the existing agent tick's planni
 No new ECS component. Two component-bearing structs are extended:
 
 1. `AgentSchemaContextProfile` (registered on `EntityKind::Agent` per archived S146): gains `disabled_methods: BTreeSet<MethodSchemaId>` with `#[serde(default)]`. Universal classification, no `*Def` wrapper needed.
-2. `GoalSchema` (registry struct, not an ECS component): gains `methods: Vec<MethodSchemaId>`. Registry-construction-time only.
+2. `GoalSchema` (registry struct, not an ECS component): gains `methods: &'static [MethodSchemaId]`. Const-static declaration only.
 
 ## Cross-System Interactions
 
