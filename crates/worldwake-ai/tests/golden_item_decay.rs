@@ -90,6 +90,7 @@ fn recent_wilderness_relief_events(log: &EventLog, tick: Tick, decay_window: u64
 //   decay window instead of accumulating forever.
 
 #[test]
+#[ignore = "CI-only: long-running item-decay steady-state golden; run via golden-item-decay workflow"]
 fn golden_waste_decay_reaches_steady_state() {
     let mut h = GoldenHarness::new(Seed([181; 32]));
     h.world
