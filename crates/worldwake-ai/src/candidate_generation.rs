@@ -17,6 +17,7 @@ use crate::{
         merchant_home_place, restock_gap_at_destination,
     },
     goal_model::free_carry_capacity_contract_from_view,
+    goal_schema::GoalDispatchKeySchemaExt,
     institutional_queries::consulted_office_holder_read_for_record_data,
     knowledge_path::{
         BeliefAspect, BeliefProvenance, InstitutionalBeliefProvenance, KnowledgePath,
@@ -29,13 +30,14 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
-    AcquisitionQuantity, AgentBeliefStore, ArtifactPostingContext, ArtifactPostingProfile,
-    AskWitnessMemoryKey, BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory,
-    BountyTarget, BountyTerms, CommodityKind, CommodityPurpose, Discrepancy, DiscrepancyClearing,
-    DiscrepancyMemory, DiversificationProfile, DriveThresholds, EligibilityRule, EmitterTag,
-    EntityId, EntityKind, EvidenceKindTag, EvidenceSummary, ExpectationBasis, ExpectationOutcome,
-    ExpectationRecord, ExpectationState, ExplorationMotivation, ExplorationProfile, GoalKey,
-    GoalKind, GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, HypothesisKind,
+    AcquisitionQuantity, AgentBeliefStore, AgentSchemaContextProfile, ArtifactPostingContext,
+    ArtifactPostingProfile, AskWitnessMemoryKey, BelievedEntityState, BelievedInstitutionalClaim,
+    BlockerMemory, BountyTarget, BountyTerms, CandidateExtractorId, CommodityKind,
+    CommodityPurpose, Discrepancy, DiscrepancyClearing, DiscrepancyMemory, DiversificationProfile,
+    DriveThresholds, EligibilityRule, EmitterTag, EntityId, EntityKind, EvidenceKindTag,
+    EvidenceSummary, ExpectationBasis, ExpectationOutcome, ExpectationRecord, ExpectationState,
+    ExplorationMotivation, ExplorationProfile, GoalDispatchKey, GoalKey, GoalKind,
+    GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, HypothesisKind,
     InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
     InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor, OpportunityKey,
     PerceptionSource, Permille, PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace,
@@ -154,7 +156,7 @@ struct AcquisitionSearchOptions<'a> {
     visited_commodities: &'a BTreeSet<CommodityKind>,
 }
 
-struct GenerationContext<'a> {
+pub(crate) struct GenerationContext<'a> {
     view: &'a dyn GoalBeliefView,
     agent: EntityId,
     place: Option<EntityId>,
@@ -246,6 +248,278 @@ pub(crate) struct PendingDiscrepancyRecord {
     pub discrepancy: Discrepancy,
     pub observed_tick: Tick,
     pub clearing_condition: DiscrepancyClearing,
+}
+
+pub(crate) struct ExtractorContext<'a, 'b> {
+    pub generation: &'a GenerationContext<'a>,
+    pub diagnostics: &'a mut CandidateGenerationDiagnostics,
+    pub prior_candidates: &'a [GoalOffer],
+    pub pending_discrepancies: &'a mut Vec<PendingDiscrepancyRecord>,
+    pub pending_violations: &'a mut Vec<PendingViolationRecord>,
+    pub pending_source_reliability_failures: &'a mut Vec<OpportunityExpectationFailureIncident>,
+    pub pending_acquisition_exhaustion_resets: &'a mut BTreeSet<HomeostaticNeedId>,
+    _marker: std::marker::PhantomData<&'b ()>,
+}
+
+pub(crate) trait CandidateExtractor: Send + Sync {
+    fn extract(&self, ctx: &mut ExtractorContext<'_, '_>) -> Vec<GoalOffer>;
+
+    fn id(&self) -> CandidateExtractorId;
+
+    fn is_enabled_for(&self, profile: &AgentSchemaContextProfile) -> bool {
+        !profile.disabled_extractors.contains(&self.id())
+    }
+}
+
+macro_rules! extractor {
+    ($name:ident, $id:ident, |$ctx:ident, $candidates:ident| $body:block) => {
+        pub(crate) struct $name;
+
+        impl CandidateExtractor for $name {
+            fn extract(&self, $ctx: &mut ExtractorContext<'_, '_>) -> Vec<GoalOffer> {
+                let prior_len = $ctx.prior_candidates.len();
+                let mut $candidates = $ctx.prior_candidates.to_vec();
+                $body
+                $candidates.into_iter().skip(prior_len).collect()
+            }
+
+            fn id(&self) -> CandidateExtractorId {
+                CandidateExtractorId::$id
+            }
+        }
+    };
+}
+
+extractor!(NeedExtractor, Need, |ctx, candidates| {
+    let needs = ctx.generation.view.homeostatic_needs(ctx.generation.agent);
+    let thresholds = ctx.generation.view.drive_thresholds(ctx.generation.agent);
+    extract_need_candidates(
+        &mut candidates,
+        ctx.diagnostics,
+        ctx.generation,
+        needs,
+        thresholds,
+    );
+});
+
+extractor!(ProductionExtractor, Production, |ctx, candidates| {
+    let needs = ctx.generation.view.homeostatic_needs(ctx.generation.agent);
+    let thresholds = ctx.generation.view.drive_thresholds(ctx.generation.agent);
+    extract_production_candidates(
+        &mut candidates,
+        ctx.diagnostics,
+        ctx.generation,
+        needs,
+        thresholds,
+    );
+});
+
+extractor!(EnterpriseExtractor, Enterprise, |ctx, candidates| {
+    extract_enterprise_candidates(&mut candidates, ctx.diagnostics, ctx.generation);
+});
+
+extractor!(DisposalExtractor, Disposal, |ctx, candidates| {
+    extract_disposal_candidates(&mut candidates, ctx.diagnostics, ctx.generation);
+});
+
+extractor!(BountyExtractor, Bounty, |ctx, candidates| {
+    extract_bounty_candidates(
+        &mut candidates,
+        ctx.diagnostics,
+        ctx.pending_discrepancies,
+        ctx.generation,
+    );
+});
+
+extractor!(
+    ArtifactPostingExtractor,
+    ArtifactPosting,
+    |ctx, candidates| {
+        extract_artifact_posting_candidates(&mut candidates, ctx.diagnostics, ctx.generation);
+    }
+);
+
+extractor!(CombatExtractor, Combat, |ctx, candidates| {
+    extract_combat_candidates(&mut candidates, ctx.diagnostics, ctx.generation);
+});
+
+extractor!(CrimeExtractor, Crime, |ctx, candidates| {
+    extract_crime_candidates(&mut candidates, ctx.diagnostics, ctx.generation);
+});
+
+extractor!(SocialExtractor, Social, |ctx, candidates| {
+    extract_social_candidates(&mut candidates, ctx.diagnostics, ctx.generation);
+});
+
+extractor!(AskWitnessExtractor, AskWitness, |ctx, candidates| {
+    extract_ask_witness_candidates(&mut candidates, ctx.diagnostics, ctx.generation);
+});
+
+extractor!(PatrolExtractor, Patrol, |ctx, candidates| {
+    extract_patrol_candidates(&mut candidates, ctx.diagnostics, ctx.generation);
+});
+
+extractor!(PoliticalExtractor, Political, |ctx, candidates| {
+    extract_political_candidates(&mut candidates, ctx.diagnostics, ctx.generation);
+});
+
+extractor!(
+    RecordedViolationExtractor,
+    RecordedViolation,
+    |ctx, candidates| {
+        extract_recorded_violation_candidates(&mut candidates, ctx.diagnostics, ctx.generation);
+    }
+);
+
+extractor!(SearchExtractor, Search, |ctx, candidates| {
+    extract_search_candidates(&mut candidates, ctx.diagnostics, ctx.generation);
+});
+
+extractor!(ReportFoundExtractor, ReportFound, |ctx, candidates| {
+    extract_report_found_candidates(&mut candidates, ctx.diagnostics, ctx.generation);
+});
+
+extractor!(EscortExtractor, Escort, |ctx, candidates| {
+    extract_escort_candidates(&mut candidates, ctx.diagnostics, ctx.generation);
+});
+
+extractor!(ExplorationExtractor, Exploration, |ctx, candidates| {
+    let needs = ctx.generation.view.homeostatic_needs(ctx.generation.agent);
+    extract_exploration_candidates(
+        &mut candidates,
+        ctx.diagnostics,
+        ctx.generation,
+        needs,
+        ctx.pending_acquisition_exhaustion_resets,
+    );
+});
+
+extractor!(
+    ProactiveExplorationExtractor,
+    ProactiveExploration,
+    |ctx, candidates| {
+        let needs = ctx.generation.view.homeostatic_needs(ctx.generation.agent);
+        extract_proactive_exploration_candidates(
+            &mut candidates,
+            ctx.diagnostics,
+            ctx.generation,
+            needs,
+        );
+    }
+);
+
+extractor!(
+    ExpectationViolationExtractor,
+    ExpectationViolation,
+    |ctx, candidates| {
+        let (pending_violations, pending_failures) = extract_expectation_violation_candidates(
+            &mut candidates,
+            ctx.diagnostics,
+            ctx.generation,
+        );
+        ctx.pending_violations.extend(pending_violations);
+        ctx.pending_source_reliability_failures
+            .extend(pending_failures);
+    }
+);
+
+extractor!(
+    OpportunityCompilerExtractor,
+    OpportunityCompiler,
+    |ctx, candidates| {
+        extract_opportunity_compiler_candidates(&mut candidates, ctx.diagnostics, ctx.generation);
+    }
+);
+
+static NEED_EXTRACTOR: NeedExtractor = NeedExtractor;
+static PRODUCTION_EXTRACTOR: ProductionExtractor = ProductionExtractor;
+static ENTERPRISE_EXTRACTOR: EnterpriseExtractor = EnterpriseExtractor;
+static DISPOSAL_EXTRACTOR: DisposalExtractor = DisposalExtractor;
+static BOUNTY_EXTRACTOR: BountyExtractor = BountyExtractor;
+static ARTIFACT_POSTING_EXTRACTOR: ArtifactPostingExtractor = ArtifactPostingExtractor;
+static COMBAT_EXTRACTOR: CombatExtractor = CombatExtractor;
+static CRIME_EXTRACTOR: CrimeExtractor = CrimeExtractor;
+static SOCIAL_EXTRACTOR: SocialExtractor = SocialExtractor;
+static ASK_WITNESS_EXTRACTOR: AskWitnessExtractor = AskWitnessExtractor;
+static PATROL_EXTRACTOR: PatrolExtractor = PatrolExtractor;
+static POLITICAL_EXTRACTOR: PoliticalExtractor = PoliticalExtractor;
+static RECORDED_VIOLATION_EXTRACTOR: RecordedViolationExtractor = RecordedViolationExtractor;
+static SEARCH_EXTRACTOR: SearchExtractor = SearchExtractor;
+static REPORT_FOUND_EXTRACTOR: ReportFoundExtractor = ReportFoundExtractor;
+static ESCORT_EXTRACTOR: EscortExtractor = EscortExtractor;
+static EXPLORATION_EXTRACTOR: ExplorationExtractor = ExplorationExtractor;
+static PROACTIVE_EXPLORATION_EXTRACTOR: ProactiveExplorationExtractor =
+    ProactiveExplorationExtractor;
+static EXPECTATION_VIOLATION_EXTRACTOR: ExpectationViolationExtractor =
+    ExpectationViolationExtractor;
+static OPPORTUNITY_COMPILER_EXTRACTOR: OpportunityCompilerExtractor = OpportunityCompilerExtractor;
+
+pub(crate) fn extractor_for(id: CandidateExtractorId) -> &'static dyn CandidateExtractor {
+    match id {
+        CandidateExtractorId::Need => &NEED_EXTRACTOR,
+        CandidateExtractorId::Production => &PRODUCTION_EXTRACTOR,
+        CandidateExtractorId::Enterprise => &ENTERPRISE_EXTRACTOR,
+        CandidateExtractorId::Disposal => &DISPOSAL_EXTRACTOR,
+        CandidateExtractorId::Bounty => &BOUNTY_EXTRACTOR,
+        CandidateExtractorId::ArtifactPosting => &ARTIFACT_POSTING_EXTRACTOR,
+        CandidateExtractorId::Combat => &COMBAT_EXTRACTOR,
+        CandidateExtractorId::Crime => &CRIME_EXTRACTOR,
+        CandidateExtractorId::Social => &SOCIAL_EXTRACTOR,
+        CandidateExtractorId::AskWitness => &ASK_WITNESS_EXTRACTOR,
+        CandidateExtractorId::Patrol => &PATROL_EXTRACTOR,
+        CandidateExtractorId::Political => &POLITICAL_EXTRACTOR,
+        CandidateExtractorId::RecordedViolation => &RECORDED_VIOLATION_EXTRACTOR,
+        CandidateExtractorId::Search => &SEARCH_EXTRACTOR,
+        CandidateExtractorId::ReportFound => &REPORT_FOUND_EXTRACTOR,
+        CandidateExtractorId::Escort => &ESCORT_EXTRACTOR,
+        CandidateExtractorId::Exploration => &EXPLORATION_EXTRACTOR,
+        CandidateExtractorId::ProactiveExploration => &PROACTIVE_EXPLORATION_EXTRACTOR,
+        CandidateExtractorId::ExpectationViolation => &EXPECTATION_VIOLATION_EXTRACTOR,
+        CandidateExtractorId::OpportunityCompiler => &OPPORTUNITY_COMPILER_EXTRACTOR,
+    }
+}
+
+pub(crate) fn build_extractor_registry()
+-> BTreeMap<CandidateExtractorId, &'static dyn CandidateExtractor> {
+    CandidateExtractorId::ALL
+        .into_iter()
+        .map(|id| (id, extractor_for(id)))
+        .collect()
+}
+
+const LEGACY_EXTRACTOR_ORDER: [CandidateExtractorId; 20] = [
+    CandidateExtractorId::Need,
+    CandidateExtractorId::Production,
+    CandidateExtractorId::Enterprise,
+    CandidateExtractorId::Disposal,
+    CandidateExtractorId::Bounty,
+    CandidateExtractorId::ArtifactPosting,
+    CandidateExtractorId::Combat,
+    CandidateExtractorId::Crime,
+    CandidateExtractorId::Social,
+    CandidateExtractorId::AskWitness,
+    CandidateExtractorId::Patrol,
+    CandidateExtractorId::Political,
+    CandidateExtractorId::RecordedViolation,
+    CandidateExtractorId::Search,
+    CandidateExtractorId::ReportFound,
+    CandidateExtractorId::Escort,
+    CandidateExtractorId::Exploration,
+    CandidateExtractorId::ProactiveExploration,
+    CandidateExtractorId::ExpectationViolation,
+    CandidateExtractorId::OpportunityCompiler,
+];
+
+pub(crate) fn ordered_candidate_extractors_from_goal_schemas() -> Vec<CandidateExtractorId> {
+    let schema_extractors: BTreeSet<CandidateExtractorId> = GoalDispatchKey::ALL
+        .into_iter()
+        .flat_map(|key| key.declaration().candidate_extractors.iter().copied())
+        .collect();
+
+    LEGACY_EXTRACTOR_ORDER
+        .into_iter()
+        .filter(|id| schema_extractors.contains(id))
+        .collect()
 }
 
 fn evidence_summary(kinds: &[(EvidenceKindTag, u16)]) -> EvidenceSummary {
@@ -423,12 +697,11 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
         };
     }
 
-    let mut candidates = Vec::new();
     let mut diagnostics = CandidateGenerationDiagnostics::default();
+    let mut pending_violations = Vec::new();
     let mut pending_discrepancies = Vec::new();
+    let mut pending_source_reliability_failures = Vec::new();
     let mut pending_acquisition_exhaustion_resets = BTreeSet::new();
-    let needs = view.homeostatic_needs(agent);
-    let thresholds = view.drive_thresholds(agent);
     let place = view.effective_place(agent);
     let ctx = GenerationContext {
         view,
@@ -445,39 +718,32 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
         current_plan,
         opportunities,
     };
-
-    emit_need_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
-    emit_production_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
-    emit_enterprise_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_disposal_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_bounty_candidates(
-        &mut candidates,
-        &mut diagnostics,
-        &mut pending_discrepancies,
-        &ctx,
-    );
-    emit_artifact_posting_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_combat_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_crime_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_social_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_ask_witness_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_patrol_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_political_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_recorded_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_search_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_report_found_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_escort_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_exploration_candidates(
-        &mut candidates,
-        &mut diagnostics,
-        &ctx,
-        needs,
-        &mut pending_acquisition_exhaustion_resets,
-    );
-    emit_proactive_exploration_candidates(&mut candidates, &mut diagnostics, &ctx, needs);
-    let (pending_violations, pending_source_reliability_failures) =
-        emit_expectation_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_opportunity_compiler_candidates(&mut candidates, &mut diagnostics, &ctx);
+    let default_schema_context_profile = AgentSchemaContextProfile::default();
+    let schema_context_profile = view.agent_schema_context_profile(agent);
+    let profile = schema_context_profile
+        .as_ref()
+        .unwrap_or(&default_schema_context_profile);
+    let extractor_registry = build_extractor_registry();
+    let mut candidates: Vec<GoalOffer> = Vec::new();
+    for extractor_id in ordered_candidate_extractors_from_goal_schemas() {
+        let extractor = extractor_registry
+            .get(&extractor_id)
+            .expect("extractor registry covers CandidateExtractorId::ALL");
+        if !extractor.is_enabled_for(profile) {
+            continue;
+        }
+        let mut extractor_ctx = ExtractorContext {
+            generation: &ctx,
+            diagnostics: &mut diagnostics,
+            prior_candidates: &candidates,
+            pending_discrepancies: &mut pending_discrepancies,
+            pending_violations: &mut pending_violations,
+            pending_source_reliability_failures: &mut pending_source_reliability_failures,
+            pending_acquisition_exhaustion_resets: &mut pending_acquisition_exhaustion_resets,
+            _marker: std::marker::PhantomData,
+        };
+        candidates.extend(extractor.extract(&mut extractor_ctx));
+    }
 
     let mut candidates = filter_suppressed_candidates(
         candidates,
@@ -488,6 +754,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
     );
     let fully_blocked_desires = diagnostics.fully_blocked_desires.clone();
     let mut blocked_fallback_candidates = Vec::new();
+    let needs = view.homeostatic_needs(agent);
     emit_exploration_candidates_for_blocked_self_care(
         &mut blocked_fallback_candidates,
         &mut diagnostics,
@@ -519,7 +786,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
     }
 }
 
-fn emit_opportunity_compiler_candidates(
+fn extract_opportunity_compiler_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -820,7 +1087,7 @@ fn candidate_matches_blocker(
     true
 }
 
-fn emit_need_candidates(
+fn extract_need_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -838,7 +1105,7 @@ fn emit_need_candidates(
     emit_dirtiness_water_acquisition_candidates(candidates, diagnostics, ctx, needs, thresholds);
 }
 
-fn emit_production_candidates(
+fn extract_production_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -848,7 +1115,7 @@ fn emit_production_candidates(
     emit_produce_goals(candidates, diagnostics, ctx, needs, thresholds);
 }
 
-fn emit_enterprise_candidates(
+fn extract_enterprise_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -858,7 +1125,7 @@ fn emit_enterprise_candidates(
     emit_move_cargo_goals(candidates, diagnostics, ctx);
 }
 
-fn emit_bounty_candidates(
+fn extract_bounty_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     pending_discrepancies: &mut Vec<PendingDiscrepancyRecord>,
@@ -1076,7 +1343,7 @@ fn record_artifact_axis_trace(
         });
 }
 
-fn emit_artifact_posting_candidates(
+fn extract_artifact_posting_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -1349,7 +1616,7 @@ fn known_controlled_delivery_sources(
         .collect()
 }
 
-fn emit_combat_candidates(
+fn extract_combat_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -1362,7 +1629,7 @@ fn emit_combat_candidates(
     emit_bury_goals(candidates, diagnostics, ctx);
 }
 
-fn emit_crime_candidates(
+fn extract_crime_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -1371,7 +1638,7 @@ fn emit_crime_candidates(
     emit_justice_candidates(candidates, diagnostics, ctx);
 }
 
-fn emit_patrol_candidates(
+fn extract_patrol_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -1747,7 +2014,7 @@ fn office_governed_faction_for_accused(
         .min()
 }
 
-fn emit_social_candidates(
+fn extract_social_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -2086,7 +2353,7 @@ fn listener_could_have_directly_observed(
         && view.effective_place(listener) == Some(observation_place)
 }
 
-fn emit_political_candidates(
+fn extract_political_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -2607,7 +2874,7 @@ fn emit_engage_hostile_goals(
     );
 }
 
-fn emit_ask_witness_candidates(
+fn extract_ask_witness_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -3285,7 +3552,7 @@ fn emit_self_consume_candidates(
     );
 }
 
-fn emit_exploration_candidates(
+fn extract_exploration_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -3515,7 +3782,7 @@ fn goal_is_self_care_fallback(goal_kind: GoalKind) -> bool {
     )
 }
 
-fn emit_proactive_exploration_candidates(
+fn extract_proactive_exploration_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -4764,7 +5031,7 @@ fn deliverable_quantity(
     Quantity(local_quantity.0.min(restock_gap.0).min(carry_fit.0))
 }
 
-fn emit_disposal_candidates(
+fn extract_disposal_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -5102,7 +5369,7 @@ fn goal_kind_acquisition_quantity(kind: &GoalKind) -> Option<AcquisitionQuantity
     }
 }
 
-fn emit_recorded_violation_candidates(
+fn extract_recorded_violation_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -5124,7 +5391,7 @@ fn emit_recorded_violation_candidates(
     }
 }
 
-fn emit_search_candidates(
+fn extract_search_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -5218,7 +5485,7 @@ fn emit_search_candidates(
 
 /// Emit [`GoalKind::ReportFound`] candidates when the agent has a resolved
 /// Found* expectation and the last-seen record matches the found place.
-fn emit_report_found_candidates(
+fn extract_report_found_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -5320,7 +5587,7 @@ fn overdue_ticks(record: ExpectationRecord, current_tick: Tick) -> u64 {
 
 /// Emit [`GoalKind::EscortToSafety`] candidates when the agent observes a
 /// wounded co-located entity and knows at least one reachable destination.
-fn emit_escort_candidates(
+fn extract_escort_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -5417,7 +5684,7 @@ fn emit_escort_candidates(
 /// Detect expectation violations by comparing stale beliefs against current
 /// perception at the agent's current location.  Returns pending violation
 /// records for the caller to apply to [`ViolationMemory`].
-fn emit_expectation_violation_candidates(
+fn extract_expectation_violation_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -6888,8 +7155,8 @@ mod tests {
         AcquisitionSearchOptions, AskWitnessGateRejection, AskWitnessGateRejectionReason,
         BeliefGateOptions, CandidateGenerationDiagnostics, CandidateOfferDiagnostic,
         CandidateSuppressionDiagnostic, GenerationContext, GoalOffer, belief_gated_places,
-        combined_evidence, deliverable_quantity, emit_ask_witness_candidates,
-        emit_expectation_violation_candidates, emit_produce_goals, emit_restock_goals,
+        combined_evidence, deliverable_quantity, emit_produce_goals, emit_restock_goals,
+        extract_ask_witness_candidates, extract_expectation_violation_candidates,
         filter_suppressed_candidates, generate_candidates, generate_candidates_with_travel_horizon,
         need_hypothesis, proactive_curiosity_pressure, proactive_familiarity, proactive_novelty,
     };
@@ -6907,15 +7174,15 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AcquisitionQuantity, AgentBeliefStore, ArtifactActionability, ArtifactCredibility,
-        ArtifactExistence, ArtifactKind, ArtifactLegalEffect, ArtifactPostingContext,
-        ArtifactPostingProfile, ArtifactVisibility, AskWitnessMemory, AskWitnessMemoryKey,
-        BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
+        AcquisitionQuantity, AgentBeliefStore, AgentSchemaContextProfile, ArtifactActionability,
+        ArtifactCredibility, ArtifactExistence, ArtifactKind, ArtifactLegalEffect,
+        ArtifactPostingContext, ArtifactPostingProfile, ArtifactVisibility, AskWitnessMemory,
+        AskWitnessMemoryKey, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
         BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory, BlockerReason,
-        BlockingFact, BodyPart, BountyTarget, BountyTerms, CloseCause, CognitiveProfile,
-        CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
-        CommunicationClass, DemandObservation, DemandObservationReason, Discrepancy,
-        DiscrepancyEntry, DiscrepancyMemory, DisposalProfile, DiversificationProfile,
+        BlockingFact, BodyPart, BountyTarget, BountyTerms, CandidateExtractorId, CloseCause,
+        CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
+        CommodityPurpose, CommunicationClass, DemandObservation, DemandObservationReason,
+        Discrepancy, DiscrepancyEntry, DiscrepancyMemory, DisposalProfile, DiversificationProfile,
         DriveThresholds, EffectiveRight, EligibilityRule, EmitterTag, EntityId, EntityKind,
         EpistemicDispositionProfile, EvidenceKindTag, ExpectationBasis, ExpectationId,
         ExpectationKindTag, ExpectationRecord, ExpectationState, ExpectationStore,
@@ -7020,6 +7287,7 @@ mod tests {
         last_proactive_exploration_ticks: BTreeMap<EntityId, Tick>,
         acquisition_exhaustion_counts: BTreeMap<(EntityId, HomeostaticNeedId), u8>,
         cognitive_profiles: BTreeMap<EntityId, CognitiveProfile>,
+        agent_schema_context_profiles: BTreeMap<EntityId, AgentSchemaContextProfile>,
         disposal_profiles: BTreeMap<EntityId, DisposalProfile>,
         corpses_at: BTreeMap<EntityId, Vec<EntityId>>,
         belief_stores: BTreeMap<EntityId, AgentBeliefStore>,
@@ -7114,6 +7382,7 @@ mod tests {
                 last_proactive_exploration_ticks: BTreeMap::new(),
                 acquisition_exhaustion_counts: BTreeMap::new(),
                 cognitive_profiles: BTreeMap::new(),
+                agent_schema_context_profiles: BTreeMap::new(),
                 disposal_profiles: BTreeMap::new(),
                 corpses_at: BTreeMap::new(),
                 belief_stores: BTreeMap::new(),
@@ -7361,6 +7630,13 @@ mod tests {
 
         fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
             self.cognitive_profiles.get(&agent).copied()
+        }
+
+        fn agent_schema_context_profile(
+            &self,
+            agent: EntityId,
+        ) -> Option<AgentSchemaContextProfile> {
+            self.agent_schema_context_profiles.get(&agent).cloned()
         }
 
         fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
@@ -9228,7 +9504,7 @@ mod tests {
             current_plan: None,
             opportunities: &[],
         };
-        emit_ask_witness_candidates(&mut candidates, &mut diagnostics, &ctx);
+        extract_ask_witness_candidates(&mut candidates, &mut diagnostics, &ctx);
         (candidates, diagnostics)
     }
 
@@ -13504,6 +13780,57 @@ mod tests {
         );
 
         assert!(contains_goal(
+            &candidates,
+            GoalKind::RestockCommodity {
+                commodity: CommodityKind::Bread,
+            }
+        ));
+    }
+
+    #[test]
+    fn disabled_enterprise_extractor_suppresses_enterprise_candidates() {
+        let agent = entity(1);
+        let place = entity(10);
+        let seller = entity(2);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.effective_places.insert(agent, place);
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_facility: Some(place),
+            },
+        );
+        view.demand_memory.insert(
+            agent,
+            vec![DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(3),
+                place,
+                tick: Tick(2),
+                counterparty: Some(seller),
+                reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+            }],
+        );
+        view.register_seller(place, CommodityKind::Bread, seller);
+        view.agent_schema_context_profiles.insert(
+            agent,
+            AgentSchemaContextProfile {
+                disabled_extractors: BTreeSet::from([CandidateExtractorId::Enterprise]),
+                ..AgentSchemaContextProfile::default()
+            },
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(
             &candidates,
             GoalKind::RestockCommodity {
                 commodity: CommodityKind::Bread,
@@ -19291,7 +19618,7 @@ mod tests {
             opportunities: &[],
         };
 
-        let (_pending, incidents) = emit_expectation_violation_candidates(
+        let (_pending, incidents) = extract_expectation_violation_candidates(
             &mut Vec::new(),
             &mut CandidateGenerationDiagnostics::default(),
             &ctx,
@@ -19381,7 +19708,7 @@ mod tests {
             opportunities: &[],
         };
 
-        let (_pending, incidents) = emit_expectation_violation_candidates(
+        let (_pending, incidents) = extract_expectation_violation_candidates(
             &mut Vec::new(),
             &mut CandidateGenerationDiagnostics::default(),
             &ctx,

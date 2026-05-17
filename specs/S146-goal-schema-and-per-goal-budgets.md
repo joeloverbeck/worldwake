@@ -6,7 +6,7 @@
 
 Folds in PR-2 (Data-Driven GoalSchema Registry) and PR-17 (Per-Goal Planning Budgets) from `reports/ai-architecture-improvements.md`.
 
-The current candidate-emission path in `crates/worldwake-ai/src/candidate_generation.rs` defines 20 hand-coded `emit_*` functions, one per goal family (`emit_need_candidates`, `emit_production_candidates`, `emit_enterprise_candidates`, `emit_disposal_candidates`, `emit_bounty_candidates`, `emit_artifact_posting_candidates`, `emit_combat_candidates`, `emit_crime_candidates`, `emit_social_candidates`, `emit_ask_witness_candidates`, `emit_patrol_candidates`, `emit_political_candidates`, `emit_recorded_violation_candidates`, `emit_search_candidates`, `emit_report_found_candidates`, `emit_escort_candidates`, `emit_exploration_candidates`, `emit_proactive_exploration_candidates`, `emit_expectation_violation_candidates`, `emit_opportunity_compiler_candidates`). Each function is independently maintained and called explicitly from `agent_tick/planning.rs`. As the project grows toward "dozens or hundreds of goals", this hand-shape becomes brittle: each new goal family adds another emitter function, another call site, another set of suppression rules, and another lint surface.
+The current candidate-emission path in `crates/worldwake-ai/src/candidate_generation.rs` defines 20 hand-coded top-level candidate-emission families, one per goal family (`emit_need_candidates`, `emit_production_candidates`, `emit_enterprise_candidates`, `emit_disposal_candidates`, `emit_bounty_candidates`, `emit_artifact_posting_candidates`, `emit_combat_candidates`, `emit_crime_candidates`, `emit_social_candidates`, `emit_ask_witness_candidates`, `emit_patrol_candidates`, `emit_political_candidates`, `emit_recorded_violation_candidates`, `emit_search_candidates`, `emit_report_found_candidates`, `emit_escort_candidates`, `emit_exploration_candidates`, `emit_proactive_exploration_candidates`, `emit_expectation_violation_candidates`, `emit_opportunity_compiler_candidates`). Before ticket 005 they were called explicitly from `candidate_generation.rs::generate_candidates_with_memories_with_travel_horizon_impl`; `agent_tick/planning.rs` consumes generated candidates downstream. As the project grows toward "dozens or hundreds of goals", this hand-shape becomes brittle: each new goal family adds another emitter function, another call site, another set of suppression rules, and another lint surface.
 
 The goal-kind registry now lives as `GoalSchema` (`crates/worldwake-ai/src/goal_schema.rs:61`), renamed in place from `GoalDispatchDeclaration` by `archive/tickets/S146GOASCHGOA-001.md`. It carries `provenance_family`, `trace_label`, `relevant_ops`, `invalidation_strategy`, `feasibility_strategy`, `frontier_exhaustion_strategy`, `family_policy`, and `progress_barrier_ops` per `GoalDispatchKey` (`crates/worldwake-core/src/goal_dispatch_key.rs:6` — the 41-variant discriminant-only enum that already has `Copy`, an `ALL` constant, and a `from_goal_kind(...)` mapping). S146 extends this declaration in place by adding exactly two new fields: `candidate_extractors: &'static [CandidateExtractorId]` (PR-2 fold-in) and `planning_budget: GoalPlanningBudget` (PR-17 fold-in). The 20 `emit_*` functions are migrated into a `CandidateExtractor` registry indexed by `CandidateExtractorId`. A new universal `AgentSchemaContextProfile` carries per-agent extractor opt-out and per-goal budget-override settings (so scenarios can opt agents out of expensive extractor families and tune budget tiers without code changes).
 
@@ -41,7 +41,7 @@ Phase 12: AI Architecture Evolution — Draft
 1. **One goal-kind registry, declaratively populated, in-place extension.** `GoalSchema` (the renamed `GoalDispatchDeclaration`) is the single registry. Adding a new goal kind means adding a `GoalSchema` entry and the supporting `GoalDispatchKey` variant — not editing parallel registries.
 2. **Per-goal planning budgets are first-class.** `Eat`'s budget differs from `BakeBread`'s budget without per-agent profile tuning.
 3. **No silent goal-family loss.** Every `GoalDispatchKey::ALL` variant must have a `GoalSchema` entry; a runtime test enforces coverage (compile-time enforcement deferred — see D9).
-4. **Backward-compat-free.** The 20 `emit_*` functions are migrated, not aliased. Old call sites in `agent_tick/planning.rs` are deleted.
+4. **Backward-compat-free.** The 20 top-level candidate-emission families are migrated, not aliased. The old explicit dispatch list in `candidate_generation.rs` is deleted.
 5. **Deterministic.** Registry iteration is `BTreeMap`-ordered; extractors run in fixed order; no `HashMap` in authoritative state.
 6. **Schema is data, not behavior.** Extractors are function pointers / trait impls; the schema's role is declarative metadata pointing at concrete dispatch.
 7. **No fossilized scaffolding.** Only fields backed by S146 deliverables (`planning_budget`, `candidate_extractors`) are added to `GoalSchema`. ID-typed pointers to unimplemented systems are explicitly NOT introduced (FND-28).
@@ -201,29 +201,32 @@ The component contains no `EntityId` references (the fields use `CandidateExtrac
 
 Defined in `worldwake-core` per the core-residence constraint for ECS components (Pattern: New Component on EntityKind::Agent).
 
-### D6: Migration of `agent_tick/planning.rs` candidate phase
+### D6: Migration of `candidate_generation.rs` candidate phase
 
-The current explicit list of `emit_*` calls is replaced by registry-driven dispatch. The profile is read through the belief-view accessor introduced in D11 (NOT through a `.schema_context_profile` field — `actor` is an `EntityId`, not a struct):
+The current explicit list of candidate-emission family calls is replaced by registry-driven dispatch. The profile is read through the belief-view accessor introduced in D11 (NOT through a `.schema_context_profile` field — `actor` is an `EntityId`, not a struct):
 
 ```rust
-let extractors = ai_runtime.extractor_registry();
-let profile = ctx.generation.view.agent_schema_context_profile(ctx.generation.agent);
+let extractors = build_extractor_registry();
+let profile = ctx.view.agent_schema_context_profile(ctx.agent);
 let mut candidates: Vec<GoalOffer> = Vec::new();
 for extractor_id in ordered_candidate_extractors_from_goal_schemas() {
-    let Some(extractor) = extractors.get(&extractor_id) else {
-        continue;
-    };
+    let extractor = extractors
+        .get(&extractor_id)
+        .expect("extractor registry covers CandidateExtractorId::ALL");
     if !extractor.is_enabled_for(profile) {
         continue;
     }
-    candidates.extend(extractor.extract(&ExtractorContext {
-        generation: &ctx.generation,
+    let mut ext_ctx = ExtractorContext {
+        generation: &ctx,
         diagnostics: &mut ctx.diagnostics,
-    }));
+        prior_candidates: &candidates,
+        // pending side-effect buffers omitted for brevity
+    };
+    candidates.extend(extractor.extract(&mut ext_ctx));
 }
 ```
 
-`ordered_candidate_extractors_from_goal_schemas()` is a deduped, legacy-order read of the `GoalSchema.candidate_extractors` metadata, not a direct "run once per schema entry" loop. This matters because several goal kinds share one extractor family and some goal kinds have multiple producer families (`InvestigateViolation`, `ExploreLocation`). The 20 direct `emit_*` call sites in `agent_tick/planning.rs` are deleted. `GoalOffer` conversion remains unchanged.
+`ordered_candidate_extractors_from_goal_schemas()` is a deduped, legacy-order read of the `GoalSchema.candidate_extractors` metadata, not a direct "run once per schema entry" loop. This matters because several goal kinds share one extractor family and some goal kinds have multiple producer families (`InvestigateViolation`, `ExploreLocation`). The direct candidate-family call list in `candidate_generation.rs` is deleted. `GoalOffer` conversion remains unchanged.
 
 ### D7: Per-goal budget application in search
 
