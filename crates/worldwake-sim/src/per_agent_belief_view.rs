@@ -2235,7 +2235,9 @@ mod tests {
             agent
         };
         let mut profile = AgentSchemaContextProfile::default();
-        profile.disabled_extractors.insert(CandidateExtractorId(3));
+        profile
+            .disabled_extractors
+            .insert(CandidateExtractorId::Disposal);
         profile.budget_overrides.insert(
             GoalDispatchKey::ProduceCommodity,
             GoalPlanningBudget::PRODUCTION,

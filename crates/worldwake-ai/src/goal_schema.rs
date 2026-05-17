@@ -5,7 +5,9 @@ use crate::goal_policy::{
 use crate::interrupts::InterruptTrigger;
 use crate::{PlannerOpKind, RankedGoalProvenanceFamily};
 use serde::{Deserialize, Serialize};
-use worldwake_core::{GoalDispatchKey, HomeostaticNeedId};
+use worldwake_core::{
+    CandidateExtractorId, GoalDispatchKey, GoalPlanningBudget, HomeostaticNeedId,
+};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum InvalidationStrategy {
@@ -71,6 +73,8 @@ pub struct GoalSchema {
     /// `ConsumeOwnedCommodity`/`MoveCargo` (special case), or `is_materialization_barrier`
     /// (step-property check) — those remain in `is_progress_barrier()`.
     pub progress_barrier_ops: &'static [PlannerOpKind],
+    pub candidate_extractors: &'static [CandidateExtractorId],
+    pub planning_budget: GoalPlanningBudget,
 }
 
 impl GoalSchema {
@@ -291,6 +295,8 @@ static DECL_CONSUME_OWNED_COMMODITY: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Need],
+    planning_budget: GoalPlanningBudget::SELF_CARE,
 };
 static DECL_ACQUIRE_SELF_CONSUME: GoalSchema = GoalSchema {
     trace_label: "AcquireCommodity(SelfConsume)",
@@ -301,6 +307,11 @@ static DECL_ACQUIRE_SELF_CONSUME: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::CooldownRetry,
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[
+        CandidateExtractorId::Need,
+        CandidateExtractorId::OpportunityCompiler,
+    ],
+    planning_budget: GoalPlanningBudget::SELF_CARE,
 };
 static DECL_ACQUIRE_RECIPE_INPUT: GoalSchema = GoalSchema {
     trace_label: "AcquireCommodity(RecipeInput)",
@@ -311,6 +322,8 @@ static DECL_ACQUIRE_RECIPE_INPUT: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::OpportunityCompiler],
+    planning_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
 };
 static DECL_ACQUIRE_RESTOCK: GoalSchema = GoalSchema {
     trace_label: "AcquireCommodity(Restock)",
@@ -321,6 +334,8 @@ static DECL_ACQUIRE_RESTOCK: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::OpportunityCompiler],
+    planning_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
 };
 static DECL_SLEEP: GoalSchema = GoalSchema {
     trace_label: "Sleep",
@@ -331,6 +346,8 @@ static DECL_SLEEP: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::CooldownRetry,
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: SLEEP_OPS,
+    candidate_extractors: &[CandidateExtractorId::Need],
+    planning_budget: GoalPlanningBudget::SELF_CARE,
 };
 static DECL_RELIEVE: GoalSchema = GoalSchema {
     trace_label: "Relieve",
@@ -341,6 +358,8 @@ static DECL_RELIEVE: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Need],
+    planning_budget: GoalPlanningBudget::SELF_CARE,
 };
 static DECL_WASH: GoalSchema = GoalSchema {
     trace_label: "Wash",
@@ -351,6 +370,8 @@ static DECL_WASH: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Need],
+    planning_budget: GoalPlanningBudget::SELF_CARE,
 };
 static DECL_FREE_CARRY_CAPACITY: GoalSchema = GoalSchema {
     trace_label: "FreeCarryCapacity",
@@ -361,6 +382,8 @@ static DECL_FREE_CARRY_CAPACITY: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: FREE_CARRY_CAPACITY_OPS,
+    candidate_extractors: &[CandidateExtractorId::Disposal],
+    planning_budget: GoalPlanningBudget::SELF_CARE,
 };
 static DECL_ENGAGE_HOSTILE: GoalSchema = GoalSchema {
     trace_label: "EngageHostile",
@@ -371,6 +394,8 @@ static DECL_ENGAGE_HOSTILE: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Combat],
+    planning_budget: GoalPlanningBudget::INVESTIGATION,
 };
 static DECL_RAID_TARGET: GoalSchema = GoalSchema {
     trace_label: "RaidTarget",
@@ -381,6 +406,8 @@ static DECL_RAID_TARGET: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Combat],
+    planning_budget: GoalPlanningBudget::INVESTIGATION,
 };
 static DECL_REDUCE_DANGER: GoalSchema = GoalSchema {
     trace_label: "ReduceDanger",
@@ -391,6 +418,8 @@ static DECL_REDUCE_DANGER: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: DANGER_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Combat],
+    planning_budget: GoalPlanningBudget::INVESTIGATION,
 };
 static DECL_REGROUP_WITH_FACTION: GoalSchema = GoalSchema {
     trace_label: "RegroupWithFaction",
@@ -401,6 +430,8 @@ static DECL_REGROUP_WITH_FACTION: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Social],
+    planning_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
 };
 static DECL_ESTABLISH_BANDIT_CAMP: GoalSchema = GoalSchema {
     trace_label: "EstablishBanditCamp",
@@ -411,6 +442,8 @@ static DECL_ESTABLISH_BANDIT_CAMP: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Social],
+    planning_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
 };
 static DECL_TREAT_WOUNDS: GoalSchema = GoalSchema {
     trace_label: "TreatWounds",
@@ -421,6 +454,8 @@ static DECL_TREAT_WOUNDS: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Combat],
+    planning_budget: GoalPlanningBudget::INVESTIGATION,
 };
 static DECL_SEARCH_FOR_MISSING: GoalSchema = GoalSchema {
     trace_label: "SearchForMissing",
@@ -431,6 +466,8 @@ static DECL_SEARCH_FOR_MISSING: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: SEARCH_PLACE_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Search],
+    planning_budget: GoalPlanningBudget::BOUNTY_ESCORT,
 };
 static DECL_REPORT_MISSING: GoalSchema = GoalSchema {
     trace_label: "ReportMissing",
@@ -441,6 +478,8 @@ static DECL_REPORT_MISSING: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: REPORT_MISSING_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Search],
+    planning_budget: GoalPlanningBudget::BOUNTY_ESCORT,
 };
 static DECL_REPORT_FOUND: GoalSchema = GoalSchema {
     trace_label: "ReportFound",
@@ -451,6 +490,8 @@ static DECL_REPORT_FOUND: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: REPORT_FOUND_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::ReportFound],
+    planning_budget: GoalPlanningBudget::BOUNTY_ESCORT,
 };
 static DECL_ESCORT_TO_SAFETY: GoalSchema = GoalSchema {
     trace_label: "EscortToSafety",
@@ -461,6 +502,8 @@ static DECL_ESCORT_TO_SAFETY: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: ESCORT_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Escort],
+    planning_budget: GoalPlanningBudget::BOUNTY_ESCORT,
 };
 static DECL_PRODUCE_COMMODITY: GoalSchema = GoalSchema {
     trace_label: "ProduceCommodity",
@@ -471,6 +514,8 @@ static DECL_PRODUCE_COMMODITY: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Production],
+    planning_budget: GoalPlanningBudget::PRODUCTION,
 };
 static DECL_SELL_COMMODITY: GoalSchema = GoalSchema {
     trace_label: "SellCommodity",
@@ -481,6 +526,8 @@ static DECL_SELL_COMMODITY: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: STAFF_MARKET_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Enterprise],
+    planning_budget: GoalPlanningBudget::PRODUCTION,
 };
 static DECL_RESTOCK_COMMODITY: GoalSchema = GoalSchema {
     trace_label: "RestockCommodity",
@@ -491,6 +538,8 @@ static DECL_RESTOCK_COMMODITY: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Enterprise],
+    planning_budget: GoalPlanningBudget::PRODUCTION,
 };
 static DECL_MOVE_CARGO: GoalSchema = GoalSchema {
     trace_label: "MoveCargo",
@@ -501,6 +550,8 @@ static DECL_MOVE_CARGO: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Enterprise],
+    planning_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
 };
 static DECL_LOOT_CORPSE: GoalSchema = GoalSchema {
     trace_label: "LootCorpse",
@@ -511,6 +562,8 @@ static DECL_LOOT_CORPSE: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: OPPORTUNISTIC_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Combat],
+    planning_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
 };
 static DECL_BURY_CORPSE: GoalSchema = GoalSchema {
     trace_label: "BuryCorpse",
@@ -521,6 +574,8 @@ static DECL_BURY_CORPSE: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Combat],
+    planning_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
 };
 static DECL_FULFILL_BOUNTY: GoalSchema = GoalSchema {
     trace_label: "FulfillBounty",
@@ -531,6 +586,8 @@ static DECL_FULFILL_BOUNTY: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: CLAIM_BOUNTY_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Bounty],
+    planning_budget: GoalPlanningBudget::BOUNTY_ESCORT,
 };
 static DECL_POST_BOUNTY: GoalSchema = GoalSchema {
     trace_label: "PostBounty",
@@ -541,6 +598,8 @@ static DECL_POST_BOUNTY: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: POST_BOUNTY_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::ArtifactPosting],
+    planning_budget: GoalPlanningBudget::BOUNTY_ESCORT,
 };
 static DECL_POST_NOTICE_WARNING: GoalSchema = GoalSchema {
     trace_label: "PostNotice(Warning)",
@@ -551,6 +610,8 @@ static DECL_POST_NOTICE_WARNING: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: POST_NOTICE_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::ArtifactPosting],
+    planning_budget: GoalPlanningBudget::INVESTIGATION,
 };
 static DECL_POST_NOTICE_OTHER: GoalSchema = GoalSchema {
     trace_label: "PostNotice(Other)",
@@ -561,6 +622,8 @@ static DECL_POST_NOTICE_OTHER: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: POST_NOTICE_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::ArtifactPosting],
+    planning_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
 };
 static DECL_SHARE_BELIEF_ALARM: GoalSchema = GoalSchema {
     trace_label: "ShareBelief(Alarm)",
@@ -571,6 +634,8 @@ static DECL_SHARE_BELIEF_ALARM: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SHARE_BELIEF_ALARM_POLICY,
     progress_barrier_ops: TELL_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Social],
+    planning_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
 };
 static DECL_SHARE_BELIEF_TESTIMONY: GoalSchema = GoalSchema {
     trace_label: "ShareBelief(Testimony)",
@@ -581,6 +646,8 @@ static DECL_SHARE_BELIEF_TESTIMONY: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SHARE_BELIEF_TESTIMONY_POLICY,
     progress_barrier_ops: TELL_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Social],
+    planning_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
 };
 static DECL_SHARE_BELIEF_GOSSIP: GoalSchema = GoalSchema {
     trace_label: "ShareBelief(Gossip)",
@@ -591,6 +658,8 @@ static DECL_SHARE_BELIEF_GOSSIP: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SHARE_BELIEF_GOSSIP_POLICY,
     progress_barrier_ops: TELL_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Social],
+    planning_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
 };
 static DECL_ASK_WITNESS: GoalSchema = GoalSchema {
     trace_label: "AskWitness",
@@ -601,6 +670,8 @@ static DECL_ASK_WITNESS: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: EPISTEMIC_SENSING_POLICY,
     progress_barrier_ops: ASK_WITNESS_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::AskWitness],
+    planning_budget: GoalPlanningBudget::INVESTIGATION,
 };
 static DECL_CLAIM_OFFICE: GoalSchema = GoalSchema {
     trace_label: "ClaimOffice",
@@ -611,6 +682,8 @@ static DECL_CLAIM_OFFICE: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: OFFICE_CLAIM_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Political],
+    planning_budget: GoalPlanningBudget::INVESTIGATION,
 };
 static DECL_SUPPORT_CANDIDATE_FOR_OFFICE: GoalSchema = GoalSchema {
     trace_label: "SupportCandidateForOffice",
@@ -621,6 +694,8 @@ static DECL_SUPPORT_CANDIDATE_FOR_OFFICE: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: OFFICE_CLAIM_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Political],
+    planning_budget: GoalPlanningBudget::INVESTIGATION,
 };
 static DECL_INVESTIGATE_VIOLATION: GoalSchema = GoalSchema {
     trace_label: "InvestigateViolation",
@@ -631,6 +706,11 @@ static DECL_INVESTIGATE_VIOLATION: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: INVESTIGATE_BARRIER,
+    candidate_extractors: &[
+        CandidateExtractorId::RecordedViolation,
+        CandidateExtractorId::ExpectationViolation,
+    ],
+    planning_budget: GoalPlanningBudget::INVESTIGATION,
 };
 static DECL_PATROL: GoalSchema = GoalSchema {
     trace_label: "Patrol",
@@ -641,6 +721,8 @@ static DECL_PATROL: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::CooldownRetry,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: PATROL_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Patrol],
+    planning_budget: GoalPlanningBudget::INVESTIGATION,
 };
 static DECL_EXPLORE_LOCATION: GoalSchema = GoalSchema {
     trace_label: "ExploreLocation",
@@ -651,6 +733,11 @@ static DECL_EXPLORE_LOCATION: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[
+        CandidateExtractorId::Exploration,
+        CandidateExtractorId::ProactiveExploration,
+    ],
+    planning_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
 };
 static DECL_STEAL_ITEM: GoalSchema = GoalSchema {
     trace_label: "StealItem",
@@ -661,6 +748,8 @@ static DECL_STEAL_ITEM: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: THEFT_POLICY,
     progress_barrier_ops: NO_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Crime],
+    planning_budget: GoalPlanningBudget::INVESTIGATION,
 };
 static DECL_ACCUSE: GoalSchema = GoalSchema {
     trace_label: "Accuse",
@@ -671,6 +760,8 @@ static DECL_ACCUSE: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: ACCUSE_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Crime],
+    planning_budget: GoalPlanningBudget::INVESTIGATION,
 };
 static DECL_PUNISH_FINE: GoalSchema = GoalSchema {
     trace_label: "PunishAccused(Fine)",
@@ -681,6 +772,8 @@ static DECL_PUNISH_FINE: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: FINE_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Crime],
+    planning_budget: GoalPlanningBudget::INVESTIGATION,
 };
 static DECL_PUNISH_EXILE: GoalSchema = GoalSchema {
     trace_label: "PunishAccused(Exile)",
@@ -691,6 +784,8 @@ static DECL_PUNISH_EXILE: GoalSchema = GoalSchema {
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: EXILE_BARRIER,
+    candidate_extractors: &[CandidateExtractorId::Crime],
+    planning_budget: GoalPlanningBudget::INVESTIGATION,
 };
 
 pub trait GoalDispatchKeySchemaExt {
@@ -754,9 +849,10 @@ mod tests {
     use crate::goal_policy::SuppressionRule;
     use crate::{GoalDispatchKey, GoalKindPlannerExt, PlannerOpKind};
     use worldwake_core::{
-        AcquisitionQuantity, ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind,
-        CommodityPurpose, EntityId, ExpectationId, GoalKind, HomeostaticNeedId, ProofRequirement,
-        PunishmentKind, Quantity, RecipeId, RecordEntryId, RewardSource, TellTopic, ViolationId,
+        AcquisitionQuantity, ArtifactPostingContext, BountyTarget, BountyTerms,
+        CandidateExtractorId, CommodityKind, CommodityPurpose, EntityId, ExpectationId, GoalKind,
+        GoalPlanningBudget, HomeostaticNeedId, ProofRequirement, PunishmentKind, Quantity,
+        RecipeId, RecordEntryId, RewardSource, TellTopic, ViolationId,
     };
 
     const ALL_KEYS: &[GoalDispatchKey] = &[
@@ -993,6 +1089,58 @@ mod tests {
             let declaration: &'static GoalSchema = key.declaration();
             assert!(!declaration.trace_label.is_empty());
         }
+    }
+
+    #[test]
+    fn goal_schema_registry_covers_all_dispatch_keys() {
+        for key in GoalDispatchKey::ALL {
+            let declaration = key.declaration();
+
+            assert!(
+                !declaration.candidate_extractors.is_empty(),
+                "GoalDispatchKey::{key:?} has no candidate_extractors entry"
+            );
+        }
+    }
+
+    #[test]
+    fn goal_schema_assigns_expected_extractor_and_budget_examples() {
+        assert_eq!(
+            GoalDispatchKey::ConsumeOwnedCommodity
+                .declaration()
+                .candidate_extractors,
+            &[CandidateExtractorId::Need]
+        );
+        assert_eq!(
+            GoalDispatchKey::ConsumeOwnedCommodity
+                .declaration()
+                .planning_budget,
+            GoalPlanningBudget::SELF_CARE
+        );
+        assert_eq!(
+            GoalDispatchKey::AcquireRecipeInput
+                .declaration()
+                .candidate_extractors,
+            &[CandidateExtractorId::OpportunityCompiler]
+        );
+        assert_eq!(
+            GoalDispatchKey::InvestigateViolation
+                .declaration()
+                .candidate_extractors,
+            &[
+                CandidateExtractorId::RecordedViolation,
+                CandidateExtractorId::ExpectationViolation,
+            ]
+        );
+        assert_eq!(
+            GoalDispatchKey::ExploreLocation
+                .declaration()
+                .candidate_extractors,
+            &[
+                CandidateExtractorId::Exploration,
+                CandidateExtractorId::ProactiveExploration,
+            ]
+        );
     }
 
     #[test]

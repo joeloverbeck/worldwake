@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — restructures candidate emission (P12 phase distinction: candidate generation phase); deletes 20 `emit_*` functions; rewires `agent_tick/planning.rs` to registry-driven dispatch
-**Deps**: archive/tickets/S146GOASCHGOA-003.md, tickets/S146GOASCHGOA-004.md
+**Deps**: archive/tickets/S146GOASCHGOA-003.md, archive/tickets/S146GOASCHGOA-004.md
 
 ## Problem
 
@@ -20,7 +20,7 @@ S146 PR-2 migrates the 20 hand-coded `emit_*` functions in `crates/worldwake-ai/
 4. AI-regression layer: this ticket modifies the candidate-generation phase (P12 phase distinction). Intended verification layer is candidate-generation focused/unit coverage — the 17 existing tests named in item 1 prove per-extractor output equivalence. Runtime `agent_tick` decision-trace coverage is exercised by `generate_candidates_orchestrates_all_domain_groups:16928`. Golden E2E coverage is ticket 007's responsibility (parity fixtures + new golden).
 5. Live `GoalKind` surface under test: all 25+ variants of `GoalKind` (`crates/worldwake-core/src/goal.rs:62`) — the per-extractor impl set covers the full set via the `CandidateExtractorId` → impl mapping. The current operator/affordance surface each scenario depends on is unchanged because the `extract()` body is the unchanged emit_* body.
 6. AI-regression layer detail: `agent_tick/planning.rs` migration is in the runtime `agent_tick` decision-trace layer. Local needs-only harness is NOT sufficient — full action registries are required because the 20 extractors span enterprise, combat, political, and patrol families. Use `cargo test -p worldwake-ai` (the workspace integration tests there exercise the full action registry).
-7. Ordering layer: this ticket preserves the existing extractor invocation order (registry iteration order = `BTreeMap` natural order of `GoalDispatchKey`, then `candidate_extractors` slice order per schema entry). No ordering substrate is changed in this ticket — ticket 006 owns search/budget ordering changes.
+7. Ordering layer: this ticket preserves the existing extractor invocation order by deriving a deduped extractor sequence from `GoalSchema.candidate_extractors` in the current legacy order. It must not run extractors once per schema entry: several `GoalDispatchKey` entries share one extractor family and ticket 004 intentionally recorded multi-producer entries for `InvestigateViolation` and `ExploreLocation`. No search/budget ordering substrate is changed in this ticket — ticket 006 owns search/budget ordering changes.
 8. Heuristic removal: no heuristic or filter is removed in this ticket. The migration is structurally invariant — every gate, threshold, and suppression rule in each `emit_*` function moves intact into its `extract()` impl body. The new `is_enabled_for` guard adds an extractor-level skip when `disabled_extractors.contains(&self.id())`, which is a new feature, not a removed one.
 13. Adjacent contradictions:
    - The 17 existing tests in `candidate_generation.rs` exercise `emit_*` functions directly. After migration, the tests either (a) call the extractor impl's `extract()` method directly, or (b) call through the registry. Classified as **required consequence** — each test must be updated to call the new entry point. Tests that assert on candidate counts/contents per extractor are best routed through (a) (direct impl call) for tightness; tests that assert on orchestration (`generate_candidates_orchestrates_all_domain_groups:16928`) are best routed through (b).
@@ -36,7 +36,7 @@ S146 PR-2 migrates the 20 hand-coded `emit_*` functions in `crates/worldwake-ai/
 ## Verification Layers
 
 1. Each `emit_*` function's behavior is preserved under migration (candidate-generation phase) → existing focused tests in `candidate_generation.rs::#[cfg(test)]` (17 tests listed in Assumption Reassessment item 1) updated to exercise the new extractor impls; assertions on candidate sets remain identical
-2. Registry iteration order matches the pre-migration sequence in `agent_tick/planning.rs` → focused test asserting registry-driven dispatch produces same `Vec<GoalOffer>` as legacy explicit-call sequence (parity fixture comparison; deeper coverage is ticket 007's responsibility)
+2. Registry-derived extractor order matches the pre-migration sequence in `agent_tick/planning.rs` and dedupes repeated extractor IDs → focused test asserting registry-driven dispatch produces same `Vec<GoalOffer>` as legacy explicit-call sequence (parity fixture comparison; deeper coverage is ticket 007's responsibility)
 3. `disabled_extractors` honored at dispatch time → focused test in `agent_tick/planning.rs::#[cfg(test)]`: agent with `disabled_extractors: BTreeSet::from([CandidateExtractorId::Enterprise])` emits no enterprise candidates even when the underlying belief state would produce them
 4. Decision-trace surface preserves per-extractor suppression provenance → existing `CandidateSuppressionDiagnostic` flow through `CandidateGenerationDiagnostics` remains intact (no new trace field; existing diagnostics continue to record per-extractor suppression reasons)
 
@@ -128,27 +128,26 @@ pub fn build_extractor_registry()
 Replace the explicit `emit_*` call sequence (lines ~449–480 in `agent_tick/planning.rs::generate_candidates_with_memories_with_travel_horizon_impl`) with registry-driven dispatch:
 
 ```rust
-let registry = ai_runtime.goal_schema_registry();
 let extractors = ai_runtime.extractor_registry();
 let profile = ctx.view.agent_schema_context_profile(ctx.agent);
 let mut candidates: Vec<GoalOffer> = Vec::new();
 let mut diagnostics = CandidateGenerationDiagnostics::default();
-for schema in registry.values() {
-    for extractor_id in schema.candidate_extractors {
-        let Some(extractor) = extractors.get(extractor_id) else { continue };
-        if !extractor.is_enabled_for(profile) {
-            continue;
-        }
-        let mut ext_ctx = ExtractorContext {
-            generation: &ctx,
-            diagnostics: &mut diagnostics,
-        };
-        candidates.extend(extractor.extract(&mut ext_ctx));
+for extractor_id in ordered_candidate_extractors_from_goal_schemas() {
+    let Some(extractor) = extractors.get(&extractor_id) else {
+        continue;
+    };
+    if !extractor.is_enabled_for(profile) {
+        continue;
     }
+    let mut ext_ctx = ExtractorContext {
+        generation: &ctx,
+        diagnostics: &mut diagnostics,
+    };
+    candidates.extend(extractor.extract(&mut ext_ctx));
 }
 ```
 
-The `ai_runtime.goal_schema_registry()` and `ai_runtime.extractor_registry()` accessors land on the appropriate runtime singleton in `worldwake-ai` (likely `AgentDecisionRuntime` or a sibling). Confirm the host during implementation.
+`ordered_candidate_extractors_from_goal_schemas()` is a small helper that walks the schema metadata, dedupes extractor IDs, and preserves the legacy top-level emitter order. The order is explicitly tested. The `ai_runtime.extractor_registry()` accessor lands on the appropriate runtime singleton in `worldwake-ai` (likely `AgentDecisionRuntime` or a sibling). Confirm the host during implementation.
 
 ### 5. Delete 20 `emit_*` functions
 

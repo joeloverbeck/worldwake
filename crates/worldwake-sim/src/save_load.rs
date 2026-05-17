@@ -373,7 +373,7 @@ mod tests {
         let mut schema_context = AgentSchemaContextProfile::default();
         schema_context
             .disabled_extractors
-            .insert(CandidateExtractorId(11));
+            .insert(CandidateExtractorId::Political);
         schema_context.budget_overrides.insert(
             GoalDispatchKey::AcquireSelfConsume,
             GoalPlanningBudget::TRAVEL_PURCHASE,
@@ -1342,7 +1342,7 @@ mod tests {
         assert!(
             restored_schema_context
                 .disabled_extractors
-                .contains(&CandidateExtractorId(11))
+                .contains(&CandidateExtractorId::Political)
         );
         assert_eq!(
             restored_schema_context

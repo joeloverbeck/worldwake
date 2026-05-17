@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `search/mod.rs` reads per-goal budget from registry; `PlanAttemptTrace` gains provenance field (decision-trace layer)
-**Deps**: archive/tickets/S146GOASCHGOA-002.md, tickets/S146GOASCHGOA-004.md
+**Deps**: archive/tickets/S146GOASCHGOA-002.md, archive/tickets/S146GOASCHGOA-004.md
 
 ## Problem
 

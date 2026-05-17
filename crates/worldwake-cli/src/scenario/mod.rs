@@ -3658,7 +3658,7 @@ mod tests {
         let mut schema_context = AgentSchemaContextProfile::default();
         schema_context
             .disabled_extractors
-            .insert(CandidateExtractorId(2));
+            .insert(CandidateExtractorId::Enterprise);
         schema_context.budget_overrides.insert(
             GoalDispatchKey::InvestigateViolation,
             GoalPlanningBudget::INVESTIGATION,

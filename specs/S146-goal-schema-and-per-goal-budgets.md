@@ -8,7 +8,7 @@ Folds in PR-2 (Data-Driven GoalSchema Registry) and PR-17 (Per-Goal Planning Bud
 
 The current candidate-emission path in `crates/worldwake-ai/src/candidate_generation.rs` defines 20 hand-coded `emit_*` functions, one per goal family (`emit_need_candidates`, `emit_production_candidates`, `emit_enterprise_candidates`, `emit_disposal_candidates`, `emit_bounty_candidates`, `emit_artifact_posting_candidates`, `emit_combat_candidates`, `emit_crime_candidates`, `emit_social_candidates`, `emit_ask_witness_candidates`, `emit_patrol_candidates`, `emit_political_candidates`, `emit_recorded_violation_candidates`, `emit_search_candidates`, `emit_report_found_candidates`, `emit_escort_candidates`, `emit_exploration_candidates`, `emit_proactive_exploration_candidates`, `emit_expectation_violation_candidates`, `emit_opportunity_compiler_candidates`). Each function is independently maintained and called explicitly from `agent_tick/planning.rs`. As the project grows toward "dozens or hundreds of goals", this hand-shape becomes brittle: each new goal family adds another emitter function, another call site, another set of suppression rules, and another lint surface.
 
-The goal-kind registry now lives as `GoalSchema` (`crates/worldwake-ai/src/goal_schema.rs:61`), renamed in place from `GoalDispatchDeclaration` by `archive/tickets/S146GOASCHGOA-001.md`. It carries `provenance_family`, `trace_label`, `relevant_ops`, `invalidation_strategy`, `feasibility_strategy`, `frontier_exhaustion_strategy`, `family_policy`, and `progress_barrier_ops` per `GoalDispatchKey` (`crates/worldwake-core/src/goal_dispatch_key.rs:6` — the 41-variant discriminant-only enum that already has `Copy`, an `ALL` constant, and a `from_goal_kind(...)` mapping). S146 extends this declaration in place by adding exactly two new fields: `candidate_extractors: Vec<CandidateExtractorId>` (PR-2 fold-in) and `planning_budget: GoalPlanningBudget` (PR-17 fold-in). The 20 `emit_*` functions are migrated into a `CandidateExtractor` registry indexed by `CandidateExtractorId`. A new universal `AgentSchemaContextProfile` carries per-agent extractor opt-out and per-goal budget-override settings (so scenarios can opt agents out of expensive extractor families and tune budget tiers without code changes).
+The goal-kind registry now lives as `GoalSchema` (`crates/worldwake-ai/src/goal_schema.rs:61`), renamed in place from `GoalDispatchDeclaration` by `archive/tickets/S146GOASCHGOA-001.md`. It carries `provenance_family`, `trace_label`, `relevant_ops`, `invalidation_strategy`, `feasibility_strategy`, `frontier_exhaustion_strategy`, `family_policy`, and `progress_barrier_ops` per `GoalDispatchKey` (`crates/worldwake-core/src/goal_dispatch_key.rs:6` — the 41-variant discriminant-only enum that already has `Copy`, an `ALL` constant, and a `from_goal_kind(...)` mapping). S146 extends this declaration in place by adding exactly two new fields: `candidate_extractors: &'static [CandidateExtractorId]` (PR-2 fold-in) and `planning_budget: GoalPlanningBudget` (PR-17 fold-in). The 20 `emit_*` functions are migrated into a `CandidateExtractor` registry indexed by `CandidateExtractorId`. A new universal `AgentSchemaContextProfile` carries per-agent extractor opt-out and per-goal budget-override settings (so scenarios can opt agents out of expensive extractor families and tune budget tiers without code changes).
 
 Per FND-28 single-truth: `GoalSchema` is the only goal-kind registry; no parallel core-resident `GoalSchema` is introduced, no `GoalKindDiscriminant` is added (the existing `GoalDispatchKey` is the discriminant). Per FND-28 "no dead paths": only fields backed by concrete S146 deliverables are added; ID-typed pointers to systems that don't yet exist (satisfaction predicates, ranking features, expectation templates, information-gap templates, motive-source hints, invalidator templates, HTN methods, explanation templates) are NOT introduced. Future specs add those fields when they have real backing implementations (e.g., S147 will add `methods: Vec<MethodSchemaId>` when HTN decomposition lands).
 
@@ -20,7 +20,7 @@ Phase 12: AI Architecture Evolution — Draft
 
 ## Crates
 
-- `worldwake-ai` — owns `GoalSchema` (rename of existing `GoalDispatchDeclaration`), `CandidateExtractor` trait, `CandidateExtractorId`, and the migrated extractor registry. Refactors `candidate_generation.rs` so the 20 emit functions live as `CandidateExtractor` impls registered against `GoalSchema.candidate_extractors`. Extends `decision_trace.rs` with the per-attempt `goal_budget` provenance field.
+- `worldwake-ai` — owns `GoalSchema` (rename of existing `GoalDispatchDeclaration`), the `CandidateExtractor` trait, and the migrated extractor registry. Refactors `candidate_generation.rs` so the 20 emit functions live as `CandidateExtractor` impls keyed by the core-owned `CandidateExtractorId` values referenced from `GoalSchema.candidate_extractors`. Extends `decision_trace.rs` with the per-attempt `goal_budget` provenance field.
 - `worldwake-core` — adds `GoalPlanningBudget` (concrete struct with preset constants) and `AgentSchemaContextProfile` (new universal ECS component on `EntityKind::Agent`). Registers the component in `component_schema.rs`. No change to authoritative world state shape beyond the new component.
 - `worldwake-sim` — extends `GoalBeliefView` with a single accessor for `AgentSchemaContextProfile` so the AI crate can read it through the belief-view layer (Pattern: New Component Read by AI Crate).
 - `worldwake-systems` — no change.
@@ -92,7 +92,7 @@ pub struct GoalSchema {
 }
 ```
 
-`CandidateExtractorId` is a typed newtype (`pub struct CandidateExtractorId(pub u16);`) defined in the same module as the `CandidateExtractor` trait (D3). The `static DECL_*` entries (currently `DECL_CONSUME_OWNED_COMMODITY`, `DECL_ACQUIRE_SELF_CONSUME`, …, ~41 entries) are updated to populate the two new fields. The discriminant remains `GoalDispatchKey`; no `GoalKindDiscriminant` is introduced.
+`CandidateExtractorId` is the core-owned 20-variant enum landed by `archive/tickets/S146GOASCHGOA-004.md` in `crates/worldwake-core/src/agent_schema_context_profile.rs`. The `static DECL_*` entries (currently `DECL_CONSUME_OWNED_COMMODITY`, `DECL_ACQUIRE_SELF_CONSUME`, …, ~41 entries) populate the two new fields. The discriminant remains `GoalDispatchKey`; no `GoalKindDiscriminant` is introduced.
 
 ### D2: `GoalPlanningBudget`
 
@@ -197,7 +197,7 @@ pub struct AgentSchemaContextProfile {
 
 Universal per FND-22 (agent diversity through concrete variation). `Default` impl yields empty sets/maps — no override. Scenarios opt agents out of expensive extractors (e.g., a peasant with `disabled_extractors: BTreeSet::from([CandidateExtractorId::Enterprise])`) or override budget tier per goal kind.
 
-The component contains no `EntityId` references (both fields use integer newtypes and primitive-keyed maps), so it does NOT need a `*Def` wrapper type — `AgentSchemaContextProfile` itself serves as the scenario-authorable shape. `MethodSchemaId` / `enabled_methods` are explicitly NOT included; S147 will add them when HTN method decomposition lands.
+The component contains no `EntityId` references (the fields use `CandidateExtractorId` enum values, `GoalDispatchKey`, and `GoalPlanningBudget`), so it does NOT need a `*Def` wrapper type — `AgentSchemaContextProfile` itself serves as the scenario-authorable shape. `MethodSchemaId` / `enabled_methods` are explicitly NOT included; S147 will add them when HTN method decomposition lands.
 
 Defined in `worldwake-core` per the core-residence constraint for ECS components (Pattern: New Component on EntityKind::Agent).
 
@@ -206,25 +206,24 @@ Defined in `worldwake-core` per the core-residence constraint for ECS components
 The current explicit list of `emit_*` calls is replaced by registry-driven dispatch. The profile is read through the belief-view accessor introduced in D11 (NOT through a `.schema_context_profile` field — `actor` is an `EntityId`, not a struct):
 
 ```rust
-let registry = ai_runtime.goal_schema_registry();
 let extractors = ai_runtime.extractor_registry();
 let profile = ctx.generation.view.agent_schema_context_profile(ctx.generation.agent);
 let mut candidates: Vec<GoalOffer> = Vec::new();
-for schema in registry.values() {
-    for extractor_id in schema.candidate_extractors {
-        let Some(extractor) = extractors.get(extractor_id) else { continue };
-        if !extractor.is_enabled_for(profile) {
-            continue;
-        }
-        candidates.extend(extractor.extract(&ExtractorContext {
-            generation: &ctx.generation,
-            diagnostics: &mut ctx.diagnostics,
-        }));
+for extractor_id in ordered_candidate_extractors_from_goal_schemas() {
+    let Some(extractor) = extractors.get(&extractor_id) else {
+        continue;
+    };
+    if !extractor.is_enabled_for(profile) {
+        continue;
     }
+    candidates.extend(extractor.extract(&ExtractorContext {
+        generation: &ctx.generation,
+        diagnostics: &mut ctx.diagnostics,
+    }));
 }
 ```
 
-The 20 direct `emit_*` call sites in `agent_tick/planning.rs` are deleted. `GoalOffer` conversion remains unchanged.
+`ordered_candidate_extractors_from_goal_schemas()` is a deduped, legacy-order read of the `GoalSchema.candidate_extractors` metadata, not a direct "run once per schema entry" loop. This matters because several goal kinds share one extractor family and some goal kinds have multiple producer families (`InvestigateViolation`, `ExploreLocation`). The 20 direct `emit_*` call sites in `agent_tick/planning.rs` are deleted. `GoalOffer` conversion remains unchanged.
 
 ### D7: Per-goal budget application in search
 

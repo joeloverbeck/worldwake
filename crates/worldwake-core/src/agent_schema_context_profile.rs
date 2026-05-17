@@ -3,7 +3,53 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-pub struct CandidateExtractorId(pub u16);
+pub enum CandidateExtractorId {
+    Need,
+    Production,
+    Enterprise,
+    Disposal,
+    Bounty,
+    ArtifactPosting,
+    Combat,
+    Crime,
+    Social,
+    AskWitness,
+    Patrol,
+    Political,
+    RecordedViolation,
+    Search,
+    ReportFound,
+    Escort,
+    Exploration,
+    ProactiveExploration,
+    ExpectationViolation,
+    OpportunityCompiler,
+}
+
+impl CandidateExtractorId {
+    pub const ALL: [Self; 20] = [
+        Self::Need,
+        Self::Production,
+        Self::Enterprise,
+        Self::Disposal,
+        Self::Bounty,
+        Self::ArtifactPosting,
+        Self::Combat,
+        Self::Crime,
+        Self::Social,
+        Self::AskWitness,
+        Self::Patrol,
+        Self::Political,
+        Self::RecordedViolation,
+        Self::Search,
+        Self::ReportFound,
+        Self::Escort,
+        Self::Exploration,
+        Self::ProactiveExploration,
+        Self::ExpectationViolation,
+        Self::OpportunityCompiler,
+    ];
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
 pub struct AgentSchemaContextProfile {
@@ -28,7 +74,9 @@ mod tests {
     #[test]
     fn serde_roundtrip_preserves_overrides() {
         let mut profile = AgentSchemaContextProfile::default();
-        profile.disabled_extractors.insert(CandidateExtractorId(7));
+        profile
+            .disabled_extractors
+            .insert(CandidateExtractorId::Patrol);
         profile.budget_overrides.insert(
             GoalDispatchKey::AcquireSelfConsume,
             GoalPlanningBudget::TRAVEL_PURCHASE,
@@ -38,5 +86,14 @@ mod tests {
         let roundtrip: AgentSchemaContextProfile = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, profile);
+    }
+
+    #[test]
+    fn candidate_extractor_id_all_covers_variant_set() {
+        let all = BTreeSet::from(CandidateExtractorId::ALL);
+
+        assert_eq!(all.len(), 20);
+        assert!(all.contains(&CandidateExtractorId::Need));
+        assert!(all.contains(&CandidateExtractorId::OpportunityCompiler));
     }
 }
