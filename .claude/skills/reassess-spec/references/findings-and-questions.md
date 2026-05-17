@@ -47,6 +47,8 @@ Addition count: **6/7 = 86%** — exceeds 25% threshold, also fires the Substant
 
 Note that D2 and D3 above land in the "refinement" column even though both modify a deliverable's pseudocode — the criterion is whether the implementation path remains a refinement of the original (signature swaps, field-type narrowing) versus a material change to the mechanism, crate set, or data flow. Borderline cases (e.g., D7 — adds a new rendering case to existing observer section) default to refinement when the rendering site already exists and the change is additive at the prose level.
 
+**Absorbed-extension cases** (surface growth without a new D-number): A finding may extend an existing deliverable's surface without introducing a new D-number. Example: the worked example's D5 originally specified routing through `attempt_repair_then_replan`; a reassessment Issue adds a new field-extension to `RepairMemory.last_repair_attempt_tick` and absorbs that extension into D5 rather than creating a new D-section. The disposition would read: `D5 (revalidation routing) | Kept; surface grew (new field-extension on RepairMemory added by reassessment, absorbed into D5) | **addition by surface growth** (no new D-number, but parent D5 now covers a field it didn't previously)`. Principle: count additions by deliverable-surface growth (new field, type, mechanism, or call site the parent didn't previously cover), not by net-new D-section count. A reassessment that adds 3 absorbed extensions to existing deliverables produces `N_a = 3` even though zero new D-numbers land — the addition trigger (25%) fires on surface growth regardless of whether the growth manifests as new D-sections.
+
 Present in this format:
 
 ```

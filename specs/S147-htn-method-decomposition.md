@@ -6,11 +6,11 @@
 
 The external assessment in `reports/ai-architecture-improvements.md` Section 7 (Upgrade D) recommends adding HTN-style methods *above* the existing GOAP planner, applied to goals where naive forward search has prohibitive cost: `FulfillBounty`, `InvestigateViolation`, `Accuse`, `PunishAccused`, `ProduceCommodity`, `RestockCommodity`, `MoveCargo`, `EscortToSafety`, `SearchForMissing`, `ClaimOffice`, `SupportCandidateForOffice`, plus future caravan/patrol/construction/repair/inheritance work. Phase 11 explicitly deferred HTN methods until "S134 (effect schemas), S138 (opportunity compiler), and S141 (motive sources) land" — all archived. The deferral condition is met.
 
-The current two-tier planner (`crates/worldwake-ai/src/search/strategic.rs:35`) already does implicit HTN-like decomposition: `StrategicStage` decomposes a goal into `Goal` and `Acquire(CommodityKind)` stages. The decomposition is generic: any goal with a missing-commodity assumption emits an acquire stage. This works for `Eat` (acquire food → eat) and `BakeBread` (acquire grain → acquire flour → acquire bread-recipe-input → bake) but expresses the decomposition in code, not data.
+The current two-tier planner already does implicit HTN-like decomposition: `build_stages` in `crates/worldwake-ai/src/search/strategic.rs:324` produces a sequence of `StrategicStage` values whose `kind` is `Goal` or `Acquire(CommodityKind)`. The decomposition is generic: any goal with a missing-commodity assumption emits an acquire stage. This works for `ConsumeOwnedCommodity` (acquire food → consume) and for `ProduceCommodity { recipe_id: "Bake Bread" }` (acquire grain → acquire flour → craft) but expresses the decomposition in code, not data.
 
 S147 lands `MethodSchema` as the data-driven layer above strategic decomposition. A `MethodSchema` is a *lawful pursuit pattern*: "how a guard investigates," "how a hunter fulfills a bounty," "how a merchant restocks," not "what story beat should happen." Every leaf remains an ordinary `ActionDef`. Every artifact remains world state. Methods describe search control and reusable craft knowledge per FND-20.
 
-The first ship covers `FulfillBounty`, `ProduceCommodity`, `RestockCommodity`, `InvestigateViolation`, and `EscortToSafety`. Methods are author-written Rust (built-time data, like S146's `GoalSchema` registry); they live in `crates/worldwake-ai/src/htn/methods.rs`. The planner consults method options before forward search: when a method's preconditions are satisfied, the planner substitutes its subgoals into the strategic itinerary. When no method applies, the planner falls back to flat GOAP as today (no behavioral regression on goals without methods).
+The first ship covers `FulfillBounty`, `ProduceCommodity`, `RestockCommodity`, `InvestigateViolation`, and `EscortToSafety`. Methods are author-written Rust (build-time data, like S146's `GoalSchema` registry); they live in `crates/worldwake-ai/src/htn/methods.rs`. The planner consults method options before forward search: when a method's preconditions are satisfied, the planner substitutes its subgoals into the strategic itinerary. When no method applies, the planner falls back to flat GOAP as today (no behavioral regression on goals without methods).
 
 ## Phase and Status
 
@@ -18,20 +18,23 @@ Phase 12: AI Architecture Evolution — Draft
 
 ## Crates
 
-- `worldwake-ai` — owns `htn` module: `MethodSchema`, `MethodSchemaId`, `MethodSelector`, the method registry, and the planner integration point in `search/strategic.rs`.
-- `worldwake-core` — exposes `MethodSchemaId` newtype and shared `SubgoalTemplate` types referenced by the `GoalSchema.methods` field added in this spec.
+- `worldwake-ai` — owns the `htn` module: `MethodSchema`, `MethodSelector`, the method registry, the planner integration in `search/strategic.rs::build_stages`, the per-trace `MethodPlanAttemptTrace` addition to `PlanAttemptTrace`, the `methods: Vec<MethodSchemaId>` field added to `GoalSchema`, and the inline-defined supporting types (`MethodPrecondition`, `SubgoalTemplate`, `MotiveBias`, `MethodFailureMode`, `BeliefPredicate`, `EntityCriterion`, `RoleTag`, `LocationTemplate`, `TopicTemplate`, `PayloadTemplate`, `ArtifactTemplate`, `ClaimRequirement`, `ExplanationTemplateId`). Reason for ai residence: `SubgoalTemplate::PerformAction(PlannerOpKind, …)` references `PlannerOpKind` at `crates/worldwake-ai/src/planner_ops.rs:13`, and `worldwake-core` cannot depend on `worldwake-ai` per the workspace layering `core → sim → systems → ai → cli`.
+- `worldwake-core` — exposes the `MethodSchemaId` newtype (so save/replay payloads can name methods), the two payload-free discriminant mirror enums `MotiveSourceDiscriminant` (mirror of `motive_source.rs:14` `MotiveSource`) and `GoalKindDiscriminant` (mirror of `goal.rs:62` `GoalKind`), the `disabled_methods: BTreeSet<MethodSchemaId>` field added to `AgentSchemaContextProfile` at `agent_schema_context_profile.rs:54`, and the new `Discrepancy::MethodFailure(MethodFailureContext)` variant at `discrepancy.rs:9`.
 - `worldwake-sim` — no change.
 - `worldwake-systems` — no change.
-- `worldwake-cli` — observer Section 7 extends to surface the method chosen per plan attempt and its decomposition trace.
+- `worldwake-cli` — observer Section 7 extends to surface the method chosen per plan attempt and its decomposition trace; no scenario-types change is required because `AgentSchemaContextProfile` already has a universal scenario surface and `disabled_methods` defaults to empty.
 
 ## Dependencies
 
-- S146 (Goal Schema and Per-Goal Budgets, archived at `archive/specs/S146-goal-schema-and-per-goal-budgets.md`, hard dep) — provides the `GoalSchema` registry substrate and `AgentSchemaContextProfile`; this S147 spec adds `GoalSchema.methods: Vec<MethodSchemaId>` and `AgentSchemaContextProfile.enabled_methods`.
-- S138 (Opportunity Compiler, archived, hard dep) — `MethodSchema.required_claims` references `Opportunity` matches.
-- S141 (Motive Source Ledger, archived, hard dep) — method selection consumes `MotiveSourceRef`s to bias method choice (Loyalty → group hunt, Revenge → direct hunt).
-- S134 (Canonical Effect Schema, archived, hard dep) — `MethodSchema.expected_artifacts` references `EffectSchema` post-conditions for verifying method completion.
-- S109 (Typed Discrepancy Taxonomy, archived) — method failure modes produce typed `Discrepancy` per `MethodSchema.failure_modes`.
-- S125 (Institutional Treasuries and Bounty Funding, archived) — `FulfillBounty` method uses treasury-backed reward release.
+- S146 (Goal Schema and Per-Goal Budgets, archived at `archive/specs/S146-goal-schema-and-per-goal-budgets.md`, hard dep) — provides the `GoalSchema` registry substrate (at `crates/worldwake-ai/src/goal_schema.rs:63`) and `AgentSchemaContextProfile` (at `crates/worldwake-core/src/agent_schema_context_profile.rs:54`); this S147 spec adds `GoalSchema.methods` (D11) and `AgentSchemaContextProfile.disabled_methods` (D7).
+- S138 (Opportunity Compiler, archived at `archive/specs/S138-opportunity-compiler.md`, hard dep) — `MethodSchema.required_claims` references `Opportunity` matches via the `ClaimRequirement` template type defined in D1.
+- S141 (Motive Source Ledger, archived at `archive/specs/S141-motive-source-ledger.md`, hard dep) — method selection consumes `MotiveSourceRef`s (at `crates/worldwake-core/src/motive_source.rs:25`) to bias method choice (Loyalty → group hunt, Revenge → direct hunt). S147 adds the core-side `MotiveSourceDiscriminant` mirror in D12 so `MotiveBias` can key on motive *kind* without committing to a specific `WoundId`/`EntityId` payload.
+- S134 (Canonical Effect Schema, archived at `archive/specs/S134-canonical-effect-schema.md`, hard dep) — `MethodSchema.expected_artifacts` references `EffectSchema` post-conditions (at `crates/worldwake-sim/src/effect_schema.rs:9`) for verifying method completion.
+- S109 (Typed Discrepancy Taxonomy, archived at `archive/specs/S109-typed-discrepancy-taxonomy.md`, hard dep) — D6 extends the `Discrepancy` enum at `crates/worldwake-core/src/discrepancy.rs:9` with a single `MethodFailure(MethodFailureContext)` variant; `MethodFailureMode` values (D1) project into a `MethodFailureKind` discriminant carried by that context.
+- S125 (Institutional Treasuries and Bounty Funding, archived at `archive/specs/S125-institutional-treasuries-and-bounty-funding.md`) — `FulfillBounty` methods (D2) use treasury-backed reward release.
+- S111 (Scenario Profile Homogeneity Lints, archived at `archive/specs/S111-scenario-homogeneity-lints.md`) — D7 extends the `ProfileHomogeneity` lint at `crates/worldwake-cli/src/scenario/lints.rs:28` to warn when every agent in a scenario has identical `disabled_methods`.
+- S144 (Aggregate Scenario Diagnostics, archived at `archive/specs/S144-aggregate-scenario-diagnostics.md`) — D5 extends the `PlanningMetrics` struct at `crates/worldwake-ai/src/scenario_diagnostics/mod.rs:32` with a `method_usage` aggregation.
+- S115 (Agenda Manager, archived at `archive/specs/S115-agenda-manager.md`) — sub-goals execute through `tick_agenda` and `AgendaState` at `crates/worldwake-ai/src/agenda_manager.rs`; methods do not have internal tick loops.
 
 ## Design Goals
 
@@ -39,34 +42,57 @@ Phase 12: AI Architecture Evolution — Draft
 2. **Methods are data, not behavior.** The registry is build-time `MethodSchema` entries; per-tick computation is a deterministic method selector.
 3. **GOAP remains the executor.** Method leaves are ordinary `ActionDef`s; the strategic + tactical search remains the runtime engine.
 4. **No silent privilege.** Methods cannot read off-place world state or invoke other systems. They only constrain *which* subgoals get attempted.
-5. **Per-agent method enablement.** Some agents naturally know more methods than others (a hunter knows GroupHunt; a peasant does not). `AgentSchemaContextProfile.enabled_methods` (added by S147 on the S146 profile) gates which methods apply.
-6. **Deterministic method selection.** Same belief state, same enabled methods, same motive sources → same method choice. No randomness in method dispatch.
+5. **Per-agent method enablement via denylist.** Some agents naturally have access to fewer methods than others (a peasant should not invoke `FulfillBountyGroupHunt`). `AgentSchemaContextProfile.disabled_methods` (added by S147) opts agents *out* of specific methods; empty default means all methods are available. The denylist convention mirrors `AgentSchemaContextProfile.disabled_extractors` and aligns with FND-22 (diversity through concrete per-agent variation).
+6. **Deterministic method selection.** Same belief state, same disabled-methods set, same motive sources → same method choice. No randomness in method dispatch.
 
 ## Non-Goals
 
 - **No method authoring DSL.** Methods are Rust structs; LLM-driven method generation is out of scope (per the assessment's explicit guardrail).
 - **No story-beat methods.** "Hero answers the call" or "merchant betrays guard" are not methods; they would violate FND-20.
 - **No new top-level reasoning framework.** Methods sit *under* the archived S146 `GoalSchema` registry, not above it.
-- **No method-only goals.** Every method-decomposed goal must also have a fallback GOAP path. Removing all methods returns the goal to today's behavior.
+- **No method-only goals.** Every method-decomposed goal must also have a fallback GOAP path. Disabling all methods for a given goal returns the goal to today's behavior.
 - **No method learning.** Methods are author-written. Per-method learning (PR-8 / habit memory) is deferred.
-- **No method-internal scheduling.** Sub-goals execute through the agenda manager (S115); methods do not have internal tick loops.
+- **No method-internal scheduling.** Sub-goals execute through `tick_agenda` (S115); methods do not have internal tick loops.
+- **No new authoritative state on method success.** A successful method run produces only ordinary action effects (event log entries from leaf `ActionDef`s) plus the per-tick `MethodPlanAttemptTrace`. The trace is not authoritative state; the action effects are.
 
 ## FOUNDATIONS Alignment
 
 | Principle | How Satisfied |
 |-----------|---------------|
-| FND-20 (Resource-Bounded Practical Reasoning Over Scripts) | Methods encode reusable affordance composition; they do not encode plot progression. The "test" — "this kind of agent pursues this kind of world condition under these beliefs" — is exactly satisfied. |
+| FND-7 (Locality of Motion, Interaction, Communication) | Method selector reads only the agent's belief view, profile, and motive ledger — no global state. |
+| FND-14 (World State Is Not Belief State) | All method preconditions evaluate `BeliefPredicate`s against the agent's belief view; world state is never read by selection. |
+| FND-20 (Resource-Bounded Practical Reasoning Over Scripts) | Methods encode reusable affordance composition; they do not encode plot progression. The principle's test — "how this kind of agent pursues this kind of world condition under these beliefs" — is exactly satisfied. |
+| FND-22 (Agent Diversity Through Concrete Variation) | `AgentSchemaContextProfile.disabled_methods` allows scenarios to author per-role method access (peasants opt out of `FulfillBountyGroupHunt`, guards opt out of nothing, etc.). Diversity is concrete state, not abstract score. |
 | FND-26 (Systems Interact Through State, Not Through Each Other) | Methods read belief views and snapshot state; they produce subgoal templates that the planner consumes. No cross-system command. |
-| FND-28 (No Backward Compatibility in Live Authority Paths) | Methods extend the planner; the no-method fallback is the actual current path, not a legacy shim. |
+| FND-28 (No Backward Compatibility in Live Authority Paths) | Methods extend the planner; the no-method fallback is the actual current path of `build_stages`, not a legacy shim. The new `Discrepancy::MethodFailure` variant lives alongside existing variants; no parallel "method-aware BeliefStale" coexists with non-method `BeliefStale`. |
 | FND-29 (Debuggability Is a Product Feature) | Method choice and decomposition are recorded in `PlanAttemptTrace.method_trace`; observer Section 7 surfaces them. |
-| FND-30 (Every New System Spec Must Declare Its Causal Hooks) | Every `MethodSchema` carries `failure_modes`, `expected_artifacts`, `required_claims`, and `preconditions` — the FND-30 fields. |
+| FND-29A (Causal History Is Authoritative, Append-Only) | Method failures attribute through the typed `Discrepancy::MethodFailure` variant (D6), so later state changes are explainable from authoritative state, not from optional trace logs. |
+| FND-30 (Every New System Spec Must Declare Its Causal Hooks) | Section H below covers all 18 declared hooks for the new HTN module and the field extensions. |
 
 ## Deliverables
 
-### D1: `MethodSchema`
+### D1: `MethodSchema` and supporting type surface
+
+All types in this deliverable live in `worldwake-ai`. The HTN module structure:
+
+```
+crates/worldwake-ai/src/htn/
+├── mod.rs
+├── method_schema.rs    (D1 types)
+├── selector.rs         (D3)
+├── registry.rs         (D8)
+└── methods.rs          (D2 first-ship method definitions)
+```
 
 ```rust
-// crates/worldwake-ai/src/htn/method_schema.rs (new)
+// crates/worldwake-ai/src/htn/method_schema.rs
+use worldwake_core::{
+    CommodityKind, EntityId, GoalKindDiscriminant, MethodSchemaId,
+    MotiveSourceDiscriminant, Permille, Quantity, WorkstationTag,
+};
+use crate::planner_ops::PlannerOpKind;
+use crate::goal_planning_budget::GoalPlanningBudget;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MethodSchema {
     pub id: MethodSchemaId,
@@ -77,17 +103,19 @@ pub struct MethodSchema {
     pub required_claims: Vec<ClaimRequirement>,
     pub failure_modes: Vec<MethodFailureMode>,
     pub explanation_template: ExplanationTemplateId,
-    pub motive_bias: Vec<MotiveBias>,           // S141 integration
-    pub planning_budget_hint: Option<GoalPlanningBudget>,   // S146 override
+    pub motive_bias: Vec<MotiveBias>,
+    pub planning_budget_hint: Option<GoalPlanningBudget>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MethodPrecondition {
     BeliefHolds(BeliefPredicate),
-    MotiveSourcePresent(MotiveSourceVariantId),
+    MotiveSourcePresent(MotiveSourceDiscriminant),
     AgentRole(RoleTag),
     LocationKnown(EntityCriterion),
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SubgoalTemplate {
     AcquireCommodity { commodity: CommodityKind, min_quantity: Quantity },
     TravelTo(LocationTemplate),
@@ -99,11 +127,13 @@ pub enum SubgoalTemplate {
     ReturnTo(LocationTemplate),
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MotiveBias {
-    pub motive_variant: MotiveSourceVariantId,
+    pub motive_variant: MotiveSourceDiscriminant,
     pub weight: Permille,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MethodFailureMode {
     PreconditionLost(BeliefPredicate),
     SubgoalUnachievable(usize),         // index into subgoals
@@ -111,191 +141,563 @@ pub enum MethodFailureMode {
     ClaimDenied(ClaimRequirement),
     Timeout(u32),                        // ticks
 }
+
+// --- Supporting template types (inline-defined for first-ship scope) ---
+
+/// Belief predicates evaluated against the agent's belief view in method
+/// preconditions and failure modes. Variants cover only the surfaces the
+/// first-ship methods require; new variants are added as methods need them.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BeliefPredicate {
+    BountyRecordExists { bounty: EntityId },
+    BountyExpired { bounty: EntityId },
+    TargetLastSeenKnown { target: EntityId },
+    WitnessNamesKnown { violation: EntityId },
+    InstitutionalRecordBelievedExtant { violation: EntityId },
+    ResourceSourceKnown { commodity: CommodityKind },
+    SellerKnown { commodity: CommodityKind },
+    OwnedCommodityBelowThreshold { commodity: CommodityKind, threshold: Quantity },
+    OwnsInputsForRecipe { recipe_id: u32 },
+    EscorteeBelievedSafeAt { escortee: EntityId },
+    AllyOrBountyOfficeAvailable,
+    TargetBelievedDangerous { target: EntityId },
+}
+
+/// Identifies a kind of entity by lawful, perceivable properties.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EntityCriterion {
+    Target(EntityId),
+    Workstation(WorkstationTag),
+    ResourceSource(CommodityKind),
+    Seller(CommodityKind),
+    OfficeOfKind(crate::role::OfficeKind),
+    Witness { topic: TopicTemplate },
+    ViolationEvidence { violation: EntityId },
+    Ledger { institution: EntityId },
+}
+
+/// Coarse role discriminator for method enablement preconditions; mirrors
+/// existing institutional role concepts without introducing a new authority
+/// surface. Scenarios already author per-role data through agent membership
+/// in offices; `RoleTag` here is a read-side classifier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum RoleTag {
+    Hunter,
+    Guard,
+    Merchant,
+    Magistrate,
+    Crafter,
+    Caravaneer,
+    Civilian,
+}
+
+/// Names a location relative to the agent's beliefs and the method's context.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LocationTemplate {
+    LastKnownTargetPlace { target: EntityId },
+    NearestSellerOf { commodity: CommodityKind },
+    AgentHome,
+    BountyIssuerPlace { bounty: EntityId },
+    OfficePlace { institution: EntityId },
+    EscorteeHome { escortee: EntityId },
+    KnownWorkstationFor { recipe_id: u32 },
+    StagingPlaceForConfrontation { target: EntityId },
+}
+
+/// Witness-ask topic template.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TopicTemplate {
+    TargetWhereabouts { target: EntityId },
+    ViolationCircumstances { violation: EntityId },
+}
+
+/// Payload synthesis strategy for a templated `PerformAction` subgoal. The
+/// planner materializes `Explicit` payloads as-is and resolves `FromContext`
+/// payloads from the active method's per-subgoal binding context.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PayloadTemplate {
+    FromContext,
+    Explicit(PayloadValueTemplate),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PayloadValueTemplate {
+    Trade { commodity: CommodityKind, quantity: Quantity },
+    Craft { recipe_id: u32 },
+    Attack { target: EntityId },
+    ClaimBounty { bounty: EntityId },
+    EscortToSafety { escortee: EntityId, destination: LocationTemplate },
+}
+
+/// References a class of evidence artifact the method expects to inspect or
+/// produce. Each variant resolves through perception against world artifacts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ArtifactTemplate {
+    ViolationEvidence { violation: EntityId },
+    Ledger { institution: EntityId },
+    BountyProof { bounty: EntityId, target: EntityId },
+}
+
+/// Names a coordination requirement (queue slot, office authority, resource
+/// source access). Resolved against `Opportunity` matches from the S138
+/// opportunity compiler at runtime.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ClaimRequirement {
+    OfficeAuthority { office: EntityId },
+    ResourceSourceAccess { commodity: CommodityKind, place: EntityId },
+    BountyIssuance { bounty: EntityId },
+    FacilityQueueSlot { facility: EntityId },
+}
+
+/// Build-time identifier for an explanation template string. The actual
+/// rendering table lives in `htn/explanation_templates.rs` and is consumed by
+/// the observer (D9). Stable across releases — used in trace serialization.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct ExplanationTemplateId(pub u32);
 ```
 
-`Permille` for all weight values. No floats.
+`Permille` for all weight values. No floats. Every embedded type derives or composes from `Copy`/`Clone`/`Eq` as the outer `MethodSchema` requires (verified via the `Hash` requirement on `MotiveSourceDiscriminant` and `GoalKindDiscriminant` per D12).
+
+**Note on supporting type scope**: The variant lists above cover the first-ship methods (D2) exhaustively. Future methods may add variants; each addition is a deliverable on the spec that introduces the new method.
 
 ### D2: First-ship methods
 
-Each method below is shipped as a `MethodSchema` entry in `build_method_registry()`. Names match the assessment's Section 7 examples.
+Each method is shipped as a `MethodSchema` entry in `build_method_registry()` (D8). All `PerformAction` subgoals reference real `PlannerOpKind` variants verified at `crates/worldwake-ai/src/planner_ops.rs:13`.
 
-**FulfillBounty methods**:
-- `FulfillBountyDirect`: preconditions — agent believes bounty record + target last-seen + reward terms. Subgoals — `AcquireCommodity` for weapons/supplies if missing → `TravelTo` last-seen → `ObserveTarget` → `PerformAction(Subdue/Kill)` → collect proof → `ReturnTo` bounty issuer → `PerformAction(ClaimBounty)`. Failure modes — `PreconditionLost(BountyExpired)`, `SubgoalUnachievable(track_target)`.
-- `FulfillBountyInvestigation`: preconditions — bounty known but target location uncertain, witnesses or records believed available. Subgoals — `AskWitness(target_whereabouts)` or `InspectArtifact(violation_record)` → update lead → resume FulfillBountyDirect.
-- `FulfillBountyGroupHunt`: preconditions — target believed dangerous, ally or bounty office available. Subgoals — `PerformAction(RecruitAlly)` → synchronize at staging → `TravelTo` confrontation place → confront. Motive bias toward `Loyalty(ally)`.
+**`FulfillBounty` methods**:
+- `FulfillBountyDirect`: preconditions — `BeliefHolds(BountyRecordExists { bounty })`, `BeliefHolds(TargetLastSeenKnown { target })`. Subgoals — `AcquireCommodity` for weapons/supplies if missing → `TravelTo(LastKnownTargetPlace { target })` → `ObserveTarget(Target(target))` → `PerformAction(Attack, Explicit(Attack { target }))` → `TravelTo(BountyIssuerPlace { bounty })` → `PerformAction(ClaimBounty, Explicit(ClaimBounty { bounty }))`. Failure modes — `PreconditionLost(BountyExpired { bounty })`, `SubgoalUnachievable(<track index>)`.
+- `FulfillBountyInvestigation`: preconditions — `BeliefHolds(BountyRecordExists { bounty })` but not `TargetLastSeenKnown`; `BeliefHolds(WitnessNamesKnown { violation })` or `BeliefHolds(InstitutionalRecordBelievedExtant { violation })`. Subgoals — `AskWitness(TargetWhereabouts { target })` or `InspectArtifact(ViolationEvidence { violation })` → re-evaluate. After belief update, the planner re-runs method selection; success of this method does not directly satisfy the bounty goal — instead it expands the agent's information so `FulfillBountyDirect` can subsequently match.
+- `FulfillBountyGroupHunt`: preconditions — `BeliefHolds(TargetBelievedDangerous { target })`, `BeliefHolds(AllyOrBountyOfficeAvailable)`. Subgoals — `PerformAction(DeclareSupport, ...)` (recruit signal via the existing `PlannerOpKind::DeclareSupport` variant) → `TravelTo(StagingPlaceForConfrontation { target })` → confront. Motive bias toward `MotiveSourceDiscriminant::Loyalty` (high weight). **Default denylist**: most non-hunter, non-guard roles include `FulfillBountyGroupHunt` in their `disabled_methods` set (see D7 universal-component note).
 
-**ProduceCommodity methods**:
-- `ProduceFromOwnedStock`: precondition — agent owns inputs and workstation in same place. Subgoals — `PerformAction(ProduceCommodity)`.
-- `ProduceWithGather`: precondition — agent missing some inputs but knows extractable sources. Subgoals — for each missing input: `AcquireCommodity` → return to workstation → produce.
-- `ProduceWithPurchase`: precondition — agent missing inputs but knows seller. Subgoals — `TravelTo` seller → `PerformAction(BuyCommodity)` → return → produce.
+**`ProduceCommodity` methods**:
+- `ProduceFromOwnedStock`: precondition — `BeliefHolds(OwnsInputsForRecipe { recipe_id })`, `BeliefHolds(KnownWorkstationFor { recipe_id })` and agent at workstation. Subgoals — `PerformAction(Craft, Explicit(Craft { recipe_id }))`.
+- `ProduceWithGather`: precondition — agent missing some inputs but `BeliefHolds(ResourceSourceKnown { commodity })` for each missing input. Subgoals — for each missing input: `AcquireCommodity { commodity, min_quantity }` → `TravelTo(KnownWorkstationFor { recipe_id })` → `PerformAction(Craft, Explicit(Craft { recipe_id }))`.
+- `ProduceWithPurchase`: precondition — agent missing inputs but `BeliefHolds(SellerKnown { commodity })`. Subgoals — `TravelTo(NearestSellerOf { commodity })` → `PerformAction(Trade, Explicit(Trade { commodity, quantity }))` → `TravelTo(KnownWorkstationFor { recipe_id })` → `PerformAction(Craft, Explicit(Craft { recipe_id }))`.
 
-**RestockCommodity methods**:
-- `RestockFromHarvest`: precondition — own commodity below threshold, source known. Subgoals — `AcquireCommodity` from source.
-- `RestockFromMarket`: precondition — own commodity below threshold, seller known. Subgoals — `TravelTo` seller → `PerformAction(BuyCommodity)`.
+**`RestockCommodity` methods**:
+- `RestockFromHarvest`: precondition — `BeliefHolds(OwnedCommodityBelowThreshold { commodity, threshold })`, `BeliefHolds(ResourceSourceKnown { commodity })`. Subgoals — `AcquireCommodity { commodity, min_quantity }` from source.
+- `RestockFromMarket`: precondition — `OwnedCommodityBelowThreshold` plus `SellerKnown { commodity }`. Subgoals — `TravelTo(NearestSellerOf { commodity })` → `PerformAction(Trade, Explicit(Trade { commodity, quantity }))`.
 
-**InvestigateViolation methods**:
-- `InvestigateOnScene`: precondition — violation record believed at known place, agent at place. Subgoals — `InspectArtifact(VialolationEvidence)` → record finding.
-- `InvestigateByWitness`: precondition — violation believed, witness names known. Subgoals — `AskWitness(violation_circumstances)` → record finding.
-- `InvestigateByLedger`: precondition — violation believed, institutional record believed extant. Subgoals — `TravelTo` office → `InspectArtifact(Ledger)` → record finding.
+**`InvestigateViolation` methods**:
+- `InvestigateOnScene`: precondition — violation believed at known place, agent at place. Subgoals — `InspectArtifact(ViolationEvidence { violation })` → record finding via `PerformAction(Investigate, FromContext)`.
+- `InvestigateByWitness`: precondition — `BeliefHolds(WitnessNamesKnown { violation })`. Subgoals — `AskWitness(ViolationCircumstances { violation })` → record finding via `PerformAction(Investigate, FromContext)`.
+- `InvestigateByLedger`: precondition — `BeliefHolds(InstitutionalRecordBelievedExtant { violation })`. Subgoals — `TravelTo(OfficePlace { institution })` → `InspectArtifact(Ledger { institution })` → record finding via `PerformAction(Investigate, FromContext)`.
 
-**EscortToSafety methods**:
-- `EscortToHome`: precondition — escortee believed safe at home. Subgoals — synchronize at escortee place → `TravelTo` home with escortee → confirm arrival.
-- `EscortToOffice`: precondition — institutional protection believed available. Subgoals — `TravelTo` office with escortee → `PerformAction(HandOffToOffice)`.
+**`EscortToSafety` methods**:
+- `EscortToHome`: precondition — `BeliefHolds(EscorteeBelievedSafeAt { escortee })` with `escortee.home`. Subgoals — synchronize at escortee place → `PerformAction(EscortToSafety, Explicit(EscortToSafety { escortee, destination: EscorteeHome { escortee } }))` → confirm arrival via `ObserveTarget(Target(escortee))`.
+- `EscortToOffice`: precondition — institutional protection believed available (`OfficeAuthority`). Subgoals — `PerformAction(EscortToSafety, Explicit(EscortToSafety { escortee, destination: OfficePlace { institution } }))`.
 
 ### D3: `MethodSelector`
 
 ```rust
 // crates/worldwake-ai/src/htn/selector.rs
-pub fn select_method(
+pub fn select_method<'r>(
     goal: &GoalOffer,
-    registry: &MethodRegistry,
+    registry: &'r MethodRegistry,
     profile: &AgentSchemaContextProfile,
     belief_view: &dyn RuntimeBeliefView,
     motives: &[MotiveSourceRef],
-) -> Option<&MethodSchema>;
+) -> Option<&'r MethodSchema>;
 ```
 
 Deterministic selection:
-1. Filter methods to those whose `goal_kind` matches and `id ∈ profile.enabled_methods`.
-2. Filter to methods whose `preconditions` are satisfied per belief view.
-3. Rank remaining methods by motive-source bias score (sum of `MotiveBias.weight` for present motive variants).
+1. Filter methods to those whose `goal_kind` matches `GoalKindDiscriminant::from(&goal.key.goal_kind)` and whose `id ∉ profile.disabled_methods`.
+2. Filter to methods whose `preconditions` evaluate to `true` per `belief_view`. Each `MethodPrecondition` variant evaluates against the existing accessors on `RuntimeBeliefView` (defined at `crates/worldwake-sim/src/belief_view.rs:1588`) — no new trait accessor is required because `BeliefPredicate` variants compose existing reads.
+3. Rank remaining methods by motive-source bias score. Formula (integer, no floats):
+   - For each present `MotiveSourceRef m` in `motives`, find `bias ∈ method.motive_bias` with `bias.motive_variant == MotiveSourceDiscriminant::from(&m.source)`. If found, add `bias.weight.0 * m.weight.0` (both `Permille`, range 0–1000; product range 0–1_000_000, fits in `u32`).
+   - Method score = sum of contributions, divided by 1000 (integer division) so the score stays in the `0..=1_000_000` range of `Permille * Permille / 1000`. Score ties go to step 4.
 4. Tie-break by `MethodSchemaId` (stable integer order).
 5. Return the top method or `None` (fall back to flat GOAP).
 
 ### D4: Planner integration
 
+`build_stages` at `crates/worldwake-ai/src/search/strategic.rs:324` (called from `strategic.rs:119`) is modified in place rather than introducing a parallel function. The current implementation is the no-method fallback; the new integration prefixes a method-selection branch:
+
 ```rust
 // crates/worldwake-ai/src/search/strategic.rs
-fn build_stages_with_method(...) -> Vec<StrategicStage> {
-    if let Some(method) = select_method(&goal, &registry, &profile, &belief_view, &motives) {
+fn build_stages(
+    goal: &GoalOffer,
+    profile: &AgentSchemaContextProfile,
+    registry: &MethodRegistry,
+    belief_view: &dyn RuntimeBeliefView,
+    motives: &[MotiveSourceRef],
+    /* existing parameters */
+) -> Vec<StrategicStage> {
+    if let Some(method) = select_method(goal, registry, profile, belief_view, motives) {
         return method.subgoals.iter()
-            .flat_map(|template| template_to_stages(template, &belief_view))
+            .flat_map(|template| template_to_stages(template, goal, belief_view))
             .collect();
     }
-    build_stages_default(...)   // existing flat-GOAP decomposition
+    // Existing flat-GOAP decomposition (unchanged)
+    build_stages_default(goal, /* existing parameters */)
 }
 ```
 
-When a method is chosen, its subgoals expand into `StrategicStage`s via the existing decomposition machinery. The strategic search itinerates over the method's stages. Tactical search remains unchanged.
+When a method is chosen, its subgoals expand into `StrategicStage`s via the existing decomposition machinery — `template_to_stages` is a new helper in `htn/selector.rs` that maps each `SubgoalTemplate` to one or more `StrategicStage` values whose `kind` is `Goal` or `Acquire(CommodityKind)`. The strategic search iterates over these stages as today. Tactical search remains unchanged. Caller signature updates (passing `registry`, `profile`, `belief_view`, `motives`) propagate to the existing call site at `strategic.rs:119`.
 
-### D5: `MethodPlanAttemptTrace`
+### D5: `MethodPlanAttemptTrace` and `PlanAttemptTrace.method_trace`
 
 ```rust
+// crates/worldwake-ai/src/decision_trace.rs (struct extension at line 1185)
+pub struct PlanAttemptTrace {
+    // ... existing fields ...
+    pub method_trace: Option<MethodPlanAttemptTrace>,    // NEW
+}
+
 pub struct MethodPlanAttemptTrace {
     pub method_id: Option<MethodSchemaId>,    // None = flat GOAP fallback
     pub subgoals_attempted: Vec<SubgoalAttemptResult>,
     pub failure_mode: Option<MethodFailureMode>,
+    pub motive_score: u32,                    // 0..=1_000_000 per D3
+}
+
+pub struct SubgoalAttemptResult {
+    pub template_index: usize,
+    pub kind: SubgoalAttemptKind,
+    pub outcome: SubgoalAttemptOutcome,
+}
+
+pub enum SubgoalAttemptKind { /* one variant per SubgoalTemplate */ }
+pub enum SubgoalAttemptOutcome { Pending, Succeeded, Failed }
+```
+
+`method_trace` is `Option<…>` so flat-GOAP plan attempts (no method selected) record `None` rather than synthesize a trace.
+
+`MethodPlanAttemptTrace` is also surfaced through `ScenarioDiagnosticsReport.planning.method_usage` — a new `BTreeMap<Option<MethodSchemaId>, MethodUsageCounts>` field added to `PlanningMetrics` at `crates/worldwake-ai/src/scenario_diagnostics/mod.rs:32`. `MethodUsageCounts` records `attempts`, `selected_count`, `fallback_count`, and `failure_count`.
+
+### D6: `Discrepancy::MethodFailure(MethodFailureContext)` variant
+
+Per the "Discrepancy as Failure-Attribution Surface" pattern (option 1), a single new variant is added to the `Discrepancy` enum at `crates/worldwake-core/src/discrepancy.rs:9`:
+
+```rust
+// crates/worldwake-core/src/discrepancy.rs
+pub enum Discrepancy {
+    // ... existing variants (unit, unchanged) ...
+    MethodFailure(MethodFailureContext),   // NEW
+}
+
+#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct MethodFailureContext {
+    pub method_id: MethodSchemaId,
+    pub kind: MethodFailureKind,
+    pub subgoal_index: Option<u32>,        // index into method.subgoals when applicable
+}
+
+#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
+#[derive(serde::Serialize, serde::Deserialize)]
+pub enum MethodFailureKind {
+    PreconditionLost,
+    SubgoalUnachievable,
+    ArtifactNotProduced,
+    ClaimDenied,
+    Timeout,
 }
 ```
 
-Surfaced through `PlanAttemptTrace` to observer Section 7 and to `ScenarioDiagnosticsReport.planning.method_usage` (extension to S144).
+`MethodFailureMode` (ai-side, D1) projects into `MethodFailureKind` (core-side) via a `From<&MethodFailureMode> for MethodFailureKind` impl in `htn/method_schema.rs`. The richer ai-side payload (`BeliefPredicate`, `ArtifactTemplate`, etc.) remains on `MethodPlanAttemptTrace` for observer rendering (D9); the typed-discrepancy variant carries only the `Copy`/`Hash`-safe core-side projection so it composes with existing blocker-memory consumers.
 
-### D6: Method failure → typed `Discrepancy`
+**Workspace exhaustive-match audit (deliverable scope)**: grep `match` sites on `Discrepancy` across all crates and add a new arm to each genuinely-exhaustive match. Per the Discrepancy pattern note, the construction sites (`Err(Discrepancy::X)`) require no change; only destructuring match sites do. Estimated ~10–20 audit sites based on the ~145 total `Discrepancy` use sites being construction-dominant. The audit is a single-pass mechanical change; sites unable to handle method failures route to a `_` arm with a debug log per crate convention.
 
-`MethodFailureMode` variants map to S109 `Discrepancy` variants:
-- `PreconditionLost(...)` → `Discrepancy::BeliefStale` or `Discrepancy::BeliefContradicted`.
-- `SubgoalUnachievable(...)` → `Discrepancy::SearchBudgetExhausted` with method context.
-- `ArtifactNotProduced(...)` → `Discrepancy::PartialExecutionDrift`.
-- `ClaimDenied(...)` → `Discrepancy::NoLegalBinding`.
-- `Timeout(...)` → `Discrepancy::PartialExecutionDrift` with method context.
+### D7: `AgentSchemaContextProfile.disabled_methods`
 
-This preserves the existing discrepancy-and-blocker memory paths (S109).
+```rust
+// crates/worldwake-core/src/agent_schema_context_profile.rs (struct extension at line 54)
+pub struct AgentSchemaContextProfile {
+    pub disabled_extractors: BTreeSet<CandidateExtractorId>,
+    pub budget_overrides: BTreeMap<GoalDispatchKey, GoalPlanningBudget>,
+    #[serde(default)]
+    pub disabled_methods: BTreeSet<MethodSchemaId>,    // NEW
+}
+```
 
-### D7: `AgentSchemaContextProfile.enabled_methods` defaults
+**Semantics**: `disabled_methods` is a **denylist**, matching the existing `disabled_extractors` field. Empty default means every method in the registry is available for the agent. Scenarios opt agents *out* of specific methods (e.g., a peasant scenario sets `disabled_methods = { FulfillBountyGroupHunt, FulfillBountyDirect, FulfillBountyInvestigation }` to model lack of bounty pursuit). The denylist convention aligns with FND-22 (diversity through concrete per-agent variation) and avoids the design contradiction where an allowlist default of "all enabled" would conflict with role-specific methods being default-available.
 
-By default, every agent has `enabled_methods = registry.all_method_ids()` (full method library available). Scenarios opt agents out by setting `enabled_methods` to a narrower set. The S111 `ProfileHomogeneity` lint warns when every agent in a scenario has identical method enablement.
+**Universal classification**: `AgentSchemaContextProfile` is already a universal-per-agent component registered in `worldwake-core` per archived S146 (no `*Def` wrapper; surfaced directly in `crates/worldwake-cli/src/scenario/types.rs:595` as an optional scenario field with `Default` impl). `disabled_methods` inherits this classification — the `#[serde(default)]` attribute ensures existing scenario RON deserialization continues to work without modification.
 
-### D8: Method registry build-time table
+**S111 lint extension**: `ProfileHomogeneity` at `crates/worldwake-cli/src/scenario/lints.rs:28` extends to warn when every agent in a scenario has identical `disabled_methods` (including all-empty, which suggests the scenario is not exercising per-role method enablement).
+
+### D8: Method registry build-time table + validation tests
 
 ```rust
 // crates/worldwake-ai/src/htn/registry.rs
 pub fn build_method_registry() -> MethodRegistry {
     let mut registry = MethodRegistry::default();
-    registry.insert(FulfillBountyDirect::schema());
-    registry.insert(FulfillBountyInvestigation::schema());
-    registry.insert(FulfillBountyGroupHunt::schema());
-    registry.insert(ProduceFromOwnedStock::schema());
-    // ... etc
+    registry.insert(methods::fulfill_bounty_direct());
+    registry.insert(methods::fulfill_bounty_investigation());
+    registry.insert(methods::fulfill_bounty_group_hunt());
+    registry.insert(methods::produce_from_owned_stock());
+    registry.insert(methods::produce_with_gather());
+    registry.insert(methods::produce_with_purchase());
+    registry.insert(methods::restock_from_harvest());
+    registry.insert(methods::restock_from_market());
+    registry.insert(methods::investigate_on_scene());
+    registry.insert(methods::investigate_by_witness());
+    registry.insert(methods::investigate_by_ledger());
+    registry.insert(methods::escort_to_home());
+    registry.insert(methods::escort_to_office());
     registry
 }
 ```
 
-Workspace test asserts every entry's `goal_kind` references a real `GoalKindDiscriminant` and every `SubgoalTemplate`'s referenced `PlannerOpKind` exists.
+**Validation tests** (in `crates/worldwake-ai/tests/htn_registry_validation.rs`):
+
+1. **Goal-kind reachability**: every method's `goal_kind` resolves to a real `GoalKindDiscriminant` (i.e., the underlying `GoalKind` variant exists). Iterates `GoalKindDiscriminant::ALL` constant.
+2. **Action reachability**: every `SubgoalTemplate::PerformAction(op, _)` references a real `PlannerOpKind` variant (compile-time guaranteed by the type system, but the test verifies via `op` matching `PlannerOpKind::ALL`-style iteration to catch enum extensions that drop variants).
+3. **MethodSchemaId uniqueness**: no two entries share an id.
+4. **Per-method failure-mode coverage**: every method declares at least one entry in `failure_modes`.
+5. **Motive bias bounds**: every `MotiveBias.weight` is `Permille::clamped()` (in 0..=1000); no underflow/overflow.
 
 ### D9: Observer Section 7 method rendering
 
 For each plan attempt, observer Section 7 prints:
+
 ```
-Plan attempt: BakeBread (Method: ProduceWithGather)
-  Subgoal 1: AcquireCommodity(Grain) ✓
-  Subgoal 2: AcquireCommodity(Flour) ✓
-  Subgoal 3: PerformAction(Bake) — Pending
+Plan attempt: ProduceCommodity{recipe="Bake Bread"} (Method: ProduceWithGather)
+  Subgoal 1: AcquireCommodity(Grain, ≥3) ✓
+  Subgoal 2: AcquireCommodity(Flour, ≥2) ✓
+  Subgoal 3: TravelTo(KnownWorkstationFor{recipe="Bake Bread"}) ✓
+  Subgoal 4: PerformAction(Craft, Bake Bread) — Pending
+
+Plan attempt: ConsumeOwnedCommodity{commodity=Bread} (Method: <none — flat GOAP fallback>)
+  (no method-decomposed trace; see strategic-stage trace above)
 ```
 
-Failed method attempts surface the `MethodFailureMode` with structured prose.
+Failed method attempts surface the `MethodFailureMode` with structured prose, e.g.:
+
+```
+Plan attempt: FulfillBounty{bounty=#42} (Method: FulfillBountyDirect)
+  Subgoal 1: TravelTo(LastKnownTargetPlace{target=#7}) ✓
+  Subgoal 2: ObserveTarget(Target{target=#7}) ✗
+  Failure: SubgoalUnachievable(index=1) — Discrepancy::MethodFailure(SubgoalUnachievable)
+```
+
+The format follows the existing observer Section 7 conventions (indented prose, `✓`/`✗`/`Pending` markers).
 
 ### D10: Golden coverage
 
-`golden_htn_methods.rs` covers:
+`golden_htn_methods.rs` (under `crates/worldwake-ai/tests/`) covers:
 - `FulfillBountyDirect` end-to-end: agent has direct target knowledge → method selected → bounty fulfilled.
-- `FulfillBountyInvestigation` → `FulfillBountyDirect` chain: agent lacks target location → investigation method → after witness ask, fallback to direct hunt.
+- `FulfillBountyInvestigation` → `FulfillBountyDirect` chain: agent lacks target location → investigation method runs → witness ask updates belief → next-tick selection rebinds to `FulfillBountyDirect`.
 - `ProduceWithGather` for a 3-input recipe: prove method substitutes stages.
-- Method-disabled fallback: agent with `enabled_methods = {}` for ProduceCommodity falls back to flat GOAP.
-- Method failure → `Discrepancy::PartialExecutionDrift` recorded.
-- Determinism: same scenario + seed → identical method choices.
+- Method-disabled fallback: agent with `disabled_methods = { all ProduceCommodity methods }` falls back to flat GOAP for `ProduceCommodity` goal.
+- Method failure → `Discrepancy::MethodFailure(MethodFailureContext)` recorded: golden asserts the typed variant + the `MethodFailureKind` discriminant on the typed channel, and the richer payload on `PlanAttemptTrace.method_trace`.
+- Determinism: same scenario + seed → identical method choices across two runs (asserted via `MethodPlanAttemptTrace.method_id` and `motive_score` equality).
+
+### D11: `GoalSchema.methods` field
+
+```rust
+// crates/worldwake-ai/src/goal_schema.rs (struct extension at line 63)
+pub struct GoalSchema {
+    // ... existing fields ...
+    pub methods: Vec<MethodSchemaId>,    // NEW: ordered list of methods this goal may decompose through
+}
+```
+
+The field is populated at `GoalSchema` registry construction time from `MethodRegistry::methods_for(goal_kind)`. Method order in the vector is the discovery order for the selector's tie-break in D3 step 4. The field is `Vec` (not `BTreeSet`) so author-controlled ordering is preserved.
+
+A test in `crates/worldwake-ai/tests/goal_schema_methods.rs` asserts that every `GoalSchema.methods[i]` resolves to a real `MethodSchema` in the registry and that the `MethodSchema.goal_kind` matches the parent `GoalSchema`'s goal kind.
+
+### D12: Core-side discriminant mirrors
+
+```rust
+// crates/worldwake-core/src/motive_source.rs (extension)
+
+/// Payload-free mirror of MotiveSource for keying biases and aggregations
+/// without committing to a specific WoundId/EntityId/OpportunityKey payload.
+/// Variants are 1:1 with MotiveSource per the Core-Side Mirror Enum precedent
+/// (BeliefStatusTag).
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(serde::Serialize, serde::Deserialize)]
+pub enum MotiveSourceDiscriminant {
+    NeedPressure,
+    Pain,
+    OfficeDuty,
+    Loyalty,
+    Greed,
+    Shame,
+    Revenge,
+}
+
+impl From<&MotiveSource> for MotiveSourceDiscriminant {
+    fn from(source: &MotiveSource) -> Self {
+        match source {
+            MotiveSource::NeedPressure { .. } => MotiveSourceDiscriminant::NeedPressure,
+            MotiveSource::Pain { .. }         => MotiveSourceDiscriminant::Pain,
+            MotiveSource::OfficeDuty { .. }   => MotiveSourceDiscriminant::OfficeDuty,
+            MotiveSource::Loyalty { .. }      => MotiveSourceDiscriminant::Loyalty,
+            MotiveSource::Greed { .. }        => MotiveSourceDiscriminant::Greed,
+            MotiveSource::Shame { .. }        => MotiveSourceDiscriminant::Shame,
+            MotiveSource::Revenge { .. }      => MotiveSourceDiscriminant::Revenge,
+        }
+    }
+}
+
+impl MotiveSource {
+    pub fn discriminant(&self) -> MotiveSourceDiscriminant { self.into() }
+}
+```
+
+```rust
+// crates/worldwake-core/src/goal.rs (extension)
+
+/// Payload-free mirror of GoalKind. Variants are 1:1 with GoalKind (~30 variants
+/// — see GoalKind at line 62). Used by HTN method dispatch keys and by any
+/// aggregation that must key on goal kind without payload (e.g., per-kind
+/// method-usage counts in D5).
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(serde::Serialize, serde::Deserialize)]
+pub enum GoalKindDiscriminant {
+    ConsumeOwnedCommodity, AcquireCommodity, Sleep, Relieve, Wash,
+    FreeCarryCapacity, EngageHostile, RaidTarget, ReduceDanger,
+    RegroupWithFaction, EstablishBanditCamp, TreatWounds, SearchForMissing,
+    ReportMissing, ReportFound, EscortToSafety, ProduceCommodity,
+    SellCommodity, RestockCommodity, MoveCargo, LootCorpse, BuryCorpse,
+    FulfillBounty, PostBounty, PostNotice, ShareBelief, AskWitness,
+    ClaimOffice, SupportCandidateForOffice, InvestigateViolation, Patrol,
+    ExploreLocation, StealItem, Accuse, PunishAccused,
+}
+
+impl GoalKindDiscriminant {
+    pub const ALL: &[GoalKindDiscriminant] = &[ /* exhaustive enumeration */ ];
+}
+
+impl From<&GoalKind> for GoalKindDiscriminant {
+    fn from(kind: &GoalKind) -> Self { /* exhaustive match */ }
+}
+
+impl GoalKind {
+    pub fn discriminant(&self) -> GoalKindDiscriminant { self.into() }
+}
+```
+
+**Note on mirror maintenance**: both mirrors are 1:1 with their source enums. A unit test in `crates/worldwake-core/tests/discriminant_mirrors.rs` enumerates every source variant and asserts the discriminant projection round-trips through a sample-construction fixture, catching any source-enum extension that forgets to add the corresponding mirror variant.
 
 ## FND-01 Section H Analysis
 
-### Information-Path Analysis
+### 1. Motivating downstream consequence
 
-Methods consume agent belief views. Method selection reads `MotiveSourceRef`s (S141 substrate) and `BeliefPredicate` evaluations. No global truth is consulted. Methods can fail because the agent's beliefs are wrong; the resulting `MethodFailureMode` flows through S109 typed discrepancy back into the existing belief/blocker chain.
+Existing flat-GOAP search hits prohibitive cost on goals with multi-step lawful pursuits (FulfillBounty, ProduceCommodity with crafting chains, InvestigateViolation across multiple evidence types). Without method decomposition, these goals either (a) exhaust the planner's per-goal budget and never plan, or (b) require the budget to be set high enough that single-tick search dominates ai-tick cost. Existing systems cannot already produce this because the implicit decomposition in `build_stages` is fixed and generic (any goal → acquire-then-act); only data-driven methods can encode the FulfillBountyGroupHunt vs. FulfillBountyDirect choice.
 
-### Positive-Feedback Analysis
+### 2. New entities, relations, records
 
-Methods do not introduce new amplifying loops. Method choice depends on existing state (beliefs, motives); method execution produces existing actions; action effects update state through the existing event log.
+- `MethodSchema` registry (build-time data in ai).
+- `MethodSchemaId` newtype (core).
+- Two core-side discriminant mirrors (`MotiveSourceDiscriminant`, `GoalKindDiscriminant`).
+- One new `Discrepancy::MethodFailure(MethodFailureContext)` variant (core).
+- One new field on `AgentSchemaContextProfile.disabled_methods` (core).
+- One new field on `GoalSchema.methods` (ai).
+- One new field on `PlanAttemptTrace.method_trace` (ai).
+- One new aggregation surface on `PlanningMetrics.method_usage` (ai/scenario_diagnostics).
 
-### Concrete Dampeners
+### 3. Actions / world processes that mutate them
 
-Method timeouts (`MethodFailureMode::Timeout(u32)`) and `planning_budget_hint` cap method-driven search per FND-11. The method itself does not loop unboundedly; subgoals execute through the agenda manager which already handles patience limits.
+No new actions. Existing actions are method *leaves*; `PlannerOpKind` variants are referenced by `SubgoalTemplate::PerformAction`. The method registry is build-time and never mutated at runtime. `MethodPlanAttemptTrace` is written by the selector and read by the observer; it is per-tick derivation, not authoritative state.
 
-### Stored State vs. Derived Read-Model List
+### 4. Information production / propagation / observability
 
-**Stored state**:
-- `AgentSchemaContextProfile.enabled_methods` — universal per-agent field added by S147 on the archived S146 profile.
-- `MethodPlanAttemptTrace` on `PlanAttemptTrace` — per-tick trace; not authoritative.
+Method choice is observable through `PlanAttemptTrace.method_trace` (D5). The trace is per-agent per-tick and exposed through observer Section 7 (D9). Method failures are observable through `Discrepancy::MethodFailure` (D6) on the typed-discrepancy channel, which is already consumed by existing blocker-memory and learning systems (S109 chain).
 
-**Derived read-model**:
-- Method registry is build-time data.
-- Method-selection output is per-tick derivation.
+### 5. Conserved quantities / source/sink paths
+
+None — methods do not introduce conserved quantities. Action leaves continue to conserve through the existing `verify_conservation` invariant.
+
+### 6. Scarce capacities / reservations / contention
+
+None at the method level. `MethodSchema.required_claims` references existing `Opportunity` matches (from S138's opportunity compiler), which already encode reservation/queue semantics. Methods do not create new contention surfaces.
+
+### 7. Partial failures, degraded states, aftermath
+
+`MethodFailureMode` (D1) and the typed `Discrepancy::MethodFailure(MethodFailureContext)` (D6) jointly cover this. Failed method attempts leave (a) the typed discrepancy on the planner trace (authoritative), (b) the richer `MethodPlanAttemptTrace` (derived), and (c) any partial action effects from leaves that did complete (authoritative event log entries). Recovery is handled by the existing `handle_plan_failure` chain (CLAUDE.md authoritative-to-ai impact rule does not trigger because method selection is upstream of action validation).
+
+### 8. Positive feedback loops amplified
+
+None. Method choice depends on existing state (beliefs, motives, profile); method execution produces existing action effects.
+
+### 9. Physical dampeners
+
+- `MethodFailureMode::Timeout(u32)` per method instance.
+- `MethodSchema.planning_budget_hint: Option<GoalPlanningBudget>` overrides the parent goal's budget for method-driven search.
+- `tick_agenda` (S115) caps method-driven subgoal pursuit through existing patience limits.
+
+### 10. Agent-local learning / habit / trust updates
+
+None in this spec. Future PR-8 / habit memory may add method preference reinforcement; that is explicitly out of scope per Non-Goals.
+
+### 11. How agents become wrong, how they correct
+
+Methods can be selected on stale beliefs (e.g., `TargetLastSeenKnown` is stale → `FulfillBountyDirect` selected → target absent at last-known place → `MethodFailureMode::SubgoalUnachievable`). Correction flows through:
+1. Subgoal observation returns mismatch.
+2. `Discrepancy::MethodFailure` posted on the typed channel.
+3. Existing belief-correction path (S109) updates the relevant `BeliefPredicate` source state.
+4. Next-tick method selection re-evaluates preconditions with updated belief state.
+
+Provenance: `MethodFailureContext.method_id` + `subgoal_index` identify which method-substrate produced the discrepancy, enabling debugging of method-attribution chains.
+
+### 12. Lifecycle states / transitions / visibility
+
+`MethodSchema` is build-time data; it has no lifecycle. `MethodPlanAttemptTrace` is per-tick and ephemeral.
+
+### 13. Temporal / spatial resolution / scheduling
+
+Method selection runs inside the existing per-agent planning phase of each tick. No new scheduling. Determinism per Design Goal #6.
+
+### 14. Boundary conditions / external drivers
+
+None — methods are purely internal to ai decision-making.
+
+### 15. Derived views / caches / optimizations
+
+`MethodPlanAttemptTrace` is a per-tick derived view of the selection process. `PlanningMetrics.method_usage` is a scenario-aggregate derived view over per-tick traces. Both are caches per FND-27 and never become source of truth.
+
+### 16. Causal records / event identities / provenance links
+
+`Discrepancy::MethodFailure(MethodFailureContext)` carries `MethodSchemaId` + `MethodFailureKind` + `subgoal_index`, sufficient to reconstruct which method substrate produced the failure. `PlanAttemptTrace.method_trace` carries the full `MethodPlanAttemptTrace` with subgoal-attempt details for debugging.
+
+### 17. Target patterns / regression cases / falsification checks
+
+D10 golden coverage provides scenario-level regression. D8 validation tests provide registry-level invariants. The `discriminant_mirrors.rs` test in D12 provides type-level invariant on mirror completeness.
+
+### 18. Save/load / replay / offscreen compression
+
+`MethodSchema` is build-time and not serialized. `Discrepancy::MethodFailure(MethodFailureContext)` derives `Serialize, Deserialize` (per D6), and `MethodFailureContext` carries only `Copy`-safe core-side types so it round-trips through the existing save/load and replay paths. The `disabled_methods` field on `AgentSchemaContextProfile` has `#[serde(default)]` (per D7), so existing serialized scenarios deserialize unchanged. `PlanAttemptTrace.method_trace` is `Option<…>` so existing trace replays without method context produce `None`.
 
 ## SystemFn Integration
 
-No new `SystemFn`. Method selection runs inside the existing agent tick's planning phase.
+No new `SystemFn`. Method selection runs inside the existing agent tick's planning phase, specifically inside the modified `build_stages` (D4).
 
 ## Component Registration
 
-No new ECS component. `AgentSchemaContextProfile.enabled_methods` is added by S147 to the universal profile registered by archived S146.
+No new ECS component. Two component-bearing structs are extended:
+
+1. `AgentSchemaContextProfile` (registered on `EntityKind::Agent` per archived S146): gains `disabled_methods: BTreeSet<MethodSchemaId>` with `#[serde(default)]`. Universal classification, no `*Def` wrapper needed.
+2. `GoalSchema` (registry struct, not an ECS component): gains `methods: Vec<MethodSchemaId>`. Registry-construction-time only.
 
 ## Cross-System Interactions
 
-- Method selector reads `BeliefView` (existing), `MotiveSourceRef`s (S141), and `AgentSchemaContextProfile` (archived S146 profile, extended by S147).
-- Method-driven subgoals execute through existing `ActionDef`s.
-- Method failure modes flow through S109's typed-discrepancy chain.
+- Method selector reads `BeliefView` (existing trait at `crates/worldwake-sim/src/belief_view.rs:1588`), `MotiveSourceRef`s (from S141 ledger at `crates/worldwake-core/src/motive_source.rs:25`), and `AgentSchemaContextProfile` (archived S146 profile, extended by D7).
+- Method-driven subgoals execute through existing `ActionDef`s registered in `ActionDefRegistry`.
+- Method failures flow through `Discrepancy::MethodFailure` (D6) — typed-discrepancy chain consumed by existing blocker-memory and learning systems (S109).
+- Aggregated method usage flows through `PlanningMetrics.method_usage` (D5) — observer / diagnostics consumed surface.
 
-All interactions are state-mediated per FND-26.
+All interactions are state-mediated per FND-26. No system imperatively invokes another.
 
 ## Profile-Driven Parameters
 
-- `AgentSchemaContextProfile.enabled_methods` — per-agent method enablement added by S147.
-- `MethodSchema.motive_bias[].weight` — `Permille`-bounded.
-- `MethodSchema.planning_budget_hint` — optional per-method override of `GoalPlanningBudget` (per S146).
+- `AgentSchemaContextProfile.disabled_methods: BTreeSet<MethodSchemaId>` — per-agent denylist of methods (D7).
+- `MethodSchema.motive_bias[].weight: Permille` — per-method bias weights (D1).
+- `MethodSchema.planning_budget_hint: Option<GoalPlanningBudget>` — optional per-method override of the parent goal's budget (D1).
 
 No floats.
 
 ## Test Plan
 
-- D10 golden coverage (5 scenarios above).
-- D8 registry validation tests.
+- D10 golden coverage (6 scenarios above).
+- D8 registry validation tests (5 invariants).
+- D11 `GoalSchema.methods` resolution tests.
+- D12 discriminant-mirror completeness tests.
 - Method-selector determinism unit tests.
-- Existing goldens unchanged (default scenarios have all methods enabled but flat-GOAP fallback covers them).
+- D6 workspace exhaustive-match audit — `cargo build --workspace` proves all match sites resolved; per-arm content tested by failure-mode goldens.
+- Existing goldens unchanged (default scenarios have empty `disabled_methods` and the flat-GOAP fallback covers all current behavior).
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
