@@ -1,6 +1,6 @@
 # S150CROGOABLO-003: Scope-aware BlockerClearingCondition variants
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `BlockerClearingCondition` enum in `worldwake-core`; recording-path clearing logic in `worldwake-ai` and `worldwake-systems`
@@ -120,3 +120,30 @@ These hook into existing post-action observation pipelines; no new SystemFn is i
 3. `cargo test -p worldwake-systems --lib trade_actions`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
 5. `./scripts/verify.sh` for the full pre-PR gate.
+
+## Outcome
+
+Completed: 2026-05-17
+
+What changed:
+
+- Added `BlockerClearingCondition::RouteRetraversedSafely(RouteSegment)` and `BlockerClearingCondition::CounterpartyAccepted(EntityId)`.
+- Added deterministic `BlockerClearingCondition::for_scope_and_fact(...)` selection for route-scoped danger/combat blockers and counterparty-scoped patience/no-buyer blockers.
+- Routed AI failure-recording and queue-observation recording through the shared selector while preserving existing exact-scope fact-specific clearing.
+- Added successful safe-travel clearing for matching `RouteRetraversedSafely` blockers in the travel commit path.
+- Added successful trade clearing for matching `CounterpartyAccepted` blockers for both participants in the trade commit path.
+- Added focused core, travel, and trade tests proving typed selection, serialization/sweep behavior, and action-commit clearing behavior.
+
+Deviation from original plan:
+
+- `record_sell_blocked_intent` still records staff-market `NoBuyer` as an exact sell-commodity blocker because that live recording site has no concrete buyer/counterparty. The shared selector will produce `CounterpartyAccepted` for any real `BlockerScope::Counterparty` + `NoBuyer` recording path.
+- The successful-interaction clearing hook was implemented at authoritative travel/trade commit sites, where route endpoints and counterparties are concrete, instead of adding a looser AI read-phase predicate.
+
+Verification:
+
+- `cargo fmt --all`
+- `cargo test -p worldwake-core --lib blocker_memory`
+- `cargo test -p worldwake-systems --lib travel_actions`
+- `cargo test -p worldwake-systems --lib trade_actions`
+- `cargo test -p worldwake-ai --lib agent_tick`
+- `cargo clippy --workspace --all-targets -- -D warnings`

@@ -171,7 +171,30 @@ pub enum BlockerClearingCondition {
     ContentionChanged {
         facility: EntityId,
     },
+    RouteRetraversedSafely(RouteSegment),
+    CounterpartyAccepted(EntityId),
     TtlOnly,
+}
+
+impl BlockerClearingCondition {
+    #[must_use]
+    pub const fn for_scope_and_fact(
+        scope: BlockerScope,
+        fact: BlockingFact,
+        fallback: Self,
+    ) -> Self {
+        match (scope, fact) {
+            (
+                BlockerScope::RouteSegment(segment),
+                BlockingFact::DangerTooHigh | BlockingFact::CombatTooRisky,
+            ) => Self::RouteRetraversedSafely(segment),
+            (
+                BlockerScope::Counterparty(counterparty),
+                BlockingFact::PatienceExhausted | BlockingFact::NoBuyer,
+            ) => Self::CounterpartyAccepted(counterparty),
+            _ => fallback,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -283,6 +306,53 @@ mod tests {
     fn blocker_clearing_condition_and_baseline_satisfy_required_bounds() {
         assert_copy_value_bounds::<BlockerClearingCondition>();
         assert_copy_value_bounds::<ClearingBaseline>();
+    }
+
+    #[test]
+    fn scope_aware_clearing_condition_selection_is_deterministic() {
+        let segment = RouteSegment::new(entity_id(1, 0), entity_id(2, 0));
+        let counterparty = entity_id(3, 0);
+
+        assert_eq!(
+            BlockerClearingCondition::for_scope_and_fact(
+                BlockerScope::RouteSegment(segment),
+                BlockingFact::DangerTooHigh,
+                BlockerClearingCondition::TtlOnly,
+            ),
+            BlockerClearingCondition::RouteRetraversedSafely(segment)
+        );
+        assert_eq!(
+            BlockerClearingCondition::for_scope_and_fact(
+                BlockerScope::RouteSegment(segment),
+                BlockingFact::CombatTooRisky,
+                BlockerClearingCondition::TtlOnly,
+            ),
+            BlockerClearingCondition::RouteRetraversedSafely(segment)
+        );
+        assert_eq!(
+            BlockerClearingCondition::for_scope_and_fact(
+                BlockerScope::Counterparty(counterparty),
+                BlockingFact::NoBuyer,
+                BlockerClearingCondition::TtlOnly,
+            ),
+            BlockerClearingCondition::CounterpartyAccepted(counterparty)
+        );
+        assert_eq!(
+            BlockerClearingCondition::for_scope_and_fact(
+                BlockerScope::Counterparty(counterparty),
+                BlockingFact::PatienceExhausted,
+                BlockerClearingCondition::TtlOnly,
+            ),
+            BlockerClearingCondition::CounterpartyAccepted(counterparty)
+        );
+        assert_eq!(
+            BlockerClearingCondition::for_scope_and_fact(
+                BlockerScope::exact(sample_goal_key(), None, None, None),
+                BlockingFact::DangerTooHigh,
+                BlockerClearingCondition::TtlOnly,
+            ),
+            BlockerClearingCondition::TtlOnly
+        );
     }
 
     #[test]
@@ -540,7 +610,9 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(2),
             expires_tick: Tick(20),
-            clearing_condition: BlockerClearingCondition::TtlOnly,
+            clearing_condition: BlockerClearingCondition::RouteRetraversedSafely(
+                RouteSegment::new(entity_id(10, 0), entity_id(11, 0)),
+            ),
             baseline_snapshot: None,
             source_event: EventId(7),
         });
@@ -550,7 +622,7 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(3),
             expires_tick: Tick(30),
-            clearing_condition: BlockerClearingCondition::TtlOnly,
+            clearing_condition: BlockerClearingCondition::CounterpartyAccepted(entity_id(12, 0)),
             baseline_snapshot: None,
             source_event: EventId(8),
         });
@@ -850,6 +922,91 @@ mod tests {
         memory.sweep_cleared(|_| false);
 
         assert_eq!(memory.intents.len(), 1);
+    }
+
+    #[test]
+    fn sweep_cleared_removes_route_retraversed_safely_blockers() {
+        let segment = RouteSegment::new(entity_id(50, 0), entity_id(51, 0));
+        let retained_segment = RouteSegment::new(entity_id(52, 0), entity_id(53, 0));
+        let mut memory = BlockerMemory::default();
+        memory.record(Blocker {
+            scope: BlockerScope::RouteSegment(segment),
+            blocking_fact: BlockingFact::DangerTooHigh,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(20),
+            clearing_condition: BlockerClearingCondition::RouteRetraversedSafely(segment),
+            baseline_snapshot: None,
+            source_event: EventId(9),
+        });
+        memory.record(Blocker {
+            scope: BlockerScope::RouteSegment(retained_segment),
+            blocking_fact: BlockingFact::DangerTooHigh,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(20),
+            clearing_condition: BlockerClearingCondition::RouteRetraversedSafely(retained_segment),
+            baseline_snapshot: None,
+            source_event: EventId(10),
+        });
+
+        memory.sweep_cleared(|blocker| {
+            matches!(
+                blocker.clearing_condition,
+                BlockerClearingCondition::RouteRetraversedSafely(cleared) if cleared == segment
+            )
+        });
+
+        assert_eq!(memory.intents.len(), 1);
+        assert!(
+            memory
+                .intents
+                .contains_key(&BlockerScope::RouteSegment(retained_segment))
+        );
+    }
+
+    #[test]
+    fn sweep_cleared_removes_counterparty_accepted_blockers() {
+        let counterparty = entity_id(60, 0);
+        let retained_counterparty = entity_id(61, 0);
+        let mut memory = BlockerMemory::default();
+        memory.record(Blocker {
+            scope: BlockerScope::Counterparty(counterparty),
+            blocking_fact: BlockingFact::NoBuyer,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(20),
+            clearing_condition: BlockerClearingCondition::CounterpartyAccepted(counterparty),
+            baseline_snapshot: None,
+            source_event: EventId(11),
+        });
+        memory.record(Blocker {
+            scope: BlockerScope::Counterparty(retained_counterparty),
+            blocking_fact: BlockingFact::NoBuyer,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(20),
+            clearing_condition: BlockerClearingCondition::CounterpartyAccepted(
+                retained_counterparty,
+            ),
+            baseline_snapshot: None,
+            source_event: EventId(12),
+        });
+
+        memory.sweep_cleared(|blocker| {
+            matches!(
+                blocker.clearing_condition,
+                BlockerClearingCondition::CounterpartyAccepted(cleared)
+                    if cleared == counterparty
+            )
+        });
+
+        assert_eq!(memory.intents.len(), 1);
+        assert!(
+            memory
+                .intents
+                .contains_key(&BlockerScope::Counterparty(retained_counterparty))
+        );
     }
 
     #[test]

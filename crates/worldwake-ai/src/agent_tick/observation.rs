@@ -624,19 +624,25 @@ pub(super) fn handle_facility_queue_transitions(
                     .remove(&facility)
                     .or(fallback_intent)
                 {
+                    let scope = BlockerKey {
+                        goal_key: intent.goal_key,
+                        place: current_place,
+                        target: Some(facility),
+                        action_def: Some(intent.intended_action),
+                    }
+                    .into();
                     blocked_memory.record(Blocker {
-                        scope: BlockerKey {
-                            goal_key: intent.goal_key,
-                            place: current_place,
-                            target: Some(facility),
-                            action_def: Some(intent.intended_action),
-                        }
-                        .into(),
+                        scope,
                         blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
                         diagnostic_context: None,
                         observed_tick: tick,
                         expires_tick: tick + u64::from(phase.structural_block_ticks),
-                        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+                        clearing_condition:
+                            worldwake_core::BlockerClearingCondition::for_scope_and_fact(
+                                scope,
+                                BlockingFact::ExclusiveFacilityUnavailable,
+                                worldwake_core::BlockerClearingCondition::TtlOnly,
+                            ),
                         baseline_snapshot: None,
                         source_event: worldwake_core::EventId(0),
                     });

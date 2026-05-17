@@ -221,13 +221,18 @@ pub(crate) fn record_failure_classification(
                 context.current_tick + u64::from(blocking_fact_ttl(blocking_fact, cognitive));
             let (clearing_condition, baseline_snapshot) =
                 derive_clearing_condition(context.view, context.agent, blocking_fact, &blocker_key);
+            let scope = blocker_key.into();
             blocked_memory.record(Blocker {
-                scope: blocker_key.into(),
+                scope,
                 blocking_fact,
                 diagnostic_context: None,
                 observed_tick: context.current_tick,
                 expires_tick,
-                clearing_condition,
+                clearing_condition: BlockerClearingCondition::for_scope_and_fact(
+                    scope,
+                    blocking_fact,
+                    clearing_condition,
+                ),
                 baseline_snapshot,
                 source_event: EventId(0),
             });
