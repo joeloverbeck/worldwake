@@ -601,6 +601,13 @@ fn normalize_discrepancy(discrepancy: Discrepancy) -> Discrepancy {
             },
             reason: worldwake_core::BlockerReason::LegalEffectExpired,
         },
+        Discrepancy::MethodFailure(_) => {
+            Discrepancy::MethodFailure(worldwake_core::MethodFailureContext {
+                method_id: worldwake_core::MethodSchemaId(0),
+                kind: worldwake_core::MethodFailureKind::SubgoalUnachievable,
+                subgoal_index: None,
+            })
+        }
         other => other,
     }
 }

@@ -111,7 +111,8 @@ pub(crate) fn classify_rejection(
         | Discrepancy::SourceInvalidated
         | Discrepancy::SearchBudgetExhausted
         | Discrepancy::NeedHorizonExceeded { .. }
-        | Discrepancy::ArtifactNotActionable { .. } => RejectionLifecycle::InfeasibleUntil {
+        | Discrepancy::ArtifactNotActionable { .. }
+        | Discrepancy::MethodFailure(_) => RejectionLifecycle::InfeasibleUntil {
             trigger: RevivalTrigger::TickElapsed {
                 at_tick: Tick(tick.0.saturating_add(u64::from(revive_cooldown_ticks))),
             },
@@ -1587,6 +1588,24 @@ mod tests {
                 GoalKind::Sleep,
                 OpportunityAnchor::Place(PLACE),
                 Discrepancy::SearchBudgetExhausted,
+            ),
+            RejectionLifecycle::InfeasibleUntil {
+                trigger: RevivalTrigger::TickElapsed { at_tick: Tick(14) },
+            }
+        );
+    }
+
+    #[test]
+    fn classify_rejection_method_failure_uses_tick_elapsed_trigger() {
+        assert_eq!(
+            classify(
+                GoalKind::Sleep,
+                OpportunityAnchor::Place(PLACE),
+                Discrepancy::MethodFailure(worldwake_core::MethodFailureContext {
+                    method_id: worldwake_core::MethodSchemaId(7),
+                    kind: worldwake_core::MethodFailureKind::SubgoalUnachievable,
+                    subgoal_index: Some(2),
+                }),
             ),
             RejectionLifecycle::InfeasibleUntil {
                 trigger: RevivalTrigger::TickElapsed { at_tick: Tick(14) },

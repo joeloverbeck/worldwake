@@ -301,7 +301,8 @@ pub(super) fn decisive_evidence_from_discrepancy_entry(
         | Discrepancy::RouteUnknown
         | Discrepancy::SearchBudgetExhausted
         | Discrepancy::PartialExecutionDrift
-        | Discrepancy::NeedHorizonExceeded { .. } => {}
+        | Discrepancy::NeedHorizonExceeded { .. }
+        | Discrepancy::MethodFailure(_) => {}
     }
     refs.capped(cap)
 }

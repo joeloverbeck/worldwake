@@ -197,7 +197,10 @@ pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,
     RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
 };
-pub use discrepancy::{Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory};
+pub use discrepancy::{
+    Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, MethodFailureContext,
+    MethodFailureKind,
+};
 pub use disposal::DisposalProfile;
 pub use diversification::{DiversificationProfile, LastProactiveExplorationTick};
 pub use drive_escalation_profile::{

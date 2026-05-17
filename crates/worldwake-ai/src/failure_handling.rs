@@ -1532,9 +1532,9 @@ fn discrepancy_ttl(discrepancy: Discrepancy, cognitive: &CognitiveProfile) -> u3
         Discrepancy::RouteUnknown => cognitive.route_unknown_backoff_ticks,
         Discrepancy::SearchBudgetExhausted => cognitive.search_exhaustion_backoff_ticks,
         Discrepancy::PartialExecutionDrift => cognitive.partial_drift_backoff_ticks,
-        Discrepancy::NeedHorizonExceeded { .. } | Discrepancy::ArtifactNotActionable { .. } => {
-            cognitive.structural_block_ticks
-        }
+        Discrepancy::NeedHorizonExceeded { .. }
+        | Discrepancy::ArtifactNotActionable { .. }
+        | Discrepancy::MethodFailure(_) => cognitive.structural_block_ticks,
     }
 }
 
@@ -3608,6 +3608,17 @@ mod tests {
             discrepancy_ttl(Discrepancy::PartialExecutionDrift, &cognitive),
             4
         );
+        assert_eq!(
+            discrepancy_ttl(
+                Discrepancy::MethodFailure(worldwake_core::MethodFailureContext {
+                    method_id: worldwake_core::MethodSchemaId(7),
+                    kind: worldwake_core::MethodFailureKind::SubgoalUnachievable,
+                    subgoal_index: Some(2),
+                }),
+                &cognitive
+            ),
+            cognitive.structural_block_ticks
+        );
     }
 
     #[test]
@@ -3661,6 +3672,17 @@ mod tests {
         assert_eq!(
             discrepancy_ttl(Discrepancy::PartialExecutionDrift, &cognitive),
             19
+        );
+        assert_eq!(
+            discrepancy_ttl(
+                Discrepancy::MethodFailure(worldwake_core::MethodFailureContext {
+                    method_id: worldwake_core::MethodSchemaId(7),
+                    kind: worldwake_core::MethodFailureKind::SubgoalUnachievable,
+                    subgoal_index: Some(2),
+                }),
+                &cognitive
+            ),
+            cognitive.structural_block_ticks
         );
     }
 
@@ -3941,6 +3963,11 @@ mod tests {
             Discrepancy::RouteUnknown,
             Discrepancy::NoLegalBinding,
             Discrepancy::NoWillingCounterparty,
+            Discrepancy::MethodFailure(worldwake_core::MethodFailureContext {
+                method_id: worldwake_core::MethodSchemaId(7),
+                kind: worldwake_core::MethodFailureKind::SubgoalUnachievable,
+                subgoal_index: Some(2),
+            }),
         ] {
             assert_eq!(
                 super::derive_discrepancy_clearing(discrepancy, &key, None),
