@@ -9,23 +9,24 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    AgentBeliefStore, ArtifactPostingProfile, BeliefConfidencePolicy, BelievedEntityState,
-    BelievedInstitutionalClaim, CarryCapacity, CognitiveProfile, CombatProfile,
-    CommodityConsumableProfile, CommodityKind, CommodityValuationProfile, ContentionGrant,
-    ControlSource, DemandObservation, DeprivationExposure, DisposalProfile, DiversificationProfile,
-    DriveEscalationProfile, DriveThresholds, EffectiveRight, EntityBeliefAspect, EntityId,
-    EntityKind, ExpectationStore, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LastHarvestTrace, LastProactiveExplorationTick, LastSeenMemory,
-    LastSeenProvenance, LatrineFullness, LawAbidingProfile, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
-    PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness, PlaceTag, PreferenceProfile,
-    Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation, ResourceExtractionQueues,
-    ResourceSource, RewardEncumbrance, RiskWeightProfile, RouteExperience, SleepQualityProfile,
-    SocialObservation, SourceReliability, StockStoragePolicy, SubstitutePreferences, SurveyMemory,
-    TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, UtilityProfile, WashBasinState, WorkstationTag, World,
-    Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
+    AgentBeliefStore, AgentSchemaContextProfile, ArtifactPostingProfile, BeliefConfidencePolicy,
+    BelievedEntityState, BelievedInstitutionalClaim, CarryCapacity, CognitiveProfile,
+    CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityValuationProfile,
+    ContentionGrant, ControlSource, DemandObservation, DeprivationExposure, DisposalProfile,
+    DiversificationProfile, DriveEscalationProfile, DriveThresholds, EffectiveRight,
+    EntityBeliefAspect, EntityId, EntityKind, ExpectationStore, HomeostaticNeedId,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    IntentionDispositionProfile, JusticeDispositionProfile, LastHarvestTrace,
+    LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LatrineFullness,
+    LawAbidingProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PerceptionProfile,
+    PerceptionSource, Permille, PlaceDirtiness, PlaceTag, PreferenceProfile, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordedViolation, ResourceExtractionQueues, ResourceSource,
+    RewardEncumbrance, RiskWeightProfile, RouteExperience, SleepQualityProfile, SocialObservation,
+    SourceReliability, StockStoragePolicy, SubstitutePreferences, SurveyMemory, TellMemoryKey,
+    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, UtilityProfile, WashBasinState, WorkstationTag, World, Wound,
+    danger_ratio_permille, is_incapacitated, load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -870,6 +871,16 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
     fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_cognitive_profile(agent).copied())
+            .flatten()
+    }
+
+    fn agent_schema_context_profile(&self, agent: EntityId) -> Option<AgentSchemaContextProfile> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_agent_schema_context_profile(agent)
+                    .cloned()
+            })
             .flatten()
     }
 
@@ -2186,20 +2197,22 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, ActionDomain, AgentBeliefStore, ArtifactPostingProfile, BanditFactionPolicy,
-        BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef, ClaimId,
-        ClaimValue, CognitiveProfile, CombatProfile, CommodityKind, ControlSource, DisposalProfile,
+        ActionDefId, ActionDomain, AgentBeliefStore, AgentSchemaContextProfile,
+        ArtifactPostingProfile, BanditFactionPolicy, BeliefConfidencePolicy, BelievedEntityState,
+        BodyCostPerTick, BodyPart, CandidateExtractorId, CauseRef, ClaimId, ClaimValue,
+        CognitiveProfile, CombatProfile, CommodityKind, ControlSource, DisposalProfile,
         EdgeExperience, EffectiveRight, EntityBeliefAspect, EntityBeliefClaim, EntityId,
         EntityKind, EntityState, EventLog, ExpectationBasis, ExpectationId, ExpectationRecord,
         ExpectationState, ExpectationStore, ExplorationProfile, FactionData, FactionPurpose,
-        HarvestTraceEntry, HomeostaticNeedId, InstitutionalBeliefKey, InstitutionalBeliefRead,
-        InstitutionalClaim, InstitutionalKnowledgeSource, LastHarvestTrace, LastSeenMemory,
-        LastSeenProvenance, LastSeenRecord, LawAbidingProfile, ObligationExecutionTracker,
-        ObligationSatiationProfile, OfficeData, PerceptionProfile, PerceptionSource, Permille,
-        Place, PlaceTag, PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData,
-        RecordKind, ResourceExtractionQueues, ResourceSource, RightKind, RiskWeightProfile,
-        RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, Topology,
-        TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
+        GoalDispatchKey, GoalPlanningBudget, HarvestTraceEntry, HomeostaticNeedId,
+        InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, LastHarvestTrace, LastSeenMemory, LastSeenProvenance,
+        LastSeenRecord, LawAbidingProfile, ObligationExecutionTracker, ObligationSatiationProfile,
+        OfficeData, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag,
+        PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind,
+        ResourceExtractionQueues, ResourceSource, RightKind, RiskWeightProfile, RouteExperience,
+        SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
+        TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
         WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state,
         build_prototype_world,
         test_utils::{
@@ -2211,6 +2224,36 @@ mod tests {
 
     fn assert_goal_belief_view<T: GoalBeliefView>() {}
     fn assert_runtime_belief_view<T: RuntimeBeliefView>() {}
+
+    #[test]
+    fn agent_schema_context_profile_returns_seeded_profile() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 0);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            commit_txn(txn);
+            agent
+        };
+        let mut profile = AgentSchemaContextProfile::default();
+        profile.disabled_extractors.insert(CandidateExtractorId(3));
+        profile.budget_overrides.insert(
+            GoalDispatchKey::ProduceCommodity,
+            GoalPlanningBudget::PRODUCTION,
+        );
+        {
+            let mut txn = new_txn(&mut world, 1);
+            txn.set_component_agent_schema_context_profile(agent, profile.clone())
+                .unwrap();
+            commit_txn(txn);
+        }
+        let beliefs = world.get_component_agent_belief_store(agent).unwrap();
+        let view = PerAgentBeliefView::new(agent, &world, beliefs);
+
+        assert_eq!(
+            ProfileBeliefView::agent_schema_context_profile(&view, agent),
+            Some(profile)
+        );
+    }
 
     fn entity_belief(
         place: worldwake_core::EntityId,

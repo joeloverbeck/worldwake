@@ -1030,6 +1030,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                agent_schema_context_profiles,
+                AgentSchemaContextProfile,
+                insert_agent_schema_context_profile,
+                get_agent_schema_context_profile,
+                get_agent_schema_context_profile_mut,
+                remove_agent_schema_context_profile,
+                has_agent_schema_context_profile,
+                iter_agent_schema_context_profiles,
+                insert_component_agent_schema_context_profile,
+                get_component_agent_schema_context_profile,
+                get_component_agent_schema_context_profile_mut,
+                remove_component_agent_schema_context_profile,
+                has_component_agent_schema_context_profile,
+                entities_with_agent_schema_context_profile,
+                query_agent_schema_context_profile,
+                count_with_agent_schema_context_profile,
+                "AgentSchemaContextProfile",
+                |kind| kind == EntityKind::Agent,
+                AgentSchemaContextProfile,
+                crate::AgentSchemaContextProfile,
+                set_component_agent_schema_context_profile,
+                clear_component_agent_schema_context_profile,
+                txn_simple_set
+            }
+            {
                 agenda_profiles,
                 AgendaProfile,
                 insert_agenda_profile,

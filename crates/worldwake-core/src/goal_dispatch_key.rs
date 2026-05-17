@@ -1,5 +1,5 @@
+use crate::{GoalKind, NoticeTopic, PunishmentKind};
 use serde::{Deserialize, Serialize};
-use worldwake_core::{GoalKind, NoticeTopic, PunishmentKind};
 
 /// Payload-aware AI-internal dispatch identity derived from authoritative goal identity.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -102,9 +102,9 @@ impl GoalDispatchKey {
         match goal {
             GoalKind::ConsumeOwnedCommodity { .. } => Self::ConsumeOwnedCommodity,
             GoalKind::AcquireCommodity { purpose, .. } => match purpose {
-                worldwake_core::CommodityPurpose::SelfConsume => Self::AcquireSelfConsume,
-                worldwake_core::CommodityPurpose::RecipeInput(_) => Self::AcquireRecipeInput,
-                worldwake_core::CommodityPurpose::Restock => Self::AcquireRestock,
+                crate::CommodityPurpose::SelfConsume => Self::AcquireSelfConsume,
+                crate::CommodityPurpose::RecipeInput(_) => Self::AcquireRecipeInput,
+                crate::CommodityPurpose::Restock => Self::AcquireRestock,
             },
             GoalKind::Sleep => Self::Sleep,
             GoalKind::Relieve => Self::Relieve,
@@ -136,9 +136,9 @@ impl GoalDispatchKey {
                 communication_class,
                 ..
             } => match communication_class {
-                worldwake_core::CommunicationClass::Alarm => Self::ShareBeliefAlarm,
-                worldwake_core::CommunicationClass::Testimony => Self::ShareBeliefTestimony,
-                worldwake_core::CommunicationClass::Gossip => Self::ShareBeliefGossip,
+                crate::CommunicationClass::Alarm => Self::ShareBeliefAlarm,
+                crate::CommunicationClass::Testimony => Self::ShareBeliefTestimony,
+                crate::CommunicationClass::Gossip => Self::ShareBeliefGossip,
             },
             GoalKind::AskWitness { .. } => Self::AskWitness,
             GoalKind::ClaimOffice { .. } => Self::ClaimOffice,
@@ -171,7 +171,7 @@ impl From<GoalKind> for GoalDispatchKey {
 #[cfg(test)]
 mod tests {
     use super::GoalDispatchKey;
-    use worldwake_core::{
+    use crate::{
         AcquisitionQuantity, ArtifactPostingContext, CommodityKind, CommodityPurpose,
         CommunicationClass, EntityId, ExpectationId, GoalKind, InstitutionalClaim, NoticeTopic,
         PunishmentKind, Quantity, RecipeId, RecordEntryId, TellTopic, ViolationId,
@@ -301,7 +301,7 @@ mod tests {
                 claim: InstitutionalClaim::OfficeHolder {
                     office: entity(14),
                     holder: Some(entity(15)),
-                    effective_tick: worldwake_core::Tick(0),
+                    effective_tick: crate::Tick(0),
                 },
             },
         };
@@ -438,7 +438,7 @@ mod tests {
             GoalKind::ShareBelief {
                 listener: target,
                 topic: TellTopic::EntityBelief { subject: office },
-                communication_class: worldwake_core::CommunicationClass::Gossip,
+                communication_class: crate::CommunicationClass::Gossip,
             },
             GoalKind::AskWitness {
                 witness: target,

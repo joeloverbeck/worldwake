@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Tests only — no production code changes
-**Deps**: 005, 006
+**Deps**: tickets/S146GOASCHGOA-005.md, tickets/S146GOASCHGOA-006.md
 
 ## Problem
 

@@ -3,6 +3,7 @@ use crate::{
     GoalKey, GoalPriorityClass, classify_frame_plan_relation,
     frame_switch_policy::compare_relation_aware_goal_switch,
     goal_policy::{FreeInterruptRole, PenaltyInterruptEligibility},
+    goal_schema::GoalDispatchKeySchemaExt,
     goal_switching::{GoalSwitchKind, compare_goal_switch},
     plan_selection::SelectionCandidatePlan,
     ranking::OrderedRanked,

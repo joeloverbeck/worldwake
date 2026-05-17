@@ -12,6 +12,7 @@ use worldwake_sim::GoalBeliefView;
 
 use crate::{
     FeasibilityStrategy, GoalDispatchKey, enterprise::merchant_home_place, goal_model::AgendaEntry,
+    goal_schema::GoalDispatchKeySchemaExt,
 };
 
 /// Cheap pre-GOAP estimate of whether a goal is locally actionable.

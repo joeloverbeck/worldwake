@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `search/mod.rs` reads per-goal budget from registry; `PlanAttemptTrace` gains provenance field (decision-trace layer)
-**Deps**: archive/tickets/S146GOASCHGOA-002.md, 004
+**Deps**: archive/tickets/S146GOASCHGOA-002.md, tickets/S146GOASCHGOA-004.md
 
 ## Problem
 
@@ -18,7 +18,7 @@ S146 PR-17's per-goal budgets only matter at the search-dispatch boundary, where
 2. Per `specs/S146-goal-schema-and-per-goal-budgets.md` D7 + D8: the search reads `goal_schema.planning_budget` per candidate's `GoalDispatchKey`, composes via `min()` with cognitive ceiling and `strategic_budget_for_stages`. The trace field is `goal_budget: GoalPlanningBudget` populated from the computed `effective_budget` at every PlanAttemptTrace construction site. Per Q3=(a) resolution: cognitive defaults are unchanged — every preset above depth 8 silently clamps to 8 for default-cognitive-profile agents, and scenarios that need deeper search must author elevated `cognitive_profile.max_plan_depth` per agent (ticket 007's golden exercises this).
 3. Shared abstraction boundary under audit: `effective_budget` is the search-layer read-model derived from (per-goal `planning_budget` from ticket 004, per-agent `CognitiveProfile`, per-agent `ExecutionBudget`). The `PlanAttemptTrace.goal_budget` field records the `effective_budget` actually applied — this is the debugging contract per FND-29. The trace field is provenance (what was used), not a duplicate of the schema's static budget.
 4. Failing-golden / invariant restatement: D7 changes the budget input source; existing goldens that run under default cognitive profile see no behavioral change because every preset above depth 8 clamps to 8 (per Q3 resolution). Ticket 007's `golden_per_goal_budget.rs` uses elevated cognitive profile to exercise the differentiation.
-5. Live `GoalKind` surface under test: all GoalKind variants; each is mapped to a `GoalDispatchKey` via existing `from_goal_kind` (`crates/worldwake-ai/src/goal_dispatch_key.rs`), which keys the populated `GoalSchema.planning_budget`. The current operator/affordance surface is unchanged — only the budget reading is rerouted.
+5. Live `GoalKind` surface under test: all GoalKind variants; each is mapped to a `GoalDispatchKey` via existing `from_goal_kind` (`crates/worldwake-core/src/goal_dispatch_key.rs`), which keys the populated `GoalSchema.planning_budget`. The current operator/affordance surface is unchanged — only the budget reading is rerouted.
 6. AI-regression layer: this ticket modifies the plan-search phase (P12 phase distinction). Intended verification layer is runtime `agent_tick` decision-trace coverage. The `PlanAttemptTrace.goal_budget` field is the proof surface for "which budget was applied"; existing `PlanSearchOutcome` exhaustion variants remain the proof surface for "did the budget exhaust."
 7. Ordering layer: this ticket may shift terminal ordering when effective budget differs from pre-S146 uniform value. Under default cognitive profile, every preset clamps to 8 → no terminal ordering shift. Under elevated cognitive profile, deeper budgets produce different terminal ordering — exercised by ticket 007's golden. The divergence depends on **delayed system resolution** (the per-goal budget feeds into the planner's expansion budget, which affects which plans complete first under exhaustion).
 13. Adjacent contradictions:

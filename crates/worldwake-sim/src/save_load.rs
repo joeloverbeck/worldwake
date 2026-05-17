@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 86;
+pub const SAVE_FORMAT_VERSION: u32 = 87;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -197,24 +197,25 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
     use worldwake_core::{
         AcquisitionQuantity, ActionDefId, ActionDomain, AffordanceKey, AgentBeliefStore,
-        ArtifactActionability, ArtifactAxisValue, ArtifactTransitionPayload, AxisName,
-        BeliefClaimKey, BeliefRef, BeliefSnapshot, BeliefStatusTag, BelievedActivity,
-        BelievedEntityState, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory,
-        BlockerRecordedPayload, BlockerScope, BlockingFact, BodyCostPerTick, CauseRef, ClaimId,
-        ClaimValue, ClaimantOutcome, CloseCause, CommodityKind, CommodityPurpose,
-        ContentionClaimant, ContentionEventPayload, ContentionResolutionRule, ControlSource,
-        DecisionEventPayload, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
-        DiscrepancyMemory, EmitterTag, EntityBeliefAspect, EntityBeliefClaim, EntityId,
-        EpistemicDispositionProfile, EventLog, EventPayload, EventTag, EventView, EvidenceKindTag,
-        EvidenceSummary, ExpectationBasis, ExpectationId, ExpectationMismatchPayload,
-        ExpectationRecord, ExpectationState, ExpectationStore, GoalAbandonReason,
-        GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind, GoalOfferedPayload,
-        GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
-        GroundComfortTag, HomeostaticNeedId, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
-        LatrineFullness, LawAbidingProfile, MaterializationTag, MetabolismProfile, MotiveSource,
-        MotiveSourceRef, ObservationOmission, ObservationRef, OmissionReason, PendingEvent,
-        PerceptionSource, PlaceDirtiness, PlanAdoptedPayload, PlanAssumptionRef,
-        PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
+        AgentSchemaContextProfile, ArtifactActionability, ArtifactAxisValue,
+        ArtifactTransitionPayload, AxisName, BeliefClaimKey, BeliefRef, BeliefSnapshot,
+        BeliefStatusTag, BelievedActivity, BelievedEntityState, Blocker, BlockerClearingCondition,
+        BlockerKey, BlockerMemory, BlockerRecordedPayload, BlockerScope, BlockingFact,
+        BodyCostPerTick, CandidateExtractorId, CauseRef, ClaimId, ClaimValue, ClaimantOutcome,
+        CloseCause, CommodityKind, CommodityPurpose, ContentionClaimant, ContentionEventPayload,
+        ContentionResolutionRule, ControlSource, DecisionEventPayload, Discrepancy,
+        DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EmitterTag, EntityBeliefAspect,
+        EntityBeliefClaim, EntityId, EpistemicDispositionProfile, EventLog, EventPayload, EventTag,
+        EventView, EvidenceKindTag, EvidenceSummary, ExpectationBasis, ExpectationId,
+        ExpectationMismatchPayload, ExpectationRecord, ExpectationState, ExpectationStore,
+        GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalDispatchKey, GoalKey,
+        GoalKind, GoalOfferedPayload, GoalPlanningBudget, GoalRejectionReason,
+        GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason, GroundComfortTag,
+        HomeostaticNeedId, LastSeenMemory, LastSeenProvenance, LastSeenRecord, LatrineFullness,
+        LawAbidingProfile, MaterializationTag, MetabolismProfile, MotiveSource, MotiveSourceRef,
+        ObservationOmission, ObservationRef, OmissionReason, PendingEvent, PerceptionSource,
+        PlaceDirtiness, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
+        PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
         RankedGoalComparisonDimensionTag, RecordRef, RejectedAlternativeSummary,
         RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
         RewardEncumbrance, RiskWeightProfile, RouteSegment, Seed, ShelterTag, SleepEpisode,
@@ -368,6 +369,17 @@ mod tests {
                     social_norm_weight: worldwake_core::Permille::new_unchecked(275),
                 },
             )
+            .unwrap();
+        let mut schema_context = AgentSchemaContextProfile::default();
+        schema_context
+            .disabled_extractors
+            .insert(CandidateExtractorId(11));
+        schema_context.budget_overrides.insert(
+            GoalDispatchKey::AcquireSelfConsume,
+            GoalPlanningBudget::TRAVEL_PURCHASE,
+        );
+        profile_txn
+            .set_component_agent_schema_context_profile(actor, schema_context)
             .unwrap();
         profile_txn
             .set_component_utility_profile(
@@ -1300,8 +1312,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_86_after_blocker_scope_key_migration() {
-        assert_eq!(SAVE_FORMAT_VERSION, 86);
+    fn save_format_version_is_87_after_agent_schema_context_profile_registration() {
+        assert_eq!(SAVE_FORMAT_VERSION, 87);
     }
 
     #[test]
@@ -1312,7 +1324,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 86);
+        assert_eq!(SAVE_FORMAT_VERSION, 87);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1323,6 +1335,21 @@ mod tests {
         );
         assert_eq!(runtime, None);
         assert_eq!(restored, state);
+        let restored_schema_context = restored
+            .world()
+            .get_component_agent_schema_context_profile(actor)
+            .expect("agent schema context profile should roundtrip");
+        assert!(
+            restored_schema_context
+                .disabled_extractors
+                .contains(&CandidateExtractorId(11))
+        );
+        assert_eq!(
+            restored_schema_context
+                .budget_overrides
+                .get(&GoalDispatchKey::AcquireSelfConsume),
+            Some(&GoalPlanningBudget::TRAVEL_PURCHASE)
+        );
         assert!(
             restored
                 .world()

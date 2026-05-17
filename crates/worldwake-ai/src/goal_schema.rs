@@ -3,9 +3,9 @@ use crate::goal_policy::{
     FreeInterruptRole, GoalFamilyPolicy, PenaltyInterruptEligibility, SuppressionRule,
 };
 use crate::interrupts::InterruptTrigger;
-use crate::{PlannerOpKind, RankedGoalProvenanceFamily, goal_dispatch_key::GoalDispatchKey};
+use crate::{PlannerOpKind, RankedGoalProvenanceFamily};
 use serde::{Deserialize, Serialize};
-use worldwake_core::HomeostaticNeedId;
+use worldwake_core::{GoalDispatchKey, HomeostaticNeedId};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum InvalidationStrategy {
@@ -693,9 +693,12 @@ static DECL_PUNISH_EXILE: GoalSchema = GoalSchema {
     progress_barrier_ops: EXILE_BARRIER,
 };
 
-impl GoalDispatchKey {
-    #[must_use]
-    pub const fn declaration(&self) -> &'static GoalSchema {
+pub trait GoalDispatchKeySchemaExt {
+    fn declaration(&self) -> &'static GoalSchema;
+}
+
+impl GoalDispatchKeySchemaExt for GoalDispatchKey {
+    fn declaration(&self) -> &'static GoalSchema {
         match self {
             Self::ConsumeOwnedCommodity => &DECL_CONSUME_OWNED_COMMODITY,
             Self::AcquireSelfConsume => &DECL_ACQUIRE_SELF_CONSUME,
@@ -745,8 +748,8 @@ impl GoalDispatchKey {
 #[cfg(test)]
 mod tests {
     use super::{
-        Authority, FeasibilityStrategy, FrontierExhaustionStrategy, GoalSchema,
-        InvalidationStrategy, SELF_CARE_POLICY,
+        Authority, FeasibilityStrategy, FrontierExhaustionStrategy, GoalDispatchKeySchemaExt,
+        GoalSchema, InvalidationStrategy, SELF_CARE_POLICY,
     };
     use crate::goal_policy::SuppressionRule;
     use crate::{GoalDispatchKey, GoalKindPlannerExt, PlannerOpKind};

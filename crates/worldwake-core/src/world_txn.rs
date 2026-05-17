@@ -2019,9 +2019,9 @@ fn observed_evidence_entities(evidence: &EvidenceRef) -> BTreeSet<EntityId> {
 mod tests {
     use super::WorldTxn;
     use crate::{
-        AcquisitionExhaustionTracker, AgendaProfile, AgentBeliefStore, ArtifactPostingProfile,
-        BeliefStoreDiff, BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory,
-        CognitiveProfile, CommunicationProfile, DemandMemory, DisposalProfile,
+        AcquisitionExhaustionTracker, AgendaProfile, AgentBeliefStore, AgentSchemaContextProfile,
+        ArtifactPostingProfile, BeliefStoreDiff, BelievedEntityState, BelievedInstitutionalClaim,
+        BlockerMemory, CognitiveProfile, CommunicationProfile, DemandMemory, DisposalProfile,
         DriveEscalationProfile, EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile,
         FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim,
         InstitutionalKnowledgeSource, InstitutionalRecordEntry, IntentionDispositionProfile,
@@ -2509,6 +2509,14 @@ mod tests {
                     component_kind: ComponentKind::CognitiveProfile,
                     before: None,
                     after: ComponentValue::CognitiveProfile(CognitiveProfile::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::AgentSchemaContextProfile,
+                    before: None,
+                    after: ComponentValue::AgentSchemaContextProfile(
+                        AgentSchemaContextProfile::default(),
+                    ),
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,

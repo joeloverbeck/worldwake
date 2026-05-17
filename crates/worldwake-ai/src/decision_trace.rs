@@ -3,6 +3,7 @@
 //! Records per-agent per-tick decision reasoning for diagnostic
 //! and test query purposes. See spec S08 for design rationale.
 
+use crate::goal_schema::GoalDispatchKeySchemaExt;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;

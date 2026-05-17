@@ -1,3 +1,4 @@
+use crate::GoalDispatchKey;
 use crate::GoalKindPlannerExt;
 use crate::agenda_manager::{RejectionLifecycle, classify_rejection};
 use crate::agent_tick::portfolio::{FeasibilityVerdict, Portfolio, SlotKind, assemble_portfolio};
@@ -13,8 +14,7 @@ use crate::decision_trace::{
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
 use crate::feasibility_probe;
-use crate::goal_dispatch_key::GoalDispatchKey;
-use crate::goal_schema::FrontierExhaustionStrategy;
+use crate::goal_schema::{FrontierExhaustionStrategy, GoalDispatchKeySchemaExt};
 use crate::opportunity_compiler::PerceivedOpportunityIndex;
 use crate::perf_telemetry::record_planning_phase_duration;
 use crate::plan_selection::SelectionCandidatePlan;
@@ -2628,10 +2628,10 @@ mod tests {
     use crate::{
         AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
         ExhaustionInvalidationCondition, ExhaustionRetryState, ExpectationFailureCause,
-        ExpectationFailurePhase, GoalKey, GoalKind, GoalOffer, GoalPriorityClass, KillCondition,
-        OpportunityAnchor, OpportunityExpectationKind, OpportunityKey, PlanSearchResult,
-        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
-        ProfileFixture, RevivalTrigger, SourceCompositeRank,
+        ExpectationFailurePhase, GoalDispatchKey, GoalKey, GoalKind, GoalOffer, GoalPriorityClass,
+        KillCondition, OpportunityAnchor, OpportunityExpectationKind, OpportunityKey,
+        PlanSearchResult, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
+        PlanningEntityRef, ProfileFixture, RevivalTrigger, SourceCompositeRank,
         agent_tick::portfolio::{FeasibilityVerdict, Portfolio, PortfolioSlot, SlotKind},
         build_semantics_table,
         decision_trace::{
@@ -2639,8 +2639,7 @@ mod tests {
             TargetBeliefPresence,
         },
         feasibility::FeasibilityHint,
-        goal_dispatch_key::GoalDispatchKey,
-        goal_schema::FrontierExhaustionStrategy,
+        goal_schema::{FrontierExhaustionStrategy, GoalDispatchKeySchemaExt},
         plan_selection::SelectionCandidatePlan,
         search::SearchTraceMetadata,
     };

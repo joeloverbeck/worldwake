@@ -8,20 +8,20 @@ use std::num::NonZeroU32;
 
 use serde::Deserialize;
 use worldwake_core::{
-    AgendaProfile, ArtifactCredibility, ArtifactExistence, ArtifactLegalEffect,
-    ArtifactPostingProfile, BlockerReason, CarryCapacity, CloseCause, CognitiveProfile,
-    CombatProfile, CommodityDecayMap, CommodityValuationProfile, CommunicationProfile, Container,
-    ContentionDispositionProfile, ContentionPolicy, ControlSource, DestructionCause,
-    DisposalProfile, DiversificationProfile, DriveEscalationProfile, DriveThresholds,
-    EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile, GroundComfortTag,
-    HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LatrineFullness,
-    LawAbidingProfile, LoadUnits, MetabolismProfile, ObligationSatiationProfile, PatrolProfile,
-    PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness, PlaceVisibilityProfile,
-    PreferenceProfile, ProofKind, ProofRequirement, PursuitProfile, Quantity, RevocationReason,
-    RiskWeightProfile, ShelterTag, SleepQualityProfile, SleepRecoveryModifier,
-    SubstitutePreferences, SuccessionLaw, TellProfile, TheftDispositionProfile,
-    TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile, WashBasinState,
-    WorkstationTag, items::CommodityKind,
+    AgendaProfile, AgentSchemaContextProfile, ArtifactCredibility, ArtifactExistence,
+    ArtifactLegalEffect, ArtifactPostingProfile, BlockerReason, CarryCapacity, CloseCause,
+    CognitiveProfile, CombatProfile, CommodityDecayMap, CommodityValuationProfile,
+    CommunicationProfile, Container, ContentionDispositionProfile, ContentionPolicy, ControlSource,
+    DestructionCause, DisposalProfile, DiversificationProfile, DriveEscalationProfile,
+    DriveThresholds, EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile,
+    GroundComfortTag, HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
+    LatrineFullness, LawAbidingProfile, LoadUnits, MetabolismProfile, ObligationSatiationProfile,
+    PatrolProfile, PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness,
+    PlaceVisibilityProfile, PreferenceProfile, ProofKind, ProofRequirement, PursuitProfile,
+    Quantity, RevocationReason, RiskWeightProfile, ShelterTag, SleepQualityProfile,
+    SleepRecoveryModifier, SubstitutePreferences, SuccessionLaw, TellProfile,
+    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
+    WashBasinState, WorkstationTag, items::CommodityKind,
     social_artifact::SuspensionReason as ArtifactSuspensionReason, topology::PlaceTag,
 };
 
@@ -591,6 +591,8 @@ pub struct AgentDef {
     pub tell_profile: Option<TellProfile>,
     #[serde(default)]
     pub cognitive_profile: Option<CognitiveProfile>,
+    #[serde(default)]
+    pub agent_schema_context_profile: Option<AgentSchemaContextProfile>,
     #[serde(default)]
     pub risk_weight_profile: Option<RiskWeightProfile>,
     #[serde(default)]

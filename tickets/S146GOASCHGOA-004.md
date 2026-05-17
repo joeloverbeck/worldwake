@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `GoalSchema` gains 2 required fields populated atomically across all 41 entries; `CandidateExtractorId` finalized for 20 extractor identities
-**Deps**: archive/tickets/S146GOASCHGOA-001.md, archive/tickets/S146GOASCHGOA-002.md, 003
+**Deps**: archive/tickets/S146GOASCHGOA-001.md, archive/tickets/S146GOASCHGOA-002.md, archive/tickets/S146GOASCHGOA-003.md
 
 ## Problem
 

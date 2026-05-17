@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — restructures candidate emission (P12 phase distinction: candidate generation phase); deletes 20 `emit_*` functions; rewires `agent_tick/planning.rs` to registry-driven dispatch
-**Deps**: 003, 004
+**Deps**: archive/tickets/S146GOASCHGOA-003.md, tickets/S146GOASCHGOA-004.md
 
 ## Problem
 

@@ -6,6 +6,7 @@ use crate::{
     },
     derive_danger_pressure,
     enterprise::{merchant_home_place, restock_gap_at_destination},
+    goal_schema::GoalDispatchKeySchemaExt,
     institutional_queries::consulted_office_holder_read_for_record_data,
     pressure::DangerAssessment,
 };
