@@ -6,10 +6,11 @@ Every future system spec (E09+) MUST include the following analysis sections:
 2. **Positive-feedback analysis**: Identify every amplifying loop (A increases B, B increases A) in the system. If no loops exist, state so explicitly.
 3. **Concrete dampeners**: For each positive-feedback loop, specify the physical world mechanism that limits amplification. Numerical clamps (e.g., `min(value, cap)`) are NOT acceptable dampeners — the dampener must be a physical world process (Principle 8).
 4. **Stored state vs. derived read-model list**: Explicitly enumerate what is authoritative stored state (components, relations) and what is a transient derived computation. No derived value may be stored as authoritative state (Principle 3).
+5. **Planner-formalism analysis**: For any planner-facing feature, state whether the behavior is plain GOAP/affordance search, HTN method decomposition over existing affordances, both with fallback, or method-required. HTN method registration is justified only by a reusable pursuit pattern that materially constrains search: multi-stage lawful decomposition, information gathering before action, role- or motive-specific strategy, repeated planner budget exhaustion, utility thrash between equivalent branches, or method-specific failure attribution. A method-required goal must name the explicit schema contract and explain why flat GOAP fallback would be semantically invalid.
 
-See `specs/FND-01-phase1-foundations-alignment.md` Section H and `docs/FOUNDATIONS.md` Principles 3, 7, 8 for rationale.
+See `specs/FND-01-phase1-foundations-alignment.md` Section H and `docs/FOUNDATIONS.md` Principles 3, 7, 8, and 20 for rationale.
 
-## 5. Agent Profile Scenario Contract
+## Agent Profile Scenario Contract
 
 Every spec that adds a new ECS component registered on `EntityKind::Agent` that
 affects agent behavior must:

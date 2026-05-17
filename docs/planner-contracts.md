@@ -255,6 +255,8 @@ For planner-driven tickets:
 
 - name the live `GoalKind`
 - name the exact operator surface under audit
+- state whether the behavior is plain GOAP/affordance search, HTN method decomposition over existing affordances, both with fallback, or method-required
+- for HTN method work, name the reusable pursuit pattern that justifies method registration rather than plain GOAP; for method-required work, name the explicit schema contract that makes flat fallback unlawful
 - name whether travel reasoning depends on authoritative duration, perceived travel cost, or neither
 - state whether the terminal binding comes from `GoalKind` identity, grounded evidence, or neither
 - state whether the proof boundary is root omission tracing, surfaced-candidate skip tracing, same-goal sibling stop tracing, selection branch attribution, snapshot/state parity, or another lower-layer planner test
