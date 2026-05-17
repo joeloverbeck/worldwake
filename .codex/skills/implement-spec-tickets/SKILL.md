@@ -17,7 +17,7 @@ Run the full Worldwake ticket-family loop without making the user manually reiss
 
 This is an orchestration skill. Do not reimplement `implement-ticket`, `skill-audit`, or `post-ticket-review` here. Load and obey those skills when each phase calls for them, and let their narrower Worldwake guardrails control the phase they own.
 
-Prefer a fresh context boundary between ticket iterations. Each ticket should start from the live repo, current spec, current ticket, and current child-skill guidance rather than from assumptions accumulated during the previous ticket. After an iteration commit, write a repo-local state file, print a compact handoff summary, and request or perform context compaction / fresh-session restart when the Codex surface supports it.
+Require a reset checkpoint between ticket iterations. Each ticket should start from the live repo, current spec, current ticket, and current child-skill guidance rather than from assumptions accumulated during the previous ticket. After an iteration commit, write a repo-local state file, print a compact handoff summary, and request or perform context compaction / fresh-session restart when the Codex surface supports it. Continue in the same context only when the next target is an immediate same-seam follow-up, the context is still small, and the proof/review/audit output from the previous iteration was compact.
 
 The persisted state file is the source of truth for resuming after `/new`; the printed handoff is only a readable mirror.
 
@@ -134,6 +134,12 @@ If an existing same-family state file is missing branch/worktree/base metadata, 
 ## Loop
 
 Repeat until there is no active ticket left in the queue and no newly created follow-up ticket takes priority.
+
+Before invoking the next ticket, decide whether the current context is still suitable:
+
+- If the next target is not an immediate same-seam follow-up from the just-finished ticket, stop after the persisted handoff and require a fresh invocation.
+- If the previous iteration produced broad proof output, material post-review edits, nontrivial child-skill audit findings, or a noisy failure investigation, stop after the persisted handoff and require a fresh invocation.
+- Continue in the same context only when the next target is an immediate same-seam follow-up and the current context still contains enough room to reload the live child-skill guidance, reassess the ticket, implement, verify, review, audit, commit, and persist the next handoff.
 
 ### 1. Implement The Target Ticket
 
