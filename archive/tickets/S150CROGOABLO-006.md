@@ -1,6 +1,6 @@
 # S150CROGOABLO-006: Cross-goal blocker golden coverage
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — test coverage only (new golden file)
@@ -20,8 +20,8 @@ This ticket adds `golden_cross_goal_blocker_scoping.rs` covering the 8 scenarios
    - `golden_need_projection.rs` for scenarios that assert per-scope behavior through trace surfaces
    Canonical golden authoring guide: `docs/golden-e2e-testing.md`.
 2. Spec source: `specs/S150-cross-goal-blocker-scoping.md` D10's 8-scenario enumeration. The scenarios map to:
-   - **Scenario A (RouteSegment multi-goal suppression)**: agent has `BlockerScope::RouteSegment(thornwall ↔ ashford)`; emits both `AcquireCommodity` (travel-trade to ashford) and `EscortToSafety` (travel-escort along same segment); assert both candidates suppressed in decision trace.
-   - **Scenario B (Counterparty multi-goal suppression)**: agent has `BlockerScope::Counterparty(merchant_42)`; emits both `BuyCommodity` (trade with merchant_42) and `AskWitness` (Tell to merchant_42); assert both candidates suppressed.
+   - **Scenario A (RouteSegment multi-goal suppression)**: agent has `BlockerScope::RouteSegment(thornwall ↔ ashford)`; emits multiple route-bearing goals across the same segment; assert the matching candidates are suppressed. Live correction: the current `GoalKind` enum has no `BuyCommodity` variant, and remote `AcquireCommodity` is still visible at candidate-generation time when the offer evidence does not carry both route endpoints; the lower feasibility/search route-blocker seam covers that route. This golden therefore uses two distinct `EscortToSafety` goal keys sharing one segment for the generation-level cross-goal proof.
+   - **Scenario B (Counterparty multi-goal suppression)**: agent has `BlockerScope::Counterparty(merchant_42)`; emits both local trade-style `AcquireCommodity` with merchant evidence and `AskWitness` to the same counterparty; assert both candidates are suppressed.
    - **Scenario C (TTL expiry restores emission)**: scenario from A or B, advance ticks past `route_segment_blocker_ticks` (240) or `counterparty_blocker_ticks` (360); assert candidates resume emission.
    - **Scenario D (RouteRetraversedSafely clearing)**: scenario from A; agent traverses the segment safely (no danger event); assert `sweep_cleared` removes the RouteSegment blocker mid-TTL.
    - **Scenario E (CounterpartyAccepted clearing)**: scenario from B; agent completes a successful trade with merchant_42; assert Counterparty blocker cleared.
@@ -29,8 +29,8 @@ This ticket adds `golden_cross_goal_blocker_scoping.rs` covering the 8 scenarios
    - **Scenario G (source_event provenance)**: trigger a blocker recording at each of the three recording sites; assert `Blocker.source_event` points to a real event in the agent's event log.
    - **Scenario H (Determinism)**: same scenario seed reproduced twice; assert `BlockerMemory.intents` byte-identical at the same tick.
 3. Live planner surfaces: each scenario names the live `GoalKind` under test:
-   - Scenarios A, C, D: `GoalKind::AcquireCommodity`, `GoalKind::EscortToSafety`
-   - Scenarios B, E: `GoalKind::BuyCommodity`, `GoalKind::AskWitness`
+   - Scenarios A, C, D: `GoalKind::EscortToSafety`
+   - Scenarios B, E: local trade-style `GoalKind::AcquireCommodity`, `GoalKind::AskWitness`
    - Scenario F: `GoalKind::AcquireCommodity` (or analogous travel-bearing goal) with DiscrepancyMemory suppression
    - Scenarios G, H: any single GoalKind sufficient to trigger one recording-site
    The current operator surface for these goal kinds was confirmed during ticket 002's recording-site enumeration; no divergence expected. Per `docs/precision-rules.md` Rule 13, if the planner's emit-site for any named GoalKind differs from the spec's narrative at implementation time, correct the ticket scope before writing the scenario fixture.
@@ -121,3 +121,19 @@ add them as small additions to existing `golden_harness/` modules (placement con
 1. `cargo test -p worldwake-ai --test golden_cross_goal_blocker_scoping`
 2. `cargo test -p worldwake-ai --test golden_portfolio_planning --test golden_plan_repair --test golden_contention_inspectability --test golden_need_projection` — regression guard for existing blocker goldens.
 3. `./scripts/verify.sh` for the full pre-PR gate.
+
+## Outcome
+
+Completed on 2026-05-17.
+
+- Added `crates/worldwake-ai/tests/golden_cross_goal_blocker_scoping.rs` with 8 S150-focused golden tests:
+  route-segment multi-goal suppression, counterparty trade/AskWitness suppression, TTL restoration, route safe-retraversal clearing, counterparty-accepted clearing, parallel discrepancy-memory route scope, source-event resolvability, and same-seed blocker-memory determinism.
+- Corrected the stale ticket narrative while implementing: `GoalKind::BuyCommodity` does not exist in the live enum, so counterparty coverage uses local trade-style `AcquireCommodity` plus `AskWitness`; generation-level route coverage uses two distinct `EscortToSafety` goals on the same segment because remote acquisition route blockers are enforced at the later route feasibility/search seam when candidate evidence does not include both endpoints.
+
+Verification:
+
+- `cargo fmt --all`
+- `cargo test -p worldwake-ai --test golden_cross_goal_blocker_scoping`
+- `cargo test -p worldwake-ai --test golden_portfolio_planning --test golden_plan_repair --test golden_contention_inspectability --test golden_need_projection`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `git diff --check`
