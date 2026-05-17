@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 195
+- Scenario blocks: 196
 - Contributing golden test files: 49
-- Associated tests: 240
+- Associated tests: 241
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -671,7 +671,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 431: S147 ProduceWithGather Method Selection
 
-- Source: `golden_htn_methods.rs:668`
+- Source: `golden_htn_methods.rs:790`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -684,7 +684,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 433: S147 Autonomous Produce Method Trace Propagation
 
-- Source: `golden_htn_methods.rs:704`
+- Source: `golden_htn_methods.rs:826`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -697,7 +697,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 434: S147 FulfillBountyInvestigation Method Selection
 
-- Source: `golden_htn_methods.rs:778`
+- Source: `golden_htn_methods.rs:900`
 - Systems: AI, Search, SocialArtifact
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Travel
@@ -710,7 +710,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 436: S147 FulfillBountyDirect Method Selection
 
-- Source: `golden_htn_methods.rs:818`
+- Source: `golden_htn_methods.rs:940`
 - Systems: AI, Search, SocialArtifact, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Combat, Travel
@@ -723,7 +723,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 437: S147 EscortToHome Method Selection
 
-- Source: `golden_htn_methods.rs:862`
+- Source: `golden_htn_methods.rs:984`
 - Systems: AI, Search, Care, Travel
 - GoalKinds: EscortToSafety
 - ActionDomains: Care, Travel
@@ -734,9 +734,22 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Proves**: generated EscortToSafety candidate evidence reaches MethodSelector and selects EscortToHome through the escortee-location belief path.
 
+### Scenario 438: S147 Method Failure Producer
+
+- Source: `golden_htn_methods.rs:1031`
+- Systems: AI, Search, Care, FailureHandling
+- GoalKinds: EscortToSafety
+- ActionDomains: Care
+- Places: Village Square
+- Principles: 14, 20, 26, 28, 29
+
+**Setup**: a generated EscortToSafety candidate selects EscortToHome, then the selected method id is carried on the active plan into the normal plan failure handler.
+
+**Proves**: method-selected failures that are not classified by a stronger blocker/discrepancy emit Discrepancy::MethodFailure through the runtime failure producer instead of through fabricated traces.
+
 ### Scenario 435: S147 Autonomous FulfillBountyInvestigation Method Trace
 
-- Source: `golden_htn_methods.rs:909`
+- Source: `golden_htn_methods.rs:1074`
 - Systems: AI, Search, SocialArtifact, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Combat, Travel
@@ -749,7 +762,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 432: S147 Disabled Methods Fall Back To Flat Strategic Search
 
-- Source: `golden_htn_methods.rs:959`
+- Source: `golden_htn_methods.rs:1124`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel

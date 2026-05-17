@@ -7,14 +7,17 @@ use std::collections::BTreeSet;
 use golden_harness::*;
 use worldwake_ai::htn::{build_method_registry, select_method, select_method_with_recipes};
 use worldwake_ai::{
-    DecisionOutcome, GoalKind, GoalOffer, PlanningState, build_planning_snapshot,
-    generate_candidates,
+    AgentDecisionRuntime, DecisionOutcome, GoalKind, GoalOffer, PlanFailureContext,
+    PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningState,
+    build_planning_snapshot, generate_candidates, handle_plan_failure,
 };
 use worldwake_core::{
-    AgentSchemaContextProfile, ArtifactHeader, ArtifactKind, BlockerMemory, BodyCostPerTick,
-    BountyTarget, BountyTerms, CommodityKind, EntityId, EntityKind, GoalKey, GoalPlanningBudget,
-    HomeostaticNeedId, HomeostaticNeeds, KnownRecipes, MetabolismProfile, MethodSchemaId,
-    MotiveSource, MotiveSourceRef, OpportunityAnchor, PerceptionSource, ProofRequirement, Quantity,
+    ActionDefId, AgentSchemaContextProfile, ArtifactHeader, ArtifactKind, BlockerMemory,
+    BodyCostPerTick, BountyTarget, BountyTerms, CognitiveProfile, CommodityKind, ContentionIntents,
+    Discrepancy, DiscrepancyMemory, EntityId, EntityKind, GoalKey, GoalPlanningBudget,
+    HomeostaticNeedId, HomeostaticNeeds, IntentionFrame, KnownRecipes, MetabolismProfile,
+    MethodFailureContext, MethodFailureKind, MethodSchemaId, MotiveSource, MotiveSourceRef,
+    OpportunityAnchor, OpportunityKey, PerceptionSource, ProofRequirement, Quantity,
     ResourceSource, RewardSource, Seed, Tick, UtilityProfile, WorkstationTag,
 };
 use worldwake_sim::RecipeDefinition;
@@ -56,9 +59,17 @@ struct GeneratedBountyOfferObservation {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct GeneratedEscortOfferObservation {
+    goal_key: GoalKey,
     selected_method: Option<MethodSchemaId>,
     evidence_entities: BTreeSet<EntityId>,
     evidence_places: BTreeSet<EntityId>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct MethodFailureObservation {
+    selected_method: Option<MethodSchemaId>,
+    recorded_discrepancy: Option<Discrepancy>,
+    runtime_plan_cleared: bool,
 }
 
 fn build_single_input_recipe() -> (worldwake_sim::RecipeRegistry, worldwake_core::RecipeId) {
@@ -570,9 +581,120 @@ fn observe_generated_escort_offer() -> GeneratedEscortOfferObservation {
     .map(|method| method.id);
 
     GeneratedEscortOfferObservation {
+        goal_key: offer.key,
         selected_method,
         evidence_entities: offer.evidence_entities,
         evidence_places: offer.evidence_places,
+    }
+}
+
+fn observe_escort_method_failure_producer() -> MethodFailureObservation {
+    let (h, caretaker, ward) = setup_htn_escort_harness();
+    let belief_store = h
+        .world
+        .get_component_agent_belief_store(caretaker)
+        .expect("caretaker should have seeded escort beliefs");
+    let view = PerAgentBeliefView::new(caretaker, &h.world, belief_store);
+    let candidates = generate_candidates(
+        &view,
+        caretaker,
+        &BlockerMemory::default(),
+        &h.recipes,
+        Tick(0),
+    );
+    let offer = candidates
+        .into_iter()
+        .find(|offer| {
+            matches!(
+                offer.key.kind,
+                GoalKind::EscortToSafety { subject, .. } if subject == ward
+            )
+        })
+        .expect("autonomous candidate generation should emit EscortToSafety");
+    let snapshot = build_planning_snapshot(
+        &view,
+        caretaker,
+        &offer.evidence_entities,
+        &offer.evidence_places,
+        6,
+    );
+    let state = PlanningState::new(&snapshot);
+    let registry = build_method_registry();
+    let profile = state
+        .agent_schema_context_profile(caretaker)
+        .unwrap_or_default();
+    let selected_method = select_method(
+        caretaker,
+        &offer,
+        &registry,
+        &profile,
+        &state,
+        &offer.motive_sources,
+    )
+    .map(|method| method.id);
+    let failed_step = PlannedStep {
+        def_id: ActionDefId(0),
+        targets: Vec::new(),
+        target_place: None,
+        payload_override: None,
+        op_kind: PlannerOpKind::Sleep,
+        estimated_ticks: 1,
+        is_materialization_barrier: false,
+        expected_materializations: Vec::new(),
+        guard: None,
+        expectations: Vec::new(),
+    };
+    let mut runtime = AgentDecisionRuntime {
+        current_plan: Some(
+            PlannedPlan::new(
+                OpportunityKey {
+                    goal_key: offer.key,
+                    anchor: OpportunityAnchor::Place(VILLAGE_SQUARE),
+                },
+                offer.key,
+                vec![failed_step.clone()],
+                PlanTerminalKind::ProgressBarrier,
+            )
+            .with_method_id(selected_method),
+        ),
+        ..AgentDecisionRuntime::default()
+    };
+    let method_id_from_plan = runtime
+        .current_plan
+        .as_ref()
+        .and_then(|plan| plan.method_id);
+    let mut frame: Option<IntentionFrame> = None;
+    let mut blocked = BlockerMemory::default();
+    let mut discrepancies = DiscrepancyMemory::default();
+    let mut facility_intents = ContentionIntents::default();
+
+    handle_plan_failure(
+        &PlanFailureContext {
+            view: &view,
+            agent: caretaker,
+            goal_key: offer.key,
+            failed_step: &failed_step,
+            method_id: method_id_from_plan,
+            execution_failure: None,
+            belief_discrepancy: None,
+            current_tick: Tick(4),
+        },
+        &mut runtime,
+        &mut frame,
+        &mut blocked,
+        &mut discrepancies,
+        &mut facility_intents,
+        &CognitiveProfile::default(),
+    );
+
+    MethodFailureObservation {
+        selected_method,
+        recorded_discrepancy: discrepancies
+            .entries
+            .values()
+            .next()
+            .map(|entry| entry.discrepancy),
+        runtime_plan_cleared: runtime.current_plan.is_none(),
     }
 }
 
@@ -903,6 +1025,49 @@ fn generated_escort_candidate_selector_replays_deterministically() {
     let second = observe_generated_escort_offer();
 
     assert_eq!(first, second);
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 438: S147 Method Failure Producer
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Search, Care, FailureHandling
+// GoalKinds: EscortToSafety
+// ActionDomains: Care
+// Places: Village Square
+// Principles: 14, 20, 26, 28, 29
+//
+// Setup: a generated EscortToSafety candidate selects EscortToHome, then the
+//   selected method id is carried on the active plan into the normal plan
+//   failure handler.
+// Proves: method-selected failures that are not classified by a stronger
+//   blocker/discrepancy emit Discrepancy::MethodFailure through the runtime
+//   failure producer instead of through fabricated traces.
+// Cross-system chain: generated escort candidate -> snapshot-backed
+//   MethodSelector -> active PlannedPlan.method_id -> handle_plan_failure ->
+//   DiscrepancyMemory.
+#[test]
+fn method_selected_failure_records_method_failure_discrepancy() {
+    let observation = observe_escort_method_failure_producer();
+
+    assert_eq!(
+        observation.selected_method,
+        Some(ESCORT_TO_HOME),
+        "hybrid method-failure proof should start from a generated escort method selection: {observation:?}"
+    );
+    assert_eq!(
+        observation.recorded_discrepancy,
+        Some(Discrepancy::MethodFailure(MethodFailureContext {
+            method_id: ESCORT_TO_HOME,
+            kind: MethodFailureKind::SubgoalUnachievable,
+            subgoal_index: None,
+        })),
+        "method-selected plan failure should record typed method failure: {observation:?}"
+    );
+    assert!(
+        observation.runtime_plan_cleared,
+        "handle_plan_failure should clear the failed active plan: {observation:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------

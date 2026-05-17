@@ -10,7 +10,7 @@
 
 `S147HTNMETDEC-014` landed the stable report-backed `FulfillBountyInvestigation` D10 seam. The remaining original S147 non-production D10 narratives were `FulfillBountyDirect`, escort method selection/failure, and typed `Discrepancy::MethodFailure(MethodFailureContext)` production through a reachable planning/action failure path.
 
-This ticket landed the direct-bounty and escort generated-candidate selector goldens and the typed method-failure producer substrate. The end-to-end method-failure golden remains split to `tickets/S147HTNMETDEC-016.md` because this ticket's proof is lower-layer runtime producer coverage, not a full autonomous golden failure narrative.
+This ticket landed the direct-bounty and escort generated-candidate selector goldens and the typed method-failure producer substrate. The end-to-end method-failure golden remains split to `archive/tickets/S147HTNMETDEC-016.md` because this ticket's proof is lower-layer runtime producer coverage, not a full autonomous golden failure narrative.
 
 ## Assumption Reassessment (2026-05-17)
 
@@ -65,7 +65,7 @@ This ticket landed the direct-bounty and escort generated-candidate selector gol
 - `docs/generated/golden-scenario-index.md` (regenerated)
 - `docs/generated/golden-scenario-details/htn-methods.md` (regenerated)
 - `docs/generated/golden-coverage-matrix.md` (regenerated)
-- `tickets/S147HTNMETDEC-016.md` (new follow-up)
+- `archive/tickets/S147HTNMETDEC-016.md` (new follow-up)
 - `specs/S147-htn-method-decomposition.md` (truth-sync)
 - `specs/IMPLEMENTATION-ORDER.md` (truth-sync)
 
@@ -74,14 +74,14 @@ This ticket landed the direct-bounty and escort generated-candidate selector gol
 - Reworking production-method and report-backed `FulfillBountyInvestigation` coverage already landed by earlier S147 tickets.
 - Adding story-beat methods or method-only goals.
 - Fabricating method failures directly in traces without a live producer.
-- Full end-to-end method-failure golden coverage; that remaining D10 narrative is owned by `tickets/S147HTNMETDEC-016.md`.
+- Full end-to-end method-failure golden coverage; that remaining D10 narrative is owned by `archive/tickets/S147HTNMETDEC-016.md`.
 
 ## Completed Acceptance
 
 ### Tests That Passed
 
 1. Stable goldens land for the direct and escort method paths that live substrate can honestly prove.
-2. The remaining end-to-end method-failure golden is assigned to `tickets/S147HTNMETDEC-016.md` with the exact missing proof boundary.
+2. The remaining end-to-end method-failure golden is assigned to `archive/tickets/S147HTNMETDEC-016.md` with the exact missing proof boundary.
 3. `python3 scripts/golden_inventory.py --write --check-docs` passes after golden metadata changes.
 4. `cargo test -p worldwake-ai --test golden_htn_methods` passes.
 5. `cargo test -p worldwake-ai` passes.
@@ -124,7 +124,7 @@ Completed on 2026-05-17.
 
 ## Deviations
 
-- The original ticket grouped direct, escort, and method-failure goldens. Reassessment found the direct and escort paths were ready for generated-candidate selector goldens, while method failure first needed runtime producer substrate. The producer landed here; the full end-to-end method-failure golden is split to `tickets/S147HTNMETDEC-016.md`.
+- The original ticket grouped direct, escort, and method-failure goldens. Reassessment found the direct and escort paths were ready for generated-candidate selector goldens, while method failure first needed runtime producer substrate. The producer landed here; the full end-to-end method-failure golden is split to `archive/tickets/S147HTNMETDEC-016.md`.
 - A draft combined Cargo command with multiple test filters was invalid and was discarded as non-proof. The save-format checks were rerun as separate exact tests and those observed runs are recorded below.
 
 ## Verification Result
