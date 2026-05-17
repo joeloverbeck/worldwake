@@ -1117,7 +1117,7 @@ fn emit_candidate_decision_events(
                 agent,
                 goal_key: suppression.opportunity.goal_key,
                 reason: suppression.reason,
-                testimony_trust_context: Vec::new(),
+                testimony_trust_context: suppression.testimony_trust_context.clone(),
             }),
         );
     }
@@ -2047,6 +2047,7 @@ fn process_agent(
                 omitted_political: read_result.omitted_political,
                 omitted_bandit: read_result.omitted_bandit,
                 omitted_social: read_result.omitted_social,
+                omitted_testimony: read_result.omitted_testimony,
                 omitted_violation_detection: read_result.omitted_violation_detection,
             };
 

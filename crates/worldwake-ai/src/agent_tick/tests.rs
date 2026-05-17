@@ -10,9 +10,9 @@ use super::planning::{
 use super::{
     AgentTickDriver, AssumptionRefContext, advance_completed_step,
     apply_step_materialization_bindings, causal_link_cap_hits_from_plan, committed_action_for_step,
-    effective_goal_switch_margin, emit_replan_triggered, handle_recoverable_travel_step_blockage,
-    invalidate_committed_source_after_reliability_failure, persist_blocked_memory,
-    persist_discrepancy_memory, plan_and_validate_next_step_traced,
+    effective_goal_switch_margin, emit_candidate_decision_events, emit_replan_triggered,
+    handle_recoverable_travel_step_blockage, invalidate_committed_source_after_reliability_failure,
+    persist_blocked_memory, persist_discrepancy_memory, plan_and_validate_next_step_traced,
     record_learned_opportunities_from_read_phase, record_repair_memory_from_completed_plan,
     update_exploration_counter_for_adopted_goal, update_frame_for_adopted_plan,
 };
@@ -56,10 +56,11 @@ use worldwake_core::{
     QueuedContentionIntent, RecipeId, RecordData, RecordKind, RepairAppliedPayload, RepairKind,
     RepairMemory, ResourceSource, Seed, SourceAttributionOutcomeTag,
     SourceExpectationFailurePayload, SourceKey, SourceKeyPayload, StatePredicate, SuccessionLaw,
-    TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
-    TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
-    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
-    build_believed_entity_state, build_prototype_world,
+    TellMemoryKey, TellProfile, TellTopic, TestimonyTrustSummary, Tick, ToldBeliefMemory,
+    TopicScope, Topology, TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile,
+    ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+    WorldTxn, Wound, WoundCause, WoundId, WoundList, build_believed_entity_state,
+    build_prototype_world,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
@@ -5483,6 +5484,55 @@ fn read_phase_emits_goal_offered_and_goal_suppressed_events_from_candidate_prove
                 ))
         }),
         "expected acquire-candidate blocker suppression payload in GoalSuppressed events"
+    );
+}
+
+#[test]
+fn goal_suppressed_event_preserves_testimony_trust_context() {
+    let agent = entity(1);
+    let witness = entity(2);
+    let subject = entity(3);
+    let topic = TellTopic::EntityBelief { subject };
+    let goal_key = GoalKey::from(GoalKind::AskWitness { witness, topic });
+    let context = TestimonyTrustSummary {
+        source: witness,
+        topic: TopicScope::GeneralFact,
+        trust: Permille::new_unchecked(100),
+        observations: 2,
+    };
+    let mut event_log = EventLog::new();
+
+    emit_candidate_decision_events(
+        &mut event_log,
+        Tick(7),
+        agent,
+        &[],
+        &[
+            crate::candidate_generation::CandidateSuppressionDiagnostic {
+                opportunity: OpportunityKey {
+                    goal_key,
+                    anchor: OpportunityAnchor::Entity(witness),
+                },
+                reason: GoalRejectionReason::SuppressedByUnreliableTestimony,
+                testimony_trust_context: vec![context],
+            },
+        ],
+    );
+
+    let suppressed = event_log.events_by_tag(EventTag::GoalSuppressed);
+    assert_eq!(suppressed.len(), 1);
+    assert_eq!(
+        event_log
+            .get(suppressed[0])
+            .and_then(|record| record.decision_payload()),
+        Some(&DecisionEventPayload::GoalSuppressed(
+            GoalSuppressedPayload {
+                agent,
+                goal_key,
+                reason: GoalRejectionReason::SuppressedByUnreliableTestimony,
+                testimony_trust_context: vec![context],
+            },
+        ))
     );
 }
 

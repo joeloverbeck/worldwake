@@ -51,6 +51,7 @@ mod shared_collections;
 pub mod side_benefit;
 mod source_composite;
 pub mod survival_forensics;
+mod testimony_trust;
 mod theft;
 
 pub use agenda_manager::{AgendaTickPolicy, AgendaTransitions, CommitTransition, tick_agenda};
@@ -87,8 +88,9 @@ pub use decision_trace::{
     SameGoalPlanningStopReason, SameGoalPlanningTrace, SelectedPlanReplacementKind,
     SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
     SelectedPlanTrace, SelectionTrace, SnapshotCacheCounters, SnapshotContinuationOutcome,
-    SnapshotContinuationTrace, SocialCandidateOmission, StrategicBudgetTrace, TravelPruningTrace,
-    TravelSuccessorTrace, ViolationDetectionOmission, ViolationDetectionOmissionReason,
+    SnapshotContinuationTrace, SocialCandidateOmission, StrategicBudgetTrace,
+    TestimonyCandidateOmission, TestimonyOmissionReason, TravelPruningTrace, TravelSuccessorTrace,
+    ViolationDetectionOmission, ViolationDetectionOmissionReason,
 };
 pub use dirty_set::DirtySet;
 pub use effect_schema_index::EffectSchemaIndex;

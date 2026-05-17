@@ -420,6 +420,12 @@ pub enum CandidateDampingReason {
         recorded_tick: Tick,
         confidence: Permille,
     },
+    TestimonySourceUnreliable {
+        source: EntityId,
+        topic: TellTopic,
+        trust: Permille,
+        threshold: Permille,
+    },
 }
 
 /// Diagnostic entry for a candidate that reached ranking with a reduced score.
@@ -460,6 +466,8 @@ pub struct CandidateTrace {
     pub omitted_bandit: Vec<BanditCandidateOmission>,
     /// Social goals omitted before generation due to resend suppression.
     pub omitted_social: Vec<SocialCandidateOmission>,
+    /// Testimony goals omitted before generation due to learned reliability.
+    pub omitted_testimony: Vec<TestimonyCandidateOmission>,
     /// Violation detection pass skipped due to missing prerequisites.
     pub omitted_violation_detection: Vec<ViolationDetectionOmission>,
 }
@@ -593,6 +601,25 @@ pub struct SocialCandidateOmission {
     pub listener: EntityId,
     pub topic: TellTopic,
     pub reason: TellTopicOmissionReason,
+}
+
+/// Hard pre-emission reason for testimony candidate omission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TestimonyOmissionReason {
+    SourceUnreliable {
+        source: EntityId,
+        topic: TellTopic,
+        trust: Permille,
+        threshold: Permille,
+    },
+}
+
+/// Diagnostic record for testimony goals omitted before candidate emission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TestimonyCandidateOmission {
+    pub witness: EntityId,
+    pub topic: TellTopic,
+    pub reason: TestimonyOmissionReason,
 }
 
 /// Hard pre-emission reason for the entire violation-detection pass being skipped.
@@ -2136,6 +2163,19 @@ fn format_candidate_damping_entry(entry: &CandidateDampingEntry) -> String {
             recorded_tick.0,
             confidence.value()
         ),
+        CandidateDampingReason::TestimonySourceUnreliable {
+            source,
+            topic,
+            trust,
+            threshold,
+        } => format!(
+            "{} damped by TestimonyReliability: source={:?}, topic={:?}, trust={}, threshold={}.",
+            format_goal_key(&entry.goal_key),
+            source,
+            topic,
+            trust.value(),
+            threshold.value()
+        ),
     }
 }
 
@@ -2855,6 +2895,7 @@ mod tests {
                     omitted_political: Vec::new(),
                     omitted_bandit: Vec::new(),
                     omitted_social: Vec::new(),
+                    omitted_testimony: Vec::new(),
                     omitted_violation_detection: Vec::new(),
                 },
                 planning: PlanSearchTrace {
@@ -2989,6 +3030,7 @@ mod tests {
                     omitted_political,
                     omitted_bandit,
                     omitted_social,
+                    omitted_testimony: vec![],
                     omitted_violation_detection: vec![],
                 },
                 planning: PlanSearchTrace {
@@ -3051,6 +3093,7 @@ mod tests {
                     omitted_political: Vec::new(),
                     omitted_bandit: Vec::new(),
                     omitted_social: Vec::new(),
+                    omitted_testimony: Vec::new(),
                     omitted_violation_detection: Vec::new(),
                 },
                 planning: PlanSearchTrace {
@@ -3721,6 +3764,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_testimony: vec![],
                 omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
@@ -3792,6 +3836,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_testimony: vec![],
                 omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
@@ -3948,6 +3993,7 @@ mod tests {
             omitted_political: vec![],
             omitted_bandit: vec![],
             omitted_social: vec![],
+            omitted_testimony: vec![],
             omitted_violation_detection: vec![],
         };
 
@@ -4016,6 +4062,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_testimony: vec![],
                 omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
@@ -4150,6 +4197,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_testimony: vec![],
                 omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
@@ -4246,6 +4294,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_testimony: vec![],
                 omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
@@ -4321,6 +4370,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_testimony: vec![],
                 omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
@@ -4395,6 +4445,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_testimony: vec![],
                 omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
@@ -4489,6 +4540,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_testimony: vec![],
                 omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
@@ -4546,6 +4598,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_testimony: vec![],
                 omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
@@ -4633,6 +4686,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_testimony: vec![],
                 omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
@@ -4726,6 +4780,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_testimony: vec![],
                 omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
@@ -4805,6 +4860,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_testimony: vec![],
                 omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
@@ -4903,6 +4959,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_testimony: vec![],
                 omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
@@ -4982,6 +5039,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_testimony: vec![],
                 omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
@@ -5422,6 +5480,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_testimony: vec![],
                 omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
@@ -5625,6 +5684,7 @@ mod tests {
                     omitted_political: vec![],
                     omitted_bandit: vec![],
                     omitted_social: vec![],
+                    omitted_testimony: vec![],
                     omitted_violation_detection: vec![],
                 },
                 planning: PlanSearchTrace {

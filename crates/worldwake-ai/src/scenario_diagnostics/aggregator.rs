@@ -550,7 +550,8 @@ fn goal_rejection_category(reason: GoalRejectionReason) -> CandidateSuppressionC
         GoalRejectionReason::SuppressedByBlocker => {
             CandidateSuppressionCategory::RejectedSuppressedByBlocker
         }
-        GoalRejectionReason::SuppressedByDiscrepancy => {
+        GoalRejectionReason::SuppressedByDiscrepancy
+        | GoalRejectionReason::SuppressedByUnreliableTestimony => {
             CandidateSuppressionCategory::RejectedSuppressedByDiscrepancy
         }
         GoalRejectionReason::SuppressedByStressPolicy => {
@@ -1008,6 +1009,7 @@ mod tests {
                     omitted_political: Vec::new(),
                     omitted_bandit: Vec::new(),
                     omitted_social: Vec::new(),
+                    omitted_testimony: Vec::new(),
                     omitted_violation_detection: vec![crate::ViolationDetectionOmission {
                         reason: crate::ViolationDetectionOmissionReason::AgentInTransit,
                     }],

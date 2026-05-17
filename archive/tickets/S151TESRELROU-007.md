@@ -1,9 +1,9 @@
 # S151TESRELROU-007: Ranking damping + candidate emission suppression for unreliable witnesses
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Yes — extends `apply_ask_witness_learned_damping`, adds new variant to `CandidateDampingReason`, adds new `TestimonyOmissionReason` enum, extends `extract_ask_witness_candidates`
+**Engine Changes**: Yes — threads runtime `TestimonyReliability` into candidate generation/ranking, adds `CandidateDampingReason::TestimonySourceUnreliable`, adds `TestimonyOmissionReason`, extends `extract_ask_witness_candidates`, and populates suppression payload testimony context
 **Deps**: archive/tickets/S151TESRELROU-001.md, archive/tickets/S151TESRELROU-002.md, archive/tickets/S151TESRELROU-003.md, archive/tickets/S151TESRELROU-004.md, archive/tickets/S151TESRELROU-006.md
 
 ## Problem
@@ -12,11 +12,11 @@ S151's D8 wires `TestimonyReliability` into the planner's ranking pipeline two w
 
 ## Assumption Reassessment (2026-05-17)
 
-1. `apply_ask_witness_learned_damping` at `crates/worldwake-ai/src/ranking.rs:1494-1517` is the existing AskWitness damping site — looks up `learned_opportunity_memory`, applies a fixed Permille factor via `scale_motive_by_confidence`, records a `CandidateDampingEntry`. S151's testimony damping extends this same site rather than adding a parallel one. **Existing test exercising this function**: `ask_witness_motive_score_is_damped_by_learned_opportunity_memory` at `crates/worldwake-ai/src/ranking.rs:7664` — must be named in this ticket's coverage and extended (not replaced) for testimony-source damping. Sibling tests at `ask_witness_priority_class_is_low` (line 7534), `ask_witness_motive_score_rises_with_confidence_gap` (line 7574), and `ask_witness_and_share_belief_scores_diverge_for_same_topic_pressure` (line 7726) provide AskWitness ranking context but do not directly exercise the damping path.
+1. `apply_ask_witness_learned_damping` was the existing AskWitness learned-opportunity damping site. Live implementation keeps that path intact and composes testimony damping in `ask_witness_motive` before learned-opportunity damping. `CandidateDampingEntry` production remains in the ranking pass through a sibling testimony damping entry helper.
 2. `CandidateDampingReason` at `crates/worldwake-ai/src/decision_trace.rs:416` currently carries a single variant `SurveyMemoryNegative { place, hypothesis, confidence }`. Extending with `TestimonySourceUnreliable { source, topic, trust, threshold }` adds an arm with the same Permille-sized payload shape — no derive issues.
 3. `PoliticalCandidateOmissionReason` at `decision_trace.rs:545` (9 variants), `BanditCandidateOmissionReason` at line 575, `ViolationDetectionOmissionReason` at line 600 — the precedent enums for new `TestimonyOmissionReason`. All recorded through the relevant emitter's `CandidateGenerationDiagnostics` surface.
-4. `extract_ask_witness_candidates` at `crates/worldwake-ai/src/candidate_generation.rs:2877-3045` is the AskWitness extractor (registered at line 468). Its emission API uses `emit_candidate_with_trace` (around line 3033) with `EmitterTag::EpistemicSensing`. Suppression entries flow through `diagnostics.ask_witness_gate_rejections: Vec<AskWitnessGateRejection>` (the existing gate-rejection diagnostic carrier) — verify during implementation whether `TestimonyOmissionReason` belongs on this Vec or on a new sibling field (likely a new field, to keep gate-rejection vs. trust-suppression distinct).
-5. Per the Authoritative-to-AI Impact Rule (CLAUDE.md): this ticket modifies candidate emission (#2) and ranking damping (#3 affects rank ordering). The remaining checklist points (#1, #4-#7) need explicit consideration during implementation — no preconditions change, no validate_* functions change, no affordance enumeration changes; the omission is pre-rank so plan failure handling is not affected by it.
+4. `extract_ask_witness_candidates` is the AskWitness extractor. The live change records unreliable-source omissions on a new `diagnostics.omitted_testimony` field and records a `CandidateSuppressionDiagnostic` with `GoalRejectionReason::SuppressedByUnreliableTestimony`, keeping stale-confidence/cooldown `ask_witness_gate_rejections` distinct.
+5. Per the Authoritative-to-AI Impact Rule (AGENTS.md): this ticket modifies candidate emission (#2) and ranking damping (#3 affects rank ordering). The remaining checklist points (#1, #4-#7) need explicit consideration during implementation — no preconditions change, no validate_* functions change, no affordance enumeration changes; the omission is pre-rank so plan failure handling is not affected by it.
 
 ## Architecture Check
 
@@ -24,7 +24,31 @@ S151's D8 wires `TestimonyReliability` into the planner's ranking pipeline two w
 2. Per FND-26: ranking reads `TestimonyReliability` (from `AgentDecisionRuntime` directly, since it's per-agent runtime state) and `TestimonyTrustProfile` (via `GoalBeliefView` accessor from ticket 004). No cross-system command paths.
 3. Per FND-28: net-new enum + net-new variant. No deprecated fallthrough — `extract_ask_witness_candidates` either emits a candidate or records an explicit omission reason; no third "silently dropped" path.
 4. Per FND-29: every suppression and damping decision is inspectable through the existing decision trace surface.
-5. Damping site reuse (extending `apply_ask_witness_learned_damping`) avoids duplicating the per-candidate damping infrastructure — one extension point instead of a new sibling function.
+5. Damping uses the existing ranking damping trace infrastructure while keeping trust computation in a shared `testimony_trust` helper used by generation and ranking.
+
+## Completion Notes
+
+Implemented on 2026-05-17:
+
+1. Added shared testimony trust helpers in `crates/worldwake-ai/src/testimony_trust.rs` for trust summaries, suppression floor calculation, and proportional damping factors.
+2. Threaded `AgentDecisionRuntime.testimony_reliability` through read-phase candidate generation and ranking while preserving empty defaults for public/test-only generation and ranking entry points.
+3. Added hard AskWitness suppression below `trust_threshold * 500/1000`, with `TestimonyOmissionReason::SourceUnreliable`, `GoalRejectionReason::SuppressedByUnreliableTestimony`, `GoalSuppressedPayload.testimony_trust_context`, and `CandidateTrace.omitted_testimony`.
+4. Added soft AskWitness damping for trust between the suppression floor and `TestimonyTrustProfile.trust_threshold`, with `CandidateDampingReason::TestimonySourceUnreliable`.
+5. Updated trace/fixture initializers in `worldwake-ai`, `worldwake-cli`, and `worldwake-visualizer` for the new trace field.
+
+No authoritative precondition, validation, affordance, action-start, or plan-failure behavior changed; the owned seam is candidate emission plus ranking only.
+
+## Verification
+
+Passed:
+
+1. `cargo fmt --all`
+2. `cargo test -p worldwake-ai ask_witness_emitter_suppresses_unreliable_witness`
+3. `cargo test -p worldwake-ai ask_witness_motive_score_is_damped_by_unreliable_testimony_source`
+4. `cargo test -p worldwake-ai goal_suppressed_event_preserves_testimony_trust_context`
+5. `cargo test -p worldwake-ai agent_tick`
+6. `cargo clippy --workspace --all-targets -- -D warnings`
+7. `cargo test --workspace`
 
 ## Verification Layers
 
@@ -125,7 +149,11 @@ When `extract_ask_witness_candidates` suppresses a candidate via `TestimonyOmiss
 - `crates/worldwake-ai/src/decision_trace.rs` (modify — `CandidateDampingReason` variant + new `TestimonyOmissionReason` enum + likely new `Vec<TestimonyOmissionReason>` field on `CandidateGenerationDiagnostics`)
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify — extend `extract_ask_witness_candidates`)
 - `crates/worldwake-ai/src/ranking.rs` (modify — extend `apply_ask_witness_learned_damping`)
-- `crates/worldwake-ai/src/agent_tick/planning.rs` (modify — `GoalSuppressed` payload context population)
+- `crates/worldwake-ai/src/testimony_trust.rs` (new — shared trust summary/floor/damping helpers)
+- `crates/worldwake-ai/src/agent_tick/observation.rs` (modify — pass runtime testimony reliability through read phase)
+- `crates/worldwake-ai/src/agent_tick/mod.rs` (modify — `GoalSuppressed` payload context population and trace field propagation)
+- `crates/worldwake-core/src/decision_event_payload.rs` (modify — add `GoalRejectionReason::SuppressedByUnreliableTestimony`)
+- Trace fixture fallout in `worldwake-ai`, `worldwake-cli`, and `worldwake-visualizer` for the new `CandidateTrace.omitted_testimony` field.
 
 ## Out of Scope
 
@@ -161,8 +189,36 @@ When `extract_ask_witness_candidates` suppresses a candidate via `TestimonyOmiss
 
 ### Commands
 
-1. `cargo test -p worldwake-ai ask_witness`
-2. `cargo test -p worldwake-ai candidate_generation`
-3. `cargo test -p worldwake-ai ranking`
-4. `cargo clippy --workspace --all-targets -- -D warnings`
-5. `./scripts/verify.sh`
+1. `cargo test -p worldwake-ai ask_witness_emitter_suppresses_unreliable_witness`
+2. `cargo test -p worldwake-ai ask_witness_motive_score_is_damped_by_unreliable_testimony_source`
+3. `cargo test -p worldwake-ai goal_suppressed_event_preserves_testimony_trust_context`
+4. `cargo test -p worldwake-ai agent_tick`
+5. `cargo clippy --workspace --all-targets -- -D warnings`
+6. `cargo test --workspace`
+
+## Outcome
+
+Completed on 2026-05-17.
+
+What changed:
+
+1. Added shared testimony trust helpers for `TestimonyReliability` summary lookup, suppression-floor calculation, and proportional damping.
+2. Threaded runtime testimony reliability into the read-phase candidate-generation and ranking paths without changing authoritative validation, affordances, action start, or plan-failure handling.
+3. Added hard AskWitness suppression below `trust_threshold * 500/1000`, with `TestimonyOmissionReason::SourceUnreliable`, `GoalRejectionReason::SuppressedByUnreliableTestimony`, `GoalSuppressedPayload.testimony_trust_context`, and `CandidateTrace.omitted_testimony`.
+4. Added soft AskWitness ranking damping between the suppression floor and `TestimonyTrustProfile.trust_threshold`, with `CandidateDampingReason::TestimonySourceUnreliable`.
+5. Updated downstream trace fixtures in `worldwake-ai`, `worldwake-cli`, and `worldwake-visualizer` for the new trace field.
+
+Deviation from original plan:
+
+1. The landed code uses `TellTopic` in AI trace diagnostics and maps to `TopicScope` only for `TestimonyReliabilityKey` / `TestimonyTrustSummary`; this matches the live AskWitness goal key and avoids lossy reverse mapping in candidate/ranking traces.
+2. Goal suppression payload context is populated in `agent_tick/mod.rs` via `CandidateSuppressionDiagnostic`, not `agent_tick/planning.rs`.
+
+Verification result:
+
+1. `cargo fmt --all`
+2. `cargo test -p worldwake-ai ask_witness_emitter_suppresses_unreliable_witness`
+3. `cargo test -p worldwake-ai ask_witness_motive_score_is_damped_by_unreliable_testimony_source`
+4. `cargo test -p worldwake-ai goal_suppressed_event_preserves_testimony_trust_context`
+5. `cargo test -p worldwake-ai agent_tick`
+6. `cargo clippy --workspace --all-targets -- -D warnings`
+7. `cargo test --workspace`

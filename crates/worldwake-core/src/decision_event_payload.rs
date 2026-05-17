@@ -205,6 +205,7 @@ pub enum GoalRejectionReason {
     SuppressedByBlocker,
     SuppressedByDiscrepancy,
     SuppressedByStressPolicy,
+    SuppressedByUnreliableTestimony,
     SuppressedByContentionPreempt,
     ArbitrationLost,
     SwitchMarginInsufficient,

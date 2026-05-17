@@ -17,7 +17,7 @@ Completed on 2026-05-17.
 - Belief observation is available through per-agent `AgentBeliefStore` component deltas in the event log. The hook reads `ComponentDiff::BeliefStore` compact diffs directly and computes `BeliefStoreDiff` for full `Set` deltas.
 - Route traversal outcome is already represented by authoritative per-agent `RouteExperience` component deltas. That live substrate is the canonical input for safe and hostile traversal counts; the draft's direct `TravelTo` action-payload scrape was superseded by this component-delta seam.
 - Dangerous-route provenance was kept tick-scoped. The hook uses same-tick `Combat`, `Escalation`, or `WildernessRelief` events involving the agent when available, and otherwise falls back to the route-experience mutation event ID.
-- `GoalSuppressedPayload.testimony_trust_context` remains owned by `S151TESRELROU-007`; this ticket added reusable goal-commit snapshot helpers but did not wire the suppression site.
+- `GoalSuppressedPayload.testimony_trust_context` was completed by the now-archived `archive/tickets/S151TESRELROU-007.md`; this ticket added reusable goal-commit snapshot helpers but did not wire the suppression site.
 
 ## Outcome
 
@@ -36,7 +36,7 @@ Completed on 2026-05-17.
 
 - The route hook does not inspect raw `ActionCommitted` travel payloads. Live code already preserves traversal outcome as `RouteExperience`, including safe and hostile counts, so reading that authoritative component delta is narrower and more stable than reconstructing traversal state from action history.
 - No core `BeliefStoreDiff` accessor was added. The existing compact diff and `BeliefStoreDiff::compute()` paths were sufficient.
-- Suppression payload context population is intentionally deferred to `S151TESRELROU-007`.
+- Suppression payload context population was intentionally deferred to, and later completed by, the now-archived `archive/tickets/S151TESRELROU-007.md`.
 
 ## Acceptance Result
 
