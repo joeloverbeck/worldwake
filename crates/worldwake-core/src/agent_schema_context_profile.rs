@@ -1,4 +1,4 @@
-use crate::{GoalDispatchKey, GoalPlanningBudget, traits::Component};
+use crate::{GoalDispatchKey, GoalPlanningBudget, MethodSchemaId, traits::Component};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -55,6 +55,8 @@ impl CandidateExtractorId {
 pub struct AgentSchemaContextProfile {
     pub disabled_extractors: BTreeSet<CandidateExtractorId>,
     pub budget_overrides: BTreeMap<GoalDispatchKey, GoalPlanningBudget>,
+    #[serde(default)]
+    pub disabled_methods: BTreeSet<MethodSchemaId>,
 }
 
 impl Component for AgentSchemaContextProfile {}
@@ -69,6 +71,7 @@ mod tests {
 
         assert!(profile.disabled_extractors.is_empty());
         assert!(profile.budget_overrides.is_empty());
+        assert!(profile.disabled_methods.is_empty());
     }
 
     #[test]

@@ -32,7 +32,7 @@ Phase 12: AI Architecture Evolution — Draft
 - S134 (Canonical Effect Schema, archived at `archive/specs/S134-canonical-effect-schema.md`, hard dep) — `MethodSchema.expected_artifacts` references `EffectSchema` post-conditions (at `crates/worldwake-sim/src/effect_schema.rs:9`) for verifying method completion.
 - S109 (Typed Discrepancy Taxonomy, archived at `archive/specs/S109-typed-discrepancy-taxonomy.md`, hard dep) — D6 extends the `Discrepancy` enum at `crates/worldwake-core/src/discrepancy.rs:9` with a single `MethodFailure(MethodFailureContext)` variant; `MethodFailureMode` values (D1) project into a `MethodFailureKind` discriminant carried by that context.
 - S125 (Institutional Treasuries and Bounty Funding, archived at `archive/specs/S125-institutional-treasuries-and-bounty-funding.md`) — `FulfillBounty` methods (D2) use treasury-backed reward release.
-- S111 (Scenario Profile Homogeneity Lints, archived at `archive/specs/S111-scenario-homogeneity-lints.md`) — D7 extends the `ProfileHomogeneity` lint at `crates/worldwake-cli/src/scenario/lints.rs:28` to warn when every agent in a scenario has identical `disabled_methods`.
+- S111 (Scenario Profile Homogeneity Lints, archived at `archive/specs/S111-scenario-homogeneity-lints.md`) — D7 extends the `ProfileHomogeneity` lint at `crates/worldwake-cli/src/scenario/lints.rs:28` so `disabled_methods` participates in the existing checked profile-variation axes.
 - S144 (Aggregate Scenario Diagnostics, archived at `archive/specs/S144-aggregate-scenario-diagnostics.md`) — D5 extends the `PlanningMetrics` struct at `crates/worldwake-ai/src/scenario_diagnostics/mod.rs:32` with a `method_usage` aggregation.
 - S115 (Agenda Manager, archived at `archive/specs/S115-agenda-manager.md`) — sub-goals execute through `tick_agenda` and `AgendaState` at `crates/worldwake-ai/src/agenda_manager.rs`; methods do not have internal tick loops.
 
@@ -416,7 +416,7 @@ pub struct AgentSchemaContextProfile {
 
 **Universal classification**: `AgentSchemaContextProfile` is already a universal-per-agent component registered in `worldwake-core` per archived S146 (no `*Def` wrapper; surfaced directly in `crates/worldwake-cli/src/scenario/types.rs:595` as an optional scenario field with `Default` impl). `disabled_methods` inherits this classification — the `#[serde(default)]` attribute ensures existing scenario RON deserialization continues to work without modification.
 
-**S111 lint extension**: `ProfileHomogeneity` at `crates/worldwake-cli/src/scenario/lints.rs:28` extends to warn when every agent in a scenario has identical `disabled_methods` (including all-empty, which suggests the scenario is not exercising per-role method enablement).
+**S111 lint extension**: `ProfileHomogeneity` at `crates/worldwake-cli/src/scenario/lints.rs:28` extends its checked variation axes to include `AgentSchemaContextProfile.disabled_methods` alongside the existing S147 schema-context fields. The lint keeps the S111 rule shape: AI populations with more than two agents fail only when no checked profile axis varies, and the failure detail names `agent_schema_context_profile.disabled_methods` so method-denylist homogeneity is inspectable.
 
 ### D8: Method registry build-time table + validation tests
 

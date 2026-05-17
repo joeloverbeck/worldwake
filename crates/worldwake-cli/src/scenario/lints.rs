@@ -78,7 +78,8 @@ fn check_profile_homogeneity(scenario: &ScenarioDef, report: &mut LintReport) {
         || option_field_varies(&ai_agents, |agent| agent.diversification_profile.as_ref())
         || option_field_varies(&ai_agents, |agent| agent.epistemic_disposition.as_ref())
         || option_field_varies(&ai_agents, |agent| agent.intention_disposition.as_ref())
-        || option_field_varies(&ai_agents, |agent| agent.last_seen_memory.as_ref());
+        || option_field_varies(&ai_agents, |agent| agent.last_seen_memory.as_ref())
+        || agent_schema_context_profile_varies(&ai_agents);
 
     if varies {
         return;
@@ -88,9 +89,28 @@ fn check_profile_homogeneity(scenario: &ScenarioDef, report: &mut LintReport) {
         rule: LintRule::ProfileHomogeneity,
         affected_agents: ai_agents.iter().map(|agent| agent.name.clone()).collect(),
         detail:
-            "AI agent population shares default profiles across all checked fields; FND-22 requires concrete per-agent variation"
+            "AI agent population shares profiles across all checked fields, including agent_schema_context_profile.disabled_extractors, agent_schema_context_profile.budget_overrides, and agent_schema_context_profile.disabled_methods; FND-22 requires concrete per-agent variation"
                 .into(),
     });
+}
+
+fn agent_schema_context_profile_varies(agents: &[&AgentDef]) -> bool {
+    option_field_varies(agents, |agent| {
+        agent
+            .agent_schema_context_profile
+            .as_ref()
+            .map(|profile| &profile.disabled_extractors)
+    }) || option_field_varies(agents, |agent| {
+        agent
+            .agent_schema_context_profile
+            .as_ref()
+            .map(|profile| &profile.budget_overrides)
+    }) || option_field_varies(agents, |agent| {
+        agent
+            .agent_schema_context_profile
+            .as_ref()
+            .map(|profile| &profile.disabled_methods)
+    })
 }
 
 fn utility_profile_motive_class_weight_varies(agents: &[&AgentDef]) -> bool {
@@ -215,11 +235,12 @@ mod tests {
         AgentDef, ExplorationProfileDef, OfficeDef, PlaceDef, ScenarioDef, TreasuryDef,
     };
     use crate::scenario::{ScenarioError, spawn_scenario};
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        CognitiveProfile, CommodityKind, ControlSource, DiversificationProfile,
-        EpistemicDispositionProfile, IntentionDispositionProfile, PerceptionProfile, Permille,
-        PlaceTag, Quantity, SuccessionLaw, UtilityProfile,
+        AgentSchemaContextProfile, CognitiveProfile, CommodityKind, ControlSource,
+        DiversificationProfile, EpistemicDispositionProfile, IntentionDispositionProfile,
+        MethodSchemaId, PerceptionProfile, Permille, PlaceTag, Quantity, SuccessionLaw,
+        UtilityProfile,
     };
 
     fn minimal_agent(name: &str, control: ControlSource) -> AgentDef {
@@ -453,6 +474,56 @@ mod tests {
                     .any(|failure| failure.rule == LintRule::ProfileHomogeneity)
             );
         }
+    }
+
+    #[test]
+    fn homogeneous_schema_context_methods_are_reported() {
+        let schema_context = AgentSchemaContextProfile {
+            disabled_methods: BTreeSet::from([MethodSchemaId(3)]),
+            ..AgentSchemaContextProfile::default()
+        };
+        let agents = ["Alice", "Bob", "Cara"].map(|name| AgentDef {
+            agent_schema_context_profile: Some(schema_context.clone()),
+            ..fully_profiled_ai(name)
+        });
+        let scenario = scenario_with_agents(agents.into());
+
+        let report = run_lints(&scenario);
+        let failure = report
+            .failures
+            .iter()
+            .find(|failure| failure.rule == LintRule::ProfileHomogeneity)
+            .expect("homogeneous method denylist should be reported");
+
+        assert!(
+            failure
+                .detail
+                .contains("agent_schema_context_profile.disabled_methods")
+        );
+    }
+
+    #[test]
+    fn schema_context_method_variation_satisfies_profile_homogeneity() {
+        let varied_schema_context = AgentSchemaContextProfile {
+            disabled_methods: BTreeSet::from([MethodSchemaId(3)]),
+            ..AgentSchemaContextProfile::default()
+        };
+        let mut varied = fully_profiled_ai("Cara");
+        varied.agent_schema_context_profile = Some(varied_schema_context);
+        let scenario = scenario_with_agents(vec![
+            fully_profiled_ai("Alice"),
+            fully_profiled_ai("Bob"),
+            varied,
+        ]);
+
+        let report = run_lints(&scenario);
+
+        assert!(
+            !report
+                .failures
+                .iter()
+                .any(|failure| failure.rule == LintRule::ProfileHomogeneity)
+        );
     }
 
     #[test]
