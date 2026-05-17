@@ -657,7 +657,7 @@ S143 (archived)       S144 (archived)       S145 (archived)       S150 (archived
    │                                            │                     │
    │                  ┌─────────────────────────┘                     │
    │                  ▼                                               │
-   │               S146 (soft dep on S145; hard deps on archived S138/S141/S134)
+   │               S146 (archived; soft dep on archived S145; hard deps on archived S138/S141/S134)
    │                  │
    │                  ├── S147 (hard dep on S146)
    │                  └── S148 (soft dep on S146; hard deps on archived S112/S115/S141)
@@ -666,7 +666,7 @@ S143 (archived)       S144 (archived)       S145 (archived)       S150 (archived
    │
    └─── S151 (soft dep on archived S150 for RouteSegment)
             │
-            └── S152 (soft deps on S146/S148/S151; modifies their profile types)
+            └── S152 (soft deps on archived S146/S148/S151; modifies their profile types)
 
 S153 (hard deps on archived S143, S148, archived S150, S151)
 ```
@@ -680,7 +680,7 @@ S153 (hard deps on archived S143, S148, archived S150, S151)
 - **S150**: ✅ COMPLETED — archived at [archive/specs/S150-cross-goal-blocker-scoping.md](/home/joeloverbeck/projects/worldwake/archive/specs/S150-cross-goal-blocker-scoping.md). Landed typed `BlockerScope` enum with `Exact`/`RouteSegment`/`Counterparty` variants, per-scope TTL profile, decision-history surface, S144 aggregation, and cross-goal blocker golden coverage.
 
 **Wave 2** (after Wave 1):
-- **S146**: Data-Driven Goal Schema and Per-Goal Planning Budgets — `GoalSchema` registry, `CandidateExtractor` migration of the 18+ `emit_*` functions, `GoalPlanningBudget` preset table (SELF_CARE/TRAVEL_PURCHASE/PRODUCTION/INVESTIGATION/BOUNTY_ESCORT), `AgentSchemaContextProfile` universal component.
+- **S146**: ✅ COMPLETED — archived at [archive/specs/S146-goal-schema-and-per-goal-budgets.md](/home/joeloverbeck/projects/worldwake/archive/specs/S146-goal-schema-and-per-goal-budgets.md). Landed the `GoalSchema` registry, `CandidateExtractor` migration of the 20 `emit_*` families, `GoalPlanningBudget` preset table (SELF_CARE/TRAVEL_PURCHASE/PRODUCTION/INVESTIGATION/BOUNTY_ESCORT), `AgentSchemaContextProfile` universal component, per-goal search budget traces, and observer failed-plan budget rendering.
   - soft depends on archived S145 (uses `strategic_budget_for_stages` helper)
 - **S151**: Testimony Source Reliability and Route Preferences — `TestimonyReliability` keyed by `(EntityId, TopicScope)`, `RoutePreference` keyed by `RouteSegment`, `TestimonyTrustProfile` / `RoutePreferenceProfile` universal components, ranking damping and travel-cost integration.
   - soft depends on archived S150 (`RouteSegment` newtype)
@@ -688,16 +688,16 @@ S153 (hard deps on archived S143, S148, archived S150, S151)
 
 **Wave 3** (parallel, after Wave 2):
 - **S147**: HTN Method Decomposition for Long Lawful Pursuits — `MethodSchema` registry; first-ship methods for `FulfillBounty` (Direct/Investigation/GroupHunt), `ProduceCommodity`, `RestockCommodity`, `InvestigateViolation` (Scene/Witness/Ledger), `EscortToSafety` (Home/Office); `MethodSelector` integration in strategic search; fallback to flat GOAP when no method applies.
-  - hard depends on S146 (`GoalSchema.methods` registry slot)
+  - hard depends on archived S146 (`GoalSchema` registry substrate; S147 adds the `methods` registry slot)
 - **S148**: Portfolio Slot Expansion and Motive-Backed Intentions — 7-slot taxonomy (Survival/ImmediateSafety/InjuryOrCare/ObligationDuty/EconomicMaintenance/SocialEpistemic/OpportunisticLocal); `OperatingMode` enum (Emergency/Normal/Idle); `PortfolioWeightsProfile` universal; extended `IntentionFrame` with `motive_refs`/`resume_conditions`/`abandon_conditions`/`explicit_claims`/`causal_links`; raises default `max_plans_normal` from 2 to 6.
-  - soft depends on S146 (`GoalSchema.motive_source_hints` for slot mapping)
+  - soft depends on archived S146 (`GoalSchema` registry substrate; S148 adds motive-to-slot mapping)
   - migrates S112's `Commitment`/`Economic` slot names into `ObligationDuty`/`EconomicMaintenance` without alias
 
 **Wave 4** (parallel, after Wave 3):
 - **S149**: Partial Plan Segments and Typed Plan Terminals — typed `PlanTerminalKind` (InformationBarrier/CoordinationBarrier/ResourceBarrier/JurisdictionBarrier/SafetyBarrier/SearchBudgetExhausted); first-class `PartialPlanSegment` storage on `AgendaEntry`; agenda-manager resume-from-prefix path; barrier → `Discrepancy` mapping; companion `AskWitness` synthesis on `InformationBarrier`.
   - soft depends on S148 (shared `ResumeCondition`/`AbandonCondition` types)
 - **S152**: Cognitive Archetypes for Seeded Diversity — `CognitiveArchetype` enum (10 variants); `ArchetypeProfileTemplate` modifying existing universal profiles; `ArchetypeAssignmentPolicy` (`DefaultUniformFive`/`Uniform`/`Weighted`/`PerRole`/`Explicit`); `PersonalityAssigned` event at spawn with seeded RNG and resolved profile snapshot.
-  - soft depends on S146/S148/S151 (modifies profile types each introduces)
+  - soft depends on archived S146/S148/S151 (modifies profile types each introduces)
 
 **Wave 5** (final, after Wave 4):
 - **S153**: Golden Gaps — AI Architecture Scaling — three remaining scenarios: false rumor justice (regression for S151), office vacancy → patrol gap (regression for S148 portfolio breadth), scaled contention (regression for S150 cross-goal blockers). Belief-wall trap (regression for S143) is covered by S143STABELVIE-006; 4 PR-15 scenarios deferred (100-goal dense market, 20-agent contention, long production chain, boundary shock).
@@ -714,7 +714,7 @@ S153 (hard deps on archived S143, S148, archived S150, S151)
 - [x] S143 trait separation archived: grep-CI blocks `DebugWorldView` imports from `worldwake-ai/src/`; compile-fail doctest keeps debug-world reads outside `RuntimeBeliefView`; belief-wall trap golden passes
 - [x] S144 archived: `ScenarioDiagnosticsReport` produces byte-stable output across reruns on `survival-baseline.ron`; observer Section 13 renders text + JSON formats
 - [x] S145 archived: 5-stage production chain records complete strategic itinerary and non-exhausted stage-aware budget provenance; cache invariant regression suite (3 tests) passes
-- [ ] S146 goal-schema registry covers every `GoalDispatchKey` variant (workspace-level coverage test); per-goal search-trace regression proves PRODUCTION-tier `BakeBread` depth 16 vs SELF_CARE-tier self-care depth 6
+- [x] S146 goal-schema registry covers every `GoalDispatchKey` variant (workspace-level coverage test); per-goal search-trace regression proves PRODUCTION-tier `ProduceCommodity` depth/expansions vs SELF_CARE-tier self-care depth/expansions under elevated cognitive ceilings
 - [ ] S147 HTN method goldens prove method selection + flat-GOAP fallback + method-failure → `Discrepancy::PartialExecutionDrift`
 - [ ] S148 7-slot portfolio golden proves slot occupancy under Normal/Emergency/Idle modes; default `max_plans_normal=6` replaces legacy `max_candidates_to_plan=2`
 - [ ] S149 typed-terminal goldens prove each of the 7 terminal kinds with concrete observability + resume conditions

@@ -15,7 +15,7 @@ Before this ticket, S146's goal-kind registry was named `GoalDispatchDeclaration
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
 1. Before implementation, `GoalDispatchDeclaration` existed at `crates/worldwake-ai/src/goal_dispatch_decl.rs:61` with 8 fields (`provenance_family`, `trace_label`, `relevant_ops`, `invalidation_strategy`, `feasibility_strategy`, `frontier_exhaustion_strategy`, `family_policy`, `progress_barrier_ops`). 41 `static DECL_*: GoalDispatchDeclaration = GoalDispatchDeclaration { ... };` entries followed at `:285`, `:295`, `:305`, … through the rest of the file. The type was re-exported from `crates/worldwake-ai/src/lib.rs:100`.
-2. Per `specs/S146-goal-schema-and-per-goal-budgets.md` D1: rename in place to `GoalSchema`; file rename `goal_dispatch_decl.rs` → `goal_schema.rs` mirrors the renamed type. No parallel core-resident `GoalSchema` is introduced (FND-28).
+2. Per `archive/specs/S146-goal-schema-and-per-goal-budgets.md` D1: rename in place to `GoalSchema`; file rename `goal_dispatch_decl.rs` → `goal_schema.rs` mirrors the renamed type. No parallel core-resident `GoalSchema` is introduced (FND-28).
 3. Shared abstraction boundary under audit: `GoalDispatchDeclaration` is the single goal-kind registry keyed by `GoalDispatchKey` (`crates/worldwake-ai/src/goal_dispatch_key.rs:6`, 41 variants). The rename preserves this contract — `GoalDispatchKey` is the discriminant; no `GoalKindDiscriminant` mirror is added.
 4. Adjacent contradictions: this ticket touches only the type name and its enclosing file name. The 8 existing fields, the 41 static entries' field values, and all consuming logic (`feasibility.rs`, `agent_tick`, `ranking.rs`) remain semantically unchanged. No field additions land here — ticket 004 owns that work.
 
@@ -55,7 +55,7 @@ Workspace-wide replacement removed source references to `GoalDispatchDeclaration
 - `crates/worldwake-ai/src/goal_dispatch_decl.rs` → `crates/worldwake-ai/src/goal_schema.rs`
 - `crates/worldwake-ai/src/lib.rs`
 - `crates/worldwake-ai/src/agent_tick/planning.rs`
-- `specs/S146-goal-schema-and-per-goal-budgets.md` (handoff path truth-sync)
+- `archive/specs/S146-goal-schema-and-per-goal-budgets.md` (handoff path truth-sync)
 
 ## Out of Scope
 

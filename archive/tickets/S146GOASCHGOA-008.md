@@ -16,7 +16,7 @@ S146's debuggability story (FND-29) hinges on the observer surfacing which budge
 
 1. Live observer numbering differs from the drafted spec prose: `crates/worldwake-cli/src/bin/observer.rs` Section 7 is `## Section 7 — End-State Inventory & Resources`, while per-agent plan attempt details are rendered under `## Section 8 — Per-Agent Decision Summary` in the `**Failed plan attempts**` table. This ticket's live rendering seam is therefore the existing Section 8 failed-attempt table, not a new Section 7 planning loop.
 2. After ticket 006, `PlanAttemptTrace.goal_budget: GoalPlanningBudget` is available at every trace site. The failed-attempt table already iterates `planning.planning.attempts` filtered to `FrontierExhausted` / `BudgetExhausted`, so it is the stable observer row surface for exposing the applied budget on actionable failures.
-3. Per `specs/S146-goal-schema-and-per-goal-budgets.md` D10, now truthed to Section 8, the observer reads the budget field and renders preset name plus effective depth/expansions. The `preset_name() -> Option<&'static str>` helper on `GoalPlanningBudget` returns `Some("SELF_CARE")` etc. for preset-equivalent budgets and `None` for `CUSTOM` overrides — observer renders `CUSTOM` when `preset_name()` returns `None`.
+3. Per `archive/specs/S146-goal-schema-and-per-goal-budgets.md` D10, now truthed to Section 8, the observer reads the budget field and renders preset name plus effective depth/expansions. The `preset_name() -> Option<&'static str>` helper on `GoalPlanningBudget` returns `Some("SELF_CARE")` etc. for preset-equivalent budgets and `None` for `CUSTOM` overrides — observer renders `CUSTOM` when `preset_name()` returns `None`.
 4. Shared abstraction boundary under audit: `GoalPlanningBudget` (defined in ticket 002, populated on `GoalSchema` in ticket 004, traced in ticket 006) and the observer's failed-plan attempt rendering pipeline. The `preset_name()` helper lives on `GoalPlanningBudget` itself because it's a property of the type, not of the observer — but its only consumer is this ticket's observer code per FND-28 "no dead paths".
 5. No mixed-layer concern: this is an observer-only rendering ticket. No simulation state mutation and no decision-trace mutation (ticket 006 already added the field).
 
@@ -50,7 +50,7 @@ Added an inline observer unit test that builds a synthetic decision trace with a
 
 - `crates/worldwake-core/src/goal_planning_budget.rs`
 - `crates/worldwake-cli/src/bin/observer.rs`
-- `specs/S146-goal-schema-and-per-goal-budgets.md`
+- `archive/specs/S146-goal-schema-and-per-goal-budgets.md`
 
 ## Out of Scope
 

@@ -1,6 +1,6 @@
 # S146: Data-Driven Goal Schema and Per-Goal Planning Budgets
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
@@ -16,7 +16,7 @@ PR-17's per-goal budget gives each goal kind its own depth/expansion/repair tuni
 
 ## Phase and Status
 
-Phase 12: AI Architecture Evolution — Draft
+Phase 12: AI Architecture Evolution — Completed
 
 ## Crates
 
@@ -377,3 +377,20 @@ D6 restructures candidate emission and D7 changes the budget input source. The s
 5. `handle_plan_failure` — N/A (unchanged).
 6. Payload revalidation — N/A (unchanged).
 7. Golden tests — must pass post-migration under the existing default-profile golden suites; D9 covers the per-goal budget handoff at the stronger focused search-trace layer.
+
+## Outcome
+
+Completed on 2026-05-17.
+
+- Renamed the old goal dispatch declaration to the single `GoalSchema` registry and populated schema-level candidate extractor IDs plus per-goal planning budgets.
+- Added `GoalPlanningBudget`, finalized `CandidateExtractorId`, registered `AgentSchemaContextProfile`, and wired scenario/spawn/belief-view access for the new universal profile.
+- Migrated candidate generation to schema-derived `CandidateExtractor` dispatch while preserving legacy extractor order and adding extractor opt-out proof.
+- Applied per-goal budget composition at search time, recorded the effective budget on `PlanAttemptTrace`, and rendered failed-plan budget labels in the observer.
+- Replaced stale drafted parity-fixture and autonomous-golden validation with stronger focused registry/search-trace tests plus workspace and CI-shaped clippy gates.
+
+Verification highlights:
+
+- Passed `cargo test -p worldwake-ai --quiet`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo test --workspace --quiet`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

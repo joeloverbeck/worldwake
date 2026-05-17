@@ -47,7 +47,7 @@ Added two focused search tests in `crates/worldwake-ai/src/search/tests.rs`. One
 
 - `crates/worldwake-ai/src/candidate_generation.rs`
 - `crates/worldwake-ai/src/search/tests.rs`
-- `specs/S146-goal-schema-and-per-goal-budgets.md`
+- `archive/specs/S146-goal-schema-and-per-goal-budgets.md`
 - `specs/IMPLEMENTATION-ORDER.md`
 - `archive/tickets/S146GOASCHGOA-007.md`
 

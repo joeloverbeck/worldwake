@@ -21,7 +21,7 @@ Before this ticket, the strategic search budget at `crates/worldwake-ai/src/sear
 ## Architecture Check
 
 1. Per FND-28 single-truth, the migration is one ticket: the helper at `strategic.rs:167-175`, its call site at `strategic.rs:113`, and the unit test at `strategic.rs:1004-1017` all change in one diff. No transient state where two formulas coexist.
-2. Locating the formula on `ExecutionBudget` rather than keeping a higher-level helper means downstream callers (e.g., S146's per-goal budget composition referenced in `specs/S146-goal-schema-and-per-goal-budgets.md:237`) can consume the same formula directly without reaching into AI-crate internals. This is the substrate hardening S146 depends on.
+2. Locating the formula on `ExecutionBudget` rather than keeping a higher-level helper means downstream callers (e.g., S146's per-goal budget composition referenced in `archive/specs/S146-goal-schema-and-per-goal-budgets.md`) can consume the same formula directly without reaching into AI-crate internals. This is the substrate hardening S146 depends on.
 
 ## Verified Layers
 

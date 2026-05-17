@@ -15,7 +15,7 @@ S146 PR-17 introduces per-goal planning budgets so `Eat`'s search differs from `
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
 1. `Permille` exists at `crates/worldwake-core/src/numerics.rs:25` with `Permille::new(value: u16) -> Result<Self, &'static str>` (`:31`) and `Permille::new_unchecked(value: u16) -> Self` (`:43`). Since the 5 preset constants supply statically-known `<= 1000` values, `new_unchecked` is the const-friendly path. The `Permille` wrapper is `pub struct Permille(u16)` — small, copy-derive-friendly, no float dependencies.
-2. Per `specs/S146-goal-schema-and-per-goal-budgets.md` D2: `GoalPlanningBudget` derives `Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize`. Fields are `max_depth: u8`, `max_node_expansions: u16`, `repair_budget_fraction: Permille`, `max_strategic_expansions: u16`. All five preset constants are `pub const` associated items.
+2. Per `archive/specs/S146-goal-schema-and-per-goal-budgets.md` D2: `GoalPlanningBudget` derives `Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize`. Fields are `max_depth: u8`, `max_node_expansions: u16`, `repair_budget_fraction: Permille`, `max_strategic_expansions: u16`. All five preset constants are `pub const` associated items.
 3. No shared abstraction boundary under audit — this ticket adds an isolated type. No existing consumer references `GoalPlanningBudget` (workspace-wide grep confirms 0 sites prior to this ticket).
 
 ## Architecture Check
