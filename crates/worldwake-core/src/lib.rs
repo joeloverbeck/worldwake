@@ -83,6 +83,7 @@ pub mod materialization_tag;
 pub mod memory_capacity_profile;
 pub mod method_schema_id;
 pub mod motive_source;
+pub mod motive_source_slot_map;
 pub mod needs;
 pub mod numerics;
 pub mod obligation;
@@ -102,6 +103,7 @@ pub mod risk_weight_profile;
 pub mod route_preference;
 pub mod route_preference_profile;
 pub mod sleep_episode;
+pub mod slot_kind;
 pub mod social_artifact;
 pub mod survey_memory;
 pub mod test_utils;
@@ -260,6 +262,7 @@ pub use materialization_tag::MaterializationTag;
 pub use memory_capacity_profile::MemoryCapacityProfile;
 pub use method_schema_id::MethodSchemaId;
 pub use motive_source::{MotiveSource, MotiveSourceDiscriminant, MotiveSourceRef};
+pub use motive_source_slot_map::slot_for as motive_source_slot_for;
 pub use needs::{
     BodyCostPerTick, DeprivationExposure, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile,
 };
@@ -292,6 +295,7 @@ pub use sleep_episode::{
     GroundComfortTag, ShelterTag, SleepEpisode, SleepQualityProfile, SleepRecoveryModifier,
     WakeCondition,
 };
+pub use slot_kind::SlotKind;
 pub use social_artifact::{
     ArtifactActionability, ArtifactAxisValue, ArtifactCredibility, ArtifactExistence,
     ArtifactHeader, ArtifactKind, ArtifactLegalEffect, ArtifactPostingContext,

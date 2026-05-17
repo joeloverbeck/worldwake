@@ -6,7 +6,7 @@
 
 Folds in PR-3 (Portfolio Slot Expansion replacing top-2 candidates) and PR-1 (BDI deliberation shell — motive-backed intentions) from `reports/ai-architecture-improvements.md`.
 
-S112 (Portfolio Planning, archived) introduced the three-slot portfolio — `Survival`, `Commitment`, `Economic` — currently defined as `SlotKind` at `crates/worldwake-ai/src/agent_tick/portfolio.rs:11` and weighted via `PortfolioSlotWeights` at `crates/worldwake-core/src/cognitive_profile.rs:5` (embedded as `CognitiveProfile.slot_weights`). `CognitiveProfile.max_candidates_to_plan = 2` (`cognitive_profile.rs:25`/`:132`) is still the default planning cap. The existing weighted-slot machinery `Portfolio::plausible_slots_by_score()` at `portfolio.rs:80` already produces a score-ordered slot list, so S148 extends *that* mechanism rather than introducing a parallel one. The assessment identifies a real gap: with hundreds of plausible motives in a dense world, three slots collapse safety/care/duty/social/opportunity motives into a single Commitment-or-Economic bucket. Agents miss obligations, fail to investigate suspicions, neglect epistemic work, and skip opportunistic local wins.
+S112 (Portfolio Planning, archived) introduced the three-slot portfolio — `Survival`, `Commitment`, `Economic` — originally defined as `SlotKind` in `crates/worldwake-ai/src/agent_tick/portfolio.rs`. S148PORMOTBAC-001 relocated `SlotKind` to `crates/worldwake-core/src/slot_kind.rs` and leaves a `worldwake-ai` re-export for existing imports. Slot weighting is still via `PortfolioSlotWeights` at `crates/worldwake-core/src/cognitive_profile.rs:5` (embedded as `CognitiveProfile.slot_weights`). `CognitiveProfile.max_candidates_to_plan = 2` (`cognitive_profile.rs:25`/`:132`) is still the default planning cap. The existing weighted-slot machinery `Portfolio::plausible_slots_by_score()` in `portfolio.rs` already produces a score-ordered slot list, so S148 extends *that* mechanism rather than introducing a parallel one. The assessment identifies a real gap: with hundreds of plausible motives in a dense world, three slots collapse safety/care/duty/social/opportunity motives into a single Commitment-or-Economic bucket. Agents miss obligations, fail to investigate suspicions, neglect epistemic work, and skip opportunistic local wins.
 
 S148 expands the portfolio to **five slots** derived directly from the real `MotiveSourceDiscriminant` taxonomy at `crates/worldwake-core/src/motive_source.rs:25`:
 
@@ -90,7 +90,7 @@ Phase 12: AI Architecture Evolution — Draft
 ### D1: Five-variant `SlotKind`
 
 ```rust
-// crates/worldwake-ai/src/agent_tick/portfolio.rs
+// crates/worldwake-core/src/slot_kind.rs
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum SlotKind {
     NeedSurvival,
@@ -102,6 +102,8 @@ pub enum SlotKind {
 ```
 
 **Migration**: S112's `Survival` → `NeedSurvival`; `Commitment` → `ObligationDuty`; `Economic` → `EconomicOpportunity`. New variants: `PainCare`, `SocialMotive`. Per FND-28 the old variant names are removed, not aliased. Every `SlotKind::` match site and constructor across the workspace migrates in lockstep (sites identified at `decision_trace.rs:3937,3945,3961-3972`; `observer.rs:7555-7556`; `planning.rs:4571,4597-4598,4752,4761`; `scenario_diagnostics/mod.rs:212`; `portfolio.rs:46,57,67,167-169,241,334,364,401,441,455,486,500,514-515,547,557,569,585-586` and tests). The legacy `GoalPressureMetrics.candidates_emitted_by_slot: BTreeMap<SlotKind, u64>` rekeys automatically since the field is keyed by the rekeyed enum.
+
+**Implementation note (S148PORMOTBAC-001, 2026-05-17)**: `SlotKind` has been relocated to core with these five variants, and the legacy variant references in source/test code have been renamed. `crates/worldwake-ai/src/agent_tick/portfolio.rs` now re-exports the core enum for existing AI imports. `PainCare` and `SocialMotive` remain dormant until the five-slot assembly ticket makes them emit.
 
 ### D2: `PortfolioWeightsProfile` (universal component, lifted from `CognitiveProfile`)
 

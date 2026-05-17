@@ -7552,8 +7552,8 @@ mod tests {
                     (GoalKind::Wash, 2),
                 ]),
                 candidates_emitted_by_slot: BTreeMap::from([
-                    (worldwake_ai::SlotKind::Survival, 7),
-                    (worldwake_ai::SlotKind::Economic, 1),
+                    (worldwake_ai::SlotKind::NeedSurvival, 7),
+                    (worldwake_ai::SlotKind::EconomicOpportunity, 1),
                 ]),
                 candidates_suppressed_by_category: BTreeMap::from([
                     (

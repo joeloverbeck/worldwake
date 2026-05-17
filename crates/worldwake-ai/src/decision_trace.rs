@@ -3934,7 +3934,7 @@ mod tests {
         });
         let mut slots = std::collections::BTreeMap::new();
         slots.insert(
-            SlotKind::Survival,
+            SlotKind::NeedSurvival,
             PortfolioSlotTrace {
                 goal_key: sleep,
                 motive_score: 900,
@@ -3942,7 +3942,7 @@ mod tests {
             },
         );
         slots.insert(
-            SlotKind::Economic,
+            SlotKind::EconomicOpportunity,
             PortfolioSlotTrace {
                 goal_key: bread,
                 motive_score: 450,
@@ -3958,10 +3958,10 @@ mod tests {
 
         assert_eq!(
             trace.slots.keys().copied().collect::<Vec<_>>(),
-            vec![SlotKind::Survival, SlotKind::Economic]
+            vec![SlotKind::NeedSurvival, SlotKind::EconomicOpportunity]
         );
         assert_eq!(
-            trace.slots.get(&SlotKind::Survival),
+            trace.slots.get(&SlotKind::NeedSurvival),
             Some(&PortfolioSlotTrace {
                 goal_key: sleep,
                 motive_score: 900,
@@ -3969,7 +3969,7 @@ mod tests {
             })
         );
         assert_eq!(
-            trace.slots.get(&SlotKind::Economic),
+            trace.slots.get(&SlotKind::EconomicOpportunity),
             Some(&PortfolioSlotTrace {
                 goal_key: bread,
                 motive_score: 450,

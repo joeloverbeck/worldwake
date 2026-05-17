@@ -3,17 +3,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{goal_model::AgendaEntry, ranking::OrderedRanked};
-use serde::{Deserialize, Serialize};
+pub use worldwake_core::SlotKind;
 use worldwake_core::{
     CommodityPurpose, Discrepancy, GoalKind, OpportunityKey, PortfolioSlotWeights,
 };
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-pub enum SlotKind {
-    Survival,
-    Commitment,
-    Economic,
-}
 
 #[derive(Clone, Debug)]
 pub(crate) struct Portfolio {
@@ -43,7 +36,7 @@ pub(crate) fn assemble_portfolio(
     if let Some(survival) = select_best_candidate(ranked, &selected, is_survival_goal) {
         selected.insert(opportunity_key(survival));
         slots.insert(
-            SlotKind::Survival,
+            SlotKind::NeedSurvival,
             PortfolioSlot {
                 ranked: survival.clone(),
                 feasibility: probe(survival),
@@ -54,7 +47,7 @@ pub(crate) fn assemble_portfolio(
     if let Some(commitment) = select_commitment_candidate(ranked, &selected, committed) {
         selected.insert(opportunity_key(commitment));
         slots.insert(
-            SlotKind::Commitment,
+            SlotKind::ObligationDuty,
             PortfolioSlot {
                 ranked: commitment.clone(),
                 feasibility: probe(commitment),
@@ -64,7 +57,7 @@ pub(crate) fn assemble_portfolio(
 
     if let Some(economic) = select_best_candidate(ranked, &selected, is_economic_goal) {
         slots.insert(
-            SlotKind::Economic,
+            SlotKind::EconomicOpportunity,
             PortfolioSlot {
                 ranked: economic.clone(),
                 feasibility: probe(economic),
@@ -164,9 +157,10 @@ fn weighted_score(kind: SlotKind, slot: &PortfolioSlot, weights: &PortfolioSlotW
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn weight_for(kind: SlotKind, weights: &PortfolioSlotWeights) -> worldwake_core::Permille {
     match kind {
-        SlotKind::Survival => weights.survival,
-        SlotKind::Commitment => weights.commitment,
-        SlotKind::Economic => weights.economic,
+        SlotKind::NeedSurvival => weights.survival,
+        SlotKind::ObligationDuty => weights.commitment,
+        SlotKind::EconomicOpportunity => weights.economic,
+        SlotKind::PainCare | SlotKind::SocialMotive => worldwake_core::Permille::ZERO,
     }
 }
 
@@ -238,7 +232,13 @@ mod tests {
 
     #[test]
     fn slot_kind_round_trips_through_serde() {
-        for slot in [SlotKind::Survival, SlotKind::Commitment, SlotKind::Economic] {
+        for slot in [
+            SlotKind::NeedSurvival,
+            SlotKind::PainCare,
+            SlotKind::ObligationDuty,
+            SlotKind::EconomicOpportunity,
+            SlotKind::SocialMotive,
+        ] {
             let bytes = bincode::serialize(&slot).expect("SlotKind should serialize");
             let decoded: SlotKind =
                 bincode::deserialize(&bytes).expect("SlotKind should deserialize");
@@ -331,7 +331,7 @@ mod tests {
 
         let survival = portfolio
             .slots
-            .get(&SlotKind::Survival)
+            .get(&SlotKind::NeedSurvival)
             .expect("survival slot should be populated");
         assert_eq!(survival.ranked.offer.key, GoalKey::from(GoalKind::Sleep));
     }
@@ -361,7 +361,7 @@ mod tests {
 
         let slot = portfolio
             .slots
-            .get(&SlotKind::Commitment)
+            .get(&SlotKind::ObligationDuty)
             .expect("commitment slot should be populated");
         assert_eq!(
             opportunity_key(&slot.ranked),
@@ -398,7 +398,7 @@ mod tests {
 
         let slot = portfolio
             .slots
-            .get(&SlotKind::Commitment)
+            .get(&SlotKind::ObligationDuty)
             .expect("commitment slot should fall back to an obligation");
         assert_eq!(
             slot.ranked.offer.key,
@@ -438,7 +438,7 @@ mod tests {
         assert_eq!(
             portfolio
                 .slots
-                .get(&SlotKind::Survival)
+                .get(&SlotKind::NeedSurvival)
                 .expect("self-consume acquisition should count as survival")
                 .ranked
                 .offer
@@ -452,7 +452,7 @@ mod tests {
         assert_eq!(
             portfolio
                 .slots
-                .get(&SlotKind::Economic)
+                .get(&SlotKind::EconomicOpportunity)
                 .expect("restock acquisition should still populate economic")
                 .ranked
                 .offer
@@ -483,21 +483,21 @@ mod tests {
         let portfolio = Portfolio {
             slots: BTreeMap::from([
                 (
-                    SlotKind::Survival,
+                    SlotKind::NeedSurvival,
                     PortfolioSlot {
                         ranked: survival,
                         feasibility: FeasibilityVerdict::Plausible,
                     },
                 ),
                 (
-                    SlotKind::Economic,
+                    SlotKind::EconomicOpportunity,
                     PortfolioSlot {
                         ranked: economic,
                         feasibility: FeasibilityVerdict::Plausible,
                     },
                 ),
                 (
-                    SlotKind::Commitment,
+                    SlotKind::ObligationDuty,
                     PortfolioSlot {
                         ranked: rejected,
                         feasibility: FeasibilityVerdict::RejectedBeforeSearch {
@@ -511,8 +511,8 @@ mod tests {
         let ordered = portfolio.plausible_slots_by_score(&PortfolioSlotWeights::default());
 
         assert_eq!(ordered.len(), 2);
-        assert_eq!(ordered[0].0, SlotKind::Survival);
-        assert_eq!(ordered[1].0, SlotKind::Economic);
+        assert_eq!(ordered[0].0, SlotKind::NeedSurvival);
+        assert_eq!(ordered[1].0, SlotKind::EconomicOpportunity);
     }
 
     #[test]
@@ -544,7 +544,7 @@ mod tests {
         let portfolio = assemble_portfolio(&ranked, None, |_| FeasibilityVerdict::Plausible);
         let survival = portfolio
             .slots
-            .get(&SlotKind::Survival)
+            .get(&SlotKind::NeedSurvival)
             .expect("survival slot should be populated");
         assert_eq!(survival.ranked.offer.key.kind, GoalKind::Relieve);
     }
@@ -554,7 +554,7 @@ mod tests {
         let portfolio = Portfolio {
             slots: BTreeMap::from([
                 (
-                    SlotKind::Survival,
+                    SlotKind::NeedSurvival,
                     PortfolioSlot {
                         ranked: ranked_goal_with_priority(
                             GoalKind::Relieve,
@@ -566,7 +566,7 @@ mod tests {
                     },
                 ),
                 (
-                    SlotKind::Commitment,
+                    SlotKind::ObligationDuty,
                     PortfolioSlot {
                         ranked: ranked_goal_with_priority(
                             post_notice_goal(entity(41)),
@@ -582,7 +582,7 @@ mod tests {
 
         let ordered = portfolio.plausible_slots_by_score(&PortfolioSlotWeights::default());
 
-        assert_eq!(ordered[0].0, SlotKind::Survival);
-        assert_eq!(ordered[1].0, SlotKind::Commitment);
+        assert_eq!(ordered[0].0, SlotKind::NeedSurvival);
+        assert_eq!(ordered[1].0, SlotKind::ObligationDuty);
     }
 }

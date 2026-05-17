@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — removes `PortfolioSlotWeights` from `CognitiveProfile`; introduces `PortfolioWeightsProfile` universal ECS component on `EntityKind::Agent`; threads weights read through a new `GoalBeliefView` accessor
-**Deps**: `S148PORMOTBAC-001`, `specs/S148-portfolio-and-motive-backed-intentions.md`
+**Deps**: `archive/tickets/S148PORMOTBAC-001.md`, `specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Problem
 

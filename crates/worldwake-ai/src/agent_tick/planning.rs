@@ -4593,9 +4593,9 @@ mod tests {
         let trace = pass.portfolio_trace();
         assert_eq!(trace.slots.len(), 3);
         assert_eq!(trace.slots_attempted, 1);
-        assert!(trace.slots.contains_key(&SlotKind::Survival));
-        assert!(trace.slots.contains_key(&SlotKind::Commitment));
-        assert!(trace.slots.contains_key(&SlotKind::Economic));
+        assert!(trace.slots.contains_key(&SlotKind::NeedSurvival));
+        assert!(trace.slots.contains_key(&SlotKind::ObligationDuty));
+        assert!(trace.slots.contains_key(&SlotKind::EconomicOpportunity));
     }
 
     #[test]
@@ -4740,7 +4740,7 @@ mod tests {
         let portfolio = Portfolio {
             slots: BTreeMap::from([
                 (
-                    SlotKind::Survival,
+                    SlotKind::NeedSurvival,
                     PortfolioSlot {
                         ranked: ranked_candidates[0].clone(),
                         feasibility: FeasibilityVerdict::RejectedBeforeSearch {
@@ -4749,7 +4749,7 @@ mod tests {
                     },
                 ),
                 (
-                    SlotKind::Commitment,
+                    SlotKind::ObligationDuty,
                     PortfolioSlot {
                         ranked: ranked_candidates[1].clone(),
                         feasibility: FeasibilityVerdict::RejectedBeforeSearch {
@@ -4758,7 +4758,7 @@ mod tests {
                     },
                 ),
                 (
-                    SlotKind::Economic,
+                    SlotKind::EconomicOpportunity,
                     PortfolioSlot {
                         ranked: ranked_candidates[2].clone(),
                         feasibility: FeasibilityVerdict::Plausible,

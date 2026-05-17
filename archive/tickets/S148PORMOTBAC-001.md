@@ -1,6 +1,6 @@
 # S148PORMOTBAC-001: Five-variant SlotKind with core relocation and motive-source mapping
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — relocates `SlotKind` from `worldwake-ai/src/agent_tick/portfolio.rs` to `worldwake-core/src/slot_kind.rs`; expands to five variants (`NeedSurvival`, `PainCare`, `ObligationDuty`, `EconomicOpportunity`, `SocialMotive`); adds `motive_source_slot_map::slot_for` total mapping over `MotiveSourceDiscriminant`
@@ -23,17 +23,17 @@ S112's three-slot portfolio (`Survival`/`Commitment`/`Economic`) collapses safet
 2. Variant taxonomy derives from concrete `MotiveSourceDiscriminant` types per FND-3 — no abstract "priority score" decides slot membership. The mapping table is a total exhaustive match: if S141 adds a new motive variant, the match's missing-arm error forces the S148 mapping to update alongside.
 3. No backwards-compatibility shims. Legacy variant names (`Survival`, `Commitment`, `Economic`) are removed atomically across the workspace; the local `SlotKind` definition in `agent_tick/portfolio.rs` is deleted (a thin `pub use worldwake_core::SlotKind;` is kept inside portfolio.rs only for in-crate import convenience).
 
-## Verification Layers
+## Verified Layers
 
 1. `SlotKind` variant set + serialization round-trip → focused unit test in `crates/worldwake-core/src/slot_kind.rs::tests`
 2. `motive_source_slot_map::slot_for` totality → focused unit test asserting each `MotiveSourceDiscriminant::*` variant maps to a `SlotKind` via explicit enumeration (the test exercises every variant by name; adding a discriminant variant later forces the test to break)
 3. Cross-crate consumer migration completeness → workspace compilation under `cargo clippy --workspace --all-targets -- -D warnings` (no orphaned import paths, no leftover legacy variant references)
 
-## What to Change
+## Landed Changes
 
-### 1. Relocate `SlotKind` to `worldwake-core`
+### 1. Relocated `SlotKind` to `worldwake-core`
 
-Create `crates/worldwake-core/src/slot_kind.rs`:
+Added `crates/worldwake-core/src/slot_kind.rs`:
 
 ```rust
 use serde::{Deserialize, Serialize};
@@ -48,11 +48,11 @@ pub enum SlotKind {
 }
 ```
 
-Re-export from `crates/worldwake-core/src/lib.rs` (`pub use slot_kind::SlotKind;`). Remove the existing `SlotKind` definition at `crates/worldwake-ai/src/agent_tick/portfolio.rs:11-16` and replace with a thin re-export at the same site: `pub use worldwake_core::SlotKind;` so in-crate `use crate::agent_tick::portfolio::SlotKind;` references keep working.
+Re-exported from `crates/worldwake-core/src/lib.rs` (`pub use slot_kind::SlotKind;`). Removed the existing `SlotKind` definition from `crates/worldwake-ai/src/agent_tick/portfolio.rs` and replaced it with a thin re-export at the same site: `pub use worldwake_core::SlotKind;` so in-crate `use crate::agent_tick::portfolio::SlotKind;` references keep working.
 
-### 2. Add `motive_source_slot_map::slot_for` total mapping
+### 2. Added `motive_source_slot_map::slot_for` total mapping
 
-Create `crates/worldwake-core/src/motive_source_slot_map.rs`:
+Added `crates/worldwake-core/src/motive_source_slot_map.rs`:
 
 ```rust
 use crate::{MotiveSourceDiscriminant, SlotKind};
@@ -70,11 +70,11 @@ pub fn slot_for(discriminant: MotiveSourceDiscriminant) -> SlotKind {
 }
 ```
 
-Re-export the module from `crates/worldwake-core/src/lib.rs` (`pub use motive_source_slot_map::slot_for as motive_source_slot_for;` or surface the module path — pick the form that fits the lib.rs re-export convention used by sibling helpers).
+Re-exported the mapping from `crates/worldwake-core/src/lib.rs` as `pub use motive_source_slot_map::slot_for as motive_source_slot_for;`.
 
-### 3. Migrate legacy variant references
+### 3. Migrated legacy variant references
 
-Atomic rename across the workspace: `Survival` → `NeedSurvival`, `Commitment` → `ObligationDuty`, `Economic` → `EconomicOpportunity`. New variants `PainCare` and `SocialMotive` have no incoming match arms yet — they begin emitting in ticket 004 (forward-declared per the spec's slot-assembly extension; no exhaustive match in current workspace breaks compilation because no match arm is yet keyed off them).
+Atomic rename across the source/test workspace: `Survival` → `NeedSurvival`, `Commitment` → `ObligationDuty`, `Economic` → `EconomicOpportunity`. New variants `PainCare` and `SocialMotive` remain dormant until ticket 004 emits them. The existing `PortfolioSlotWeights` bridge gives those dormant variants zero weight until ticket 002 lifts the five-slot weight profile.
 
 Sites to touch (per Assumption Reassessment item 3 blast radius):
 - `crates/worldwake-ai/src/agent_tick/portfolio.rs` (definition site + tests)
@@ -84,7 +84,7 @@ Sites to touch (per Assumption Reassessment item 3 blast radius):
 - `crates/worldwake-ai/src/scenario_diagnostics/mod.rs` (lines 27, 212 — the line-212 fixture in particular constructs a `BTreeMap` literal keyed by the legacy variant)
 - `crates/worldwake-cli/src/bin/observer.rs` (lines 7555-7556)
 
-## Files to Touch
+## Landed Files
 
 - `crates/worldwake-core/src/slot_kind.rs` (new)
 - `crates/worldwake-core/src/motive_source_slot_map.rs` (new)
@@ -94,22 +94,24 @@ Sites to touch (per Assumption Reassessment item 3 blast radius):
 - `crates/worldwake-ai/src/decision_trace.rs` (modify — variant rename)
 - `crates/worldwake-ai/src/scenario_diagnostics/aggregator.rs` (modify — variant rename)
 - `crates/worldwake-ai/src/scenario_diagnostics/mod.rs` (modify — variant rename in fixture map literal)
+- `crates/worldwake-ai/tests/golden_portfolio_planning.rs` (modify — existing golden assertion updated for renamed slot debug output)
 - `crates/worldwake-cli/src/bin/observer.rs` (modify — variant rename in rendering)
+- `archive/tickets/S148PORMOTBAC-001.md` (modify — closeout truthing, then archive move)
 
 ## Out of Scope
 
 - `PortfolioWeightsProfile` lifting and per-slot weight field naming (ticket 002 — depends on this ticket for variant names)
 - `OperatingMode` enum and per-tick derivation (ticket 003)
 - `assemble_portfolio` extension to use the five new variants and emit `PainCare`/`SocialMotive` winners (ticket 004 — slot assembly uses `motive_source_slot_for` to emit these)
-- Goldens migration to the new variant set (ticket 010)
+- New golden coverage for the five-slot portfolio remains ticket 010. This ticket only updated existing golden assertions that failed because this ticket renamed the live enum variants.
 
 ## Acceptance Criteria
 
-### Tests That Must Pass
+### Tests Passed
 
-1. `cargo test -p worldwake-core slot_kind` — new focused tests pass (serde round-trip on all 5 variants; `Ord` ordering matches declaration order)
+1. `cargo test -p worldwake-core slot_kind` — added focused tests passed (serde round-trip on all 5 variants; `Ord` ordering matches declaration order)
 2. `cargo test -p worldwake-core motive_source_slot_map` — totality test passes (every `MotiveSourceDiscriminant` variant has a slot)
-3. Existing portfolio.rs tests pass with renamed variants — semantic intent preserved (e.g., `survival_slot_picks_highest_motive_survival` becomes a test on `NeedSurvival`-slot selection from `NeedPressure`-discriminant candidates; name updates to reflect the new variant)
+3. Existing portfolio.rs tests passed with renamed variants — semantic intent preserved (e.g., `survival_slot_picks_highest_motive_survival` now tests `NeedSurvival`-slot selection from `NeedPressure`-discriminant candidates)
 4. Existing suite: `cargo test --workspace`
 5. Lint: `cargo clippy --workspace --all-targets -- -D warnings`
 
@@ -117,18 +119,45 @@ Sites to touch (per Assumption Reassessment item 3 blast radius):
 
 1. `SlotKind` is defined in exactly one crate (`worldwake-core`); no parallel definition survives anywhere in the workspace.
 2. `motive_source_slot_for` (or the chosen public name) is exhaustive over `MotiveSourceDiscriminant` with no `_ =>` catch-all — adding a discriminant variant later breaks compilation, forcing the S148 mapping to update.
-3. No legacy variant name (`SlotKind::Survival`, `SlotKind::Commitment`, `SlotKind::Economic`) appears anywhere in the workspace after migration.
+3. No legacy variant reference (`SlotKind::Survival`, `SlotKind::Commitment`, `SlotKind::Economic`) appears in source/test code after migration; remaining active spec/ticket mentions are historical migration context.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
 1. `crates/worldwake-core/src/slot_kind.rs` — new inline `#[cfg(test)]` module: `slot_kind_serde_round_trips_all_five_variants`, `slot_kind_ord_matches_declaration_order`
 2. `crates/worldwake-core/src/motive_source_slot_map.rs` — new inline `#[cfg(test)]` module: `slot_for_is_defined_for_every_motive_source_discriminant`
-3. `crates/worldwake-ai/src/agent_tick/portfolio.rs` — modify existing tests at lines 20, 98, 120, 153, 193, 249, 299, 333: rename to use new variants while preserving the semantic intent each test asserts
+3. `crates/worldwake-ai/src/agent_tick/portfolio.rs` — modified existing portfolio tests to use new variants while preserving the semantic intent each test asserts
+4. `crates/worldwake-ai/tests/golden_portfolio_planning.rs` — updated existing assertion text to check `ObligationDuty`, `EconomicOpportunity`, and absence of `NeedSurvival`
 
-### Commands
+### Commands Run
 
-1. `cargo test -p worldwake-core slot_kind motive_source_slot_map`
-2. `cargo test -p worldwake-ai -- agent_tick::portfolio`
-3. `./scripts/verify.sh` (workspace-wide gates pre-PR)
+1. `cargo test -p worldwake-core slot_kind`
+2. `cargo test -p worldwake-core motive_source_slot_map`
+3. `cargo test -p worldwake-ai --lib agent_tick::portfolio`
+4. `cargo test -p worldwake-ai --test golden_portfolio_planning`
+5. `cargo test --workspace`
+6. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-17.
+
+- `SlotKind` now lives in `worldwake-core` with the five S148 variants and is re-exported through `worldwake-ai` for existing imports.
+- Added the exhaustive core `motive_source_slot_for` mapping from every current `MotiveSourceDiscriminant` to a slot, with no catch-all arm.
+- Renamed legacy slot variant references across AI planning, traces, diagnostics, observer fixtures, and existing portfolio/golden assertions.
+- Left `PainCare` and `SocialMotive` dormant in the current three-slot assembly; they receive zero legacy weight until later S148 tickets add `PortfolioWeightsProfile` and five-slot assembly.
+
+## Deviations
+
+- The drafted combined focused command `cargo test -p worldwake-core slot_kind motive_source_slot_map` is not a truthful Cargo selector shape, so verification was split into two commands.
+- Broad workspace testing exposed an existing golden assertion that still searched for legacy debug names. That assertion was updated here as enum-rename fallout; new S148 golden coverage remains ticket 010.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core slot_kind`
+- Passed `cargo test -p worldwake-core motive_source_slot_map`
+- Passed `cargo test -p worldwake-ai --lib agent_tick::portfolio`
+- Passed `cargo test -p worldwake-ai --test golden_portfolio_planning`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

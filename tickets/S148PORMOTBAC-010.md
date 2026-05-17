@@ -3,12 +3,12 @@
 **Status**: PENDING
 **Priority**: HIGH
 **Effort**: Large
-**Engine Changes**: No — test-only ticket; adds new golden suite `crates/worldwake-ai/tests/golden_portfolio_five_slots.rs` covering 8 scenarios per spec D14; audits and migrates the existing 6-test `crates/worldwake-ai/tests/golden_portfolio_planning.rs` to the new variant names and (where appropriate) the five-slot taxonomy
-**Deps**: `S148PORMOTBAC-001`, `S148PORMOTBAC-002`, `S148PORMOTBAC-003`, `S148PORMOTBAC-004`, `S148PORMOTBAC-005`, `S148PORMOTBAC-006`, `S148PORMOTBAC-007`, `S148PORMOTBAC-008`, `specs/S148-portfolio-and-motive-backed-intentions.md`
+**Engine Changes**: No — test-only ticket; adds new golden suite `crates/worldwake-ai/tests/golden_portfolio_five_slots.rs` covering 8 scenarios per spec D14; audits the existing `crates/worldwake-ai/tests/golden_portfolio_planning.rs` suite after the S148PORMOTBAC-001 enum rename and migrates any remaining expectations to the five-slot taxonomy where appropriate
+**Deps**: `archive/tickets/S148PORMOTBAC-001.md`, `S148PORMOTBAC-002`, `S148PORMOTBAC-003`, `S148PORMOTBAC-004`, `S148PORMOTBAC-005`, `S148PORMOTBAC-006`, `S148PORMOTBAC-007`, `S148PORMOTBAC-008`, `specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Problem
 
-S148 expands the portfolio from three to five slots, introduces operating-mode-modulated weight degradation, adds typed resume/abandon condition lifecycle predicates on `IntentionFrame`, and emits `Discrepancy::AbandonConditionFired` when abandonment fires. Without golden coverage, regressions in any of these new surfaces would land silently. Spec D14 names 8 scenarios that prove the contract end-to-end through the real agent decision cycle (candidate generation → ranking → slot assembly → planning → execution); a missing golden suite leaves the new mechanism unverified at the E2E layer. Additionally, the existing 6-test `golden_portfolio_planning.rs` (currently asserting on the legacy three-slot taxonomy) must be audited and migrated so it continues to exercise the slot-assembly contract under the new variant names.
+S148 expands the portfolio from three to five slots, introduces operating-mode-modulated weight degradation, adds typed resume/abandon condition lifecycle predicates on `IntentionFrame`, and emits `Discrepancy::AbandonConditionFired` when abandonment fires. Without golden coverage, regressions in any of these new surfaces would land silently. Spec D14 names 8 scenarios that prove the contract end-to-end through the real agent decision cycle (candidate generation → ranking → slot assembly → planning → execution); a missing golden suite leaves the new mechanism unverified at the E2E layer. Additionally, the existing `golden_portfolio_planning.rs` suite must be audited after the minimal enum-name fallout handled by `archive/tickets/S148PORMOTBAC-001.md` so it continues to exercise the slot-assembly contract under the five-slot taxonomy where appropriate.
 
 ## Assumption Reassessment (2026-05-17)
 
@@ -61,7 +61,7 @@ Plus one additional test: `causal_links_cap_evicts_oldest_in_fifo_order_during_r
 
 For each of the 6 existing tests:
 
-- **Rename variant references** atomically per ticket 001's migration (`Survival` → `NeedSurvival`, `Commitment` → `ObligationDuty`, `Economic` → `EconomicOpportunity`).
+- **Audit variant references** after `archive/tickets/S148PORMOTBAC-001.md`'s migration (`Survival` → `NeedSurvival`, `Commitment` → `ObligationDuty`, `Economic` → `EconomicOpportunity`) and update any remaining golden assertions that still encode the three-slot taxonomy.
 - **Update weight reads** — tests that construct explicit weight fixtures use the new `PortfolioWeightsProfile` shape (5 weights + 3 plan caps) per ticket 002.
 - **Update planning cap reads** — tests that previously asserted on `max_candidates_to_plan == 2` re-assert on the new default `max_plans_normal == 5` (or pin a fixture `max_plans_normal` value matching the original test's intent) per ticket 008.
 - **Preserve test intent** — the original scenarios are not invalidated by the migration; the test name and assertion structure stay aligned with the original invariant.
