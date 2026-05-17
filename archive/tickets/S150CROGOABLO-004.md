@@ -1,6 +1,6 @@
 # S150CROGOABLO-004: Observer Section 3b typed-scope rendering
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: None — tooling-only (observer binary)
@@ -102,3 +102,25 @@ If `observer.rs` already carries a `#[cfg(test)]` block for rendering helpers, e
 1. `cargo test -p worldwake-cli --bin observer`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
 3. `./scripts/verify.sh` for the full pre-PR gate.
+
+## Outcome
+
+Completed: 2026-05-17
+
+What changed:
+
+- Added observer-side `BlockerScope` summary rendering for `Exact`, `RouteSegment`, and `Counterparty` blocker scopes.
+- Threaded the live `World` into Section 3b decision-history summary rendering so blocker scope labels use the existing `entity_display_name` and `format_goal_kind` helpers.
+- Preserved single-line decision-history table rows while replacing generic `Debug` scope output for `BlockerRecorded` events.
+- Added a focused observer test covering all three scope variants and canonical route ordering.
+
+Deviation from original plan:
+
+- The route separator is rendered as ASCII `<->` instead of the illustrative Unicode arrow in the ticket text, matching the repository's default ASCII editing convention.
+- Exact scope rendering includes optional target and action context when present, e.g. `Exact(Sleep at Ashford target=Merchant Vara action=adef6)`.
+
+Verification:
+
+- `cargo fmt --all`
+- `cargo test -p worldwake-cli --bin observer`
+- `cargo clippy --workspace --all-targets -- -D warnings`
