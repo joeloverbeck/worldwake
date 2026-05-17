@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implemented-S151-testimony-reliability",
   "base_head": "7b62ec6e85b4fa822a24f7a8aa26e3d93b2581bd",
-  "last_ticket": "archive/tickets/S151TESRELROU-009.md",
+  "last_ticket": "archive/tickets/S151TESRELROU-010.md",
   "last_result": "completed_archived",
-  "last_work_commit": "705964465510a5876fe80edfd79a93d6f64902ca",
+  "last_work_commit": "5cd03804c8be4cb7be32fa50e13b2c8270605a0f",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S151TESRELROU-010.md",
+  "next_target": "tickets/S151TESRELROU-011.md",
   "queue": [
-    "tickets/S151TESRELROU-010.md",
     "tickets/S151TESRELROU-011.md"
   ],
   "implement_ticket_audit": "pending",
