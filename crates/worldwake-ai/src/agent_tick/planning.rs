@@ -13,8 +13,8 @@ use crate::decision_trace::{
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
 use crate::feasibility_probe;
-use crate::goal_dispatch_decl::FrontierExhaustionStrategy;
 use crate::goal_dispatch_key::GoalDispatchKey;
+use crate::goal_schema::FrontierExhaustionStrategy;
 use crate::opportunity_compiler::PerceivedOpportunityIndex;
 use crate::perf_telemetry::record_planning_phase_duration;
 use crate::plan_selection::SelectionCandidatePlan;
@@ -2639,8 +2639,8 @@ mod tests {
             TargetBeliefPresence,
         },
         feasibility::FeasibilityHint,
-        goal_dispatch_decl::FrontierExhaustionStrategy,
         goal_dispatch_key::GoalDispatchKey,
+        goal_schema::FrontierExhaustionStrategy,
         plan_selection::SelectionCandidatePlan,
         search::SearchTraceMetadata,
     };

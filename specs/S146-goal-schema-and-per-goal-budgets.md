@@ -8,7 +8,7 @@ Folds in PR-2 (Data-Driven GoalSchema Registry) and PR-17 (Per-Goal Planning Bud
 
 The current candidate-emission path in `crates/worldwake-ai/src/candidate_generation.rs` defines 20 hand-coded `emit_*` functions, one per goal family (`emit_need_candidates`, `emit_production_candidates`, `emit_enterprise_candidates`, `emit_disposal_candidates`, `emit_bounty_candidates`, `emit_artifact_posting_candidates`, `emit_combat_candidates`, `emit_crime_candidates`, `emit_social_candidates`, `emit_ask_witness_candidates`, `emit_patrol_candidates`, `emit_political_candidates`, `emit_recorded_violation_candidates`, `emit_search_candidates`, `emit_report_found_candidates`, `emit_escort_candidates`, `emit_exploration_candidates`, `emit_proactive_exploration_candidates`, `emit_expectation_violation_candidates`, `emit_opportunity_compiler_candidates`). Each function is independently maintained and called explicitly from `agent_tick/planning.rs`. As the project grows toward "dozens or hundreds of goals", this hand-shape becomes brittle: each new goal family adds another emitter function, another call site, another set of suppression rules, and another lint surface.
 
-`GoalDispatchDeclaration` (`crates/worldwake-ai/src/goal_dispatch_decl.rs:61`) already functions as the goal-kind registry — it carries `provenance_family`, `trace_label`, `relevant_ops`, `invalidation_strategy`, `feasibility_strategy`, `frontier_exhaustion_strategy`, `family_policy`, and `progress_barrier_ops` per `GoalDispatchKey` (`crates/worldwake-ai/src/goal_dispatch_key.rs:6` — the 41-variant discriminant-only enum that already has `Copy`, an `ALL` constant, and a `from_goal_kind(...)` mapping). S146 extends this declaration in place by adding exactly two new fields: `candidate_extractors: Vec<CandidateExtractorId>` (PR-2 fold-in) and `planning_budget: GoalPlanningBudget` (PR-17 fold-in). The 20 `emit_*` functions are migrated into a `CandidateExtractor` registry indexed by `CandidateExtractorId`. The type is renamed `GoalDispatchDeclaration` → `GoalSchema` to reflect its broadened responsibility (was dispatch-only; becomes the schema envisioned by the assessment) — one mass-rename across the 47 existing call sites. A new universal `AgentSchemaContextProfile` carries per-agent extractor opt-out and per-goal budget-override settings (so scenarios can opt agents out of expensive extractor families and tune budget tiers without code changes).
+The goal-kind registry now lives as `GoalSchema` (`crates/worldwake-ai/src/goal_schema.rs:61`), renamed in place from `GoalDispatchDeclaration` by `archive/tickets/S146GOASCHGOA-001.md`. It carries `provenance_family`, `trace_label`, `relevant_ops`, `invalidation_strategy`, `feasibility_strategy`, `frontier_exhaustion_strategy`, `family_policy`, and `progress_barrier_ops` per `GoalDispatchKey` (`crates/worldwake-ai/src/goal_dispatch_key.rs:6` — the 41-variant discriminant-only enum that already has `Copy`, an `ALL` constant, and a `from_goal_kind(...)` mapping). S146 extends this declaration in place by adding exactly two new fields: `candidate_extractors: Vec<CandidateExtractorId>` (PR-2 fold-in) and `planning_budget: GoalPlanningBudget` (PR-17 fold-in). The 20 `emit_*` functions are migrated into a `CandidateExtractor` registry indexed by `CandidateExtractorId`. A new universal `AgentSchemaContextProfile` carries per-agent extractor opt-out and per-goal budget-override settings (so scenarios can opt agents out of expensive extractor families and tune budget tiers without code changes).
 
 Per FND-28 single-truth: `GoalSchema` is the only goal-kind registry; no parallel core-resident `GoalSchema` is introduced, no `GoalKindDiscriminant` is added (the existing `GoalDispatchKey` is the discriminant). Per FND-28 "no dead paths": only fields backed by concrete S146 deliverables are added; ID-typed pointers to systems that don't yet exist (satisfaction predicates, ranking features, expectation templates, information-gap templates, motive-source hints, invalidator templates, HTN methods, explanation templates) are NOT introduced. Future specs add those fields when they have real backing implementations (e.g., S147 will add `methods: Vec<MethodSchemaId>` when HTN decomposition lands).
 
@@ -70,12 +70,12 @@ Phase 12: AI Architecture Evolution — Draft
 
 ## Deliverables
 
-### D1: `GoalSchema` type (rename of `GoalDispatchDeclaration`, +2 fields)
+### D1: `GoalSchema` type (+2 fields after in-place rename)
 
-Rename `GoalDispatchDeclaration` → `GoalSchema` across 47 sites in `worldwake-ai`. The struct keeps its 8 existing fields and gains exactly two new fields:
+`S146GOASCHGOA-001` renamed `GoalDispatchDeclaration` → `GoalSchema` in place across `worldwake-ai`. The struct keeps its 8 existing fields and gains exactly two new fields:
 
 ```rust
-// crates/worldwake-ai/src/goal_dispatch_decl.rs (renamed to goal_schema.rs)
+// crates/worldwake-ai/src/goal_schema.rs
 pub struct GoalSchema {
     // existing fields, unchanged:
     pub provenance_family: RankedGoalProvenanceFamily,
@@ -170,7 +170,7 @@ Suppression flows through the existing `CandidateGenerationDiagnostics` mechanis
 
 ### D4: Registry build-time entries (additive)
 
-Each of the existing ~41 `static DECL_*` entries in `crates/worldwake-ai/src/goal_dispatch_decl.rs` is updated to populate the two new fields. Example:
+Each of the existing ~41 `static DECL_*` entries in `crates/worldwake-ai/src/goal_schema.rs` is updated to populate the two new fields. Example:
 
 ```rust
 static DECL_CONSUME_OWNED_COMMODITY: GoalSchema = GoalSchema {

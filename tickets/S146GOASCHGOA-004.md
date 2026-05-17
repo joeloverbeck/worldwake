@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `GoalSchema` gains 2 required fields populated atomically across all 41 entries; `CandidateExtractorId` finalized for 20 extractor identities
-**Deps**: 001, 002, 003
+**Deps**: archive/tickets/S146GOASCHGOA-001.md, 002, 003
 
 ## Problem
 
@@ -14,7 +14,7 @@ S146 PR-2 (data-driven `GoalSchema` registry) requires each schema entry to decl
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. After ticket 001 lands, `GoalSchema` (renamed from `GoalDispatchDeclaration`) lives at `crates/worldwake-ai/src/goal_schema.rs:61` with 8 fields. After ticket 003 lands, `CandidateExtractorId` is a placeholder newtype `pub struct CandidateExtractorId(pub u16);` in `crates/worldwake-core/src/agent_schema_context_profile.rs`. After ticket 002 lands, `GoalPlanningBudget` is available at `crates/worldwake-core/src/goal_planning_budget.rs` with 5 preset constants. The 41 `static DECL_*: GoalSchema = GoalSchema { ... };` entries currently enumerate all 8 fields without spread syntax (verified — no `..Default::default()` in any entry).
+1. `archive/tickets/S146GOASCHGOA-001.md` landed the in-place rename, so `GoalSchema` (renamed from `GoalDispatchDeclaration`) lives at `crates/worldwake-ai/src/goal_schema.rs:61` with 8 fields. After ticket 003 lands, `CandidateExtractorId` is a placeholder newtype `pub struct CandidateExtractorId(pub u16);` in `crates/worldwake-core/src/agent_schema_context_profile.rs`. After ticket 002 lands, `GoalPlanningBudget` is available at `crates/worldwake-core/src/goal_planning_budget.rs` with 5 preset constants. The 41 `static DECL_*: GoalSchema = GoalSchema { ... };` entries currently enumerate all 8 fields without spread syntax (verified — no `..Default::default()` in any entry).
 2. Per `specs/S146-goal-schema-and-per-goal-budgets.md` D4: each existing entry is updated to populate the two new fields. The spec example shows `candidate_extractors: &[CandidateExtractorId::Need]` and `planning_budget: GoalPlanningBudget::SELF_CARE` for `DECL_CONSUME_OWNED_COMMODITY`. The 20 extractor identities correspond to the existing 20 `emit_*` functions in `candidate_generation.rs`.
 3. Shared abstraction boundary under audit: `CandidateExtractorId` is the identity surface that links `GoalSchema.candidate_extractors` (this ticket) to `impl CandidateExtractor` (ticket 005). The semantic contract is "each `CandidateExtractorId` corresponds to exactly one `CandidateExtractor` impl that emits the same candidate family that the legacy `emit_*` function produced." Ticket 005 enforces the second half (`fn id(&self) -> CandidateExtractorId` per impl); this ticket establishes the canonical variant set.
 4. Required-field migration: per `spec-to-tickets` skill's "Required-field migrations" rule, the foundation ticket must populate all construction sites in one shot. This ticket does that — adds both fields to `GoalSchema` and assigns real values to all 41 entries atomically. No placeholder values used; each entry's extractor mapping follows the existing call-graph in `candidate_generation.rs` (e.g., `Eat`-family entries → `Need`, `Produce*` entries → `Production`, etc.).

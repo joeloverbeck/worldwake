@@ -1,6 +1,6 @@
 # S146GOASCHGOA-001: Rename `GoalDispatchDeclaration` → `GoalSchema`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None — pure rename, no behavioral change
@@ -8,13 +8,13 @@
 
 ## Problem
 
-S146 broadens `GoalDispatchDeclaration` (`crates/worldwake-ai/src/goal_dispatch_decl.rs:61`) from dispatch-only metadata into the full goal-kind schema envisioned by the assessment. Per FND-28 single-truth, no parallel `GoalSchema` may coexist — the existing type is renamed in place to reflect its new responsibility (registry of declarative metadata pointing at concrete dispatch). Renaming first as its own ticket unblocks ticket 004's field additions without conflating mechanical rename with semantic changes.
+Before this ticket, S146's goal-kind registry was named `GoalDispatchDeclaration` in `crates/worldwake-ai/src/goal_dispatch_decl.rs`. S146 broadens that dispatch-only metadata into the full goal-kind schema envisioned by the assessment. Per FND-28 single-truth, no parallel `GoalSchema` may coexist — the existing type needed to be renamed in place to reflect its broader responsibility (registry of declarative metadata pointing at concrete dispatch). Renaming first as its own ticket unblocks ticket 004's field additions without conflating mechanical rename with semantic changes.
 
 ## Assumption Reassessment (2026-05-17)
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. `GoalDispatchDeclaration` struct exists at `crates/worldwake-ai/src/goal_dispatch_decl.rs:61` with 8 fields (`provenance_family`, `trace_label`, `relevant_ops`, `invalidation_strategy`, `feasibility_strategy`, `frontier_exhaustion_strategy`, `family_policy`, `progress_barrier_ops`). 41 `static DECL_*: GoalDispatchDeclaration = GoalDispatchDeclaration { ... };` entries follow at `:285`, `:295`, `:305`, … through the rest of the file. The type is re-exported from `crates/worldwake-ai/src/lib.rs:100`.
+1. Before implementation, `GoalDispatchDeclaration` existed at `crates/worldwake-ai/src/goal_dispatch_decl.rs:61` with 8 fields (`provenance_family`, `trace_label`, `relevant_ops`, `invalidation_strategy`, `feasibility_strategy`, `frontier_exhaustion_strategy`, `family_policy`, `progress_barrier_ops`). 41 `static DECL_*: GoalDispatchDeclaration = GoalDispatchDeclaration { ... };` entries followed at `:285`, `:295`, `:305`, … through the rest of the file. The type was re-exported from `crates/worldwake-ai/src/lib.rs:100`.
 2. Per `specs/S146-goal-schema-and-per-goal-budgets.md` D1: rename in place to `GoalSchema`; file rename `goal_dispatch_decl.rs` → `goal_schema.rs` mirrors the renamed type. No parallel core-resident `GoalSchema` is introduced (FND-28).
 3. Shared abstraction boundary under audit: `GoalDispatchDeclaration` is the single goal-kind registry keyed by `GoalDispatchKey` (`crates/worldwake-ai/src/goal_dispatch_key.rs:6`, 41 variants). The rename preserves this contract — `GoalDispatchKey` is the discriminant; no `GoalKindDiscriminant` mirror is added.
 4. Adjacent contradictions: this ticket touches only the type name and its enclosing file name. The 8 existing fields, the 41 static entries' field values, and all consuming logic (`feasibility.rs`, `agent_tick`, `ranking.rs`) remain semantically unchanged. No field additions land here — ticket 004 owns that work.
@@ -24,36 +24,38 @@ S146 broadens `GoalDispatchDeclaration` (`crates/worldwake-ai/src/goal_dispatch_
 1. Single-truth registry per FND-28: extending the existing type rather than introducing a parallel `GoalSchema` in `worldwake-core` avoids the two-live-authoritative-representations failure mode. Cross-crate placement was rejected during reassessment because the registry's only consumers (extractors, search, planner ops) live in `worldwake-ai` — moving the type to core would add crate-boundary friction for no current payoff.
 2. The rename is a non-behavioral mechanical change. No shim, alias, or `pub use GoalDispatchDeclaration = GoalSchema` is introduced — the old name is deleted outright.
 
-## Verification Layers
+## Verified Layers
 
 1. Workspace compiles after rename → `cargo build --workspace`
 2. Every existing test passes unchanged → `cargo test --workspace`
 3. Lint clean → `cargo clippy --workspace --all-targets -- -D warnings`
 4. Single-layer mechanical refactor — no additional verification surface applies; behavior is invariant under rename.
 
-## What to Change
+## Landed Changes
 
-### 1. Rename the struct and its file
+### 1. Renamed the struct and its file
 
-Rename `crates/worldwake-ai/src/goal_dispatch_decl.rs` → `crates/worldwake-ai/src/goal_schema.rs`. Within the file:
+Renamed `crates/worldwake-ai/src/goal_dispatch_decl.rs` → `crates/worldwake-ai/src/goal_schema.rs`. Within the file:
 - `pub struct GoalDispatchDeclaration` → `pub struct GoalSchema`
 - `impl GoalDispatchDeclaration` → `impl GoalSchema`
 - All 41 `static DECL_*: GoalDispatchDeclaration = GoalDispatchDeclaration { ... };` → `static DECL_*: GoalSchema = GoalSchema { ... };`
 
-### 2. Update module declaration and re-exports
+### 2. Updated module declaration and re-exports
 
 In `crates/worldwake-ai/src/lib.rs`:
 - `mod goal_dispatch_decl;` → `mod goal_schema;`
 - `pub use goal_dispatch_decl::{ ... GoalDispatchDeclaration ... };` → `pub use goal_schema::{ ... GoalSchema ... };`
 
-### 3. Update remaining references across worldwake-ai
+### 3. Updated remaining source references across worldwake-ai
 
-Workspace-wide replace of `GoalDispatchDeclaration` → `GoalSchema`. The grep evidence from Step 2 confirms 47 total references; all reside in `worldwake-ai` (46 in `goal_dispatch_decl.rs`, 1 in `lib.rs`). No other crate consumes this type.
+Workspace-wide replacement removed source references to `GoalDispatchDeclaration` and `goal_dispatch_decl`. Live reassessment found two extra module-path references in `crates/worldwake-ai/src/agent_tick/planning.rs`; those were updated to `goal_schema` along with the type/file rename. No other crate consumes this type.
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-ai/src/goal_dispatch_decl.rs` (rename to `crates/worldwake-ai/src/goal_schema.rs`)
-- `crates/worldwake-ai/src/lib.rs` (modify — module decl + re-export)
+- `crates/worldwake-ai/src/goal_dispatch_decl.rs` → `crates/worldwake-ai/src/goal_schema.rs`
+- `crates/worldwake-ai/src/lib.rs`
+- `crates/worldwake-ai/src/agent_tick/planning.rs`
+- `specs/S146-goal-schema-and-per-goal-budgets.md` (handoff path truth-sync)
 
 ## Out of Scope
 
@@ -61,9 +63,9 @@ Workspace-wide replace of `GoalDispatchDeclaration` → `GoalSchema`. The grep e
 - Defining `CandidateExtractorId` or `GoalPlanningBudget` types — owned by tickets 004 and 002 respectively.
 - Any behavioral change to dispatch, candidate emission, or planning — pure rename only.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Verification Passed
 
 1. Workspace builds: `cargo build --workspace`
 2. Existing test suite: `cargo test --workspace`
@@ -74,14 +76,37 @@ Workspace-wide replace of `GoalDispatchDeclaration` → `GoalSchema`. The grep e
 1. `GoalSchema` is the single goal-kind registry (no parallel type introduced — FND-28).
 2. All 41 `static DECL_*` entries retain their pre-rename field values exactly.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
 1. None — pure rename has no test surface; existing tests verify the type's behavior is unchanged under the new name.
 
-### Commands
+### Commands Run
 
 1. `cargo test -p worldwake-ai`
-2. `cargo clippy --workspace --all-targets -- -D warnings`
-3. `scripts/verify.sh` — final pre-PR
+2. `cargo build --workspace`
+3. `cargo test --workspace`
+4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-17.
+
+- Renamed the single goal-kind registry type from `GoalDispatchDeclaration` to `GoalSchema`.
+- Renamed the module file from `goal_dispatch_decl.rs` to `goal_schema.rs`.
+- Updated the public re-export and the two planning-module imports that referenced the old module path.
+- Kept the existing 8 schema fields and all 41 declaration entry values unchanged; no S146 field additions landed in this ticket.
+- Updated the active S146 spec's handoff references so later tickets target `crates/worldwake-ai/src/goal_schema.rs`.
+
+## Deviations
+
+- Live reassessment found two source references to the old module path in `agent_tick/planning.rs` in addition to the ticket's originally counted type/re-export references. Those were part of the same mechanical rename and did not change behavior.
+
+## Verification Result
+
+- Passed `cargo fmt --all`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo build --workspace`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

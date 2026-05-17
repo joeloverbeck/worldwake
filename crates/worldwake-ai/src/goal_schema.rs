@@ -58,7 +58,7 @@ pub enum Authority {
     HintOnly,
 }
 
-pub struct GoalDispatchDeclaration {
+pub struct GoalSchema {
     pub trace_label: &'static str,
     pub provenance_family: Option<RankedGoalProvenanceFamily>,
     pub relevant_ops: &'static [PlannerOpKind],
@@ -73,7 +73,7 @@ pub struct GoalDispatchDeclaration {
     pub progress_barrier_ops: &'static [PlannerOpKind],
 }
 
-impl GoalDispatchDeclaration {
+impl GoalSchema {
     pub fn relevant_ops_authority(&self) -> Authority {
         Authority::HintOnly
     }
@@ -282,7 +282,7 @@ const NO_BARRIER: &[PlannerOpKind] = &[];
 // Declaration constants
 // ---------------------------------------------------------------------------
 
-static DECL_CONSUME_OWNED_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_CONSUME_OWNED_COMMODITY: GoalSchema = GoalSchema {
     trace_label: "ConsumeOwnedCommodity",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: CONSUME_OPS,
@@ -292,7 +292,7 @@ static DECL_CONSUME_OWNED_COMMODITY: GoalDispatchDeclaration = GoalDispatchDecla
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_ACQUIRE_SELF_CONSUME: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_ACQUIRE_SELF_CONSUME: GoalSchema = GoalSchema {
     trace_label: "AcquireCommodity(SelfConsume)",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: ACQUIRE_OPS,
@@ -302,7 +302,7 @@ static DECL_ACQUIRE_SELF_CONSUME: GoalDispatchDeclaration = GoalDispatchDeclarat
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_ACQUIRE_RECIPE_INPUT: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_ACQUIRE_RECIPE_INPUT: GoalSchema = GoalSchema {
     trace_label: "AcquireCommodity(RecipeInput)",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: ACQUIRE_OPS,
@@ -312,7 +312,7 @@ static DECL_ACQUIRE_RECIPE_INPUT: GoalDispatchDeclaration = GoalDispatchDeclarat
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_ACQUIRE_RESTOCK: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_ACQUIRE_RESTOCK: GoalSchema = GoalSchema {
     trace_label: "AcquireCommodity(Restock)",
     provenance_family: None,
     relevant_ops: ACQUIRE_OPS,
@@ -322,7 +322,7 @@ static DECL_ACQUIRE_RESTOCK: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_SLEEP: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_SLEEP: GoalSchema = GoalSchema {
     trace_label: "Sleep",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: SLEEP_OPS,
@@ -332,7 +332,7 @@ static DECL_SLEEP: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: SLEEP_OPS,
 };
-static DECL_RELIEVE: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_RELIEVE: GoalSchema = GoalSchema {
     trace_label: "Relieve",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: RELIEVE_OPS,
@@ -342,7 +342,7 @@ static DECL_RELIEVE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_WASH: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_WASH: GoalSchema = GoalSchema {
     trace_label: "Wash",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: WASH_OPS,
@@ -352,7 +352,7 @@ static DECL_WASH: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_FREE_CARRY_CAPACITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_FREE_CARRY_CAPACITY: GoalSchema = GoalSchema {
     trace_label: "FreeCarryCapacity",
     provenance_family: None,
     relevant_ops: FREE_CARRY_CAPACITY_OPS,
@@ -362,7 +362,7 @@ static DECL_FREE_CARRY_CAPACITY: GoalDispatchDeclaration = GoalDispatchDeclarati
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: FREE_CARRY_CAPACITY_OPS,
 };
-static DECL_ENGAGE_HOSTILE: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_ENGAGE_HOSTILE: GoalSchema = GoalSchema {
     trace_label: "EngageHostile",
     provenance_family: Some(RankedGoalProvenanceFamily::Danger),
     relevant_ops: ENGAGE_HOSTILE_OPS,
@@ -372,7 +372,7 @@ static DECL_ENGAGE_HOSTILE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_RAID_TARGET: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_RAID_TARGET: GoalSchema = GoalSchema {
     trace_label: "RaidTarget",
     provenance_family: None,
     relevant_ops: RAID_TARGET_OPS,
@@ -382,7 +382,7 @@ static DECL_RAID_TARGET: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_REDUCE_DANGER: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_REDUCE_DANGER: GoalSchema = GoalSchema {
     trace_label: "ReduceDanger",
     provenance_family: Some(RankedGoalProvenanceFamily::Danger),
     relevant_ops: REDUCE_DANGER_OPS,
@@ -392,7 +392,7 @@ static DECL_REDUCE_DANGER: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: DANGER_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_REGROUP_WITH_FACTION: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_REGROUP_WITH_FACTION: GoalSchema = GoalSchema {
     trace_label: "RegroupWithFaction",
     provenance_family: None,
     relevant_ops: REGROUP_WITH_FACTION_OPS,
@@ -402,7 +402,7 @@ static DECL_REGROUP_WITH_FACTION: GoalDispatchDeclaration = GoalDispatchDeclarat
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_ESTABLISH_BANDIT_CAMP: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_ESTABLISH_BANDIT_CAMP: GoalSchema = GoalSchema {
     trace_label: "EstablishBanditCamp",
     provenance_family: None,
     relevant_ops: ESTABLISH_BANDIT_CAMP_OPS,
@@ -412,7 +412,7 @@ static DECL_ESTABLISH_BANDIT_CAMP: GoalDispatchDeclaration = GoalDispatchDeclara
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_TREAT_WOUNDS: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_TREAT_WOUNDS: GoalSchema = GoalSchema {
     trace_label: "TreatWounds",
     provenance_family: None,
     relevant_ops: TREAT_WOUNDS_OPS,
@@ -422,7 +422,7 @@ static DECL_TREAT_WOUNDS: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_SEARCH_FOR_MISSING: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_SEARCH_FOR_MISSING: GoalSchema = GoalSchema {
     trace_label: "SearchForMissing",
     provenance_family: None,
     relevant_ops: SEARCH_FOR_MISSING_OPS,
@@ -432,7 +432,7 @@ static DECL_SEARCH_FOR_MISSING: GoalDispatchDeclaration = GoalDispatchDeclaratio
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: SEARCH_PLACE_BARRIER,
 };
-static DECL_REPORT_MISSING: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_REPORT_MISSING: GoalSchema = GoalSchema {
     trace_label: "ReportMissing",
     provenance_family: None,
     relevant_ops: REPORT_MISSING_OPS,
@@ -442,7 +442,7 @@ static DECL_REPORT_MISSING: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: REPORT_MISSING_BARRIER,
 };
-static DECL_REPORT_FOUND: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_REPORT_FOUND: GoalSchema = GoalSchema {
     trace_label: "ReportFound",
     provenance_family: None,
     relevant_ops: REPORT_FOUND_OPS,
@@ -452,7 +452,7 @@ static DECL_REPORT_FOUND: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: REPORT_FOUND_BARRIER,
 };
-static DECL_ESCORT_TO_SAFETY: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_ESCORT_TO_SAFETY: GoalSchema = GoalSchema {
     trace_label: "EscortToSafety",
     provenance_family: None,
     relevant_ops: ESCORT_TO_SAFETY_OPS,
@@ -462,7 +462,7 @@ static DECL_ESCORT_TO_SAFETY: GoalDispatchDeclaration = GoalDispatchDeclaration 
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: ESCORT_BARRIER,
 };
-static DECL_PRODUCE_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_PRODUCE_COMMODITY: GoalSchema = GoalSchema {
     trace_label: "ProduceCommodity",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: PRODUCE_OPS,
@@ -472,7 +472,7 @@ static DECL_PRODUCE_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_SELL_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_SELL_COMMODITY: GoalSchema = GoalSchema {
     trace_label: "SellCommodity",
     provenance_family: None,
     relevant_ops: SELL_OPS,
@@ -482,7 +482,7 @@ static DECL_SELL_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: STAFF_MARKET_BARRIER,
 };
-static DECL_RESTOCK_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_RESTOCK_COMMODITY: GoalSchema = GoalSchema {
     trace_label: "RestockCommodity",
     provenance_family: None,
     relevant_ops: RESTOCK_OPS,
@@ -492,7 +492,7 @@ static DECL_RESTOCK_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_MOVE_CARGO: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_MOVE_CARGO: GoalSchema = GoalSchema {
     trace_label: "MoveCargo",
     provenance_family: None,
     relevant_ops: MOVE_CARGO_OPS,
@@ -502,7 +502,7 @@ static DECL_MOVE_CARGO: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_LOOT_CORPSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_LOOT_CORPSE: GoalSchema = GoalSchema {
     trace_label: "LootCorpse",
     provenance_family: None,
     relevant_ops: LOOT_OPS,
@@ -512,7 +512,7 @@ static DECL_LOOT_CORPSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: OPPORTUNISTIC_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_BURY_CORPSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_BURY_CORPSE: GoalSchema = GoalSchema {
     trace_label: "BuryCorpse",
     provenance_family: None,
     relevant_ops: BURY_OPS,
@@ -522,7 +522,7 @@ static DECL_BURY_CORPSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_FULFILL_BOUNTY: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_FULFILL_BOUNTY: GoalSchema = GoalSchema {
     trace_label: "FulfillBounty",
     provenance_family: None,
     relevant_ops: FULFILL_BOUNTY_OPS,
@@ -532,7 +532,7 @@ static DECL_FULFILL_BOUNTY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: CLAIM_BOUNTY_BARRIER,
 };
-static DECL_POST_BOUNTY: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_POST_BOUNTY: GoalSchema = GoalSchema {
     trace_label: "PostBounty",
     provenance_family: None,
     relevant_ops: POST_BOUNTY_OPS,
@@ -542,7 +542,7 @@ static DECL_POST_BOUNTY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: POST_BOUNTY_BARRIER,
 };
-static DECL_POST_NOTICE_WARNING: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_POST_NOTICE_WARNING: GoalSchema = GoalSchema {
     trace_label: "PostNotice(Warning)",
     provenance_family: None,
     relevant_ops: POST_NOTICE_OPS,
@@ -552,7 +552,7 @@ static DECL_POST_NOTICE_WARNING: GoalDispatchDeclaration = GoalDispatchDeclarati
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: POST_NOTICE_BARRIER,
 };
-static DECL_POST_NOTICE_OTHER: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_POST_NOTICE_OTHER: GoalSchema = GoalSchema {
     trace_label: "PostNotice(Other)",
     provenance_family: None,
     relevant_ops: POST_NOTICE_OPS,
@@ -562,7 +562,7 @@ static DECL_POST_NOTICE_OTHER: GoalDispatchDeclaration = GoalDispatchDeclaration
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: POST_NOTICE_BARRIER,
 };
-static DECL_SHARE_BELIEF_ALARM: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_SHARE_BELIEF_ALARM: GoalSchema = GoalSchema {
     trace_label: "ShareBelief(Alarm)",
     provenance_family: None,
     relevant_ops: SHARE_BELIEF_OPS,
@@ -572,7 +572,7 @@ static DECL_SHARE_BELIEF_ALARM: GoalDispatchDeclaration = GoalDispatchDeclaratio
     family_policy: SHARE_BELIEF_ALARM_POLICY,
     progress_barrier_ops: TELL_BARRIER,
 };
-static DECL_SHARE_BELIEF_TESTIMONY: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_SHARE_BELIEF_TESTIMONY: GoalSchema = GoalSchema {
     trace_label: "ShareBelief(Testimony)",
     provenance_family: None,
     relevant_ops: SHARE_BELIEF_OPS,
@@ -582,7 +582,7 @@ static DECL_SHARE_BELIEF_TESTIMONY: GoalDispatchDeclaration = GoalDispatchDeclar
     family_policy: SHARE_BELIEF_TESTIMONY_POLICY,
     progress_barrier_ops: TELL_BARRIER,
 };
-static DECL_SHARE_BELIEF_GOSSIP: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_SHARE_BELIEF_GOSSIP: GoalSchema = GoalSchema {
     trace_label: "ShareBelief(Gossip)",
     provenance_family: None,
     relevant_ops: SHARE_BELIEF_OPS,
@@ -592,7 +592,7 @@ static DECL_SHARE_BELIEF_GOSSIP: GoalDispatchDeclaration = GoalDispatchDeclarati
     family_policy: SHARE_BELIEF_GOSSIP_POLICY,
     progress_barrier_ops: TELL_BARRIER,
 };
-static DECL_ASK_WITNESS: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_ASK_WITNESS: GoalSchema = GoalSchema {
     trace_label: "AskWitness",
     provenance_family: Some(RankedGoalProvenanceFamily::EpistemicSensing),
     relevant_ops: ASK_WITNESS_OPS,
@@ -602,7 +602,7 @@ static DECL_ASK_WITNESS: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: EPISTEMIC_SENSING_POLICY,
     progress_barrier_ops: ASK_WITNESS_BARRIER,
 };
-static DECL_CLAIM_OFFICE: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_CLAIM_OFFICE: GoalSchema = GoalSchema {
     trace_label: "ClaimOffice",
     provenance_family: None,
     relevant_ops: CLAIM_OFFICE_OPS,
@@ -612,7 +612,7 @@ static DECL_CLAIM_OFFICE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: OFFICE_CLAIM_BARRIER,
 };
-static DECL_SUPPORT_CANDIDATE_FOR_OFFICE: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_SUPPORT_CANDIDATE_FOR_OFFICE: GoalSchema = GoalSchema {
     trace_label: "SupportCandidateForOffice",
     provenance_family: None,
     relevant_ops: SUPPORT_OFFICE_OPS,
@@ -622,7 +622,7 @@ static DECL_SUPPORT_CANDIDATE_FOR_OFFICE: GoalDispatchDeclaration = GoalDispatch
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: OFFICE_CLAIM_BARRIER,
 };
-static DECL_INVESTIGATE_VIOLATION: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_INVESTIGATE_VIOLATION: GoalSchema = GoalSchema {
     trace_label: "InvestigateViolation",
     provenance_family: None,
     relevant_ops: INVESTIGATE_OPS,
@@ -632,7 +632,7 @@ static DECL_INVESTIGATE_VIOLATION: GoalDispatchDeclaration = GoalDispatchDeclara
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: INVESTIGATE_BARRIER,
 };
-static DECL_PATROL: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_PATROL: GoalSchema = GoalSchema {
     trace_label: "Patrol",
     provenance_family: None,
     relevant_ops: PATROL_OPS,
@@ -642,7 +642,7 @@ static DECL_PATROL: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: PATROL_BARRIER,
 };
-static DECL_EXPLORE_LOCATION: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_EXPLORE_LOCATION: GoalSchema = GoalSchema {
     trace_label: "ExploreLocation",
     provenance_family: None,
     relevant_ops: EXPLORE_OPS,
@@ -652,7 +652,7 @@ static DECL_EXPLORE_LOCATION: GoalDispatchDeclaration = GoalDispatchDeclaration 
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_STEAL_ITEM: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_STEAL_ITEM: GoalSchema = GoalSchema {
     trace_label: "StealItem",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: MOVE_CARGO_OPS,
@@ -662,7 +662,7 @@ static DECL_STEAL_ITEM: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: THEFT_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
-static DECL_ACCUSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_ACCUSE: GoalSchema = GoalSchema {
     trace_label: "Accuse",
     provenance_family: None,
     relevant_ops: ACCUSE_OPS,
@@ -672,7 +672,7 @@ static DECL_ACCUSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: ACCUSE_BARRIER,
 };
-static DECL_PUNISH_FINE: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_PUNISH_FINE: GoalSchema = GoalSchema {
     trace_label: "PunishAccused(Fine)",
     provenance_family: None,
     relevant_ops: FINE_OPS,
@@ -682,7 +682,7 @@ static DECL_PUNISH_FINE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: FINE_BARRIER,
 };
-static DECL_PUNISH_EXILE: GoalDispatchDeclaration = GoalDispatchDeclaration {
+static DECL_PUNISH_EXILE: GoalSchema = GoalSchema {
     trace_label: "PunishAccused(Exile)",
     provenance_family: None,
     relevant_ops: EXILE_OPS,
@@ -695,7 +695,7 @@ static DECL_PUNISH_EXILE: GoalDispatchDeclaration = GoalDispatchDeclaration {
 
 impl GoalDispatchKey {
     #[must_use]
-    pub const fn declaration(&self) -> &'static GoalDispatchDeclaration {
+    pub const fn declaration(&self) -> &'static GoalSchema {
         match self {
             Self::ConsumeOwnedCommodity => &DECL_CONSUME_OWNED_COMMODITY,
             Self::AcquireSelfConsume => &DECL_ACQUIRE_SELF_CONSUME,
@@ -745,7 +745,7 @@ impl GoalDispatchKey {
 #[cfg(test)]
 mod tests {
     use super::{
-        Authority, FeasibilityStrategy, FrontierExhaustionStrategy, GoalDispatchDeclaration,
+        Authority, FeasibilityStrategy, FrontierExhaustionStrategy, GoalSchema,
         InvalidationStrategy, SELF_CARE_POLICY,
     };
     use crate::goal_policy::SuppressionRule;
@@ -987,7 +987,7 @@ mod tests {
         assert_eq!(ALL_KEYS.len(), 41);
 
         for key in ALL_KEYS {
-            let declaration: &'static GoalDispatchDeclaration = key.declaration();
+            let declaration: &'static GoalSchema = key.declaration();
             assert!(!declaration.trace_label.is_empty());
         }
     }
