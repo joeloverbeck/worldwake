@@ -20,7 +20,7 @@ use crate::opportunity_compiler::{
 use crate::plan_step_expectations::{
     fulfill_plan_step_expectations, persist_expectation_store_update,
 };
-use crate::ranking::rank_candidates_with_memories;
+use crate::ranking::rank_candidates_with_memories_and_testimony_reliability;
 use crate::{
     AgendaEntry, AgentDecisionRuntime, DecisionContext, ExpectationFailureCause,
     ExpectationFailurePhase, GoalKindPlannerExt, OpportunityExpectationFailureIncident,
@@ -105,6 +105,8 @@ pub(crate) struct ReadPhaseResult {
     pub(super) omitted_bandit: Vec<crate::BanditCandidateOmission>,
     /// Social goals omitted before emission due to resend suppression.
     pub(super) omitted_social: Vec<crate::SocialCandidateOmission>,
+    /// Testimony goals omitted before emission due to learned reliability.
+    pub(super) omitted_testimony: Vec<crate::TestimonyCandidateOmission>,
     /// Violation detection pass skipped due to missing prerequisites.
     pub(super) omitted_violation_detection: Vec<crate::ViolationDetectionOmission>,
     /// Shared decision context built once from beliefs for ranking + interrupts.
@@ -295,7 +297,7 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
     }
 
     let mut candidates =
-        crate::candidate_generation::generate_candidates_with_current_plan_with_memories_with_travel_horizon_and_opportunities(
+        crate::candidate_generation::generate_candidates_with_current_plan_with_memories_with_travel_horizon_and_opportunities_and_testimony_reliability(
             &view,
             agent,
             blocked_memory,
@@ -307,6 +309,7 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
             tracing,
             runtime.current_plan.as_ref(),
             &candidate_opportunities,
+            &runtime.testimony_reliability,
         );
     let opportunity_index = build_perceived_opportunity_index(
         opportunities
@@ -352,7 +355,7 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
         .collect();
     let candidate_evidence = candidates.diagnostics.evidence.values().cloned().collect();
     let dc = crate::build_decision_context(&view, agent);
-    let outcome = rank_candidates_with_memories(
+    let outcome = rank_candidates_with_memories_and_testimony_reliability(
         &candidates.candidates,
         &view,
         agent,
@@ -361,6 +364,7 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
         dc,
         repair_memory,
         learned_opportunity_memory,
+        &runtime.testimony_reliability,
     );
     let mut ranked = outcome.ranked;
     crate::ranking::apply_pending_source_reliability_failures(
@@ -373,6 +377,7 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
             decision_context: dc,
             repair_memory,
             learned_opportunity_memory,
+            testimony_reliability: &runtime.testimony_reliability,
         },
         &candidates.pending_source_reliability_failures,
     );
@@ -399,6 +404,7 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
         omitted_political: candidates.diagnostics.omitted_political,
         omitted_bandit: candidates.diagnostics.omitted_bandit,
         omitted_social: candidates.diagnostics.omitted_social,
+        omitted_testimony: candidates.diagnostics.omitted_testimony,
         omitted_violation_detection: candidates.diagnostics.omitted_violation_detection,
         decision_context: dc,
         pursuit_invalidation,

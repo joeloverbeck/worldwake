@@ -22,9 +22,10 @@ use worldwake_core::{
     ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PerceptionProfile,
     PerceptionSource, Permille, PlaceDirtiness, PlaceTag, PreferenceProfile, Quantity, RecipeId,
     RecipientKnowledgeStatus, RecordedViolation, ResourceExtractionQueues, ResourceSource,
-    RewardEncumbrance, RiskWeightProfile, RouteExperience, SleepQualityProfile, SocialObservation,
-    SourceReliability, StockStoragePolicy, SubstitutePreferences, SurveyMemory, TellMemoryKey,
-    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    RewardEncumbrance, RiskWeightProfile, RouteExperience, RoutePreferenceProfile,
+    SleepQualityProfile, SocialObservation, SourceReliability, StockStoragePolicy,
+    SubstitutePreferences, SurveyMemory, TellMemoryKey, TellProfile, TellTopic,
+    TestimonyTrustProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
     UniqueItemKind, UtilityProfile, WashBasinState, WorkstationTag, World, Wound,
     danger_ratio_permille, is_incapacitated, load_of_entity,
 };
@@ -723,6 +724,26 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_metabolism_profile(agent).copied())
+            .flatten()
+    }
+
+    fn testimony_trust_profile(&self, agent: EntityId) -> Option<TestimonyTrustProfile> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_testimony_trust_profile(agent)
+                    .cloned()
+            })
+            .flatten()
+    }
+
+    fn route_preference_profile(&self, agent: EntityId) -> Option<RoutePreferenceProfile> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_route_preference_profile(agent)
+                    .cloned()
+            })
             .flatten()
     }
 

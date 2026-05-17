@@ -180,6 +180,8 @@ fn golden_motive_sources_commit_payload_preserves_hunger_and_greed_sources() {
         decisive_motive_sources: vec![hunger.clone(), greed.clone()],
         rejected_alternatives: Vec::<RejectedAlternativeSummary>::new(),
         assumptions: Vec::new(),
+        testimony_trust_context: Vec::new(),
+        route_preference_context: Vec::new(),
     });
 
     assert_eq!(committed.decisive_motive_sources, vec![hunger, greed]);

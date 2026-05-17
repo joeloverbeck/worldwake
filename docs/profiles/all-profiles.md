@@ -10,6 +10,7 @@
 Always applied to every agent with defaults. Scenario definitions may override individual fields.
 
 - [AgendaProfile](#agendaprofile) — Stable per-agent agenda memory and retry parameters used by the AI layer.
+- [AgentSchemaContextProfile](#agentschemacontextprofile) — (no description)
 - [ArtifactPostingProfile](#artifactpostingprofile) — Per-agent defaults for artifact TTL when posting notices and bounties.
 - [CognitiveProfile](#cognitiveprofile) — Stable per-agent cognitive reasoning parameters used by the AI layer.
 - [CommunicationProfile](#communicationprofile) — Per-agent parameters controlling communication acceptance by class.
@@ -23,7 +24,9 @@ Always applied to every agent with defaults. Scenario definitions may override i
 - [PerceptionProfile](#perceptionprofile) — Per-agent parameters controlling belief retention and observation quality.
 - [PreferenceProfile](#preferenceprofile) — Per-agent experience-based route and source preference parameters.
 - [RiskWeightProfile](#riskweightprofile) — Per-agent risk-aversion weights used when ranking opportunities.
+- [RoutePreferenceProfile](#routepreferenceprofile) — Per-agent parameters for deriving route preference from traversal history.
 - [TellProfile](#tellprofile) — Per-agent parameters controlling what information an agent relays and accepts.
+- [TestimonyTrustProfile](#testimonytrustprofile) — Per-agent parameters for deriving witness trust from testimony reliability.
 
 ### Optional Profiles
 
@@ -67,6 +70,19 @@ Stable per-agent agenda memory and retry parameters used by the AI layer.
 | `pending_capacity` | `u32` | Maximum number of pending agenda entries retained for the agent. (default: `16`) |
 | `suspended_capacity` | `u32` | Maximum number of suspended agenda entries retained for the agent. (default: `8`) |
 | `revive_cooldown_ticks` | `u32` | Cooldown before a pending agenda entry is reconsidered again. (default: `4`) |
+
+---
+
+## AgentSchemaContextProfile
+
+**Category**: Universal (always applied with defaults)
+
+**Source**: `crates/worldwake-core/src/agent_schema_context_profile.rs:55`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `disabled_extractors` | `BTreeSet<CandidateExtractorId>` | *(undocumented)* |
+| `budget_overrides` | `BTreeMap<GoalDispatchKey, GoalPlanningBudget>` | *(undocumented)* |
 
 ---
 
@@ -348,6 +364,23 @@ Per-agent risk-aversion weights used when ranking opportunities.
 
 ---
 
+## RoutePreferenceProfile
+
+**Category**: Universal (always applied with defaults)
+
+**Source**: `crates/worldwake-core/src/route_preference_profile.rs:7`
+
+Per-agent parameters for deriving route preference from traversal history.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `safe_traversal_weight` | `Permille` | Preference increase per safe traversal. (default: `Permille::new_unchecked(200)`) |
+| `dangerous_traversal_penalty` | `Permille` | Preference penalty per dangerous traversal. (default: `Permille::new_unchecked(600)`) |
+| `days_to_decay_observations` | `u32` | Whole days after which observations decay back to neutral. (default: `30`) |
+| `minimum_traversals` | `u8` | Traversals required before preference can diverge from neutral. (default: `2`) |
+
+---
+
 ## TellProfile
 
 **Category**: Universal (always applied with defaults)
@@ -362,6 +395,33 @@ Per-agent parameters controlling what information an agent relays and accepts.
 | `max_relay_chain_len` | `u8` | Maximum relay chain length before the agent stops forwarding heard information. (default: `3`) |
 | `conversation_memory_capacity` | `u16` | Maximum number of recent conversation entries the agent retains. (default: `12`) |
 | `conversation_memory_retention_ticks` | `u64` | How long (in ticks) conversation memory entries are retained before expiry. (default: `48`) |
+
+---
+
+## TestimonyTrustProfile
+
+**Category**: Universal (always applied with defaults)
+
+**Source**: `crates/worldwake-core/src/testimony_trust_profile.rs:7`
+
+Per-agent parameters for deriving witness trust from testimony reliability.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `confirmation_weight` | `Permille` | Trust increase per directly confirmed report. (default: `Permille::new_unchecked(250)`) |
+| `refutation_penalty` | `Permille` | Trust penalty per directly refuted report. (default: `Permille::new_unchecked(400)`) |
+| `stale_decay_per_tick` | `Permille` | Trust penalty per stale report observation. (default: `Permille::new_unchecked(1)`) |
+| `contradicted_penalty` | `Permille` | Trust penalty per contradicted report observation. (default: `Permille::new_unchecked(350)`) |
+| `minimum_observations` | `u8` | Observations required before trust can diverge from neutral. (default: `2`) |
+| `trust_threshold` | `Permille` | Trust below this value can damp or suppress testimony use. (default: `Permille::new_unchecked(400)`) |
+| `topic_weight_route_hazard` | `Permille` | Topic salience multiplier for route-hazard testimony. (default: `Permille::new_unchecked(500)`) |
+| `topic_weight_resource_availability` | `Permille` | Topic salience multiplier for resource-availability testimony. (default: `Permille::new_unchecked(500)`) |
+| `topic_weight_office_holder` | `Permille` | Topic salience multiplier for office-holder testimony. (default: `Permille::new_unchecked(500)`) |
+| `topic_weight_accusation_credibility` | `Permille` | Topic salience multiplier for accusation-credibility testimony. (default: `Permille::new_unchecked(500)`) |
+| `topic_weight_bounty_validity` | `Permille` | Topic salience multiplier for bounty-validity testimony. (default: `Permille::new_unchecked(500)`) |
+| `topic_weight_price_level` | `Permille` | Topic salience multiplier for price-level testimony. (default: `Permille::new_unchecked(500)`) |
+| `topic_weight_entity_whereabouts` | `Permille` | Topic salience multiplier for entity-whereabouts testimony. (default: `Permille::new_unchecked(500)`) |
+| `topic_weight_general_fact` | `Permille` | Topic salience multiplier for general-fact testimony. (default: `Permille::new_unchecked(500)`) |
 
 ---
 

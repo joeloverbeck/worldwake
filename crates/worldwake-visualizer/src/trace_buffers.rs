@@ -288,6 +288,7 @@ mod tests {
                     omitted_political: Vec::new(),
                     omitted_bandit: Vec::new(),
                     omitted_social: Vec::new(),
+                    omitted_testimony: Vec::new(),
                     omitted_violation_detection: Vec::new(),
                 },
                 planning: PlanSearchTrace {

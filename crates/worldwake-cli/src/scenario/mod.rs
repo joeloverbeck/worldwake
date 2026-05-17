@@ -662,6 +662,20 @@ fn spawn_agent(
     txn.set_component_communication_profile(agent_id, communication)?;
     let preference = agent_def.preference_profile.unwrap_or_default();
     txn.set_component_preference_profile(agent_id, preference)?;
+    txn.set_component_testimony_trust_profile(
+        agent_id,
+        agent_def
+            .testimony_trust_profile
+            .clone()
+            .unwrap_or_default(),
+    )?;
+    txn.set_component_route_preference_profile(
+        agent_id,
+        agent_def
+            .route_preference_profile
+            .clone()
+            .unwrap_or_default(),
+    )?;
     txn.set_component_expectation_store(agent_id, ExpectationStore::default())?;
     let last_seen_memory = last_seen_memory_from_def(agent_def.last_seen_memory.as_ref(), names)?;
     txn.set_component_last_seen_memory(agent_id, last_seen_memory)?;
@@ -1536,9 +1550,10 @@ mod tests {
         LastSeenMemory, LatrineFullness, LawAbidingProfile, LoadUnits, MultiplierPermille,
         ObligationSatiationProfile, PatrolProfile, PatrolRoute, PerceptionProfile, Permille,
         PlaceDirtiness, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity,
-        RiskWeightProfile, ShelterTag, SleepQualityProfile, SleepRecoveryModifier,
-        SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
-        ViolationDispositionProfile, WashBasinState, WorkstationTag, default_commodity_decay_map,
+        RiskWeightProfile, RoutePreferenceProfile, ShelterTag, SleepQualityProfile,
+        SleepRecoveryModifier, SubstitutePreferences, TellProfile, TestimonyTrustProfile,
+        TheftDispositionProfile, ThresholdBand, TradeCategory, ViolationDispositionProfile,
+        WashBasinState, WorkstationTag, default_commodity_decay_map,
     };
     use worldwake_sim::{BeliefRead, BelievedAuthorityView, PerAgentBeliefView};
 
@@ -1585,6 +1600,8 @@ mod tests {
             contention_disposition: None,
             commodity_valuation: None,
             substitute_preferences: None,
+            testimony_trust_profile: None,
+            route_preference_profile: None,
             known_recipes: None,
         }
     }
@@ -3594,6 +3611,14 @@ mod tests {
             Some(&PreferenceProfile::default())
         );
         assert_eq!(
+            world.get_component_testimony_trust_profile(agent),
+            Some(&TestimonyTrustProfile::default())
+        );
+        assert_eq!(
+            world.get_component_route_preference_profile(agent),
+            Some(&RoutePreferenceProfile::default())
+        );
+        assert_eq!(
             world.get_component_expectation_store(agent),
             Some(&ExpectationStore::default())
         );
@@ -3675,6 +3700,39 @@ mod tests {
         assert_eq!(
             world.get_component_agent_schema_context_profile(agent),
             Some(&schema_context)
+        );
+    }
+
+    #[test]
+    fn test_spawn_agent_applies_authored_s151_profiles() {
+        let mut def = minimal_def();
+        let testimony_profile = TestimonyTrustProfile {
+            confirmation_weight: Permille::new_unchecked(300),
+            topic_weight_route_hazard: Permille::new_unchecked(750),
+            ..TestimonyTrustProfile::default()
+        };
+        let route_profile = RoutePreferenceProfile {
+            safe_traversal_weight: Permille::new_unchecked(350),
+            days_to_decay_observations: 12,
+            ..RoutePreferenceProfile::default()
+        };
+        def.agents[0].testimony_trust_profile = Some(testimony_profile.clone());
+        def.agents[0].route_preference_profile = Some(route_profile.clone());
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("spawned scenario should contain one agent");
+
+        assert_eq!(
+            world.get_component_testimony_trust_profile(agent),
+            Some(&testimony_profile)
+        );
+        assert_eq!(
+            world.get_component_route_preference_profile(agent),
+            Some(&route_profile)
         );
     }
 

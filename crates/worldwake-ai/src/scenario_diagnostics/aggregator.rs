@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     BeliefStatusTag, BlockerScope, ClaimantOutcome, DecisionEventPayload, Discrepancy, EventLog,
     EventTag, EventView, GoalKind, GoalRejectionReason, OmissionReason, PercentileBucket, Permille,
-    PlanInvalidationReason, ReplanReason, SourceAttributionOutcomeTag, Tick,
+    PlanInvalidationReason, ReplanReason, Tick, TopicScope,
 };
 
 use crate::{
@@ -68,7 +68,8 @@ struct ScenarioDiagnosticsBuilder {
 
     stale_belief_actions: u64,
     contradicted_belief_actions: u64,
-    source_reliability_changes: u64,
+    source_reliability_changes_by_topic: BTreeMap<TopicScope, u64>,
+    route_preference_changes: u64,
     correction_latency_values: Vec<u64>,
     blocker_counts_by_scope: BTreeMap<BlockerScopeVariantId, u64>,
 
@@ -284,6 +285,13 @@ impl ScenarioDiagnosticsBuilder {
         match payload {
             DecisionEventPayload::GoalSuppressed(payload) => {
                 self.add_suppression(goal_rejection_category(payload.reason), 1);
+                self.record_testimony_trust_context(&payload.testimony_trust_context);
+            }
+            DecisionEventPayload::GoalCommitted(payload) => {
+                self.record_testimony_trust_context(&payload.testimony_trust_context);
+                self.route_preference_changes = self.route_preference_changes.saturating_add(
+                    u64::try_from(payload.route_preference_context.len()).unwrap_or(u64::MAX),
+                );
             }
             DecisionEventPayload::PlanInvalidated(payload) => {
                 self.record_plan_invalidation_reason(&payload.reason);
@@ -307,14 +315,20 @@ impl ScenarioDiagnosticsBuilder {
                     payload.belief_snapshot.map(|snapshot| snapshot.status),
                 );
             }
-            DecisionEventPayload::SourceExpectationFailure(payload) => {
-                if payload.attribution_outcome
-                    == SourceAttributionOutcomeTag::SourceReliabilityDecremented
-                {
-                    self.source_reliability_changes += 1;
-                }
-            }
             _ => {}
+        }
+    }
+
+    fn record_testimony_trust_context(
+        &mut self,
+        testimony_trust_context: &[worldwake_core::TestimonyTrustSummary],
+    ) {
+        for summary in testimony_trust_context {
+            increment(
+                &mut self.source_reliability_changes_by_topic,
+                summary.topic,
+                1,
+            );
         }
     }
 
@@ -444,7 +458,8 @@ impl ScenarioDiagnosticsBuilder {
             belief: BeliefMetrics {
                 stale_belief_actions: self.stale_belief_actions,
                 contradicted_belief_actions: self.contradicted_belief_actions,
-                source_reliability_changes: self.source_reliability_changes,
+                source_reliability_changes_by_topic: self.source_reliability_changes_by_topic,
+                route_preference_changes: self.route_preference_changes,
                 false_rumor_propagation_count: 0,
                 correction_latency: bucket_from_unsorted(&mut self.correction_latency_values),
                 blocker_counts_by_scope: self.blocker_counts_by_scope,
@@ -550,7 +565,8 @@ fn goal_rejection_category(reason: GoalRejectionReason) -> CandidateSuppressionC
         GoalRejectionReason::SuppressedByBlocker => {
             CandidateSuppressionCategory::RejectedSuppressedByBlocker
         }
-        GoalRejectionReason::SuppressedByDiscrepancy => {
+        GoalRejectionReason::SuppressedByDiscrepancy
+        | GoalRejectionReason::SuppressedByUnreliableTestimony => {
             CandidateSuppressionCategory::RejectedSuppressedByDiscrepancy
         }
         GoalRejectionReason::SuppressedByStressPolicy => {
@@ -609,11 +625,12 @@ mod tests {
         ActionDefId, BeliefStatusTag, BlockerKey, BlockerRecordedPayload, BlockerScope,
         BlockingFact, CauseRef, ClaimantOutcome, CommodityKind, ContentionClaimant,
         ContentionEventPayload, ContentionResolutionRule, DecisionEventPayload, Discrepancy,
-        EntityId, EventLog, EventPayload, EventTag, GoalKey, GoalKind, GoalRejectionReason,
-        GoalSuppressedPayload, HomeostaticNeedId, InvalidatorTag, OmissionReason,
-        OpportunityAnchor, OpportunityKey, PendingEvent, PercentileBucket, Permille,
-        PlanInvalidatedPayload, PlanInvalidationReason, RepairKind, ReplanReason,
-        ReplanTriggeredPayload, RouteSegment, Tick, VisibilitySpec, WitnessData,
+        EntityId, EventLog, EventPayload, EventTag, GoalCommittedPayload, GoalKey, GoalKind,
+        GoalRejectionReason, GoalSuppressedPayload, HomeostaticNeedId, InvalidatorTag,
+        OmissionReason, OpportunityAnchor, OpportunityKey, PendingEvent, PercentileBucket,
+        Permille, PlanInvalidatedPayload, PlanInvalidationReason, RepairKind, ReplanReason,
+        ReplanTriggeredPayload, RoutePreferenceSummary, RouteSegment, TestimonyTrustSummary, Tick,
+        TopicScope, VisibilitySpec, WitnessData,
     };
 
     #[test]
@@ -656,6 +673,7 @@ mod tests {
                 agent: entity(1),
                 goal_key: GoalKey::from(GoalKind::Sleep),
                 reason: GoalRejectionReason::FeasibilityProbeFailed,
+                testimony_trust_context: Vec::new(),
             }),
         );
 
@@ -700,6 +718,56 @@ mod tests {
             report.goal_pressure.active_intention_continuation_rate,
             Permille::new_unchecked(1000)
         );
+    }
+
+    #[test]
+    fn belief_metrics_roll_up_testimony_topics_and_route_preferences() {
+        let mut event_log = EventLog::new();
+        emit_decision_payload(
+            &mut event_log,
+            Tick(1),
+            EventTag::GoalCommitted,
+            DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
+                agent: entity(1),
+                goal_key: GoalKey::from(GoalKind::Sleep),
+                motive_score: 100,
+                decisive_motive_sources: Vec::new(),
+                rejected_alternatives: Vec::new(),
+                assumptions: Vec::new(),
+                testimony_trust_context: vec![
+                    testimony_summary(TopicScope::RouteHazard),
+                    testimony_summary(TopicScope::ResourceAvailability),
+                ],
+                route_preference_context: vec![RoutePreferenceSummary {
+                    segment: RouteSegment::new(entity(10), entity(11)),
+                    preference: Permille::new_unchecked(700),
+                    last_safe_tick: Some(Tick(1)),
+                    last_dangerous_tick: None,
+                }],
+            }),
+        );
+        emit_decision_payload(
+            &mut event_log,
+            Tick(2),
+            EventTag::GoalSuppressed,
+            DecisionEventPayload::GoalSuppressed(GoalSuppressedPayload {
+                agent: entity(1),
+                goal_key: GoalKey::from(wash_goal()),
+                reason: GoalRejectionReason::SuppressedByUnreliableTestimony,
+                testimony_trust_context: vec![testimony_summary(TopicScope::RouteHazard)],
+            }),
+        );
+
+        let report = build_scenario_diagnostics(&[], &[], &[], &event_log, (Tick(0), Tick(3)));
+
+        assert_eq!(
+            report.belief.source_reliability_changes_by_topic,
+            BTreeMap::from([
+                (TopicScope::RouteHazard, 2),
+                (TopicScope::ResourceAvailability, 1),
+            ])
+        );
+        assert_eq!(report.belief.route_preference_changes, 1);
     }
 
     #[test]
@@ -1007,6 +1075,7 @@ mod tests {
                     omitted_political: Vec::new(),
                     omitted_bandit: Vec::new(),
                     omitted_social: Vec::new(),
+                    omitted_testimony: Vec::new(),
                     omitted_violation_detection: vec![crate::ViolationDetectionOmission {
                         reason: crate::ViolationDetectionOmissionReason::AgentInTransit,
                     }],
@@ -1150,6 +1219,15 @@ mod tests {
 
     fn wash_goal() -> GoalKind {
         GoalKind::Wash
+    }
+
+    fn testimony_summary(topic: TopicScope) -> TestimonyTrustSummary {
+        TestimonyTrustSummary {
+            source: entity(40),
+            topic,
+            trust: Permille::new_unchecked(300),
+            observations: 2,
+        }
     }
 
     fn emit_decision_payload(

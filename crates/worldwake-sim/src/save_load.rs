@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 87;
+pub const SAVE_FORMAT_VERSION: u32 = 88;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -218,12 +218,13 @@ mod tests {
         PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
         RankedGoalComparisonDimensionTag, RecordRef, RejectedAlternativeSummary,
         RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
-        RewardEncumbrance, RiskWeightProfile, RouteSegment, Seed, ShelterTag, SleepEpisode,
-        SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepQualityProfile,
-        SleepRecoveryModifier, StateHash, SuspensionReason, Tick, TickRange, UniqueItemKind,
-        UtilityProfile, VisibilitySpec, WakeCondition, WakeReason, WashBasinState,
-        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, build_prototype_world,
+        RewardEncumbrance, RiskWeightProfile, RoutePreferenceProfile, RoutePreferenceSummary,
+        RouteSegment, Seed, ShelterTag, SleepEpisode, SleepEpisodeEndedPayload,
+        SleepEpisodeStartedPayload, SleepQualityProfile, SleepRecoveryModifier, StateHash,
+        SuspensionReason, TestimonyTrustProfile, TestimonyTrustSummary, Tick, TickRange,
+        TopicScope, UniqueItemKind, UtilityProfile, VisibilitySpec, WakeCondition, WakeReason,
+        WashBasinState, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -393,6 +394,22 @@ mod tests {
                     ..UtilityProfile::default()
                 },
             )
+            .unwrap();
+        let testimony_profile = TestimonyTrustProfile {
+            confirmation_weight: worldwake_core::Permille::new_unchecked(325),
+            topic_weight_route_hazard: worldwake_core::Permille::new_unchecked(625),
+            ..TestimonyTrustProfile::default()
+        };
+        profile_txn
+            .set_component_testimony_trust_profile(actor, testimony_profile)
+            .unwrap();
+        let route_profile = RoutePreferenceProfile {
+            safe_traversal_weight: worldwake_core::Permille::new_unchecked(275),
+            days_to_decay_observations: 17,
+            ..RoutePreferenceProfile::default()
+        };
+        profile_txn
+            .set_component_route_preference_profile(actor, route_profile)
             .unwrap();
         let _ = profile_txn.commit(&mut event_log);
         let mut office_txn = new_txn(&mut world, Tick(1), CauseRef::Bootstrap);
@@ -1080,6 +1097,12 @@ mod tests {
                     agent: actor,
                     goal_key: sleep_goal,
                     reason: GoalRejectionReason::SuppressedByStressPolicy,
+                    testimony_trust_context: vec![TestimonyTrustSummary {
+                        source: target,
+                        topic: TopicScope::RouteHazard,
+                        trust: worldwake_core::Permille::new_unchecked(350),
+                        observations: 3,
+                    }],
                 }),
             ),
             (
@@ -1103,6 +1126,18 @@ mod tests {
                     assumptions: vec![PlanAssumptionRef {
                         assumption: worldwake_core::FrameAssumption::NoCriticalThreat,
                         introduced_at_step: 0,
+                    }],
+                    testimony_trust_context: vec![TestimonyTrustSummary {
+                        source: target,
+                        topic: TopicScope::ResourceAvailability,
+                        trust: worldwake_core::Permille::new_unchecked(725),
+                        observations: 4,
+                    }],
+                    route_preference_context: vec![RoutePreferenceSummary {
+                        segment: RouteSegment::new(actor, place),
+                        preference: worldwake_core::Permille::new_unchecked(700),
+                        last_safe_tick: Some(Tick(18)),
+                        last_dangerous_tick: None,
                     }],
                 }),
             ),
@@ -1312,8 +1347,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_87_after_agent_schema_context_profile_registration() {
-        assert_eq!(SAVE_FORMAT_VERSION, 87);
+    fn save_format_version_is_88_after_s151_state_landing() {
+        assert_eq!(SAVE_FORMAT_VERSION, 88);
     }
 
     #[test]
@@ -1324,7 +1359,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 87);
+        assert_eq!(SAVE_FORMAT_VERSION, 88);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1431,6 +1466,38 @@ mod tests {
                 revenge_weight: worldwake_core::Permille::new_unchecked(325),
                 ..UtilityProfile::default()
             })
+        );
+        assert_eq!(
+            restored
+                .world()
+                .get_component_testimony_trust_profile(actor)
+                .unwrap()
+                .confirmation_weight,
+            worldwake_core::Permille::new_unchecked(325)
+        );
+        assert_eq!(
+            restored
+                .world()
+                .get_component_testimony_trust_profile(actor)
+                .unwrap()
+                .topic_weight_route_hazard,
+            worldwake_core::Permille::new_unchecked(625)
+        );
+        assert_eq!(
+            restored
+                .world()
+                .get_component_route_preference_profile(actor)
+                .unwrap()
+                .safe_traversal_weight,
+            worldwake_core::Permille::new_unchecked(275)
+        );
+        assert_eq!(
+            restored
+                .world()
+                .get_component_route_preference_profile(actor)
+                .unwrap()
+                .days_to_decay_observations,
+            17
         );
         assert_eq!(
             restored
@@ -1751,6 +1818,36 @@ mod tests {
                 }) if *facility == target
             )
         }));
+        assert!(restored_payloads.iter().any(|payload| {
+            matches!(
+                payload,
+                DecisionEventPayload::GoalSuppressed(GoalSuppressedPayload {
+                    testimony_trust_context,
+                    ..
+                }) if testimony_trust_context.iter().any(|summary| {
+                    summary.topic == TopicScope::RouteHazard
+                        && summary.source == target
+                        && summary.observations == 3
+                })
+            )
+        }));
+        assert!(restored_payloads.iter().any(|payload| {
+            matches!(
+                payload,
+                DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
+                    testimony_trust_context,
+                    route_preference_context,
+                    ..
+                }) if testimony_trust_context.iter().any(|summary| {
+                    summary.topic == TopicScope::ResourceAvailability
+                        && summary.source == target
+                        && summary.observations == 4
+                }) && route_preference_context.iter().any(|summary| {
+                    summary.segment == RouteSegment::new(actor, place)
+                        && summary.preference == worldwake_core::Permille::new_unchecked(700)
+                })
+            )
+        }));
 
         for (original, roundtrip) in original_payloads.iter().zip(&restored_payloads) {
             assert_eq!(
@@ -1853,11 +1950,11 @@ mod tests {
     }
 
     #[test]
-    fn load_rejects_wrong_version() {
+    fn load_rejects_pre_s151_version_87_without_migration_shim() {
         let (state, _, _, _) = populated_state();
         let mut bytes = save_to_bytes(&state, None).unwrap();
         bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
-            .copy_from_slice(&(SAVE_FORMAT_VERSION - 1).to_le_bytes());
+            .copy_from_slice(&87_u32.to_le_bytes());
 
         let error = load_from_bytes(&bytes).unwrap_err();
 
@@ -1866,7 +1963,7 @@ mod tests {
             SaveError::UnsupportedVersion {
                 found,
                 expected: SAVE_FORMAT_VERSION
-            } if found == SAVE_FORMAT_VERSION - 1
+            } if found == 87
         ));
     }
 

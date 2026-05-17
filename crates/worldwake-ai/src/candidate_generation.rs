@@ -8,8 +8,8 @@ use crate::{
         CandidateEvidenceExclusionReason, CandidateEvidenceKind, CandidateEvidenceTrace,
         CandidateLegalityTrace, CandidateSource, DesireFullyBlocked, PoliticalCandidateOmission,
         PoliticalCandidateOmissionReason, PoliticalGoalFamily, PursuitDiagnostic,
-        PursuitOmissionReason, SocialCandidateOmission, ViolationDetectionOmission,
-        ViolationDetectionOmissionReason,
+        PursuitOmissionReason, SocialCandidateOmission, TestimonyCandidateOmission,
+        TestimonyOmissionReason, ViolationDetectionOmission, ViolationDetectionOmissionReason,
     },
     derive_danger_pressure,
     enterprise::{
@@ -29,6 +29,7 @@ use crate::{
     theft::assess_theft_deterrence,
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::sync::OnceLock;
 use worldwake_core::{
     AcquisitionQuantity, AgentBeliefStore, AgentSchemaContextProfile, ArtifactPostingContext,
     ArtifactPostingProfile, AskWitnessMemoryKey, BelievedEntityState, BelievedInstitutionalClaim,
@@ -42,9 +43,10 @@ use worldwake_core::{
     InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor, OpportunityKey,
     PerceptionSource, Permille, PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace,
     PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData, RecordEntryId, RecordKind,
-    RightKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
-    TradeCategory, UtilityProfile, ViolationId, ViolationKind, ViolationMemory, WorkstationTag,
-    belief_confidence, classify_communication, current_institutional_belief_topics, load_per_unit,
+    RightKind, SocialObservation, SocialObservationDetail, TellTopic, TestimonyReliability,
+    TestimonyTrustSummary, TheftFacts, Tick, TradeCategory, UtilityProfile, ViolationId,
+    ViolationKind, ViolationMemory, WorkstationTag, belief_confidence, classify_communication,
+    current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
@@ -170,6 +172,7 @@ pub(crate) struct GenerationContext<'a> {
     tracing_enabled: bool,
     current_plan: Option<&'a PlannedPlan>,
     opportunities: &'a [Opportunity],
+    testimony_reliability: &'a TestimonyReliability,
 }
 
 #[derive(Default)]
@@ -179,6 +182,7 @@ pub(crate) struct CandidateGenerationDiagnostics {
     pub omitted_political: Vec<PoliticalCandidateOmission>,
     pub omitted_bandit: Vec<BanditCandidateOmission>,
     pub omitted_social: Vec<SocialCandidateOmission>,
+    pub omitted_testimony: Vec<TestimonyCandidateOmission>,
     pub omitted_violation_detection: Vec<ViolationDetectionOmission>,
     pub ask_witness_gate_rejections: Vec<AskWitnessGateRejection>,
     pub evidence: BTreeMap<OpportunityKey, CandidateEvidenceTrace>,
@@ -199,6 +203,7 @@ pub(crate) struct CandidateOfferDiagnostic {
 pub(crate) struct CandidateSuppressionDiagnostic {
     pub opportunity: OpportunityKey,
     pub reason: GoalRejectionReason,
+    pub testimony_trust_context: Vec<TestimonyTrustSummary>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -642,6 +647,38 @@ pub(crate) fn generate_candidates_with_current_plan_with_memories_with_travel_ho
         tracing_enabled,
         current_plan,
         opportunities,
+        empty_testimony_reliability(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn generate_candidates_with_current_plan_with_memories_with_travel_horizon_and_opportunities_and_testimony_reliability(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    blocked: &BlockerMemory,
+    discrepancies: &DiscrepancyMemory,
+    violation_memory: &ViolationMemory,
+    recipes: &RecipeRegistry,
+    current_tick: Tick,
+    travel_horizon: u8,
+    tracing_enabled: bool,
+    current_plan: Option<&PlannedPlan>,
+    opportunities: &[Opportunity],
+    testimony_reliability: &TestimonyReliability,
+) -> CandidateGenerationResult {
+    generate_candidates_with_memories_with_travel_horizon_impl(
+        view,
+        agent,
+        blocked,
+        discrepancies,
+        violation_memory,
+        recipes,
+        current_tick,
+        travel_horizon,
+        tracing_enabled,
+        current_plan,
+        opportunities,
+        testimony_reliability,
     )
 }
 
@@ -669,6 +706,7 @@ pub(crate) fn generate_candidates_with_memories_with_travel_horizon(
         tracing_enabled,
         None,
         &[],
+        empty_testimony_reliability(),
     )
 }
 
@@ -685,6 +723,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
     tracing_enabled: bool,
     current_plan: Option<&PlannedPlan>,
     opportunities: &[Opportunity],
+    testimony_reliability: &TestimonyReliability,
 ) -> CandidateGenerationResult {
     if view.is_dead(agent) || !view.is_alive(agent) {
         return CandidateGenerationResult {
@@ -717,6 +756,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
         tracing_enabled,
         current_plan,
         opportunities,
+        testimony_reliability,
     };
     let default_schema_context_profile = AgentSchemaContextProfile::default();
     let schema_context_profile = view.agent_schema_context_profile(agent);
@@ -784,6 +824,11 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
         pending_source_reliability_failures,
         pending_acquisition_exhaustion_resets,
     }
+}
+
+fn empty_testimony_reliability() -> &'static TestimonyReliability {
+    static EMPTY: OnceLock<TestimonyReliability> = OnceLock::new();
+    EMPTY.get_or_init(TestimonyReliability::default)
 }
 
 fn extract_opportunity_compiler_candidates(
@@ -943,6 +988,7 @@ fn filter_suppressed_candidates(
                     SuppressionMatch::Discrepancy => GoalRejectionReason::SuppressedByDiscrepancy,
                     SuppressionMatch::Blocker(_) => GoalRejectionReason::SuppressedByBlocker,
                 },
+                testimony_trust_context: Vec::new(),
             });
             blocked_by_goal.entry(candidate.key).or_default().push((
                 opportunity,
@@ -2940,6 +2986,22 @@ fn extract_ask_witness_candidates(
                     });
                 continue;
             }
+            if let Some(summary) =
+                unreliable_testimony_suppression(ctx, diagnostics, *witness, topic)
+            {
+                diagnostics.suppressed.push(CandidateSuppressionDiagnostic {
+                    opportunity: OpportunityKey {
+                        goal_key: GoalKey::from(GoalKind::AskWitness {
+                            witness: *witness,
+                            topic,
+                        }),
+                        anchor: OpportunityAnchor::Entity(*witness),
+                    },
+                    reason: GoalRejectionReason::SuppressedByUnreliableTestimony,
+                    testimony_trust_context: vec![summary],
+                });
+                continue;
+            }
 
             let salience = compute_recency_weighted_salience(
                 &belief,
@@ -2989,6 +3051,22 @@ fn extract_ask_witness_candidates(
                         topic,
                         reason: AskWitnessGateRejectionReason::CooldownActive,
                     });
+                continue;
+            }
+            if let Some(summary) =
+                unreliable_testimony_suppression(ctx, diagnostics, *witness, topic)
+            {
+                diagnostics.suppressed.push(CandidateSuppressionDiagnostic {
+                    opportunity: OpportunityKey {
+                        goal_key: GoalKey::from(GoalKind::AskWitness {
+                            witness: *witness,
+                            topic,
+                        }),
+                        anchor: OpportunityAnchor::Entity(*witness),
+                    },
+                    reason: GoalRejectionReason::SuppressedByUnreliableTestimony,
+                    testimony_trust_context: vec![summary],
+                });
                 continue;
             }
 
@@ -3042,6 +3120,38 @@ fn extract_ask_witness_candidates(
             );
         }
     }
+}
+
+fn unreliable_testimony_suppression(
+    ctx: &GenerationContext<'_>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    witness: EntityId,
+    topic: TellTopic,
+) -> Option<TestimonyTrustSummary> {
+    let profile = ctx.view.testimony_trust_profile(ctx.agent)?;
+    let summary = crate::testimony_trust::testimony_trust_summary(
+        ctx.testimony_reliability,
+        &profile,
+        witness,
+        topic,
+    )?;
+    let floor = crate::testimony_trust::testimony_suppression_floor(&profile);
+    if summary.trust >= floor {
+        return None;
+    }
+    diagnostics
+        .omitted_testimony
+        .push(TestimonyCandidateOmission {
+            witness,
+            topic,
+            reason: TestimonyOmissionReason::SourceUnreliable {
+                source: witness,
+                topic,
+                trust: summary.trust,
+                threshold: floor,
+            },
+        });
+    Some(summary)
 }
 
 fn compute_belief_confidence(
@@ -7160,6 +7270,7 @@ mod tests {
         filter_suppressed_candidates, generate_candidates, generate_candidates_with_travel_horizon,
         need_hypothesis, proactive_curiosity_pressure, proactive_familiarity, proactive_novelty,
     };
+    use crate::TestimonyOmissionReason;
     use crate::{
         BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
         CandidateEvidenceTrace, ExpectationFailureCause, ExpectationFailurePhase,
@@ -7197,9 +7308,9 @@ mod tests {
         RecordEntryId, RecordKind, ResourceSource, RewardSource, RightKind, SharedTellState,
         ShelterTag, SleepQualityProfile, SleepRecoveryModifier, SocialObservation,
         SocialObservationDetail, SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic,
-        TheftFacts, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-        UtilityProfile, ViolationKind, ViolationMemory, WashBasinState, WorkstationTag, Wound,
-        WoundCause, WoundId,
+        TestimonyReliability, TheftFacts, Tick, TickRange, ToldBeliefMemory,
+        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationKind, ViolationMemory,
+        WashBasinState, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, BeliefRead, ControlBeliefView, DurationExpr,
@@ -7315,6 +7426,7 @@ mod tests {
             BTreeMap<(EntityId, InstitutionalBeliefKey), Vec<BelievedInstitutionalClaim>>,
         believed_rights: BTreeMap<(EntityId, EntityId), Vec<EffectiveRight>>,
         epistemic_disposition_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
+        testimony_trust_profiles: BTreeMap<EntityId, worldwake_core::TestimonyTrustProfile>,
         violation_disposition_profiles:
             BTreeMap<EntityId, worldwake_core::ViolationDispositionProfile>,
         theft_disposition_profiles: BTreeMap<EntityId, worldwake_core::TheftDispositionProfile>,
@@ -7407,6 +7519,7 @@ mod tests {
                 institutional_claims: BTreeMap::new(),
                 believed_rights: BTreeMap::new(),
                 epistemic_disposition_profiles: BTreeMap::new(),
+                testimony_trust_profiles: BTreeMap::new(),
                 violation_disposition_profiles: BTreeMap::new(),
                 theft_disposition_profiles: BTreeMap::new(),
                 justice_disposition_profiles: BTreeMap::new(),
@@ -7637,6 +7750,13 @@ mod tests {
             agent: EntityId,
         ) -> Option<AgentSchemaContextProfile> {
             self.agent_schema_context_profiles.get(&agent).cloned()
+        }
+
+        fn testimony_trust_profile(
+            &self,
+            agent: EntityId,
+        ) -> Option<worldwake_core::TestimonyTrustProfile> {
+            self.testimony_trust_profiles.get(&agent).cloned()
         }
 
         fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
@@ -8499,6 +8619,7 @@ mod tests {
             tracing_enabled: false,
             current_plan: None,
             opportunities: &[],
+            testimony_reliability: super::empty_testimony_reliability(),
         }
     }
 
@@ -9503,6 +9624,7 @@ mod tests {
             tracing_enabled: true,
             current_plan: None,
             opportunities: &[],
+            testimony_reliability: super::empty_testimony_reliability(),
         };
         extract_ask_witness_candidates(&mut candidates, &mut diagnostics, &ctx);
         (candidates, diagnostics)
@@ -9642,6 +9764,79 @@ mod tests {
                 topic: TellTopic::EntityBelief { subject },
                 reason: AskWitnessGateRejectionReason::CooldownActive,
             }]
+        );
+    }
+
+    #[test]
+    fn ask_witness_emitter_suppresses_unreliable_witness() {
+        let witness = entity(3);
+        let subject = entity(4);
+        let (mut view, agent, place) = ask_witness_fixture(45, [witness]);
+        view.testimony_trust_profiles.insert(
+            agent,
+            worldwake_core::TestimonyTrustProfile {
+                trust_threshold: pm(400),
+                ..worldwake_core::TestimonyTrustProfile::default()
+            },
+        );
+        view.beliefs.insert(
+            agent,
+            vec![reported_entity_belief(subject, place, 5, witness)],
+        );
+        view.sync_belief_store(agent);
+        let topic = TellTopic::EntityBelief { subject };
+        let mut reliability = TestimonyReliability::default();
+        let key = worldwake_core::TestimonyReliabilityKey {
+            source: witness,
+            topic: worldwake_core::belief_topic_to_topic_scope(&topic),
+        };
+        reliability.record_refutation(key, worldwake_core::EventId(1), Tick(20));
+        reliability.record_refutation(key, worldwake_core::EventId(2), Tick(21));
+
+        let blocked = BlockerMemory::default();
+        let discrepancies = DiscrepancyMemory::default();
+        let violation_memory = ViolationMemory::default();
+        let recipes = RecipeRegistry::new();
+        let mut candidates = Vec::new();
+        let mut diagnostics = CandidateGenerationDiagnostics::default();
+        let ctx = GenerationContext {
+            view: &view,
+            agent,
+            place: Some(place),
+            travel_horizon: 6,
+            enterprise: EnterpriseSignals::default(),
+            blocked: &blocked,
+            discrepancies: &discrepancies,
+            violation_memory: &violation_memory,
+            recipes: &recipes,
+            current_tick: view.current_tick,
+            tracing_enabled: true,
+            current_plan: None,
+            opportunities: &[],
+            testimony_reliability: &reliability,
+        };
+
+        extract_ask_witness_candidates(&mut candidates, &mut diagnostics, &ctx);
+
+        assert!(candidates.is_empty());
+        assert_eq!(diagnostics.omitted_testimony.len(), 1);
+        assert_eq!(
+            diagnostics.omitted_testimony[0].reason,
+            TestimonyOmissionReason::SourceUnreliable {
+                source: witness,
+                topic,
+                trust: pm(100),
+                threshold: pm(200),
+            }
+        );
+        assert_eq!(diagnostics.suppressed.len(), 1);
+        assert_eq!(
+            diagnostics.suppressed[0].reason,
+            GoalRejectionReason::SuppressedByUnreliableTestimony
+        );
+        assert_eq!(
+            diagnostics.suppressed[0].testimony_trust_context[0].trust,
+            pm(100)
         );
     }
 
@@ -11403,6 +11598,7 @@ mod tests {
             vec![CandidateSuppressionDiagnostic {
                 opportunity,
                 reason: GoalRejectionReason::SuppressedByBlocker,
+                testimony_trust_context: Vec::new(),
             }]
         );
     }
@@ -11802,6 +11998,7 @@ mod tests {
             tracing_enabled: false,
             current_plan: None,
             opportunities: &[],
+            testimony_reliability: super::empty_testimony_reliability(),
         };
 
         assert!(!super::relief_path_actionable(
@@ -13359,6 +13556,7 @@ mod tests {
             tracing_enabled: false,
             current_plan: None,
             opportunities: &[],
+            testimony_reliability: super::empty_testimony_reliability(),
         };
         let mut candidates = Vec::new();
         let mut diagnostics = CandidateGenerationDiagnostics::default();
@@ -13896,6 +14094,7 @@ mod tests {
             tracing_enabled: false,
             current_plan: None,
             opportunities: &[],
+            testimony_reliability: super::empty_testimony_reliability(),
         };
         let mut candidates = Vec::new();
         let mut diagnostics = CandidateGenerationDiagnostics::default();
@@ -19638,6 +19837,7 @@ mod tests {
             tracing_enabled: false,
             current_plan: Some(&current_plan),
             opportunities: &[],
+            testimony_reliability: super::empty_testimony_reliability(),
         };
 
         let (_pending, incidents) = extract_expectation_violation_candidates(
@@ -19728,6 +19928,7 @@ mod tests {
             tracing_enabled: false,
             current_plan: Some(&current_plan),
             opportunities: &[],
+            testimony_reliability: super::empty_testimony_reliability(),
         };
 
         let (_pending, incidents) = extract_expectation_violation_candidates(
@@ -21376,6 +21577,7 @@ mod tests {
             tracing_enabled: false,
             current_plan: None,
             opportunities: &[],
+            testimony_reliability: super::empty_testimony_reliability(),
         };
 
         assert_eq!(

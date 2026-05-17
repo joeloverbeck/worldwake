@@ -109,6 +109,8 @@ fn golden_decision_payload_goal_committed_records_rejected_drink_and_assumptions
                 rejection_dimension: Some(RankedGoalComparisonDimensionTag::MotiveScore),
             }],
             assumptions: vec![need_assumption()],
+            testimony_trust_context: Vec::new(),
+            route_preference_context: Vec::new(),
         }),
     );
 

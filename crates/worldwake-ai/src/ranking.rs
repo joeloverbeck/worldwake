@@ -53,8 +53,8 @@ use worldwake_core::{
     MultiplierPermille, NoticeTopic, ObligationExecutionTracker, ObligationSatiationProfile,
     OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, PreferenceProfile, Quantity,
     ReliabilityRecord, RepairMemory, RightKind, SourceKey, SubstitutePreferences, SurveyRecord,
-    TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence,
-    escalation_multiplier, failure_ratio_permille,
+    TellTopic, TestimonyReliability, ThresholdBand, Tick, UtilityProfile, ViolationKind,
+    belief_confidence, escalation_multiplier, failure_ratio_permille,
 };
 use worldwake_sim::{
     BeliefRead, CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score,
@@ -211,6 +211,32 @@ pub(crate) fn rank_candidates_with_memories(
     repair_memory: &RepairMemory,
     learned_opportunity_memory: &LearnedOpportunityMemory,
 ) -> RankingOutcome {
+    rank_candidates_with_memories_and_testimony_reliability(
+        candidates,
+        view,
+        agent,
+        current_tick,
+        utility,
+        decision_context,
+        repair_memory,
+        learned_opportunity_memory,
+        empty_testimony_reliability(),
+    )
+}
+
+#[must_use]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn rank_candidates_with_memories_and_testimony_reliability(
+    candidates: &[GoalOffer],
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    current_tick: Tick,
+    utility: &UtilityProfile,
+    decision_context: DecisionContext,
+    repair_memory: &RepairMemory,
+    learned_opportunity_memory: &LearnedOpportunityMemory,
+    testimony_reliability: &TestimonyReliability,
+) -> RankingOutcome {
     let context = RankingContext::with_memories(
         view,
         agent,
@@ -219,6 +245,7 @@ pub(crate) fn rank_candidates_with_memories(
         decision_context,
         repair_memory,
         learned_opportunity_memory,
+        testimony_reliability,
     );
 
     let mut suppressed = Vec::new();
@@ -238,6 +265,7 @@ pub(crate) fn rank_candidates_with_memories(
                         anchor: candidate.anchor,
                     },
                     reason: GoalRejectionReason::SuppressedByStressPolicy,
+                    testimony_trust_context: Vec::new(),
                 },
             );
             continue;
@@ -272,6 +300,9 @@ pub(crate) fn rank_candidates_with_memories(
             crate::feasibility::FeasibilityHint::Uncertain,
         );
         if let Some(entry) = survey_damping_entry(candidate, &context) {
+            damped.push(entry);
+        }
+        if let Some(entry) = testimony_damping_entry(candidate, &context) {
             damped.push(entry);
         }
         if scored.motive_score == 0 {
@@ -499,6 +530,7 @@ pub(crate) fn apply_pending_source_reliability_failures(
         inputs.decision_context,
         inputs.repair_memory,
         inputs.learned_opportunity_memory,
+        inputs.testimony_reliability,
     );
 
     for entry in ranked.iter_mut() {
@@ -558,6 +590,7 @@ pub(crate) struct PendingSourceReliabilityInputs<'a> {
     pub(crate) decision_context: DecisionContext,
     pub(crate) repair_memory: &'a RepairMemory,
     pub(crate) learned_opportunity_memory: &'a LearnedOpportunityMemory,
+    pub(crate) testimony_reliability: &'a TestimonyReliability,
 }
 
 fn apply_source_reliability_discount_with_pending_failures(
@@ -741,6 +774,7 @@ pub(crate) struct RankingContext<'a> {
     utility: &'a UtilityProfile,
     repair_memory: &'a RepairMemory,
     learned_opportunity_memory: &'a LearnedOpportunityMemory,
+    testimony_reliability: &'a TestimonyReliability,
     needs: Option<HomeostaticNeeds>,
     thresholds: Option<DriveThresholds>,
     exposure: Option<DeprivationExposure>,
@@ -775,9 +809,11 @@ impl<'a> RankingContext<'a> {
             decision_context,
             empty_repair_memory(),
             empty_learned_opportunity_memory(),
+            empty_testimony_reliability(),
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn with_memories(
         view: &'a dyn GoalBeliefView,
         agent: EntityId,
@@ -786,6 +822,7 @@ impl<'a> RankingContext<'a> {
         decision_context: DecisionContext,
         repair_memory: &'a RepairMemory,
         learned_opportunity_memory: &'a LearnedOpportunityMemory,
+        testimony_reliability: &'a TestimonyReliability,
     ) -> Self {
         let danger_assessment = assess_danger(view, agent);
         let satiation_profile = view.obligation_satiation_profile(agent);
@@ -803,6 +840,7 @@ impl<'a> RankingContext<'a> {
             utility,
             repair_memory,
             learned_opportunity_memory,
+            testimony_reliability,
             needs: view.homeostatic_needs(agent),
             thresholds: view.drive_thresholds(agent),
             exposure: view.deprivation_exposure(agent),
@@ -832,6 +870,11 @@ fn empty_repair_memory() -> &'static RepairMemory {
 fn empty_learned_opportunity_memory() -> &'static LearnedOpportunityMemory {
     static EMPTY: OnceLock<LearnedOpportunityMemory> = OnceLock::new();
     EMPTY.get_or_init(LearnedOpportunityMemory::default)
+}
+
+fn empty_testimony_reliability() -> &'static TestimonyReliability {
+    static EMPTY: OnceLock<TestimonyReliability> = OnceLock::new();
+    EMPTY.get_or_init(TestimonyReliability::default)
 }
 
 #[derive(Copy, Clone)]
@@ -1462,7 +1505,8 @@ fn ask_witness_motive(
     );
     let signal = weighted_gap.saturating_add(recency_bonus);
     let base = score_product(context.utility.social_weight, signal);
-    apply_ask_witness_learned_damping(candidate, context, base)
+    let testimony_damped = apply_ask_witness_testimony_damping(witness, topic, context, base);
+    apply_ask_witness_learned_damping(candidate, context, testimony_damped)
 }
 
 fn ask_witness_belief_confidence(
@@ -1514,6 +1558,38 @@ fn apply_ask_witness_learned_damping(
         return base;
     }
     scale_motive_by_confidence(base, ASK_WITNESS_LEARNED_DAMPING_FACTOR)
+}
+
+fn apply_ask_witness_testimony_damping(
+    witness: EntityId,
+    topic: TellTopic,
+    context: &RankingContext<'_>,
+    base: u32,
+) -> u32 {
+    if base == 0 {
+        return 0;
+    }
+    let Some(profile) = context.view.testimony_trust_profile(context.agent) else {
+        return base;
+    };
+    let Some(summary) = crate::testimony_trust::testimony_trust_summary(
+        context.testimony_reliability,
+        &profile,
+        witness,
+        topic,
+    ) else {
+        return base;
+    };
+    let threshold = profile.trust_threshold;
+    if summary.trust >= threshold {
+        return base;
+    }
+    let floor = crate::testimony_trust::testimony_suppression_floor(&profile);
+    if summary.trust < floor {
+        return 0;
+    }
+    let factor = crate::testimony_trust::testimony_damping_factor(summary.trust, threshold, floor);
+    scale_motive_by_confidence(base, factor)
 }
 
 fn matching_survey_record<'a>(
@@ -1576,6 +1652,34 @@ fn survey_damping_entry(
             confidence: record.confidence,
         },
     })
+}
+
+fn testimony_damping_entry(
+    candidate: &GoalOffer,
+    context: &RankingContext<'_>,
+) -> Option<CandidateDampingEntry> {
+    let GoalKind::AskWitness { witness, topic } = candidate.key.kind else {
+        return None;
+    };
+    let profile = context.view.testimony_trust_profile(context.agent)?;
+    let summary = crate::testimony_trust::testimony_trust_summary(
+        context.testimony_reliability,
+        &profile,
+        witness,
+        topic,
+    )?;
+    let floor = crate::testimony_trust::testimony_suppression_floor(&profile);
+    (summary.trust >= floor && summary.trust < profile.trust_threshold).then_some(
+        CandidateDampingEntry {
+            goal_key: candidate.key,
+            reason: CandidateDampingReason::TestimonySourceUnreliable {
+                source: witness,
+                topic,
+                trust: summary.trust,
+                threshold: profile.trust_threshold,
+            },
+        },
+    )
 }
 
 fn exploration_motive(context: &RankingContext<'_>, motivating_need: ExplorationMotivation) -> u32 {
@@ -3114,7 +3218,7 @@ mod tests {
         RecordedViolation, ReliabilityRecord, ResourceSource, RewardSource, RightKind,
         RouteExperience, ShelterTag, SleepQualityProfile, SleepRecoveryModifier, SourceKey,
         SourceReliability, SubstitutePreferences, SurveyMemory, SurveyRecord, TellTopic,
-        TheftDispositionProfile, TheftFacts, Tick, TickRange, TradeCategory,
+        TestimonyReliability, TheftDispositionProfile, TheftFacts, Tick, TickRange, TradeCategory,
         TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId, ViolationKind,
         WashBasinState, WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
     };
@@ -3159,6 +3263,7 @@ mod tests {
         theft_profiles: BTreeMap<EntityId, TheftDispositionProfile>,
         justice_profiles: BTreeMap<EntityId, JusticeDispositionProfile>,
         epistemic_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
+        testimony_trust_profiles: BTreeMap<EntityId, worldwake_core::TestimonyTrustProfile>,
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         known_recipes: BTreeMap<EntityId, Vec<RecipeId>>,
         recipe_definitions: BTreeMap<RecipeId, RecipeDefinition>,
@@ -3327,6 +3432,13 @@ mod tests {
         }
         fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
             self.preference_profiles.get(&agent).copied()
+        }
+
+        fn testimony_trust_profile(
+            &self,
+            agent: EntityId,
+        ) -> Option<worldwake_core::TestimonyTrustProfile> {
+            self.testimony_trust_profiles.get(&agent).cloned()
         }
     }
 
@@ -5602,6 +5714,7 @@ mod tests {
                         anchor: OpportunityAnchor::None,
                     },
                     reason: GoalRejectionReason::SuppressedByStressPolicy,
+                    testimony_trust_context: Vec::new(),
                 }
             ]
         );
@@ -6792,6 +6905,7 @@ mod tests {
                 decision_context: build_decision_context(&view, agent),
                 repair_memory: super::empty_repair_memory(),
                 learned_opportunity_memory: super::empty_learned_opportunity_memory(),
+                testimony_reliability: super::empty_testimony_reliability(),
             },
             &[OpportunityExpectationFailureIncident {
                 opportunity: familiar_opportunity,
@@ -7720,6 +7834,86 @@ mod tests {
 
         assert!(baseline[0].motive_score > 0);
         assert!(damped[0].motive_score < baseline[0].motive_score);
+    }
+
+    #[test]
+    fn ask_witness_motive_score_is_damped_by_unreliable_testimony_source() {
+        let agent = entity(1);
+        let witness = entity(2);
+        let subject = entity(3);
+        let mut view = base_view(agent);
+        view.epistemic_profiles
+            .insert(agent, EpistemicDispositionProfile::default());
+        view.testimony_trust_profiles.insert(
+            agent,
+            worldwake_core::TestimonyTrustProfile {
+                trust_threshold: pm(400),
+                ..worldwake_core::TestimonyTrustProfile::default()
+            },
+        );
+        view.beliefs.insert(
+            agent,
+            vec![(
+                subject,
+                believed_state(
+                    1,
+                    PerceptionSource::Report {
+                        from: witness,
+                        chain_len: 1,
+                    },
+                ),
+            )],
+        );
+        let candidate = goal_at_entity(
+            GoalKind::AskWitness {
+                witness,
+                topic: TellTopic::EntityBelief { subject },
+            },
+            witness,
+        );
+        let baseline = rank(
+            std::slice::from_ref(&candidate),
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+        let mut reliability = TestimonyReliability::default();
+        let topic = TellTopic::EntityBelief { subject };
+        let key = worldwake_core::TestimonyReliabilityKey {
+            source: witness,
+            topic: worldwake_core::belief_topic_to_topic_scope(&topic),
+        };
+        reliability.record_refutation(key, worldwake_core::EventId(1), Tick(8));
+        reliability.record_stale(key, worldwake_core::EventId(2), Tick(9));
+        let dc = build_decision_context(&view, agent);
+
+        let outcome = super::rank_candidates_with_memories_and_testimony_reliability(
+            std::slice::from_ref(&candidate),
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            dc,
+            super::empty_repair_memory(),
+            super::empty_learned_opportunity_memory(),
+            &reliability,
+        );
+        let damped = outcome.ranked;
+
+        assert!(baseline[0].motive_score > 0);
+        assert!(damped[0].motive_score < baseline[0].motive_score);
+        assert_eq!(outcome.damped.len(), 1);
+        assert_eq!(
+            outcome.damped[0].reason,
+            CandidateDampingReason::TestimonySourceUnreliable {
+                source: witness,
+                topic,
+                trust: pm(300),
+                threshold: pm(400),
+            }
+        );
     }
 
     #[test]

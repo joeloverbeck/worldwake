@@ -29,7 +29,7 @@ Phase 12: AI Architecture Evolution — Draft
 - S143 (Static Belief-View Trait Separation, Phase 12, archived at `archive/specs/S143-static-belief-view-trait-separation.md`) — provides the trait fences the belief-wall trap golden exercises; `S143STABELVIE-006` already landed that regression.
 - S148 (Portfolio Slot Expansion, Phase 12) — provides the seven-slot portfolio the office-vacancy golden exercises.
 - S150 (Cross-Goal Blocker Scoping, archived at `archive/specs/S150-cross-goal-blocker-scoping.md`) — provides the typed scopes the scaled-contention golden checks.
-- S151 (Testimony Reliability and Route Preferences, Phase 12) — provides the testimony substrate the false-rumor-justice golden exercises.
+- S151 (Testimony Reliability and Route Preferences, archived at `archive/specs/S151-testimony-reliability-and-route-preferences.md`) — provides the testimony substrate the false-rumor-justice golden exercises.
 - S125 (Institutional Treasuries and Bounty Funding, archived) — used by office-vacancy scenario for institutional bounty issuance.
 - S119 / S121 (Authored Survival Health Contracts, archived) — golden-harness contract assertion helpers.
 

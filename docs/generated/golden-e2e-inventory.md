@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 49
-- Files contributing `golden_*` tests: 49
-- Total `golden_*` tests: 222
+- Golden test files: 52
+- Files contributing `golden_*` tests: 52
+- Total `golden_*` tests: 237
 
 ## Per-File Inventory
 
@@ -18,6 +18,7 @@ Do not hand-edit it.
 | `golden_artifact_lifecycle.rs` | 5 |
 | `golden_belief_wall_trap.rs` | 3 |
 | `golden_contention_inspectability.rs` | 5 |
+| `golden_cross_goal_blocker_scoping.rs` | 8 |
 | `golden_decision_history_events.rs` | 1 |
 | `golden_decision_payload.rs` | 4 |
 | `golden_epistemic_sensing.rs` | 6 |
@@ -38,6 +39,7 @@ Do not hand-edit it.
 | `golden_planner_pathology_degenerate.rs` | 1 |
 | `golden_portfolio_planning.rs` | 1 |
 | `golden_quantity_aware_acquisition.rs` | 5 |
+| `golden_route_preferences.rs` | 4 |
 | `golden_scenario_diagnostics_fixture.rs` | 1 |
 | `golden_scenario_diagnostics_replay.rs` | 1 |
 | `golden_simulation_gaps.rs` | 5 |
@@ -61,6 +63,7 @@ Do not hand-edit it.
 | `golden_survival_tell.rs` | 2 |
 | `golden_survival_theft.rs` | 2 |
 | `golden_survival_trade.rs` | 2 |
+| `golden_testimony_reliability.rs` | 3 |
 | `golden_travel_physiology.rs` | 12 |
 
 ### `golden_activation_decay.rs`
@@ -111,6 +114,17 @@ Do not hand-edit it.
 - `golden_well_facility_queue_admission`
 - `golden_blocker_memory_attribution_payload_resolves`
 - `golden_survival_contested_replay_parity`
+
+### `golden_cross_goal_blocker_scoping.rs`
+
+- `route_segment_blocker_suppresses_multiple_goals_on_same_segment`
+- `counterparty_blocker_suppresses_trade_and_ask_witness_goals`
+- `route_segment_ttl_expiry_restores_candidate_emission`
+- `route_retraversed_safely_clears_matching_blocker_before_ttl`
+- `counterparty_accepted_clears_matching_blocker_before_ttl`
+- `discrepancy_memory_preserves_parallel_route_scope_suppression`
+- `blocker_source_event_points_to_recorded_event`
+- `same_seed_blocker_memory_serializes_identically`
 
 ### `golden_decision_history_events.rs`
 
@@ -276,6 +290,13 @@ Do not hand-edit it.
 - `golden_s126_long_horizon_scales_desired_target`
 - `golden_scenario_e_queue_abandonment_promotes_next_actor`
 
+### `golden_route_preferences.rs`
+
+- `golden_route_preference_safe_traversals_raise_preference`
+- `golden_route_preference_dangerous_traversal_lowers_preference`
+- `golden_route_preference_decays_to_neutral_after_profile_window`
+- `golden_route_preference_and_route_segment_blocker_compose_independently`
+
 ### `golden_scenario_diagnostics_fixture.rs`
 
 - `golden_scenario_diagnostics_survival_baseline_fixture_is_stable`
@@ -416,6 +437,12 @@ Do not hand-edit it.
 
 - `survival_trade_proves_substitute_market_branch`
 - `survival_trade_replays_deterministically`
+
+### `golden_testimony_reliability.rs`
+
+- `golden_testimony_reliability_route_hazard_refutation_records_context`
+- `golden_testimony_reliability_confirmation_raises_trust_above_neutral`
+- `golden_testimony_reliability_repeated_false_accusation_suppresses_source`
 
 ### `golden_travel_physiology.rs`
 

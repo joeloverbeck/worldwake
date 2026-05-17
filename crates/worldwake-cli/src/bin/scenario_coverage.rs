@@ -1315,6 +1315,8 @@ fn authored_agent_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str> {
             contention_disposition,
             commodity_valuation,
             substitute_preferences,
+            testimony_trust_profile,
+            route_preference_profile,
             known_recipes,
         } = agent;
 
@@ -1365,6 +1367,11 @@ fn authored_agent_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str> {
             (contention_disposition.is_some(), "contention_disposition"),
             (commodity_valuation.is_some(), "commodity_valuation"),
             (substitute_preferences.is_some(), "substitute_preferences"),
+            (testimony_trust_profile.is_some(), "testimony_trust_profile"),
+            (
+                route_preference_profile.is_some(),
+                "route_preference_profile",
+            ),
             (known_recipes.is_some(), "known_recipes"),
         ] {
             if present {

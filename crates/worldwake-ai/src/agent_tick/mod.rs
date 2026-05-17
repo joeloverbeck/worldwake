@@ -2,6 +2,7 @@ mod active_action;
 mod candidates;
 mod execution;
 mod frame;
+mod learned_state_observation;
 mod observation;
 mod planning;
 pub(crate) mod portfolio;
@@ -22,6 +23,7 @@ use frame::{
     record_assumption_failure, record_source_invalidation, update_frame_for_adopted_plan,
 };
 pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
+use learned_state_observation::record_learned_state_updates;
 use observation::{
     CompletedPlanSummary, ExpectationMismatchContext, InFlightReconciliation, ReadPhaseContext,
     emit_expectation_mismatch, reconcile_in_flight_state,
@@ -30,8 +32,9 @@ use observation::{
 #[cfg(test)]
 use planning::plan_and_validate_next_step_traced;
 use planning::{
-    build_candidate_plans, plan_and_validate_next_step_traced_with_opportunity_index,
-    summarize_ranked_goal, summarize_step,
+    build_candidate_plans_with_route_preference,
+    plan_and_validate_next_step_traced_with_opportunity_index, summarize_ranked_goal,
+    summarize_step,
 };
 
 use crate::decision_trace::{
@@ -1115,6 +1118,7 @@ fn emit_candidate_decision_events(
                 agent,
                 goal_key: suppression.opportunity.goal_key,
                 reason: suppression.reason,
+                testimony_trust_context: suppression.testimony_trust_context.clone(),
             }),
         );
     }
@@ -1424,6 +1428,8 @@ fn process_agent(
         &mut discrepancy_memory,
         agent,
     )?;
+
+    record_learned_state_updates(runtime, agent, ctx.event_log, ctx.world.topology(), tick);
 
     // Detect progress recorded during reconciliation (advance_completed_step).
     if let Some(ref mut ft) = frame_transitions {
@@ -2042,6 +2048,7 @@ fn process_agent(
                 omitted_political: read_result.omitted_political,
                 omitted_bandit: read_result.omitted_bandit,
                 omitted_social: read_result.omitted_social,
+                omitted_testimony: read_result.omitted_testimony,
                 omitted_violation_detection: read_result.omitted_violation_detection,
             };
 

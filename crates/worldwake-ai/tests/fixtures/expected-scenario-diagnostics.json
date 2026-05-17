@@ -5334,7 +5334,8 @@
   "belief": {
     "stale_belief_actions": 0,
     "contradicted_belief_actions": 23,
-    "source_reliability_changes": 0,
+    "source_reliability_changes_by_topic": {},
+    "route_preference_changes": 0,
     "false_rumor_propagation_count": 0,
     "correction_latency": {
       "n": 0,

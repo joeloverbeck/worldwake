@@ -98,10 +98,15 @@ pub mod repair_memory;
 pub mod reward_encumbrance;
 pub mod rights;
 pub mod risk_weight_profile;
+pub mod route_preference;
+pub mod route_preference_profile;
 pub mod sleep_episode;
 pub mod social_artifact;
 pub mod survey_memory;
 pub mod test_utils;
+pub mod testimony_reliability;
+pub mod testimony_trust_profile;
+pub mod topic_scope;
 pub mod topology;
 pub mod trade;
 pub mod traits;
@@ -182,9 +187,10 @@ pub use decision_event_payload::{
     OpportunityExpectationKindTag, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
     PlanInvalidationReason, PursuitInvalidationReasonTag, RankedGoalComparisonDimensionTag,
     RecordRef, RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
-    ReplanTriggeredPayload, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
-    SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKeyPayload,
-    SurveyRecordedPayload, WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
+    ReplanTriggeredPayload, RoutePreferenceSummary, SleepEpisodeEndedPayload,
+    SleepEpisodeStartedPayload, SourceAttributionOutcomeTag, SourceExpectationFailurePayload,
+    SourceKeyPayload, SurveyRecordedPayload, TestimonyTrustSummary, WakeReason,
+    WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
 };
 pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,
@@ -275,6 +281,8 @@ pub use repair_memory::{BreachSignature, RepairEntry, RepairMemory};
 pub use reward_encumbrance::{RewardEncumbrance, RewardReservation};
 pub use rights::{EffectiveRight, RightKind};
 pub use risk_weight_profile::RiskWeightProfile;
+pub use route_preference::{RoutePreference, RoutePreferenceEntry};
+pub use route_preference_profile::RoutePreferenceProfile;
 pub use sleep_episode::{
     GroundComfortTag, ShelterTag, SleepEpisode, SleepQualityProfile, SleepRecoveryModifier,
     WakeCondition,
@@ -287,6 +295,12 @@ pub use social_artifact::{
     ProofRequirement, RevocationReason, RewardSource,
 };
 pub use survey_memory::{SurveyMemory, SurveyRecord};
+pub use testimony_reliability::{
+    PROVENANCE_RING_CAPACITY, TestimonyReliability, TestimonyReliabilityEntry,
+    TestimonyReliabilityKey,
+};
+pub use testimony_trust_profile::TestimonyTrustProfile;
+pub use topic_scope::{TopicScope, belief_topic_to_topic_scope, entity_aspect_to_topic_scope};
 pub use topology::{
     OUTDOOR_RELIEF_TAGS, Place, PlaceTag, PlaceTagSet, PrototypePlace, Route, Topology, TravelEdge,
     build_prototype_world, prototype_place_entity,

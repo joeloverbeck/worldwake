@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 181
-- Contributing golden test files: 46
-- Associated tests: 217
+- Scenario blocks: 188
+- Contributing golden test files: 48
+- Associated tests: 224
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -233,7 +233,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 393: Single-Slot Orchard Emits Arrival-Time Contention Payload
 
-- Source: `golden_contention_inspectability.rs:333`
+- Source: `golden_contention_inspectability.rs:334`
 
 **Setup**: Three human-controlled agents are co-located at a single-slot orchard with a pre-seeded waiting queue before the head actor makes a real harvest request.
 
@@ -243,7 +243,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 394: Survival Contested Emits Resource And Facility Contention
 
-- Source: `golden_contention_inspectability.rs:398`
+- Source: `golden_contention_inspectability.rs:399`
 
 **Setup**: Run authored survival-contested.ron long enough for resource-extraction and facility-queue contention substrates to emit.
 
@@ -253,7 +253,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 395: Well Facility Queue Admission Emits Contention Payload
 
-- Source: `golden_contention_inspectability.rs:448`
+- Source: `golden_contention_inspectability.rs:449`
 
 **Setup**: Two thirsty human-controlled agents queue for one auto-promoting contention-managed well with a pre-seeded facility queue.
 
@@ -263,7 +263,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 396: Reservation Conflict Backreference Resolves To Event Payload
 
-- Source: `golden_contention_inspectability.rs:515`
+- Source: `golden_contention_inspectability.rs:516`
 
 **Setup**: A real harvest grant emits ContentionResolved, then BlockerMemory stores that event id in ReservationConflict.contention_event.
 
@@ -273,7 +273,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 397: Survival Contested Contention Events Replay Deterministically
 
-- Source: `golden_contention_inspectability.rs:562`
+- Source: `golden_contention_inspectability.rs:563`
 
 **Setup**: Run survival-contested.ron twice from its authored seed for the full 1440-tick window and capture ContentionResolved payloads.
 
@@ -295,7 +295,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 385: S136 Decision Payload Stale-Belief Replan References Claim
 
-- Source: `golden_decision_payload.rs:133`
+- Source: `golden_decision_payload.rs:135`
 - Systems: AI, EventLog
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: DecisionHistory
@@ -307,7 +307,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 386: S136 Decision Payload Commodity Assumption Breach Records Observation
 
-- Source: `golden_decision_payload.rs:184`
+- Source: `golden_decision_payload.rs:186`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -319,7 +319,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 387: S136 Decision Payload Source Failure Records Source Observation
 
-- Source: `golden_decision_payload.rs:243`
+- Source: `golden_decision_payload.rs:245`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -838,7 +838,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 405: S141 Motive Sources Pain Contribution Dominates Hunger
 
-- Source: `golden_motive_sources.rs:188`
+- Source: `golden_motive_sources.rs:190`
 - Systems: AI
 - GoalKinds: TreatWounds, ConsumeOwnedCommodity
 - ActionDomains: Medical, Needs
@@ -850,7 +850,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 406: S141 Motive Sources Greed Weight Variation Is Profile State
 
-- Source: `golden_motive_sources.rs:234`
+- Source: `golden_motive_sources.rs:236`
 - Systems: AI
 - GoalKinds: PostNotice
 - ActionDomains: DecisionHistory
@@ -862,7 +862,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 407: S141 Motive Sources Empty Offer Assertion
 
-- Source: `golden_motive_sources.rs:266`
+- Source: `golden_motive_sources.rs:268`
 - Systems: AI
 - GoalKinds: Sleep
 - ActionDomains: DecisionHistory
@@ -1325,7 +1325,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 408: S137 Merchant-Moved Breach Rebinds To Sibling
 
-- Source: `golden_plan_repair.rs:215`
+- Source: `golden_plan_repair.rs:217`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1337,7 +1337,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 409: S137 Stale Belief Attempts Insert Verification
 
-- Source: `golden_plan_repair.rs:287`
+- Source: `golden_plan_repair.rs:289`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1349,7 +1349,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 410: S137 Recently Failed Repair Kind Is Skipped
 
-- Source: `golden_plan_repair.rs:339`
+- Source: `golden_plan_repair.rs:341`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1361,7 +1361,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 411: S137 Commodity Availability Changed Clears Blocker Structurally
 
-- Source: `golden_plan_repair.rs:390`
+- Source: `golden_plan_repair.rs:392`
 - Systems: AI, Core
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1373,7 +1373,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 412: S137 Repair Budget Exhaustion Falls Through To Full Replan
 
-- Source: `golden_plan_repair.rs:464`
+- Source: `golden_plan_repair.rs:467`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1385,7 +1385,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 413: S137 Abandon Produces Empty Progress Barrier
 
-- Source: `golden_plan_repair.rs:519`
+- Source: `golden_plan_repair.rs:522`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1397,7 +1397,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 414: S137 Phase 11 Approved Repair Gate Witness
 
-- Source: `golden_plan_repair.rs:562`
+- Source: `golden_plan_repair.rs:565`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1439,7 +1439,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 167: Portfolio Rejects Infeasible Commitment After Sleep Blocker Suppression
 
-- Source: `golden_portfolio_planning.rs:219`
+- Source: `golden_portfolio_planning.rs:221`
 - Systems: AI, Needs, Social, Production, Decision History
 - GoalKinds: Sleep, ReportMissing, ProduceCommodity
 - ActionDomains: Needs, Social, Production
@@ -1526,6 +1526,54 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: FOUNDATIONS Section VI Scenario E "Competing Claimants -> Queue or Race -> Expiry/Prune -> Next Actor Acts" — once B leaves the queue, the remaining queued actor (C) is granted the slot when they re-request after A's commit. The line is inspectable world state, not invisible runtime magic (FND-26 / FND-29).
 
 **Cross-system chain**: AcquireCommodity emissions for A, B, C -> A grants slot 0, B + C queue -> scaffolding removes B from queue -> A commits -> slot released -> C re-requests -> grant_or_signal_full grants slot 0 to C -> action trace shows C started, B never restarts.
+
+### Scenario 427: S151 Safe Route Traversal Raises Preference
+
+- Source: `golden_route_preferences.rs:40`
+- Systems: AI, Travel
+- GoalKinds: Travel
+- ActionDomains: Travel
+- Principles: P3, P15, P31
+
+**Setup**: the same route segment is traversed safely five times; no dangerous traversal is staged, so the signal is a pure safe-route preference.
+
+**Proves**: the route preference entry records all safe traversals and derives a preference above neutral.
+
+### Scenario 428: S151 Dangerous Traversal Lowers Preference
+
+- Source: `golden_route_preferences.rs:63`
+- Systems: AI, Travel, Combat
+- GoalKinds: Travel
+- ActionDomains: Travel
+- Principles: P3, P15, P31
+
+**Setup**: a dangerous traversal event is recorded on the direct segment with no safe offsetting observations.
+
+**Proves**: the route preference entry stores the dangerous event provenance and derives a preference below neutral.
+
+### Scenario 429: S151 Route Preference Decays To Neutral
+
+- Source: `golden_route_preferences.rs:89`
+- Systems: AI, Travel
+- GoalKinds: Travel
+- ActionDomains: Travel
+- Principles: P3, P15, P31
+
+**Setup**: safe traversals occur at tick 0 and time advances beyond the profile's one-day decay window with no further observations.
+
+**Proves**: the derived route preference returns to neutral after the concrete decay horizon.
+
+### Scenario 430: S151 Route Preference And S150 Blocker Compose
+
+- Source: `golden_route_preferences.rs:116`
+- Systems: AI, Travel, BlockerMemory
+- GoalKinds: Travel
+- ActionDomains: Travel
+- Principles: P12, P26, P28
+
+**Setup**: the same segment has a positive route preference and an active RouteSegment blocker; the alternate segment has neither.
+
+**Proves**: the preference remains inspectable as a soft signal while the blocker is independently active as a hard suppression surface.
 
 ### Scenario 421: Survival-baseline diagnostics fixture
 
@@ -2234,6 +2282,42 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: both agents satisfy the authored survival-health contract; the
 
 **Cross-system chain**: no listed bread market branch -> committed stage_stock_for_sale ->
+
+### Scenario 424: S151 Stale Route-Hazard Refutation Records Trust Context
+
+- Source: `golden_testimony_reliability.rs:98`
+- Systems: AI, EventLog
+- GoalKinds: AskWitness
+- ActionDomains: DecisionHistory
+- Principles: P15, P16, P29
+
+**Setup**: fixture isolates a single witness and route-hazard topic; no rival witness candidate is staged because this scenario proves the emitted suppression payload's testimony context.
+
+**Proves**: a direct refutation lowers trust below the suppression threshold and the GoalSuppressed payload preserves the source/topic trust summary.
+
+### Scenario 425: S151 Accurate Threat Confirmation Raises Source Trust
+
+- Source: `golden_testimony_reliability.rs:131`
+- Systems: AI, EventLog
+- GoalKinds: AskWitness
+- ActionDomains: DecisionHistory
+- Principles: P3, P15, P29
+
+**Setup**: one direct confirmation is recorded for a route-hazard report; no negative observations are staged, so the trust calculation has a single concrete cause.
+
+**Proves**: confirmed testimony raises trust above neutral and the summary is deterministic across repeated derivation.
+
+### Scenario 426: S151 Repeated False Accusation Crosses Suppression Threshold
+
+- Source: `golden_testimony_reliability.rs:160`
+- Systems: AI, EventLog
+- GoalKinds: AskWitness
+- ActionDomains: DecisionHistory
+- Principles: P15, P16, P31
+
+**Setup**: the same witness is refuted twice for accusation credibility, meeting the minimum-observation gate; unrelated topics are absent so the threshold crossing belongs to this source/topic pair.
+
+**Proves**: repeated refutations produce a below-threshold trust summary and the suppression payload carries the accusation topic context.
 
 ### Scenario 58: Travel Need Escalation
 

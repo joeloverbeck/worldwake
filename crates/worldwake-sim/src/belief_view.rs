@@ -22,10 +22,11 @@ use worldwake_core::{
     PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus,
     RecordData, RecordKind, RecordedViolation, ResourceExtractionQueues, ResourceSource,
     RewardEncumbrance, RewardSource, RightKind, RiskWeightProfile, RouteExperience,
-    SleepQualityProfile, SocialObservation, SourceReliability, StockStoragePolicy,
-    SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-    ViolationDispositionProfile, WashBasinState, WorkstationTag, Wound, effective_claim_confidence,
+    RoutePreferenceProfile, SleepQualityProfile, SocialObservation, SourceReliability,
+    StockStoragePolicy, SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic,
+    TestimonyTrustProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, WashBasinState, WorkstationTag,
+    Wound, effective_claim_confidence,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -517,6 +518,14 @@ pub trait GoalBeliefView: BelievedAuthorityView + LocalPhysicalObservationView {
         let _ = agent;
         None
     }
+    fn testimony_trust_profile(&self, agent: EntityId) -> Option<TestimonyTrustProfile> {
+        let _ = agent;
+        None
+    }
+    fn route_preference_profile(&self, agent: EntityId) -> Option<RoutePreferenceProfile> {
+        let _ = agent;
+        None
+    }
     fn place_sleep_quality_profile(&self, agent: EntityId, place: EntityId) -> SleepQualityProfile {
         let _ = (agent, place);
         SleepQualityProfile::default()
@@ -1003,6 +1012,14 @@ pub trait ProfileBeliefView {
         None
     }
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
+    fn testimony_trust_profile(&self, agent: EntityId) -> Option<TestimonyTrustProfile> {
+        let _ = agent;
+        None
+    }
+    fn route_preference_profile(&self, agent: EntityId) -> Option<RoutePreferenceProfile> {
+        let _ = agent;
+        None
+    }
     fn place_sleep_quality_profile(&self, agent: EntityId, place: EntityId) -> SleepQualityProfile {
         let _ = (agent, place);
         SleepQualityProfile::default()
@@ -2060,6 +2077,20 @@ where
         ProfileBeliefView::metabolism_profile(self, agent)
     }
 
+    fn testimony_trust_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::TestimonyTrustProfile> {
+        ProfileBeliefView::testimony_trust_profile(self, agent)
+    }
+
+    fn route_preference_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::RoutePreferenceProfile> {
+        ProfileBeliefView::route_preference_profile(self, agent)
+    }
+
     fn place_sleep_quality_profile(
         &self,
         agent: worldwake_core::EntityId,
@@ -2778,9 +2809,10 @@ mod tests {
         LastProactiveExplorationTick, LatrineFullness, LoadUnits, ObservationOmissionLog,
         OfficeData, PatrolProfile, PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness,
         Quantity, RecordData, RecordEntryId, RecordKind, ResourceSource, RewardEncumbrance,
-        RewardReservation, RewardSource, ShelterTag, SleepQualityProfile, SleepRecoveryModifier,
-        SuccessionLaw, SurveyMemory, TheftFacts, Tick, UniqueItemKind, ViolationId, VisibilitySpec,
-        WashBasinState, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
+        RewardReservation, RewardSource, RoutePreferenceProfile, ShelterTag, SleepQualityProfile,
+        SleepRecoveryModifier, SuccessionLaw, SurveyMemory, TestimonyTrustProfile, TheftFacts,
+        Tick, UniqueItemKind, ViolationId, VisibilitySpec, WashBasinState, WitnessData,
+        WorkstationTag, World, WorldTxn, build_prototype_world,
     };
 
     fn sample_claim(
@@ -2872,6 +2904,14 @@ mod tests {
             &self,
             _agent: EntityId,
         ) -> Option<worldwake_core::MetabolismProfile> {
+            None
+        }
+
+        fn testimony_trust_profile(&self, _agent: EntityId) -> Option<TestimonyTrustProfile> {
+            None
+        }
+
+        fn route_preference_profile(&self, _agent: EntityId) -> Option<RoutePreferenceProfile> {
             None
         }
 
@@ -3763,6 +3803,27 @@ mod tests {
         assert_eq!(
             GoalBeliefView::survey_memory(&view, agent),
             Some(&SurveyMemory::default())
+        );
+    }
+
+    #[test]
+    fn runtime_belief_view_s151_profile_accessors_return_seeded_defaults() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            commit_txn(txn);
+            agent
+        };
+        let view = PerAgentBeliefView::from_world(agent, &world);
+
+        assert_eq!(
+            GoalBeliefView::testimony_trust_profile(&view, agent),
+            Some(TestimonyTrustProfile::default())
+        );
+        assert_eq!(
+            GoalBeliefView::route_preference_profile(&view, agent),
+            Some(RoutePreferenceProfile::default())
         );
     }
 

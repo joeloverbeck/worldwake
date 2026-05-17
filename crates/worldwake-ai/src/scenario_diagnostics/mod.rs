@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use worldwake_core::{Discrepancy, GoalKind, PercentileBucket, Permille, Tick};
+use worldwake_core::{Discrepancy, GoalKind, PercentileBucket, Permille, Tick, TopicScope};
 
 use crate::{PlanTerminalKind, SlotKind};
 
@@ -57,7 +57,8 @@ pub struct RevalidationRepairMetrics {
 pub struct BeliefMetrics {
     pub stale_belief_actions: u64,
     pub contradicted_belief_actions: u64,
-    pub source_reliability_changes: u64,
+    pub source_reliability_changes_by_topic: BTreeMap<TopicScope, u64>,
+    pub route_preference_changes: u64,
     pub false_rumor_propagation_count: u64,
     pub correction_latency: PercentileBucket,
     pub blocker_counts_by_scope: BTreeMap<BlockerScopeVariantId, u64>,
@@ -124,7 +125,7 @@ mod tests {
     };
     use crate::{PlanTerminalKind, SlotKind};
     use std::collections::BTreeMap;
-    use worldwake_core::{Discrepancy, GoalKind, PercentileBucket, Permille, Tick};
+    use worldwake_core::{Discrepancy, GoalKind, PercentileBucket, Permille, Tick, TopicScope};
 
     #[test]
     fn scenario_diagnostics_report_round_trips_through_serde() {
@@ -228,7 +229,11 @@ mod tests {
             belief: BeliefMetrics {
                 stale_belief_actions: 2,
                 contradicted_belief_actions: 1,
-                source_reliability_changes: 3,
+                source_reliability_changes_by_topic: BTreeMap::from([
+                    (TopicScope::RouteHazard, 2),
+                    (TopicScope::ResourceAvailability, 1),
+                ]),
+                route_preference_changes: 4,
                 false_rumor_propagation_count: 0,
                 correction_latency: PercentileBucket::from_sorted(&[4, 9]),
                 blocker_counts_by_scope: BTreeMap::from([

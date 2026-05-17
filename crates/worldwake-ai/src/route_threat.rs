@@ -3,8 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::{PlanningSnapshot, derive_danger_pressure};
 use worldwake_core::{
     ActionDomain, ArtifactActionability, ArtifactKind, BeliefConfidencePolicy,
-    BelievedArtifactState, BelievedEntityState, EntityId, NoticeTopic, Permille, SocialObservation,
-    SocialObservationKind, Tick, belief_confidence,
+    BelievedArtifactState, BelievedEntityState, EntityId, NoticeTopic, Permille, RoutePreference,
+    RoutePreferenceProfile, RouteSegment, SocialObservation, SocialObservationKind, Tick,
+    belief_confidence,
 };
 use worldwake_sim::GoalBeliefView;
 
@@ -184,11 +185,14 @@ pub(crate) fn strongest_threat_warning_place(
         .max_by_key(|(place, signal)| (signal.value(), place.slot, place.generation))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn perceived_direct_travel_cost_from_memory(
     current_tick: Tick,
     confidence_policy: BeliefConfidencePolicy,
     entity_beliefs: &BTreeMap<EntityId, BelievedEntityState>,
     social_observations: &[SocialObservation],
+    route_preference: Option<&RoutePreference>,
+    route_preference_profile: Option<&RoutePreferenceProfile>,
     edge_from: EntityId,
     edge_to: EntityId,
     base_ticks: u32,
@@ -201,14 +205,56 @@ pub(crate) fn perceived_direct_travel_cost_from_memory(
         edge_from,
         edge_to,
     );
-    if threat.value() == 0 {
-        return base_ticks;
-    }
-
     let penalty = base_ticks
         .saturating_mul(u32::from(threat.value()))
         .div_ceil(1000);
-    base_ticks.saturating_add(penalty)
+    let threat_adjusted_cost = base_ticks.saturating_add(penalty);
+    apply_route_preference_cost_bias(
+        threat_adjusted_cost,
+        base_ticks,
+        current_tick,
+        route_preference,
+        route_preference_profile,
+        edge_from,
+        edge_to,
+    )
+}
+
+fn apply_route_preference_cost_bias(
+    cost: u32,
+    base_ticks: u32,
+    current_tick: Tick,
+    route_preference: Option<&RoutePreference>,
+    route_preference_profile: Option<&RoutePreferenceProfile>,
+    edge_from: EntityId,
+    edge_to: EntityId,
+) -> u32 {
+    let (Some(route_preference), Some(route_preference_profile)) =
+        (route_preference, route_preference_profile)
+    else {
+        return cost;
+    };
+    let Some(entry) = route_preference.get(&RouteSegment::new(edge_from, edge_to)) else {
+        return cost;
+    };
+    let preference = entry
+        .preference(route_preference_profile, current_tick)
+        .value();
+    match preference.cmp(&500) {
+        std::cmp::Ordering::Equal => cost,
+        std::cmp::Ordering::Greater => {
+            let adjustment = base_ticks
+                .saturating_mul(u32::from(preference - 500))
+                .div_ceil(1000);
+            cost.saturating_sub(adjustment).max(1)
+        }
+        std::cmp::Ordering::Less => {
+            let adjustment = base_ticks
+                .saturating_mul(u32::from(500 - preference))
+                .div_ceil(1000);
+            cost.saturating_add(adjustment)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -219,8 +265,8 @@ mod tests {
         ActionDomain, ArtifactActionability, ArtifactCredibility, ArtifactExistence, ArtifactKind,
         ArtifactLegalEffect, ArtifactVisibility, BeliefConfidencePolicy, BelievedActivity,
         BelievedArtifactState, BelievedEntityState, BodyPart, EntityId, NoticeTopic,
-        PerceptionSource, SocialObservation, SocialObservationDetail, Tick, Wound, WoundCause,
-        WoundId,
+        PerceptionSource, RoutePreference, RoutePreferenceProfile, RouteSegment, SocialObservation,
+        SocialObservationDetail, Tick, Wound, WoundCause, WoundId,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -454,6 +500,8 @@ mod tests {
             BeliefConfidencePolicy::default(),
             &BTreeMap::new(),
             &[],
+            None,
+            None,
             place_a,
             place_b,
             3,
@@ -463,6 +511,8 @@ mod tests {
             BeliefConfidencePolicy::default(),
             &beliefs,
             &[],
+            None,
+            None,
             place_a,
             place_b,
             3,
@@ -482,6 +532,8 @@ mod tests {
             BeliefConfidencePolicy::default(),
             &BTreeMap::new(),
             &[],
+            None,
+            None,
             place_a,
             place_b,
             3,
@@ -491,11 +543,106 @@ mod tests {
             BeliefConfidencePolicy::default(),
             &BTreeMap::from([(notice, sample_threat_warning(place_b, Tick(9)))]),
             &[],
+            None,
+            None,
             place_a,
             place_b,
             3,
         );
 
         assert!(warned_cost > safe_cost);
+    }
+
+    #[test]
+    fn route_preference_biases_perceived_direct_travel_cost_around_neutral() {
+        let place_a = entity(1);
+        let place_b = entity(2);
+        let segment = RouteSegment::new(place_a, place_b);
+        let profile = RoutePreferenceProfile {
+            days_to_decay_observations: 30,
+            minimum_traversals: 1,
+            ..RoutePreferenceProfile::default()
+        };
+        let mut preferred = RoutePreference::default();
+        preferred.record_safe(segment, Tick(9));
+        let mut avoided = RoutePreference::default();
+        avoided.record_dangerous(segment, worldwake_core::EventId(7), Tick(9));
+
+        let neutral_cost = perceived_direct_travel_cost_from_memory(
+            Tick(9),
+            BeliefConfidencePolicy::default(),
+            &BTreeMap::new(),
+            &[],
+            None,
+            None,
+            place_a,
+            place_b,
+            10,
+        );
+        let preferred_cost = perceived_direct_travel_cost_from_memory(
+            Tick(9),
+            BeliefConfidencePolicy::default(),
+            &BTreeMap::new(),
+            &[],
+            Some(&preferred),
+            Some(&profile),
+            place_a,
+            place_b,
+            10,
+        );
+        let avoided_cost = perceived_direct_travel_cost_from_memory(
+            Tick(9),
+            BeliefConfidencePolicy::default(),
+            &BTreeMap::new(),
+            &[],
+            Some(&avoided),
+            Some(&profile),
+            place_a,
+            place_b,
+            10,
+        );
+
+        assert_eq!(neutral_cost, 10);
+        assert!(preferred_cost < neutral_cost);
+        assert!(avoided_cost > neutral_cost);
+    }
+
+    #[test]
+    fn route_preference_cost_bias_uses_canonical_direction() {
+        let place_a = entity(1);
+        let place_b = entity(2);
+        let segment = RouteSegment::new(place_a, place_b);
+        let profile = RoutePreferenceProfile {
+            days_to_decay_observations: 30,
+            minimum_traversals: 1,
+            ..RoutePreferenceProfile::default()
+        };
+        let mut preference = RoutePreference::default();
+        preference.record_safe(segment, Tick(9));
+
+        let forward = perceived_direct_travel_cost_from_memory(
+            Tick(9),
+            BeliefConfidencePolicy::default(),
+            &BTreeMap::new(),
+            &[],
+            Some(&preference),
+            Some(&profile),
+            place_a,
+            place_b,
+            10,
+        );
+        let reverse = perceived_direct_travel_cost_from_memory(
+            Tick(9),
+            BeliefConfidencePolicy::default(),
+            &BTreeMap::new(),
+            &[],
+            Some(&preference),
+            Some(&profile),
+            place_b,
+            place_a,
+            10,
+        );
+
+        assert_eq!(forward, reverse);
     }
 }
