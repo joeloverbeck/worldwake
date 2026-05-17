@@ -148,7 +148,8 @@ pub use ranking::{
     rank_candidates,
 };
 pub use scenario_diagnostics::{
-    CandidateSuppressionCategory, ScenarioDiagnosticsReport, build_scenario_diagnostics,
+    BlockerScopeVariantId, CandidateSuppressionCategory, ScenarioDiagnosticsReport,
+    build_scenario_diagnostics,
 };
 pub use search::{PlanSearchResult, search_plan};
 pub use side_benefit::{PlanValue, SideBenefit, build_plan_value, detect_side_benefits};

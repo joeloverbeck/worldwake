@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, EdgeExperience, EntityId, EntityKind, EventLog, EventTag,
-    EventView, ExpectationId, GoalKind, Permille, Quantity, Tick, TravelEdgeId, VisibilitySpec,
-    WorldTxn, WoundCause, build_believed_entity_state,
+    ActionDefId, BlockerClearingCondition, BodyCostPerTick, EdgeExperience, EntityId, EntityKind,
+    EventLog, EventTag, EventView, ExpectationId, GoalKind, Permille, Quantity, RouteSegment, Tick,
+    TravelEdgeId, VisibilitySpec, WorldTxn, WoundCause, build_believed_entity_state,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerRegistry,
@@ -304,7 +304,34 @@ fn apply_travel_arrival(
     .map_err(|err| ActionError::InternalError(err.to_string()))?;
     let hostile = had_combat_during_travel(event_log, instance.actor, departure_tick, current_tick);
     record_route_experience(txn, instance.actor, edge_id, current_tick, hostile)?;
+    if !hostile {
+        clear_route_retraversed_blockers(txn, instance.actor, origin, destination)?;
+    }
     reinforce_exploration_arrival_belief(instance.actor, destination, current_tick, txn)?;
+    Ok(())
+}
+
+fn clear_route_retraversed_blockers(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    origin: EntityId,
+    destination: EntityId,
+) -> Result<(), ActionError> {
+    let Some(mut memory) = txn.get_component_blocker_memory(actor).cloned() else {
+        return Ok(());
+    };
+    let before = memory.intents.len();
+    let segment = RouteSegment::new(origin, destination);
+    memory.sweep_cleared(|blocker| {
+        matches!(
+            blocker.clearing_condition,
+            BlockerClearingCondition::RouteRetraversedSafely(cleared) if cleared == segment
+        )
+    });
+    if memory.intents.len() != before {
+        txn.set_component_blocker_memory(actor, memory)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
     Ok(())
 }
 
@@ -533,12 +560,12 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AgentBeliefStore, CauseRef, Container, ControlSource, EdgeExperience, EventLog,
-        EventPayload, EventView, EvidenceKind, ExplorationProfile, FrameState, GoalKey, GoalKind,
-        HomeostaticNeedId, InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits,
-        MetabolismProfile, PendingEvent, PerceptionSource, Place, PreferenceProfile, Quantity,
-        RouteExperience, Seed, Tick, Topology, TravelEdge, WitnessData, World,
-        build_believed_entity_state,
+        AgentBeliefStore, Blocker, BlockerMemory, BlockerScope, BlockingFact, CauseRef, Container,
+        ControlSource, EdgeExperience, EventId, EventLog, EventPayload, EventView, EvidenceKind,
+        ExplorationProfile, FrameState, GoalKey, GoalKind, HomeostaticNeedId, InTransitOnEdge,
+        IntentionDomain, IntentionFrame, LoadUnits, MetabolismProfile, PendingEvent,
+        PerceptionSource, Place, PreferenceProfile, Quantity, RouteExperience, Seed, Tick,
+        Topology, TravelEdge, WitnessData, World, build_believed_entity_state,
     };
     use worldwake_sim::{
         ActionExecutionAuthority, ActionInstance, ActionInstanceId, DeterministicRng,
@@ -971,6 +998,77 @@ mod tests {
             .get(log.events_by_tag(EventTag::ActionCommitted)[0])
             .unwrap();
         assert!(commit_record.tags().contains(&EventTag::Travel));
+    }
+
+    #[test]
+    fn safe_travel_commit_clears_matching_route_retraversal_blocker() {
+        let (mut world, actor, _, _, origin, destination) = setup_world();
+        let segment = RouteSegment::new(origin, destination);
+        let retained_segment = RouteSegment::new(destination, entity(3));
+        let mut memory = BlockerMemory::default();
+        memory.record(Blocker {
+            scope: BlockerScope::RouteSegment(segment),
+            blocking_fact: BlockingFact::DangerTooHigh,
+            diagnostic_context: None,
+            observed_tick: Tick(4),
+            expires_tick: Tick(20),
+            clearing_condition: BlockerClearingCondition::RouteRetraversedSafely(segment),
+            baseline_snapshot: None,
+            source_event: EventId(1),
+        });
+        memory.record(Blocker {
+            scope: BlockerScope::RouteSegment(retained_segment),
+            blocking_fact: BlockingFact::DangerTooHigh,
+            diagnostic_context: None,
+            observed_tick: Tick(4),
+            expires_tick: Tick(20),
+            clearing_condition: BlockerClearingCondition::RouteRetraversedSafely(retained_segment),
+            baseline_snapshot: None,
+            source_event: EventId(2),
+        });
+        let mut txn = new_txn(&mut world, 4);
+        txn.set_component_blocker_memory(actor, memory).unwrap();
+        commit_txn(txn);
+
+        let (defs, handlers, _) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
+        let instance_id = start_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            actor,
+            destination,
+        );
+
+        assert!(matches!(
+            complete_travel_action(
+                &mut world,
+                &mut log,
+                &mut active_actions,
+                &mut rng,
+                &defs,
+                &handlers,
+                instance_id,
+            ),
+            TickOutcome::Committed { .. }
+        ));
+
+        let memory = world.get_component_blocker_memory(actor).unwrap();
+        assert!(
+            !memory
+                .intents
+                .contains_key(&BlockerScope::RouteSegment(segment))
+        );
+        assert!(
+            memory
+                .intents
+                .contains_key(&BlockerScope::RouteSegment(retained_segment))
+        );
     }
 
     #[test]

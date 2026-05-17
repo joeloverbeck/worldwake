@@ -1301,7 +1301,7 @@ fn apply_committed_rejection_lifecycle(
             clear_committed_plan_state(runtime, jc, facility_intents);
             if let FeasibilityVerdict::RejectedBeforeSearch { reason } = slot.feasibility {
                 discrepancy_memory.record(worldwake_core::DiscrepancyEntry {
-                    blocker_key: worldwake_core::BlockerKey {
+                    scope: worldwake_core::BlockerKey {
                         goal_key: slot.ranked.offer.key,
                         place: match slot.ranked.offer.anchor {
                             OpportunityAnchor::Place(place) => Some(place),
@@ -1316,11 +1316,13 @@ fn apply_committed_rejection_lifecycle(
                             }
                         },
                         action_def: None,
-                    },
+                    }
+                    .into(),
                     discrepancy: reason,
                     observed_tick: current_tick,
                     expires_tick: Tick(current_tick.0.saturating_add(1)),
                     clearing_condition: worldwake_core::DiscrepancyClearing::TtlExpiry,
+                    source_event: worldwake_core::EventId(0),
                 });
             }
             agenda_state.committed = None;
@@ -2725,6 +2727,8 @@ mod tests {
             counterparty_refusal_backoff_ticks: CognitiveProfile::default()
                 .counterparty_refusal_backoff_ticks,
             route_unknown_backoff_ticks: CognitiveProfile::default().route_unknown_backoff_ticks,
+            route_segment_blocker_ticks: CognitiveProfile::default().route_segment_blocker_ticks,
+            counterparty_blocker_ticks: CognitiveProfile::default().counterparty_blocker_ticks,
             search_exhaustion_backoff_ticks: CognitiveProfile::default()
                 .search_exhaustion_backoff_ticks,
             partial_drift_backoff_ticks: CognitiveProfile::default().partial_drift_backoff_ticks,

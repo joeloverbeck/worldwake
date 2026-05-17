@@ -150,16 +150,18 @@ fn inject_prior_commitment(
 fn inject_probe_only_sleep_blocker(harness: &mut GoldenHarness, agent: EntityId, place: EntityId) {
     let mut memory = BlockerMemory::default();
     memory.record(Blocker {
-        blocker_key: BlockerKey {
+        scope: BlockerKey {
             goal_key: GoalKey::from(GoalKind::Sleep),
             place: Some(place),
             target: None,
             action_def: None,
-        },
+        }
+        .into(),
         blocking_fact: BlockingFact::NoKnownPath,
         diagnostic_context: None,
         observed_tick: Tick(0),
         expires_tick: Tick(8),
+        source_event: worldwake_core::EventId(0),
         clearing_condition: BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
     });

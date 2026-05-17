@@ -244,7 +244,9 @@ fn promote_revived(
                 .last_reconsidered_tick
                 .0
                 .saturating_add(u64::from(profile.revive_cooldown_ticks));
-        if !cooldown_ready || discrepancy_memory.is_suppressed(&blocker_key_from(entry), tick) {
+        if !cooldown_ready
+            || discrepancy_memory.is_suppressed(&blocker_key_from(entry).into(), tick)
+        {
             continue;
         }
         let Some(trigger) = entry.revival_trigger.as_ref() else {
@@ -1185,10 +1187,11 @@ mod tests {
         };
         let mut discrepancy_memory = worldwake_core::DiscrepancyMemory::default();
         discrepancy_memory.record(worldwake_core::DiscrepancyEntry {
-            blocker_key,
+            scope: blocker_key.into(),
             discrepancy: worldwake_core::Discrepancy::BeliefStale,
             observed_tick: Tick(1),
             expires_tick: Tick(20),
+            source_event: worldwake_core::EventId(0),
             clearing_condition: worldwake_core::DiscrepancyClearing::TtlExpiry,
         });
 

@@ -3,7 +3,7 @@ use worldwake_core::{
     AffordanceKey, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
     ClearingBaseline, CognitiveProfile, CommodityKind, ContentionIntents, Discrepancy,
     DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EntityBeliefAspect, EntityId,
-    GoalKey, GoalKind, IntentionFrame, Quantity, Tick,
+    EventId, GoalKey, GoalKind, IntentionFrame, Quantity, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -221,14 +221,20 @@ pub(crate) fn record_failure_classification(
                 context.current_tick + u64::from(blocking_fact_ttl(blocking_fact, cognitive));
             let (clearing_condition, baseline_snapshot) =
                 derive_clearing_condition(context.view, context.agent, blocking_fact, &blocker_key);
+            let scope = blocker_key.into();
             blocked_memory.record(Blocker {
-                blocker_key,
+                scope,
                 blocking_fact,
                 diagnostic_context: None,
                 observed_tick: context.current_tick,
                 expires_tick,
-                clearing_condition,
+                clearing_condition: BlockerClearingCondition::for_scope_and_fact(
+                    scope,
+                    blocking_fact,
+                    clearing_condition,
+                ),
                 baseline_snapshot,
+                source_event: EventId(0),
             });
             FailureClassification::Blocker(blocking_fact)
         }
@@ -236,7 +242,7 @@ pub(crate) fn record_failure_classification(
             let expires_tick =
                 context.current_tick + u64::from(discrepancy_ttl(discrepancy, cognitive));
             discrepancy_memory.record(DiscrepancyEntry {
-                blocker_key,
+                scope: blocker_key.into(),
                 discrepancy,
                 observed_tick: context.current_tick,
                 expires_tick,
@@ -245,6 +251,7 @@ pub(crate) fn record_failure_classification(
                     &blocker_key,
                     context.execution_failure,
                 ),
+                source_event: EventId(0),
             });
             FailureClassification::Discrepancy(discrepancy)
         }
@@ -1218,13 +1225,13 @@ fn is_blocker_cleared(view: &dyn RuntimeBeliefView, agent: EntityId, blocker: &B
             BlockerClearingCondition::CommodityAvailabilityChanged { commodity, place },
             Some(ClearingBaseline::CommodityQuantity { quantity: baseline }),
         ) => match blocker.blocking_fact {
-            BlockingFact::SellerOutOfStock => blocker.blocker_key.target.is_some_and(|seller| {
+            BlockingFact::SellerOutOfStock => blocker.scope.exact_target().is_some_and(|seller| {
                 view.entity_kind(seller).is_some()
                     && view.commodity_quantity(seller, *commodity) > Quantity(0)
             }),
             BlockingFact::SourceDepleted => blocker
-                .blocker_key
-                .target
+                .scope
+                .exact_target()
                 .and_then(|source| view.resource_source(source))
                 .is_some_and(|resource| resource.available_quantity > Quantity(0)),
             _ => view.locally_observed_commodity_quantity(agent, *place, *commodity) != *baseline,
@@ -1262,7 +1269,7 @@ fn is_blocker_cleared(view: &dyn RuntimeBeliefView, agent: EntityId, blocker: &B
         (
             BlockerClearingCondition::EntityReappeared { entity },
             Some(ClearingBaseline::EntityBelieved(false)),
-        ) => match blocker.blocker_key.goal_key.kind {
+        ) => match blocker.scope.exact_goal_key().unwrap().kind {
             GoalKind::TreatWounds { .. } | GoalKind::ReduceDanger => {
                 view.entity_kind(*entity).is_some() && view.is_alive(*entity)
             }
@@ -1940,6 +1947,8 @@ mod tests {
             counterparty_refusal_backoff_ticks: CognitiveProfile::default()
                 .counterparty_refusal_backoff_ticks,
             route_unknown_backoff_ticks: CognitiveProfile::default().route_unknown_backoff_ticks,
+            route_segment_blocker_ticks: CognitiveProfile::default().route_segment_blocker_ticks,
+            counterparty_blocker_ticks: CognitiveProfile::default().counterparty_blocker_ticks,
             search_exhaustion_backoff_ticks: CognitiveProfile::default()
                 .search_exhaustion_backoff_ticks,
             partial_drift_backoff_ticks: CognitiveProfile::default().partial_drift_backoff_ticks,
@@ -2206,9 +2215,9 @@ mod tests {
         assert_eq!(blocked.intents.len(), 1);
         let intent = blocked.intents.values().next().unwrap();
         assert_eq!(intent.blocking_fact, BlockingFact::SellerOutOfStock);
-        assert_eq!(intent.blocker_key.target, Some(seller));
-        assert_eq!(intent.blocker_key.place, Some(place));
-        assert_eq!(intent.blocker_key.action_def, Some(ActionDefId(1)));
+        assert_eq!(intent.scope.exact_target(), Some(seller));
+        assert_eq!(intent.scope.exact_place(), Some(place));
+        assert_eq!(intent.scope.exact_action_def(), Some(ActionDefId(1)));
         assert_eq!(
             intent.clearing_condition,
             BlockerClearingCondition::CommodityAvailabilityChanged {
@@ -2326,9 +2335,9 @@ mod tests {
         assert!(blocked.intents.is_empty());
         let entry = discrepancies.entries.values().next().unwrap();
         assert_eq!(entry.discrepancy, Discrepancy::ImproperPlanningState);
-        assert_eq!(entry.blocker_key.target, Some(bread_lot));
-        assert_eq!(entry.blocker_key.place, Some(remote_place));
-        assert_eq!(entry.blocker_key.action_def, Some(step.def_id));
+        assert_eq!(entry.scope.exact_target(), Some(bread_lot));
+        assert_eq!(entry.scope.exact_place(), Some(remote_place));
+        assert_eq!(entry.scope.exact_action_def(), Some(step.def_id));
     }
 
     #[test]
@@ -2375,8 +2384,8 @@ mod tests {
             .next()
             .expect("local target-gone acquire failure should record a blocker");
         assert_eq!(entry.blocking_fact, BlockingFact::TargetGone);
-        assert_eq!(entry.blocker_key.place, Some(home));
-        assert_eq!(entry.blocker_key.target, None);
+        assert_eq!(entry.scope.exact_place(), Some(home));
+        assert_eq!(entry.scope.exact_target(), None);
         assert_eq!(
             entry.clearing_condition,
             BlockerClearingCondition::CommodityAvailabilityChanged {
@@ -2445,8 +2454,8 @@ mod tests {
             .next()
             .expect("local unsupported acquire failure should record a discrepancy");
         assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
-        assert_eq!(entry.blocker_key.place, Some(home));
-        assert_eq!(entry.blocker_key.target, None);
+        assert_eq!(entry.scope.exact_place(), Some(home));
+        assert_eq!(entry.scope.exact_target(), None);
     }
 
     #[test]
@@ -2491,7 +2500,7 @@ mod tests {
 
         let entry = discrepancies.entries.values().next().unwrap();
         assert_eq!(entry.discrepancy, Discrepancy::BeliefStale);
-        assert_eq!(entry.blocker_key.target, Some(target));
+        assert_eq!(entry.scope.exact_target(), Some(target));
     }
 
     #[test]
@@ -2536,7 +2545,7 @@ mod tests {
 
         let entry = discrepancies.entries.values().next().unwrap();
         assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
-        assert_eq!(entry.blocker_key.target, Some(target));
+        assert_eq!(entry.scope.exact_target(), Some(target));
     }
 
     #[test]
@@ -2770,12 +2779,13 @@ mod tests {
         let place = entity(10);
         let seller = entity(2);
         let blocker = Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: trade_goal(),
                 place: Some(place),
                 target: Some(seller),
                 action_def: Some(ActionDefId(1)),
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::SellerOutOfStock,
             diagnostic_context: None,
             observed_tick: Tick(1),
@@ -2787,6 +2797,7 @@ mod tests {
             baseline_snapshot: Some(ClearingBaseline::CommodityQuantity {
                 quantity: Quantity(0),
             }),
+            source_event: worldwake_core::EventId(0),
         };
 
         let mut view = TestBeliefView::default();
@@ -2801,7 +2812,7 @@ mod tests {
     fn is_blocker_cleared_inventory_changed() {
         let agent = entity(1);
         let blocker = Blocker {
-            blocker_key: sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
+            scope: sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)).into(),
             blocking_fact: BlockingFact::TooExpensive,
             diagnostic_context: None,
             observed_tick: Tick(1),
@@ -2812,6 +2823,7 @@ mod tests {
             baseline_snapshot: Some(ClearingBaseline::InventoryQuantity {
                 quantity: Quantity(0),
             }),
+            source_event: worldwake_core::EventId(0),
         };
 
         let mut view = TestBeliefView::default();
@@ -2825,7 +2837,7 @@ mod tests {
     fn is_blocker_cleared_unique_item_acquired() {
         let agent = entity(1);
         let blocker = Blocker {
-            blocker_key: sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
+            scope: sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)).into(),
             blocking_fact: BlockingFact::MissingTool(UniqueItemKind::SimpleTool),
             diagnostic_context: None,
             observed_tick: Tick(1),
@@ -2834,6 +2846,7 @@ mod tests {
                 kind: UniqueItemKind::SimpleTool,
             },
             baseline_snapshot: Some(ClearingBaseline::UniqueItemCount(0)),
+            source_event: worldwake_core::EventId(0),
         };
 
         let mut view = TestBeliefView::default();
@@ -2849,13 +2862,14 @@ mod tests {
         let current_place = entity(10);
         let destination = entity(11);
         let blocker = Blocker {
-            blocker_key: sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
+            scope: sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)).into(),
             blocking_fact: BlockingFact::NoKnownPath,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::PathDiscovered { destination },
             baseline_snapshot: Some(ClearingBaseline::PathKnown(false)),
+            source_event: worldwake_core::EventId(0),
         };
 
         let mut view = TestBeliefView::default();
@@ -2873,18 +2887,20 @@ mod tests {
         let agent = entity(1);
         let target = entity(2);
         let blocker = Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::ReduceDanger),
                 place: Some(entity(10)),
                 target: Some(target),
                 action_def: Some(ActionDefId(4)),
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::TargetGone,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::EntityReappeared { entity: target },
             baseline_snapshot: Some(ClearingBaseline::EntityBelieved(false)),
+            source_event: worldwake_core::EventId(0),
         };
 
         let mut view = TestBeliefView::default();
@@ -2898,13 +2914,14 @@ mod tests {
     fn is_blocker_cleared_danger_reduced() {
         let agent = entity(1);
         let blocker = Blocker {
-            blocker_key: sample_blocker_key_for(GoalKey::from(GoalKind::ReduceDanger)),
+            scope: sample_blocker_key_for(GoalKey::from(GoalKind::ReduceDanger)).into(),
             blocking_fact: BlockingFact::DangerTooHigh,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::DangerReduced { place: entity(10) },
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         };
 
         assert!(is_blocker_cleared(
@@ -2919,20 +2936,22 @@ mod tests {
         let agent = entity(1);
         let facility = entity(3);
         let blocker = Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::ProduceCommodity {
                     recipe_id: RecipeId(4),
                 }),
                 place: Some(entity(10)),
                 target: Some(facility),
                 action_def: Some(ActionDefId(3)),
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::ContentionChanged { facility },
             baseline_snapshot: Some(ClearingBaseline::ContentionPosition(Some(2))),
+            source_event: worldwake_core::EventId(0),
         };
 
         let mut view = TestBeliefView::default();
@@ -2948,7 +2967,7 @@ mod tests {
     ) -> Blocker {
         let _ = agent;
         Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: CommodityPurpose::SelfConsume,
@@ -2957,13 +2976,15 @@ mod tests {
                 place: Some(entity(10)),
                 target: Some(facility),
                 action_def: Some(ActionDefId(3)),
-            },
+            }
+            .into(),
             blocking_fact: reservation_conflict(facility, ActionDefId(3)),
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::ContentionChanged { facility },
             baseline_snapshot: Some(ClearingBaseline::ContentionPosition(baseline_position)),
+            source_event: worldwake_core::EventId(0),
         }
     }
 
@@ -3087,13 +3108,14 @@ mod tests {
     fn is_blocker_cleared_ttl_only_never_clears() {
         let agent = entity(1);
         let blocker = Blocker {
-            blocker_key: sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
+            scope: sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)).into(),
             blocking_fact: BlockingFact::NoKnownPath,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         };
 
         assert!(!is_blocker_cleared(
@@ -3109,12 +3131,13 @@ mod tests {
         let place = entity(10);
         let seller = entity(2);
         let blocker = Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: trade_goal(),
                 place: Some(place),
                 target: None,
                 action_def: Some(ActionDefId(1)),
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::NoKnownSeller,
             diagnostic_context: None,
             observed_tick: Tick(1),
@@ -3124,6 +3147,7 @@ mod tests {
                 place,
             },
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         };
 
         let mut view = TestBeliefView::default();
@@ -3139,7 +3163,7 @@ mod tests {
     fn is_blocker_cleared_missing_baseline_falls_back() {
         let agent = entity(1);
         let blocker = Blocker {
-            blocker_key: sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
+            scope: sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)).into(),
             blocking_fact: BlockingFact::TooExpensive,
             diagnostic_context: None,
             observed_tick: Tick(1),
@@ -3148,6 +3172,7 @@ mod tests {
                 commodity: CommodityKind::Coin,
             },
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         };
 
         let mut view = TestBeliefView::default();
@@ -3162,18 +3187,20 @@ mod tests {
         let agent = entity(1);
         let target = entity(2);
         let blocker = Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::RaidTarget { target }),
                 place: Some(entity(10)),
                 target: Some(target),
                 action_def: Some(ActionDefId(4)),
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::TargetGone,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         };
 
         let mut view = TestBeliefView::default();
@@ -3458,9 +3485,9 @@ mod tests {
         assert_eq!(discrepancies.entries.len(), 1);
         let entry = discrepancies.entries.values().next().unwrap();
         assert_eq!(entry.discrepancy, Discrepancy::ImproperPlanningState);
-        assert_eq!(entry.blocker_key.target, Some(office));
-        assert_eq!(entry.blocker_key.place, Some(place));
-        assert_eq!(entry.blocker_key.action_def, Some(ActionDefId(6)));
+        assert_eq!(entry.scope.exact_target(), Some(office));
+        assert_eq!(entry.scope.exact_place(), Some(place));
+        assert_eq!(entry.scope.exact_action_def(), Some(ActionDefId(6)));
         assert_eq!(
             entry.expires_tick,
             Tick(20 + u64::from(cognitive(&budget).improper_state_backoff_ticks))
@@ -3702,7 +3729,7 @@ mod tests {
         assert!(blocked.intents.is_empty());
         let entry = discrepancies.entries.values().next().unwrap();
         assert_eq!(entry.discrepancy, Discrepancy::ImproperPlanningState);
-        assert_eq!(entry.blocker_key.action_def, Some(step.def_id));
+        assert_eq!(entry.scope.exact_action_def(), Some(step.def_id));
     }
 
     #[test]
@@ -3731,7 +3758,7 @@ mod tests {
             action_def: Some(ActionDefId(1)),
         };
         blocked.record(Blocker {
-            blocker_key: bk1,
+            scope: bk1.into(),
             blocking_fact: BlockingFact::SellerOutOfStock,
             diagnostic_context: None,
             observed_tick: Tick(1),
@@ -3744,6 +3771,7 @@ mod tests {
             baseline_snapshot: Some(ClearingBaseline::CommodityQuantity {
                 quantity: Quantity(0),
             }),
+            source_event: worldwake_core::EventId(0),
         });
         let bk2 = BlockerKey {
             goal_key: GoalKey::from(GoalKind::ProduceCommodity {
@@ -3754,7 +3782,7 @@ mod tests {
             action_def: Some(ActionDefId(3)),
         };
         blocked.record(Blocker {
-            blocker_key: bk2,
+            scope: bk2.into(),
             blocking_fact: BlockingFact::WorkstationBusy,
             diagnostic_context: None,
             observed_tick: Tick(1),
@@ -3763,6 +3791,7 @@ mod tests {
                 facility: workstation,
             },
             baseline_snapshot: Some(ClearingBaseline::ContentionPosition(Some(2))),
+            source_event: worldwake_core::EventId(0),
         });
         let bk3 = BlockerKey {
             goal_key: GoalKey::from(GoalKind::Sleep),
@@ -3771,13 +3800,14 @@ mod tests {
             action_def: None,
         };
         blocked.record(Blocker {
-            blocker_key: bk3,
+            scope: bk3.into(),
             blocking_fact: BlockingFact::NoKnownPath,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(5),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
 
         view.facility_grants.insert(
@@ -3837,18 +3867,20 @@ mod tests {
 
         let mut blocked = BlockerMemory::default();
         blocked.record(Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: goal,
                 place: Some(agent_place),
                 target: Some(target),
                 action_def: Some(ActionDefId(4)),
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::TargetGone,
             diagnostic_context: None,
             observed_tick: Tick(5),
             expires_tick: Tick(50),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
 
         // The blocker should NOT auto-resolve even though the target entity
@@ -4005,10 +4037,11 @@ mod tests {
         );
 
         let entry = DiscrepancyEntry {
-            blocker_key: discrepancy_blocker_key_with_target(source),
+            scope: discrepancy_blocker_key_with_target(source).into(),
             discrepancy: Discrepancy::BeliefContradicted,
             observed_tick: Tick(10),
             expires_tick: Tick(200),
+            source_event: worldwake_core::EventId(0),
             clearing_condition: DiscrepancyClearing::CommodityAvailabilityChanged {
                 commodity: CommodityKind::Apple,
                 place,

@@ -76,7 +76,8 @@ fn check_blocker_memory(
     current_tick: Tick,
 ) -> Option<FeasibilityHint> {
     let has_live_blocker = blocked_memory.intents.values().any(|intent| {
-        intent.blocker_key.goal_key == goal.offer.key && intent.expires_tick > current_tick
+        intent.scope.exact_goal_key().unwrap() == goal.offer.key
+            && intent.expires_tick > current_tick
     });
     if has_live_blocker {
         return Some(FeasibilityHint::Unlikely);
@@ -576,18 +577,20 @@ mod tests {
 
     fn make_blocker(goal_key: GoalKey, expires: Tick) -> Blocker {
         Blocker {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key,
                 place: None,
                 target: None,
                 action_def: None,
-            },
+            }
+            .into(),
             blocking_fact: BlockingFact::NoKnownPath,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: expires,
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         }
     }
 

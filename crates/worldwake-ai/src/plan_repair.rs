@@ -332,10 +332,11 @@ mod tests {
 
     fn discrepancy_entry(clearing_condition: DiscrepancyClearing) -> DiscrepancyEntry {
         DiscrepancyEntry {
-            blocker_key: sample_blocker_key(),
+            scope: sample_blocker_key().into(),
             discrepancy: Discrepancy::BeliefStale,
             observed_tick: Tick(5),
             expires_tick: Tick(25),
+            source_event: worldwake_core::EventId(0),
             clearing_condition,
         }
     }

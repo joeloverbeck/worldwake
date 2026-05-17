@@ -616,6 +616,8 @@ mod tests {
                 no_legal_binding_backoff_ticks: 121,
                 counterparty_refusal_backoff_ticks: 41,
                 route_unknown_backoff_ticks: 201,
+                route_segment_blocker_ticks: 241,
+                counterparty_blocker_ticks: 361,
                 search_exhaustion_backoff_ticks: 101,
                 partial_drift_backoff_ticks: 5,
                 expectation_tolerance_ticks: 7,

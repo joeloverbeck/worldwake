@@ -7,7 +7,7 @@
 //! `evaluate_assumptions` → `record_assumption_failure`, lands a typed
 //! `Discrepancy::NeedHorizonExceeded` entry in `DiscrepancyMemory` with
 //! `DiscrepancyClearing::TtlExpiry`, suppresses the original goal's
-//! `BlockerKey` for `structural_block_ticks`, executes a different planned
+//! `BlockerScope` for `structural_block_ticks`, executes a different planned
 //! goal under the suppression window, and clears the suppression at TTL
 //! expiry.
 //!
@@ -39,8 +39,8 @@ use golden_harness::{
 use worldwake_ai::CommodityPurpose;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
 use worldwake_core::{
-    AcquisitionQuantity, BlockerKey, CommodityKind, DiscrepancyClearing, EntityId, FrameAssumption,
-    GoalKey, GoalKind, HomeostaticNeedId, PerceptionSource, Tick,
+    AcquisitionQuantity, BlockerScope, CommodityKind, DiscrepancyClearing, EntityId,
+    FrameAssumption, GoalKey, GoalKind, HomeostaticNeedId, PerceptionSource, Tick,
 };
 
 const STRUCTURAL_BLOCK_TICKS: u32 = 30;
@@ -95,7 +95,7 @@ fn golden_need_projection_chain() {
     let original_goal_key = original_apple_goal_key();
 
     let mut saw_assumption_at: Option<(Tick, FrameAssumption)> = None;
-    let mut saw_discrepancy: Option<(Tick, BlockerKey, Tick, DiscrepancyClearing)> = None;
+    let mut saw_discrepancy: Option<(Tick, BlockerScope, Tick, DiscrepancyClearing)> = None;
     // Suppression must hold for the recorded BlockerKey at the discrepancy tick.
     let mut suppressed_at_disc_tick: Option<bool> = None;
     // The agent's runtime executing plan picks at least one goal whose key is
@@ -147,7 +147,7 @@ fn golden_need_projection_chain() {
                 .driver
                 .runtime(agent)
                 .and_then(|runtime| runtime.current_plan.as_ref())
-            && plan.goal != suppressed_key.goal_key
+            && plan.goal != suppressed_key.exact_goal_key().unwrap()
         {
             saw_alternative_plan = Some((current_tick, plan.goal));
         }
@@ -214,7 +214,8 @@ fn golden_need_projection_chain() {
          saw expires_tick={expires_tick:?})"
     );
     assert_eq!(
-        suppressed_key.goal_key, original_goal_key,
+        suppressed_key.exact_goal_key().unwrap(),
+        original_goal_key,
         "S126: the suppressed BlockerKey must carry the original AcquireCommodity(Apple, \
          SelfConsume) goal that was committed before the breach"
     );
@@ -242,10 +243,11 @@ fn golden_need_projection_chain() {
     });
     assert!(alt_tick > disc_tick);
     assert_ne!(
-        alt_goal, suppressed_key.goal_key,
+        alt_goal,
+        suppressed_key.exact_goal_key().unwrap(),
         "S126: post-suppression executing plan goal must NOT equal the suppressed goal_key (saw \
          {alt_goal:?}, suppressed={:?})",
-        suppressed_key.goal_key
+        suppressed_key.exact_goal_key().unwrap()
     );
 
     // Milestone 5: TTL expiry releases the suppression.

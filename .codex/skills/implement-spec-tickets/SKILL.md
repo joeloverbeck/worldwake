@@ -56,7 +56,7 @@ Keep the file small and machine-readable. Update it after intake, after every it
   "last_ticket": "tickets/S123EXAMPLE-001.md",
   "last_result": "completed_archived",
   "last_work_commit": "abc1234",
-  "last_state_commit": "def5678",
+  "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
   "next_target": "tickets/S123EXAMPLE-002.md",
   "queue": [
@@ -64,6 +64,8 @@ Keep the file small and machine-readable. Update it after intake, after every it
   ],
   "implement_ticket_audit": "pending",
   "post_ticket_review_audit": "not_required",
+  "last_implement_ticket_audit": "done",
+  "last_post_ticket_review_audit": "done",
   "blocked": false,
   "blocker": null,
   "dirty_state": "clean",
@@ -80,11 +82,14 @@ On resume after `/new`, read this state file first, then verify every important 
 - `next_target` exists and is still active, unless the next action is final spec archival
 - queued ticket paths still exist and still belong to the originating spec family
 - `last_work_commit` is reachable from `HEAD`
-- `last_state_commit` is either `null` / `"none"` or a commit reachable from `HEAD`; older state files may contain legacy `"self"` here, but before invoking a child skill you must resolve it to the reachable state-only commit that last changed `.codex/run-state/implement-spec-tickets.json`
-- `last_state_commit_kind`, when present, is `amended`, `separate`, or `none`; if it is missing in an older state file, infer `separate` only when `last_state_commit` is a real reachable commit and infer `none` only when `last_state_commit` is `"none"` / `null`; for legacy `"self"` values, infer `separate` only after replacing `"self"` with the concrete state-only commit sha
+- `last_state_commit` is either `null` / `"none"`, `"containing_commit"`, or a commit reachable from `HEAD`; older state files may contain legacy `"self"` here, but before invoking a child skill you must resolve legacy `"self"` to `"containing_commit"` or to the reachable commit that last changed `.codex/run-state/implement-spec-tickets.json`
+- `last_state_commit_kind`, when present, is `amended`, `separate`, or `none`; if it is missing in an older state file, infer `separate` only when `last_state_commit` is a real reachable commit or `"containing_commit"` and infer `none` only when `last_state_commit` is `"none"` / `null`
+- for `last_state_commit: "containing_commit"`, verify `git log -n 1 -- .codex/run-state/implement-spec-tickets.json` is reachable from `HEAD` and treat that commit as the actual state persistence commit for resume checks and handoff reporting
 - child-audit markers, when present, are compatible with the last iteration state:
   - `implement_ticket_audit` is `done`, `pending`, or `skipped:<reason>`
   - `post_ticket_review_audit` is `done`, `pending`, `not_required`, or `skipped:<reason>`
+  - `last_implement_ticket_audit`, when present, is `done`, `pending`, or `skipped:<reason>` and describes the completed `last_ticket`
+  - `last_post_ticket_review_audit`, when present, is `done`, `pending`, `not_required`, or `skipped:<reason>` and describes the completed `last_ticket`
   - if a marker is missing for an in-flight iteration, infer it from live evidence only when the compact audit/review block or changed skill diff is visible; otherwise set it to `pending` before committing the iteration
 - `git status --short` matches or safely supersedes `dirty_state`
 
@@ -96,7 +101,7 @@ Resume validation checked: spec, worktree_root, branch, base_head, next_target, 
 
 If the state file conflicts with the live repo, trust the live repo and patch the state file before continuing. If the conflict changes the next target or archival readiness, state that explicitly before invoking a child skill.
 
-`last_work_commit` means the commit that contains the ticket implementation, review/archive move, follow-up creation, and any applied child-skill hardening for the iteration. Record full commit SHAs in the JSON state file; short SHAs are acceptable in printed handoffs only. `last_state_commit` identifies the actual commit that persisted the state update: the same sha as `last_work_commit` when amended into that commit, the separate state-only commit sha when committed separately, or `"none"` when intentionally left uncommitted. `last_state_commit_kind` records the persistence shape (`amended`, `separate`, or `none`) so the state file remains self-sufficient after `/new`; do not rely on the printed handoff as the only place that contains the separate state commit sha.
+`last_work_commit` means the commit that contains the ticket implementation, review/archive move, follow-up creation, and any applied child-skill hardening for the iteration. Record full work commit SHAs in the JSON state file; short SHAs are acceptable in printed handoffs only. `last_state_commit` identifies the state persistence shape: the same sha as `last_work_commit` when amended into that commit, `"containing_commit"` when the state file is committed separately and the commit that contains the file is discovered with `git log -n 1 -- .codex/run-state/implement-spec-tickets.json`, or `"none"` when intentionally left uncommitted. Do not try to make a separate state commit contain its own final SHA; changing the file changes the commit SHA and creates a self-reference loop. `last_state_commit_kind` records the persistence shape (`amended`, `separate`, or `none`) so the state file remains resumable after `/new`; do not rely on the printed handoff as the only place that contains the separate state commit sha.
 
 ## Intake
 
@@ -120,7 +125,7 @@ If the state file conflicts with the live repo, trust the live repo and patch th
 10. Decide how to handle pre-existing untracked same-family ticket/spec files before implementation. Include them only when they are required to define the active family queue, dependency chain, or truthful handoff for the current iteration.
 11. Write or refresh `.codex/run-state/implement-spec-tickets.json` with the resolved spec, branch/worktree metadata, initial target, initial queue, child-audit markers initialized for the first iteration, dirty-state classification, and `blocked: false`.
 
-When advancing from one ticket to the next, reset child-audit markers for the new `next_target` before invoking any child skill. A completed iteration's `done` markers describe the just-finished `last_ticket`; they must not be carried forward as if the new current target's child phases have already run. Use `implement_ticket_audit: "pending"` for the next target, and `post_ticket_review_audit: "not_required"` until review actually creates or updates handoff surfaces that trigger it.
+When advancing from one ticket to the next, copy the completed ticket's audit markers into `last_implement_ticket_audit` and `last_post_ticket_review_audit`, then reset the current child-audit markers for the new `next_target` before invoking any child skill. A completed iteration's `done` markers describe the just-finished `last_ticket`; they must not be carried forward as if the new current target's child phases have already run. Use `implement_ticket_audit: "pending"` for the next target, and `post_ticket_review_audit: "not_required"` until review actually creates or updates handoff surfaces that trigger it.
 
 If an old state file exists but no reset or blocker will occur before the first target is processed, a pre-work state refresh may be deferred until the first iteration state commit. This is allowed only when the next target, queue, ownership classification, and archival readiness have been validated against live repo state before invoking child skills.
 
@@ -242,13 +247,14 @@ After each iteration work commit, update `.codex/run-state/implement-spec-ticket
 - worktree root, starting branch, current branch, and base commit for the run
 - last ticket processed and result
 - `last_work_commit`: the ticket iteration work commit sha, or `"none"` if no work commit was created
-- `last_state_commit`: the actual commit sha that persisted the state update, the same sha as `last_work_commit` when amended into the work commit, or `"none"` when the state file remains intentionally uncommitted
+- `last_state_commit`: the same sha as `last_work_commit` when amended into the work commit, `"containing_commit"` when the state file is committed separately, or `"none"` when the state file remains intentionally uncommitted
 - `last_state_commit_kind`: `separate`, `amended`, or `none`
 - next target, or `"final_spec_archive"` / `"blocked"`
 - remaining queue
 - child-audit markers for the completed or in-flight iteration:
   - `implement_ticket_audit`
   - `post_ticket_review_audit`
+  - `last_implement_ticket_audit` and `last_post_ticket_review_audit`, when advancing to a new `next_target`
 - blocker summary when blocked
 - dirty-state classification
 - `updated_at`
@@ -258,7 +264,7 @@ Normalize `dirty_state` after committing owned paths: refresh `git status --shor
 If the state file itself changes after the work commit, either:
 
 - amend it into the work commit before reporting the sha, then set `last_work_commit` and `last_state_commit` to that amended commit sha and set `last_state_commit_kind` to `amended`; or
-- commit it separately as a harness-state commit, then set `last_work_commit` to the implementation/archive commit, set `last_state_commit` to the actual state-only commit sha, and set `last_state_commit_kind` to `separate`.
+- commit it separately as a harness-state commit, set `last_work_commit` to the implementation/archive commit, set `last_state_commit` to `"containing_commit"`, and set `last_state_commit_kind` to `separate`. After the commit succeeds, report the actual state commit sha from `git rev-parse HEAD` in the handoff; on resume, rediscover it with `git log -n 1 -- .codex/run-state/implement-spec-tickets.json`.
 
 When the state file is committed separately, the committed `dirty_state` must describe the expected worktree state after that state commit succeeds, not the transient state-file dirt before the commit. In the normal successful case, record `clean`. If the state file intentionally remains uncommitted, only then mention the dirty state file in `dirty_state`, set `last_state_commit` to `"none"`, and set `last_state_commit_kind` to `none`.
 

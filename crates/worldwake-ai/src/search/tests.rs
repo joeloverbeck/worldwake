@@ -71,6 +71,8 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         counterparty_refusal_backoff_ticks: CognitiveProfile::default()
             .counterparty_refusal_backoff_ticks,
         route_unknown_backoff_ticks: CognitiveProfile::default().route_unknown_backoff_ticks,
+        route_segment_blocker_ticks: CognitiveProfile::default().route_segment_blocker_ticks,
+        counterparty_blocker_ticks: CognitiveProfile::default().counterparty_blocker_ticks,
         search_exhaustion_backoff_ticks: CognitiveProfile::default()
             .search_exhaustion_backoff_ticks,
         partial_drift_backoff_ticks: CognitiveProfile::default().partial_drift_backoff_ticks,
@@ -2723,18 +2725,20 @@ fn search_blocks_remote_stale_move_cargo_by_target_place() {
     };
     let mut blocked = BlockerMemory::default();
     blocked.record(Blocker {
-        blocker_key: BlockerKey {
+        scope: BlockerKey {
             goal_key: goal.key,
             place: Some(orchard),
             target: Some(bread),
             action_def: Some(pick_up_id),
-        },
+        }
+        .into(),
         blocking_fact: BlockingFact::TargetGone,
         diagnostic_context: None,
         observed_tick: Tick(1),
         expires_tick: Tick(20),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
+        source_event: worldwake_core::EventId(0),
     });
 
     assert_eq!(
@@ -2936,18 +2940,20 @@ fn place_anchored_acquire_search_does_not_escape_blocked_local_lot_to_sibling_pl
     );
     let mut blocked = BlockerMemory::default();
     blocked.record(Blocker {
-        blocker_key: BlockerKey {
+        scope: BlockerKey {
             goal_key: goal.key,
             place: Some(orchard),
             target: Some(orchard_apple),
             action_def: Some(pick_up_id),
-        },
+        }
+        .into(),
         blocking_fact: BlockingFact::TargetGone,
         diagnostic_context: None,
         observed_tick: Tick(1),
         expires_tick: Tick(20),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
+        source_event: worldwake_core::EventId(0),
     });
 
     let result = search_plan(
@@ -5612,18 +5618,20 @@ fn search_filters_blocked_facility_use_from_queue_candidates() {
     };
     let mut blocked = BlockerMemory::default();
     blocked.record(Blocker {
-        blocker_key: BlockerKey {
+        scope: BlockerKey {
             goal_key: goal.key,
             place: Some(fixture.orchard_farm),
             target: Some(fixture.orchard_row),
             action_def: Some(fixture.harvest_action),
-        },
+        }
+        .into(),
         blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
         diagnostic_context: None,
         observed_tick: Tick(2),
         expires_tick: Tick(20),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
+        source_event: worldwake_core::EventId(0),
     });
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot_with_blocked_facility_uses(
@@ -5691,18 +5699,20 @@ fn search_trace_records_blocked_facility_use_root_filter() {
     };
     let mut blocked = BlockerMemory::default();
     blocked.record(Blocker {
-        blocker_key: BlockerKey {
+        scope: BlockerKey {
             goal_key: goal.key,
             place: Some(fixture.orchard_farm),
             target: Some(fixture.orchard_row),
             action_def: Some(fixture.harvest_action),
-        },
+        }
+        .into(),
         blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
         diagnostic_context: None,
         observed_tick: Tick(2),
         expires_tick: Tick(20),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
+        source_event: worldwake_core::EventId(0),
     });
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot_with_blocked_facility_uses(
@@ -5827,18 +5837,20 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
     };
     let mut blocked = BlockerMemory::default();
     blocked.record(Blocker {
-        blocker_key: BlockerKey {
+        scope: BlockerKey {
             goal_key: goal.key,
             place: Some(fixture.orchard_farm),
             target: Some(fixture.orchard_row),
             action_def: Some(fixture.harvest_action),
-        },
+        }
+        .into(),
         blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
         diagnostic_context: None,
         observed_tick: Tick(2),
         expires_tick: Tick(20),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
+        source_event: worldwake_core::EventId(0),
     });
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot_with_blocked_facility_uses(
@@ -14379,18 +14391,20 @@ fn place_scoped_blocker_prunes_candidate_at_blocked_place() {
     // With place-scoped blocker at town: plan should NOT be found.
     let mut blocked = BlockerMemory::default();
     blocked.record(Blocker {
-        blocker_key: BlockerKey {
+        scope: BlockerKey {
             goal_key: goal.key,
             place: Some(town),
             target: None,
             action_def: None,
-        },
+        }
+        .into(),
         blocking_fact: BlockingFact::SourceDepleted,
         diagnostic_context: None,
         observed_tick: Tick(0),
         expires_tick: Tick(100),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
+        source_event: worldwake_core::EventId(0),
     });
     let with_blocker = search_plan(
         &snapshot,
@@ -14447,18 +14461,20 @@ fn place_scoped_blocker_does_not_prune_candidate_at_different_place() {
 
     let mut blocked = BlockerMemory::default();
     blocked.record(Blocker {
-        blocker_key: BlockerKey {
+        scope: BlockerKey {
             goal_key: goal.key,
             place: Some(field), // different place
             target: None,
             action_def: None,
-        },
+        }
+        .into(),
         blocking_fact: BlockingFact::SourceDepleted,
         diagnostic_context: None,
         observed_tick: Tick(0),
         expires_tick: Tick(100),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
+        source_event: worldwake_core::EventId(0),
     });
     let result = search_plan(
         &snapshot,
@@ -14547,18 +14563,20 @@ fn travel_action_uses_destination_as_place_for_blocker_check() {
     // With blocker at field: travel-to-field should be pruned → no plan.
     let mut blocked = BlockerMemory::default();
     blocked.record(Blocker {
-        blocker_key: BlockerKey {
+        scope: BlockerKey {
             goal_key: goal.key,
             place: Some(field),
             target: None,
             action_def: None,
-        },
+        }
+        .into(),
         blocking_fact: BlockingFact::SourceDepleted,
         diagnostic_context: None,
         observed_tick: Tick(0),
         expires_tick: Tick(100),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
+        source_event: worldwake_core::EventId(0),
     });
     let with_blocker = search_plan(
         &snapshot,
@@ -14612,18 +14630,20 @@ fn candidate_pruned_by_blocker_records_place_blocker_trace() {
 
     let mut blocked = BlockerMemory::default();
     blocked.record(Blocker {
-        blocker_key: BlockerKey {
+        scope: BlockerKey {
             goal_key: goal.key,
             place: Some(town),
             target: None,
             action_def: None,
-        },
+        }
+        .into(),
         blocking_fact: BlockingFact::SourceDepleted,
         diagnostic_context: None,
         observed_tick: Tick(0),
         expires_tick: Tick(100),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
+        source_event: worldwake_core::EventId(0),
     });
 
     let mut summaries = Vec::new();

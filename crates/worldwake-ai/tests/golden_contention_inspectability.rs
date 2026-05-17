@@ -236,7 +236,7 @@ fn set_reservation_conflict_blocker(
     };
     let mut memory = BlockerMemory::default();
     memory.record(Blocker {
-        blocker_key,
+        scope: blocker_key.into(),
         blocking_fact: BlockingFact::ReservationConflict {
             affordance,
             contention_event,
@@ -248,6 +248,7 @@ fn set_reservation_conflict_blocker(
             facility: affordance.facility,
         },
         baseline_snapshot: None,
+        source_event: worldwake_core::EventId(0),
     });
     let mut txn = new_txn(&mut h.world, tick.0);
     txn.set_component_blocker_memory(actor, memory).unwrap();

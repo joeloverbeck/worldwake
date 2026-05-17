@@ -64,6 +64,12 @@ pub struct CognitiveProfile {
     /// TTL for route-unknown discrepancies before retry.
     #[serde(default = "default_route_unknown_backoff_ticks")]
     pub route_unknown_backoff_ticks: u32,
+    /// Ticks before a RouteSegment-scoped blocker expires under `TtlOnly` clearing.
+    #[serde(default = "default_route_segment_blocker_ticks")]
+    pub route_segment_blocker_ticks: u32,
+    /// Ticks before a Counterparty-scoped blocker expires under `TtlOnly` clearing.
+    #[serde(default = "default_counterparty_blocker_ticks")]
+    pub counterparty_blocker_ticks: u32,
     /// TTL for search-budget-exhaustion discrepancies before retry.
     #[serde(default = "default_search_exhaustion_backoff_ticks")]
     pub search_exhaustion_backoff_ticks: u32,
@@ -140,6 +146,8 @@ impl Default for CognitiveProfile {
             no_legal_binding_backoff_ticks: default_no_legal_binding_backoff_ticks(),
             counterparty_refusal_backoff_ticks: default_counterparty_refusal_backoff_ticks(),
             route_unknown_backoff_ticks: default_route_unknown_backoff_ticks(),
+            route_segment_blocker_ticks: default_route_segment_blocker_ticks(),
+            counterparty_blocker_ticks: default_counterparty_blocker_ticks(),
             search_exhaustion_backoff_ticks: default_search_exhaustion_backoff_ticks(),
             partial_drift_backoff_ticks: default_partial_drift_backoff_ticks(),
             expectation_tolerance_ticks: default_expectation_tolerance_ticks(),
@@ -220,6 +228,14 @@ const fn default_route_unknown_backoff_ticks() -> u32 {
     200
 }
 
+const fn default_route_segment_blocker_ticks() -> u32 {
+    240
+}
+
+const fn default_counterparty_blocker_ticks() -> u32 {
+    360
+}
+
 const fn default_search_exhaustion_backoff_ticks() -> u32 {
     100
 }
@@ -298,6 +314,8 @@ mod tests {
         assert_eq!(profile.no_legal_binding_backoff_ticks, 120);
         assert_eq!(profile.counterparty_refusal_backoff_ticks, 40);
         assert_eq!(profile.route_unknown_backoff_ticks, 200);
+        assert_eq!(profile.route_segment_blocker_ticks, 240);
+        assert_eq!(profile.counterparty_blocker_ticks, 360);
         assert_eq!(profile.search_exhaustion_backoff_ticks, 100);
         assert_eq!(profile.partial_drift_backoff_ticks, 4);
         assert_eq!(profile.expectation_tolerance_ticks, 2);
@@ -347,6 +365,8 @@ mod tests {
             no_legal_binding_backoff_ticks: 121,
             counterparty_refusal_backoff_ticks: 41,
             route_unknown_backoff_ticks: 201,
+            route_segment_blocker_ticks: 241,
+            counterparty_blocker_ticks: 361,
             search_exhaustion_backoff_ticks: 101,
             partial_drift_backoff_ticks: 5,
             expectation_tolerance_ticks: 7,
@@ -699,6 +719,37 @@ mod tests {
         assert_eq!(
             profile.partial_drift_backoff_ticks,
             CognitiveProfile::default().partial_drift_backoff_ticks
+        );
+    }
+
+    #[test]
+    fn cognitive_profile_deserialization_defaults_blocker_scope_ttls() {
+        let serialized = to_string_pretty(
+            &CognitiveProfile {
+                route_segment_blocker_ticks: 241,
+                counterparty_blocker_ticks: 361,
+                ..CognitiveProfile::default()
+            },
+            PrettyConfig::default(),
+        )
+        .unwrap();
+        let without_fields = serialized
+            .lines()
+            .filter(|line| {
+                !line.contains("route_segment_blocker_ticks")
+                    && !line.contains("counterparty_blocker_ticks")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let profile: CognitiveProfile = from_str(&without_fields).unwrap();
+
+        assert_eq!(
+            profile.route_segment_blocker_ticks,
+            CognitiveProfile::default().route_segment_blocker_ticks
+        );
+        assert_eq!(
+            profile.counterparty_blocker_ticks,
+            CognitiveProfile::default().counterparty_blocker_ticks
         );
     }
 

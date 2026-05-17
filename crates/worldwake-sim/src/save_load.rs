@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 85;
+pub const SAVE_FORMAT_VERSION: u32 = 86;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -199,10 +199,11 @@ mod tests {
         AcquisitionQuantity, ActionDefId, ActionDomain, AffordanceKey, AgentBeliefStore,
         ArtifactActionability, ArtifactAxisValue, ArtifactTransitionPayload, AxisName,
         BeliefClaimKey, BeliefRef, BeliefSnapshot, BeliefStatusTag, BelievedActivity,
-        BelievedEntityState, BlockerKey, BlockerRecordedPayload, BlockingFact, BodyCostPerTick,
-        CauseRef, ClaimId, ClaimValue, ClaimantOutcome, CloseCause, CommodityKind,
-        CommodityPurpose, ContentionClaimant, ContentionEventPayload, ContentionResolutionRule,
-        ControlSource, DecisionEventPayload, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
+        BelievedEntityState, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory,
+        BlockerRecordedPayload, BlockerScope, BlockingFact, BodyCostPerTick, CauseRef, ClaimId,
+        ClaimValue, ClaimantOutcome, CloseCause, CommodityKind, CommodityPurpose,
+        ContentionClaimant, ContentionEventPayload, ContentionResolutionRule, ControlSource,
+        DecisionEventPayload, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
         DiscrepancyMemory, EmitterTag, EntityBeliefAspect, EntityBeliefClaim, EntityId,
         EpistemicDispositionProfile, EventLog, EventPayload, EventTag, EventView, EvidenceKindTag,
         EvidenceSummary, ExpectationBasis, ExpectationId, ExpectationMismatchPayload,
@@ -216,7 +217,7 @@ mod tests {
         PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
         RankedGoalComparisonDimensionTag, RecordRef, RejectedAlternativeSummary,
         RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
-        RewardEncumbrance, RiskWeightProfile, Seed, ShelterTag, SleepEpisode,
+        RewardEncumbrance, RiskWeightProfile, RouteSegment, Seed, ShelterTag, SleepEpisode,
         SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepQualityProfile,
         SleepRecoveryModifier, StateHash, SuspensionReason, Tick, TickRange, UniqueItemKind,
         UtilityProfile, VisibilitySpec, WakeCondition, WakeReason, WashBasinState,
@@ -568,12 +569,13 @@ mod tests {
         let artifact = worldwake_core::test_utils::entity_id(100, 0);
         let artifact_goal = GoalKey::from(GoalKind::FulfillBounty { bounty: artifact });
         discrepancy_memory.record(DiscrepancyEntry {
-            blocker_key: BlockerKey {
+            scope: BlockerKey {
                 goal_key: artifact_goal,
                 place: None,
                 target: Some(artifact),
                 action_def: None,
-            },
+            }
+            .into(),
             discrepancy: Discrepancy::ArtifactNotActionable {
                 artifact,
                 reason: worldwake_core::BlockerReason::LegalEffectExpired,
@@ -581,9 +583,39 @@ mod tests {
             observed_tick: Tick(5),
             expires_tick: Tick(25),
             clearing_condition: DiscrepancyClearing::ReobservationOf { target: artifact },
+            source_event: worldwake_core::EventId(5),
         });
         belief_txn
             .set_component_discrepancy_memory(actor, discrepancy_memory)
+            .unwrap();
+        let route_scope = BlockerScope::RouteSegment(RouteSegment::new(
+            belief_place,
+            worldwake_core::test_utils::entity_id(101, 0),
+        ));
+        let counterparty_scope = BlockerScope::Counterparty(target);
+        let mut blocker_memory = BlockerMemory::default();
+        blocker_memory.record(Blocker {
+            scope: route_scope,
+            blocking_fact: BlockingFact::NoKnownPath,
+            diagnostic_context: None,
+            observed_tick: Tick(5),
+            expires_tick: Tick(25),
+            clearing_condition: BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+            source_event: worldwake_core::EventId(6),
+        });
+        blocker_memory.record(Blocker {
+            scope: counterparty_scope,
+            blocking_fact: BlockingFact::NoBuyer,
+            diagnostic_context: None,
+            observed_tick: Tick(6),
+            expires_tick: Tick(26),
+            clearing_condition: BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+            source_event: worldwake_core::EventId(7),
+        });
+        belief_txn
+            .set_component_blocker_memory(actor, blocker_memory)
             .unwrap();
         belief_txn
             .set_component_last_seen_memory(
@@ -1226,7 +1258,7 @@ mod tests {
                 EventTag::BlockerRecorded,
                 DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
                     agent: actor,
-                    blocker_key,
+                    scope: blocker_key.into(),
                     discrepancy: Some(Discrepancy::RouteUnknown),
                     blocking_fact: Some(BlockingFact::ReservationConflict {
                         affordance: AffordanceKey {
@@ -1268,8 +1300,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_85_after_authority_belief_claim_lanes() {
-        assert_eq!(SAVE_FORMAT_VERSION, 85);
+    fn save_format_version_is_86_after_blocker_scope_key_migration() {
+        assert_eq!(SAVE_FORMAT_VERSION, 86);
     }
 
     #[test]
@@ -1280,7 +1312,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 85);
+        assert_eq!(SAVE_FORMAT_VERSION, 86);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1299,6 +1331,19 @@ mod tests {
                     entry.discrepancy,
                     Discrepancy::ArtifactNotActionable { .. }
                 )))
+        );
+        assert!(
+            restored
+                .world()
+                .get_component_blocker_memory(actor)
+                .is_some_and(|memory| {
+                    memory.intents.keys().any(|scope| {
+                        matches!(
+                            scope,
+                            BlockerScope::RouteSegment(_) | BlockerScope::Counterparty(_)
+                        )
+                    })
+                })
         );
         assert_eq!(restored.scheduler().active_actions().len(), 1);
         assert_eq!(restored.scheduler().input_queue().len(), 2);

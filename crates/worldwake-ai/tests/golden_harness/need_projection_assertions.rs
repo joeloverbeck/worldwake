@@ -1,12 +1,12 @@
 //! Reusable assertions for need-horizon (S126) goldens.
 //!
 //! These helpers compose over `IntentionFrame`, `DiscrepancyMemory`, and
-//! `BlockerKey` so future assumption-driven goldens can read them at the
+//! `BlockerScope` so future assumption-driven goldens can read them at the
 //! intended proof surface (`FrameAssumption` presence, typed `Discrepancy`
 //! recording, suppression status) without duplicating destructuring boilerplate.
 
 use worldwake_core::{
-    BlockerKey, Discrepancy, DiscrepancyClearing, DiscrepancyMemory, EntityId, FrameAssumption,
+    BlockerScope, Discrepancy, DiscrepancyClearing, DiscrepancyMemory, EntityId, FrameAssumption,
     HomeostaticNeedId, IntentionFrame, Tick, World,
 };
 
@@ -31,13 +31,13 @@ pub fn frame_contains_need_safe_until_tick(
 
 /// Returns the first `DiscrepancyEntry` in `DiscrepancyMemory` whose payload
 /// is `Discrepancy::NeedHorizonExceeded` for the named need, paired with its
-/// `BlockerKey` and `expires_tick` for downstream TTL assertions.
+/// `BlockerScope` and `expires_tick` for downstream TTL assertions.
 #[must_use]
 pub fn first_need_horizon_entry(
     world: &World,
     agent: EntityId,
     need: HomeostaticNeedId,
-) -> Option<(BlockerKey, Tick, DiscrepancyClearing)> {
+) -> Option<(BlockerScope, Tick, DiscrepancyClearing)> {
     let memory = world.get_component_discrepancy_memory(agent)?;
     memory.entries.iter().find_map(|(key, entry)| {
         if matches!(
@@ -52,13 +52,13 @@ pub fn first_need_horizon_entry(
 }
 
 /// Returns `true` when `DiscrepancyMemory` would suppress the supplied
-/// `BlockerKey` at `current_tick`. Returns `false` if the memory component
+/// `BlockerScope` at `current_tick`. Returns `false` if the memory component
 /// is absent.
 #[must_use]
 pub fn blocker_is_suppressed(
     world: &World,
     agent: EntityId,
-    key: &BlockerKey,
+    key: &BlockerScope,
     current_tick: Tick,
 ) -> bool {
     world

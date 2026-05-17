@@ -1333,11 +1333,26 @@ pub(super) fn candidate_blocked_by_place(
 ) -> Option<(Option<EntityId>, worldwake_core::BlockingFact)> {
     let place = candidate_action_place(candidate, node, semantics_table);
     let target = candidate.authoritative_targets.first().copied();
+    if let Some(semantics) = semantics_table.get(&candidate.def_id)
+        && semantics.op_kind == PlannerOpKind::Travel
+        && let (Some(from), Some(to)) = (
+            node.state
+                .effective_place_ref(PlanningEntityRef::Authoritative(
+                    node.state.snapshot().actor(),
+                )),
+            target,
+        )
+        && let Some(intent) = blocked.route_segment_blocked(from, to, current_tick)
+    {
+        return Some((place, intent.blocking_fact));
+    }
+    if let Some(target) = target
+        && let Some(intent) = blocked.counterparty_blocked(target, current_tick)
+    {
+        return Some((place, intent.blocking_fact));
+    }
     let intent = blocked.find_blocked_for_search(
-        &goal.key,
-        place,
-        target,
-        Some(candidate.def_id),
+        &worldwake_core::BlockerScope::exact(goal.key, place, target, Some(candidate.def_id)),
         current_tick,
     )?;
     Some((place, intent.blocking_fact))

@@ -25,7 +25,7 @@ use worldwake_ai::{
     ScenarioDiagnosticsReport, SurvivalForensicExtractor, build_scenario_diagnostics,
 };
 use worldwake_cli::diagnostics_json::scenario_diagnostics_report_to_json_pretty;
-use worldwake_cli::display::entity_display_name;
+use worldwake_cli::display::{entity_display_name, format_goal_kind};
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, spawn_scenario_ignoring_lints};
 use worldwake_core::{
     ActionInterruptReasonTag, AgentBeliefStore, ArtifactAxisValue, ArtifactHeader, AxisName,
@@ -482,7 +482,65 @@ fn append_assumption_count(summary: &mut String, assumptions: usize) {
     }
 }
 
-fn decision_payload_summary(payload: &DecisionEventPayload) -> String {
+fn blocker_scope_summary(
+    scope: worldwake_core::BlockerScope,
+    world: Option<&worldwake_core::World>,
+) -> String {
+    match scope {
+        worldwake_core::BlockerScope::Exact(key) => {
+            let goal = world.map_or_else(
+                || format!("{:?}", key.goal_key.kind),
+                |world| format_goal_kind(world, &key.goal_key.kind),
+            );
+            let place = key.place.map_or_else(
+                || "-".to_string(),
+                |place| {
+                    world.map_or_else(
+                        || place.to_string(),
+                        |world| entity_display_name(world, place),
+                    )
+                },
+            );
+            let target = key.target.map(|target| {
+                world.map_or_else(
+                    || target.to_string(),
+                    |world| entity_display_name(world, target),
+                )
+            });
+            let action = key
+                .action_def
+                .map(|action| format!(" action={action}"))
+                .unwrap_or_default();
+            target.map_or_else(
+                || format!("Exact({goal} at {place}{action})"),
+                |target| format!("Exact({goal} at {place} target={target}{action})"),
+            )
+        }
+        worldwake_core::BlockerScope::RouteSegment(segment) => {
+            let from = world.map_or_else(
+                || segment.from.to_string(),
+                |world| entity_display_name(world, segment.from),
+            );
+            let to = world.map_or_else(
+                || segment.to.to_string(),
+                |world| entity_display_name(world, segment.to),
+            );
+            format!("RouteSegment({from} <-> {to})")
+        }
+        worldwake_core::BlockerScope::Counterparty(counterparty) => {
+            let counterparty = world.map_or_else(
+                || counterparty.to_string(),
+                |world| entity_display_name(world, counterparty),
+            );
+            format!("Counterparty({counterparty})")
+        }
+    }
+}
+
+fn decision_payload_summary(
+    payload: &DecisionEventPayload,
+    world: Option<&worldwake_core::World>,
+) -> String {
     match payload {
         DecisionEventPayload::GoalOffered(inner) => format!(
             "goal={:?} emitter={:?} evidence={}",
@@ -614,9 +672,10 @@ fn decision_payload_summary(payload: &DecisionEventPayload) -> String {
                 (None, Some(blocking_fact)) => format!("BlockingFact({blocking_fact:?})"),
                 _ => "Unclassified".to_string(),
             };
+            let key = blocker_scope_summary(inner.scope, world);
             let mut summary = format!(
-                "key={:?} class={} expires={}",
-                inner.blocker_key, class, inner.expires_tick.0
+                "key={} class={} expires={}",
+                key, class, inner.expires_tick.0
             );
             append_decisive_counts(
                 &mut summary,
@@ -865,6 +924,7 @@ fn format_risk_fact(risk: &RiskFact, world: &worldwake_core::World) -> String {
 
 fn render_decision_history_section(
     out: &mut String,
+    world: &worldwake_core::World,
     event_log: &worldwake_core::EventLog,
     agents: &[(EntityId, String)],
     traces: Option<&DecisionTraceSink>,
@@ -896,7 +956,7 @@ fn render_decision_history_section(
             record.tick().0,
             agent_name,
             decision_event_name(payload),
-            decision_payload_summary(payload)
+            decision_payload_summary(payload, Some(world))
         )
         .unwrap();
         if let DecisionEventPayload::GoalCommitted(inner) = payload {
@@ -4227,7 +4287,7 @@ fn format_report(
         )
         .unwrap();
     }
-    render_decision_history_section(&mut out, event_log, agents, driver.trace_sink());
+    render_decision_history_section(&mut out, world, event_log, agents, driver.trace_sink());
 
     // Section 4: Anomaly Flags
     writeln!(out, "## Section 4 — Anomaly Flags\n").unwrap();
@@ -5417,8 +5477,8 @@ mod tests {
         ANOMALY_ROLLING_WINDOW_TICKS, AgentStats, Anomaly, AnomalyKind, BehavioralTransition,
         BudgetExhaustionSnapshot, DiagnosticsFormat, DiagnosticsRenderOptions, NeedsSample,
         PlanAttemptTrace, PlanSearchOutcome, affordance_change_snapshots, behavioral_transitions,
-        committed_travel_ticks, compute_maintenance_rates, death_summary_line,
-        decision_payload_summary, detect_acute_need_spike, detect_anomalies,
+        blocker_scope_summary, committed_travel_ticks, compute_maintenance_rates,
+        death_summary_line, decision_payload_summary, detect_acute_need_spike, detect_anomalies,
         detect_geographic_convergence, detect_maintenance_starvation, detect_recipe_monoculture,
         failed_plan_breakdown, failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
         failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
@@ -5457,22 +5517,22 @@ mod tests {
         AcquisitionQuantity, ActionDefId, ActionDomain, AffordanceKey, AgentBeliefStore,
         ArtifactActionability, ArtifactAxisValue, ArtifactHeader, ArtifactKind,
         ArtifactLegalEffect, ArtifactTransitionPayload, AxisName, BeliefClaimKey, BeliefRef,
-        BeliefStatusTag, BelievedEntityState, BlockerKey, BlockerRecordedPayload, BodyCostPerTick,
-        CauseRef, ClaimantOutcome, CloseCause, CommodityKind, CommodityPurpose, ContentionClaimant,
-        ContentionEventPayload, ContentionResolutionRule, ControlSource, DeadAt, DeathCause,
-        DecisionEventPayload, DriveThresholds, EmitterTag, EntityBeliefAspect, EntityId,
-        EntityKind, EventLog, EventPayload, EventTag, FrameAssumption, GoalAbandonReason,
+        BeliefStatusTag, BelievedEntityState, BlockerKey, BlockerRecordedPayload, BlockerScope,
+        BodyCostPerTick, CauseRef, ClaimantOutcome, CloseCause, CommodityKind, CommodityPurpose,
+        ContentionClaimant, ContentionEventPayload, ContentionResolutionRule, ControlSource,
+        DeadAt, DeathCause, DecisionEventPayload, DriveThresholds, EmitterTag, EntityBeliefAspect,
+        EntityId, EntityKind, EventLog, EventPayload, EventTag, FrameAssumption, GoalAbandonReason,
         GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind, GoalOfferedPayload,
         GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
         HomeostaticNeedId, InvalidatorTag, KnownRecipes, MetabolismProfile, Name,
         ObservationOmission, ObservationRef, OmissionReason, OpportunityAnchor, PendingEvent,
         PercentileBucket, Permille, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
         PlanInvalidationReason, PrototypePlace, Quantity, RankedGoalComparisonDimensionTag,
-        RecipeId, RecordRef, ResourceSource, SaliencePolicy, SleepEpisodeEndedPayload,
-        SleepEpisodeStartedPayload, SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition,
-        WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
-        prototype_place_entity,
+        RecipeId, RecordRef, ResourceSource, RouteSegment, SaliencePolicy,
+        SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepRecoveryModifier, Tick,
+        VisibilitySpec, WakeCondition, WakeReason, WashFacilityUsedPayload, WasteCreatedPayload,
+        WasteSource, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionHandlerId, ActionInstanceId, ActionPayload,
@@ -6076,12 +6136,13 @@ mod tests {
             EventTag::BlockerRecorded,
             DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
                 agent,
-                blocker_key: BlockerKey {
+                scope: BlockerKey {
                     goal_key: move_goal,
                     place: Some(entity(21)),
                     target: Some(target),
                     action_def: Some(ActionDefId(6)),
-                },
+                }
+                .into(),
                 discrepancy: Some(worldwake_core::Discrepancy::RouteUnknown),
                 blocking_fact: None,
                 expires_tick: Tick(99),
@@ -7221,6 +7282,10 @@ mod tests {
                 source_reliability_changes: 2,
                 false_rumor_propagation_count: 0,
                 correction_latency: PercentileBucket::from_sorted(&[2, 6]),
+                blocker_counts_by_scope: BTreeMap::from([
+                    (worldwake_ai::BlockerScopeVariantId::Exact, 2),
+                    (worldwake_ai::BlockerScopeVariantId::RouteSegment, 1),
+                ]),
             },
             coordination: worldwake_ai::scenario_diagnostics::CoordinationMetrics {
                 queue_wait_ticks: PercentileBucket::from_sorted(&[0, 3, 7]),
@@ -7512,9 +7577,11 @@ mod tests {
         let target = entity(2);
         let log = sample_decision_event_log(agent, target);
         let mut out = String::new();
+        let world = World::new(build_prototype_world()).unwrap();
 
         render_decision_history_section(
             &mut out,
+            &world,
             &log,
             &[(agent, "Guard Theron".to_string())],
             None,
@@ -7614,8 +7681,10 @@ mod tests {
         sink.record(trace);
 
         let mut out = String::new();
+        let world = World::new(build_prototype_world()).unwrap();
         render_decision_history_section(
             &mut out,
+            &world,
             &log,
             &[(agent, "Agent A".to_string())],
             Some(&sink),
@@ -7690,8 +7759,10 @@ mod tests {
         );
 
         let mut out = String::new();
+        let world = World::new(build_prototype_world()).unwrap();
         render_decision_history_section(
             &mut out,
+            &world,
             &log,
             &[(agent, "Agent A".to_string())],
             Some(&sink),
@@ -7758,6 +7829,7 @@ mod tests {
         let mut decision = String::new();
         render_decision_history_section(
             &mut decision,
+            &world,
             &EventLog::new(),
             &[(agent, "Agent A".to_string())],
             Some(&sink),
@@ -7780,8 +7852,8 @@ mod tests {
 
     #[test]
     fn decision_payload_summary_is_single_line_for_goal_committed() {
-        let populated =
-            decision_payload_summary(&DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
+        let populated = decision_payload_summary(
+            &DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
                 agent: entity(1),
                 goal_key: GoalKey::from(GoalKind::Sleep),
                 motive_score: 420,
@@ -7797,7 +7869,9 @@ mod tests {
                     rejection_dimension: Some(RankedGoalComparisonDimensionTag::MotiveScore),
                 }],
                 assumptions: vec![assumption_ref(1), assumption_ref(2)],
-            }));
+            }),
+            None,
+        );
 
         assert_eq!(
             populated,
@@ -7805,8 +7879,8 @@ mod tests {
         );
         assert_single_line(&populated);
 
-        let empty =
-            decision_payload_summary(&DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
+        let empty = decision_payload_summary(
+            &DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
                 agent: entity(1),
                 goal_key: GoalKey::from(GoalKind::Sleep),
                 motive_score: 420,
@@ -7822,7 +7896,9 @@ mod tests {
                     rejection_dimension: None,
                 }],
                 assumptions: Vec::new(),
-            }));
+            }),
+            None,
+        );
 
         assert_eq!(empty, "goal=Sleep motive=420 alts=1");
         assert_single_line(&empty);
@@ -7832,24 +7908,28 @@ mod tests {
 
     #[test]
     fn decision_payload_summary_is_single_line_for_plan_adopted() {
-        let populated =
-            decision_payload_summary(&DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
+        let populated = decision_payload_summary(
+            &DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
                 agent: entity(1),
                 goal_key: GoalKey::from(GoalKind::Sleep),
                 plan_step_count: 3,
                 assumptions: vec![assumption_ref(1)],
-            }));
+            }),
+            None,
+        );
 
         assert_eq!(populated, "goal=Sleep steps=3 assume=1");
         assert_single_line(&populated);
 
-        let empty =
-            decision_payload_summary(&DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
+        let empty = decision_payload_summary(
+            &DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
                 agent: entity(1),
                 goal_key: GoalKey::from(GoalKind::Sleep),
                 plan_step_count: 3,
                 assumptions: Vec::new(),
-            }));
+            }),
+            None,
+        );
 
         assert_eq!(empty, "goal=Sleep steps=3");
         assert_single_line(&empty);
@@ -7858,15 +7938,16 @@ mod tests {
 
     #[test]
     fn decision_payload_summary_is_single_line_for_blocker_recorded() {
-        let populated = decision_payload_summary(&DecisionEventPayload::BlockerRecorded(
-            BlockerRecordedPayload {
+        let populated = decision_payload_summary(
+            &DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
                 agent: entity(1),
-                blocker_key: BlockerKey {
+                scope: BlockerKey {
                     goal_key: GoalKey::from(GoalKind::Patrol { place: entity(9) }),
                     place: Some(entity(9)),
                     target: Some(entity(2)),
                     action_def: Some(ActionDefId(6)),
-                },
+                }
+                .into(),
                 discrepancy: Some(worldwake_core::Discrepancy::BeliefStale),
                 blocking_fact: None,
                 expires_tick: Tick(99),
@@ -7878,22 +7959,24 @@ mod tests {
                     observation_ref(entity(5)),
                 ],
                 assumptions: vec![assumption_ref(1)],
-            },
-        ));
+            }),
+            None,
+        );
 
         assert!(populated.contains("decisive=B1 R1 O2"));
         assert!(populated.contains("assume=1"));
         assert_single_line(&populated);
 
-        let empty = decision_payload_summary(&DecisionEventPayload::BlockerRecorded(
-            BlockerRecordedPayload {
+        let empty = decision_payload_summary(
+            &DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
                 agent: entity(1),
-                blocker_key: BlockerKey {
+                scope: BlockerKey {
                     goal_key: GoalKey::from(GoalKind::Patrol { place: entity(9) }),
                     place: Some(entity(9)),
                     target: Some(entity(2)),
                     action_def: Some(ActionDefId(6)),
-                },
+                }
+                .into(),
                 discrepancy: Some(worldwake_core::Discrepancy::BeliefStale),
                 blocking_fact: None,
                 expires_tick: Tick(99),
@@ -7902,8 +7985,9 @@ mod tests {
                 decisive_records: Vec::new(),
                 decisive_world_observations: Vec::new(),
                 assumptions: Vec::new(),
-            },
-        ));
+            }),
+            None,
+        );
 
         assert_single_line(&empty);
         assert!(!empty.contains(" decisive="));
@@ -7911,9 +7995,52 @@ mod tests {
     }
 
     #[test]
+    fn blocker_scope_summary_renders_each_scope_variant() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (ashford, thornwall, merchant) = {
+            let mut txn = new_txn(&mut world, 1);
+            let ashford = txn.create_agent("Ashford", ControlSource::Ai).unwrap();
+            let thornwall = txn.create_agent("Thornwall", ControlSource::Ai).unwrap();
+            let merchant = txn
+                .create_agent("Merchant Vara", ControlSource::Ai)
+                .unwrap();
+            commit_txn(txn);
+            (ashford, thornwall, merchant)
+        };
+
+        let exact = blocker_scope_summary(
+            BlockerScope::exact(
+                GoalKey::from(GoalKind::Sleep),
+                Some(ashford),
+                Some(merchant),
+                Some(ActionDefId(6)),
+            ),
+            Some(&world),
+        );
+        let route = blocker_scope_summary(
+            BlockerScope::RouteSegment(RouteSegment::new(thornwall, ashford)),
+            Some(&world),
+        );
+        let reversed_route = blocker_scope_summary(
+            BlockerScope::RouteSegment(RouteSegment::new(ashford, thornwall)),
+            Some(&world),
+        );
+        let counterparty =
+            blocker_scope_summary(BlockerScope::Counterparty(merchant), Some(&world));
+
+        assert_eq!(
+            exact,
+            "Exact(Sleep at Ashford target=Merchant Vara action=adef6)"
+        );
+        assert_eq!(route, "RouteSegment(Ashford <-> Thornwall)");
+        assert_eq!(route, reversed_route);
+        assert_eq!(counterparty, "Counterparty(Merchant Vara)");
+    }
+
+    #[test]
     fn decision_payload_summary_is_single_line_for_replan_triggered() {
-        let populated = decision_payload_summary(&DecisionEventPayload::ReplanTriggered(
-            worldwake_core::ReplanTriggeredPayload {
+        let populated = decision_payload_summary(
+            &DecisionEventPayload::ReplanTriggered(worldwake_core::ReplanTriggeredPayload {
                 agent: entity(1),
                 goal_key: GoalKey::from(GoalKind::Patrol { place: entity(9) }),
                 reason: worldwake_core::ReplanReason::ActionInterrupted {
@@ -7923,15 +8050,16 @@ mod tests {
                 decisive_records: Vec::new(),
                 decisive_world_observations: Vec::new(),
                 assumptions: vec![assumption_ref(1), assumption_ref(2)],
-            },
-        ));
+            }),
+            None,
+        );
 
         assert!(populated.contains("decisive=B1 R0 O0"));
         assert!(populated.contains("assume=2"));
         assert_single_line(&populated);
 
-        let empty = decision_payload_summary(&DecisionEventPayload::ReplanTriggered(
-            worldwake_core::ReplanTriggeredPayload {
+        let empty = decision_payload_summary(
+            &DecisionEventPayload::ReplanTriggered(worldwake_core::ReplanTriggeredPayload {
                 agent: entity(1),
                 goal_key: GoalKey::from(GoalKind::Patrol { place: entity(9) }),
                 reason: worldwake_core::ReplanReason::ActionInterrupted {
@@ -7941,8 +8069,9 @@ mod tests {
                 decisive_records: Vec::new(),
                 decisive_world_observations: Vec::new(),
                 assumptions: Vec::new(),
-            },
-        ));
+            }),
+            None,
+        );
 
         assert_single_line(&empty);
         assert!(!empty.contains(" decisive="));
@@ -7951,47 +8080,57 @@ mod tests {
 
     #[test]
     fn decision_payload_summary_is_single_line_for_expectation_mismatch() {
-        let populated = decision_payload_summary(&DecisionEventPayload::ExpectationMismatch(
-            worldwake_core::ExpectationMismatchPayload {
-                agent: entity(1),
-                goal_key: GoalKey::from(GoalKind::AcquireCommodity {
-                    commodity: CommodityKind::Bread,
-                    purpose: CommodityPurpose::SelfConsume,
-                    quantity: AcquisitionQuantity::single(),
-                }),
-                step_index: 2,
-                expected_materializations: vec![worldwake_core::MaterializationTag::SplitOffLot],
-                expectation_kind: None,
-                mismatch_detail: None,
-                decisive_beliefs: Vec::new(),
-                decisive_records: vec![record_ref(entity(3))],
-                decisive_world_observations: vec![observation_ref(entity(4))],
-                assumptions: vec![assumption_ref(1)],
-            },
-        ));
+        let populated = decision_payload_summary(
+            &DecisionEventPayload::ExpectationMismatch(
+                worldwake_core::ExpectationMismatchPayload {
+                    agent: entity(1),
+                    goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Bread,
+                        purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
+                    }),
+                    step_index: 2,
+                    expected_materializations: vec![
+                        worldwake_core::MaterializationTag::SplitOffLot,
+                    ],
+                    expectation_kind: None,
+                    mismatch_detail: None,
+                    decisive_beliefs: Vec::new(),
+                    decisive_records: vec![record_ref(entity(3))],
+                    decisive_world_observations: vec![observation_ref(entity(4))],
+                    assumptions: vec![assumption_ref(1)],
+                },
+            ),
+            None,
+        );
 
         assert!(populated.contains("decisive=B0 R1 O1"));
         assert!(populated.contains("assume=1"));
         assert_single_line(&populated);
 
-        let empty = decision_payload_summary(&DecisionEventPayload::ExpectationMismatch(
-            worldwake_core::ExpectationMismatchPayload {
-                agent: entity(1),
-                goal_key: GoalKey::from(GoalKind::AcquireCommodity {
-                    commodity: CommodityKind::Bread,
-                    purpose: CommodityPurpose::SelfConsume,
-                    quantity: AcquisitionQuantity::single(),
-                }),
-                step_index: 2,
-                expected_materializations: vec![worldwake_core::MaterializationTag::SplitOffLot],
-                expectation_kind: None,
-                mismatch_detail: None,
-                decisive_beliefs: Vec::new(),
-                decisive_records: Vec::new(),
-                decisive_world_observations: Vec::new(),
-                assumptions: Vec::new(),
-            },
-        ));
+        let empty = decision_payload_summary(
+            &DecisionEventPayload::ExpectationMismatch(
+                worldwake_core::ExpectationMismatchPayload {
+                    agent: entity(1),
+                    goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Bread,
+                        purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
+                    }),
+                    step_index: 2,
+                    expected_materializations: vec![
+                        worldwake_core::MaterializationTag::SplitOffLot,
+                    ],
+                    expectation_kind: None,
+                    mismatch_detail: None,
+                    decisive_beliefs: Vec::new(),
+                    decisive_records: Vec::new(),
+                    decisive_world_observations: Vec::new(),
+                    assumptions: Vec::new(),
+                },
+            ),
+            None,
+        );
 
         assert_single_line(&empty);
         assert!(!empty.contains(" decisive="));
@@ -8000,8 +8139,9 @@ mod tests {
 
     #[test]
     fn decision_payload_summary_is_single_line_for_source_expectation_failure() {
-        let populated = decision_payload_summary(&DecisionEventPayload::SourceExpectationFailure(
-            worldwake_core::SourceExpectationFailurePayload {
+        let populated = decision_payload_summary(
+            &DecisionEventPayload::SourceExpectationFailure(
+                worldwake_core::SourceExpectationFailurePayload {
                 agent: entity(1),
                 opportunity: worldwake_core::OpportunityKey {
                     goal_key: GoalKey::from(GoalKind::AcquireCommodity {
@@ -8028,15 +8168,17 @@ mod tests {
                     observation_ref(entity(8)),
                     observation_ref(entity(9)),
                 ],
-            },
-        ));
+            }),
+            None,
+        );
 
         assert!(populated.contains("decisive=B0 R0 O2"));
         assert_single_line(&populated);
         assert!(!populated.contains(" assume="));
 
-        let empty = decision_payload_summary(&DecisionEventPayload::SourceExpectationFailure(
-            worldwake_core::SourceExpectationFailurePayload {
+        let empty = decision_payload_summary(
+            &DecisionEventPayload::SourceExpectationFailure(
+                worldwake_core::SourceExpectationFailurePayload {
                 agent: entity(1),
                 opportunity: worldwake_core::OpportunityKey {
                     goal_key: GoalKey::from(GoalKind::AcquireCommodity {
@@ -8060,8 +8202,9 @@ mod tests {
                 decisive_beliefs: Vec::new(),
                 decisive_records: Vec::new(),
                 decisive_world_observations: Vec::new(),
-            },
-        ));
+            }),
+            None,
+        );
 
         assert_single_line(&empty);
         assert!(!empty.contains(" decisive="));

@@ -119,16 +119,18 @@ fn commodity_link(
 
 fn discrepancy_entry(clearing_condition: DiscrepancyClearing) -> DiscrepancyEntry {
     DiscrepancyEntry {
-        blocker_key: BlockerKey {
+        scope: BlockerKey {
             goal_key: goal_key(),
             place: Some(entity(8)),
             target: Some(entity(7)),
             action_def: Some(ActionDefId(1)),
-        },
+        }
+        .into(),
         discrepancy: Discrepancy::BeliefStale,
         observed_tick: Tick(5),
         expires_tick: Tick(50),
         clearing_condition,
+        source_event: worldwake_core::EventId(0),
     }
 }
 
@@ -411,7 +413,7 @@ fn commodity_availability_changed_clears_blocker_structurally() {
     };
     let mut blocker_memory = BlockerMemory::default();
     blocker_memory.record(Blocker {
-        blocker_key,
+        scope: blocker_key.into(),
         blocking_fact: BlockingFact::SellerOutOfStock,
         diagnostic_context: None,
         observed_tick: Tick(10),
@@ -421,6 +423,7 @@ fn commodity_availability_changed_clears_blocker_structurally() {
             place: market,
         },
         baseline_snapshot: None,
+        source_event: worldwake_core::EventId(0),
     });
     blocker_memory.sweep_cleared(|blocker| {
         blocker.clearing_condition

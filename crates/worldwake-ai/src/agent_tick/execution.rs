@@ -464,7 +464,7 @@ fn discrepancy_entry_for_repair(
     let (discrepancy, clearing_condition) =
         discrepancy_for_repair_signature(signature, broken_link);
     DiscrepancyEntry {
-        blocker_key: BlockerKey {
+        scope: BlockerKey {
             goal_key,
             place: step.target_place,
             target: signature.step_target.or_else(|| match broken_link.fact {
@@ -474,11 +474,13 @@ fn discrepancy_entry_for_repair(
                 PlanningFact::ResourceAccess { resource, .. } => Some(resource),
             }),
             action_def: Some(step.def_id),
-        },
+        }
+        .into(),
         discrepancy,
         observed_tick: tick,
         expires_tick: Tick(tick.0 + 1),
         clearing_condition,
+        source_event: worldwake_core::EventId(0),
     }
 }
 
@@ -891,6 +893,16 @@ pub(super) fn persist_blocked_memory(
     after: &BlockerMemory,
     assumption_refs: AssumptionRefContext<'_>,
 ) -> Result<(), TickInputError> {
+    let existing = world.get_component_blocker_memory(agent);
+    if blocker_memory_already_persisted(existing, after)
+        || (existing.is_none() && before == after && after.intents.is_empty())
+    {
+        return Ok(());
+    }
+
+    let source_event = event_log.next_id();
+    let persisted_after = blocker_memory_with_source_events(after, source_event);
+    let after = persisted_after.as_ref().unwrap_or(after);
     let changed_entries = after
         .intents
         .iter()
@@ -899,12 +911,6 @@ pub(super) fn persist_blocked_memory(
             _ => Some(*blocker),
         })
         .collect::<Vec<_>>();
-    let existing = world.get_component_blocker_memory(agent);
-    if existing == Some(after)
-        || (existing.is_none() && before == after && after.intents.is_empty())
-    {
-        return Ok(());
-    }
 
     let mut txn = WorldTxn::new(
         world,
@@ -927,7 +933,7 @@ pub(super) fn persist_blocked_memory(
             EventTag::BlockerRecorded,
             DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
                 agent,
-                blocker_key: blocker.blocker_key,
+                scope: blocker.scope,
                 discrepancy: None,
                 blocking_fact: Some(blocker.blocking_fact),
                 expires_tick: blocker.expires_tick,
@@ -942,6 +948,45 @@ pub(super) fn persist_blocked_memory(
     Ok(())
 }
 
+fn blocker_memory_already_persisted(
+    existing: Option<&BlockerMemory>,
+    requested: &BlockerMemory,
+) -> bool {
+    let Some(existing) = existing else {
+        return false;
+    };
+    if existing.intents.len() != requested.intents.len() {
+        return false;
+    }
+    requested.intents.iter().all(|(scope, requested)| {
+        existing.intents.get(scope).is_some_and(|existing| {
+            if existing == requested {
+                return true;
+            }
+            let mut normalized = *requested;
+            if normalized.source_event == worldwake_core::EventId(0) {
+                normalized.source_event = existing.source_event;
+            }
+            existing == &normalized
+        })
+    })
+}
+
+fn blocker_memory_with_source_events(
+    memory: &BlockerMemory,
+    source_event: worldwake_core::EventId,
+) -> Option<BlockerMemory> {
+    let mut updated = memory.clone();
+    let mut changed = false;
+    for blocker in updated.intents.values_mut() {
+        if blocker.source_event == worldwake_core::EventId(0) {
+            blocker.source_event = source_event;
+            changed = true;
+        }
+    }
+    changed.then_some(updated)
+}
+
 pub(super) fn persist_discrepancy_memory(
     world: &mut worldwake_core::World,
     event_log: &mut worldwake_core::EventLog,
@@ -951,6 +996,16 @@ pub(super) fn persist_discrepancy_memory(
     after: &DiscrepancyMemory,
     assumption_refs: AssumptionRefContext<'_>,
 ) -> Result<(), TickInputError> {
+    let existing = world.get_component_discrepancy_memory(agent);
+    if discrepancy_memory_already_persisted(existing, after)
+        || (existing.is_none() && before == after && after.entries.is_empty())
+    {
+        return Ok(());
+    }
+
+    let source_event = event_log.next_id();
+    let persisted_after = discrepancy_memory_with_source_events(after, source_event);
+    let after = persisted_after.as_ref().unwrap_or(after);
     let changed_entries = after
         .entries
         .iter()
@@ -959,12 +1014,6 @@ pub(super) fn persist_discrepancy_memory(
             _ => Some(*entry),
         })
         .collect::<Vec<_>>();
-    let existing = world.get_component_discrepancy_memory(agent);
-    if existing == Some(after)
-        || (existing.is_none() && before == after && after.entries.is_empty())
-    {
-        return Ok(());
-    }
 
     let mut txn = WorldTxn::new(
         world,
@@ -989,7 +1038,7 @@ pub(super) fn persist_discrepancy_memory(
             EventTag::BlockerRecorded,
             DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
                 agent,
-                blocker_key: entry.blocker_key,
+                scope: entry.scope,
                 discrepancy: Some(entry.discrepancy),
                 blocking_fact: None,
                 expires_tick: entry.expires_tick,
@@ -1002,6 +1051,45 @@ pub(super) fn persist_discrepancy_memory(
         );
     }
     Ok(())
+}
+
+fn discrepancy_memory_already_persisted(
+    existing: Option<&DiscrepancyMemory>,
+    requested: &DiscrepancyMemory,
+) -> bool {
+    let Some(existing) = existing else {
+        return false;
+    };
+    if existing.entries.len() != requested.entries.len() {
+        return false;
+    }
+    requested.entries.iter().all(|(scope, requested)| {
+        existing.entries.get(scope).is_some_and(|existing| {
+            if existing == requested {
+                return true;
+            }
+            let mut normalized = *requested;
+            if normalized.source_event == worldwake_core::EventId(0) {
+                normalized.source_event = existing.source_event;
+            }
+            existing == &normalized
+        })
+    })
+}
+
+fn discrepancy_memory_with_source_events(
+    memory: &DiscrepancyMemory,
+    source_event: worldwake_core::EventId,
+) -> Option<DiscrepancyMemory> {
+    let mut updated = memory.clone();
+    let mut changed = false;
+    for entry in updated.entries.values_mut() {
+        if entry.source_event == worldwake_core::EventId(0) {
+            entry.source_event = source_event;
+            changed = true;
+        }
+    }
+    changed.then_some(updated)
 }
 
 fn belief_snapshot_for_discrepancy_entry(
@@ -1018,7 +1106,7 @@ fn belief_snapshot_for_discrepancy_entry(
     }
 
     let _ = world.get_component_agent_belief_store(agent)?;
-    let target = entry.blocker_key.target?;
+    let target = entry.scope.exact_target()?;
     let view = PerAgentBeliefView::from_world_at_tick(agent, tick, world);
     let envelope = view.believed_target_location(agent, target);
     let expected = match envelope.status {
@@ -1339,7 +1427,7 @@ mod tests {
         };
         let mut memory = BlockerMemory::default();
         memory.record(Blocker {
-            blocker_key,
+            scope: blocker_key.into(),
             blocking_fact: BlockingFact::ReservationConflict {
                 affordance,
                 contention_event: None,
@@ -1351,6 +1439,7 @@ mod tests {
                 facility: affordance.facility,
             },
             baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
         });
         memory
     }

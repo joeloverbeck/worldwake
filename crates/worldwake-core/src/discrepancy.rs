@@ -1,5 +1,5 @@
 use crate::{
-    BeliefClaimKey, BlockerKey, BlockerReason, CommodityKind, Component, EntityId,
+    BeliefClaimKey, BlockerReason, BlockerScope, CommodityKind, Component, EntityId, EventId,
     HomeostaticNeedId, OmissionReason, Tick,
 };
 use serde::{Deserialize, Serialize};
@@ -46,11 +46,12 @@ pub enum Discrepancy {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DiscrepancyEntry {
-    pub blocker_key: BlockerKey,
+    pub scope: BlockerScope,
     pub discrepancy: Discrepancy,
     pub observed_tick: Tick,
     pub expires_tick: Tick,
     pub clearing_condition: DiscrepancyClearing,
+    pub source_event: EventId,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -71,12 +72,12 @@ pub enum DiscrepancyClearing {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DiscrepancyMemory {
-    pub entries: BTreeMap<BlockerKey, DiscrepancyEntry>,
+    pub entries: BTreeMap<BlockerScope, DiscrepancyEntry>,
 }
 
 impl DiscrepancyMemory {
     pub fn record(&mut self, entry: DiscrepancyEntry) {
-        self.entries.insert(entry.blocker_key, entry);
+        self.entries.insert(entry.scope, entry);
     }
 
     pub fn expire(&mut self, current_tick: Tick) {
@@ -85,14 +86,14 @@ impl DiscrepancyMemory {
     }
 
     #[must_use]
-    pub fn is_suppressed(&self, key: &BlockerKey, current_tick: Tick) -> bool {
+    pub fn is_suppressed(&self, scope: &BlockerScope, current_tick: Tick) -> bool {
         self.entries
-            .get(key)
+            .get(scope)
             .is_some_and(|entry| entry.expires_tick > current_tick)
     }
 
-    pub fn clear_for(&mut self, key: &BlockerKey) {
-        self.entries.remove(key);
+    pub fn clear_for(&mut self, scope: &BlockerScope) {
+        self.entries.remove(scope);
     }
 
     pub fn clear_by_condition(&mut self, mut predicate: impl FnMut(&DiscrepancyEntry) -> bool) {
@@ -106,8 +107,9 @@ impl Component for DiscrepancyMemory {}
 mod tests {
     use super::{Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory};
     use crate::{
-        ActionDefId, BeliefClaimKey, BlockerKey, BlockerReason, CommodityKind, EntityBeliefAspect,
-        EntityId, GoalKind, OmissionReason, SaliencePolicy, Tick,
+        ActionDefId, BeliefClaimKey, BlockerKey, BlockerReason, BlockerScope, CommodityKind,
+        EntityBeliefAspect, EntityId, EventId, GoalKind, OmissionReason, RouteSegment,
+        SaliencePolicy, Tick,
         test_utils::{entity_id, sample_goal_key},
         traits::Component,
     };
@@ -136,11 +138,12 @@ mod tests {
         clearing_condition: DiscrepancyClearing,
     ) -> DiscrepancyEntry {
         DiscrepancyEntry {
-            blocker_key: key,
+            scope: key.into(),
             discrepancy,
             observed_tick: Tick(9),
             expires_tick,
             clearing_condition,
+            source_event: EventId(1),
         }
     }
 
@@ -233,6 +236,42 @@ mod tests {
     }
 
     #[test]
+    fn discrepancy_memory_roundtrips_non_exact_scope_entries() {
+        let route_scope =
+            BlockerScope::RouteSegment(RouteSegment::new(entity_id(10, 0), entity_id(11, 0)));
+        let counterparty_scope = BlockerScope::Counterparty(entity_id(12, 0));
+        let mut memory = DiscrepancyMemory::default();
+        memory.record(DiscrepancyEntry {
+            scope: route_scope,
+            discrepancy: Discrepancy::RouteUnknown,
+            observed_tick: Tick(2),
+            expires_tick: Tick(20),
+            clearing_condition: DiscrepancyClearing::WorldStructureChange,
+            source_event: EventId(7),
+        });
+        memory.record(DiscrepancyEntry {
+            scope: counterparty_scope,
+            discrepancy: Discrepancy::NoWillingCounterparty,
+            observed_tick: Tick(3),
+            expires_tick: Tick(30),
+            clearing_condition: DiscrepancyClearing::TtlExpiry,
+            source_event: EventId(8),
+        });
+
+        let bytes = bincode::serialize(&memory).unwrap();
+        let roundtrip: DiscrepancyMemory = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, memory);
+        assert!(roundtrip.is_suppressed(&route_scope, Tick(10)));
+        assert!(roundtrip.is_suppressed(&counterparty_scope, Tick(10)));
+        assert_eq!(roundtrip.entries[&route_scope].source_event, EventId(7));
+        assert_eq!(
+            roundtrip.entries[&counterparty_scope].source_event,
+            EventId(8)
+        );
+    }
+
+    #[test]
     fn discrepancy_clearing_roundtrips_through_bincode() {
         let clearing = DiscrepancyClearing::BeliefUpdate {
             claim_key: BeliefClaimKey {
@@ -273,13 +312,13 @@ mod tests {
             DiscrepancyClearing::WorldStructureChange,
         ));
 
-        assert!(memory.is_suppressed(&key, Tick(9)));
-        assert!(!memory.is_suppressed(&key, Tick(10)));
+        assert!(memory.is_suppressed(&key.into(), Tick(9)));
+        assert!(!memory.is_suppressed(&key.into(), Tick(10)));
 
         memory.expire(Tick(10));
 
         assert_eq!(memory.entries.len(), 1);
-        assert!(memory.entries.contains_key(&other_key));
+        assert!(memory.entries.contains_key(&other_key.into()));
     }
 
     #[test]
@@ -293,7 +332,7 @@ mod tests {
             DiscrepancyClearing::TtlExpiry,
         ));
 
-        memory.clear_for(&key);
+        memory.clear_for(&key.into());
 
         assert!(memory.entries.is_empty());
     }
@@ -334,8 +373,8 @@ mod tests {
             )
         });
 
-        assert!(!memory.entries.contains_key(&clear_key));
-        assert!(memory.entries.contains_key(&retained_key));
+        assert!(!memory.entries.contains_key(&clear_key.into()));
+        assert!(memory.entries.contains_key(&retained_key.into()));
     }
 
     #[test]
@@ -378,7 +417,7 @@ mod tests {
         });
 
         assert_eq!(memory.entries.len(), 1);
-        assert!(memory.entries.contains_key(&other_key));
+        assert!(memory.entries.contains_key(&other_key.into()));
     }
 
     #[test]
@@ -418,6 +457,6 @@ mod tests {
         });
 
         assert_eq!(memory.entries.len(), 1);
-        assert!(memory.entries.contains_key(&other_key));
+        assert!(memory.entries.contains_key(&other_key.into()));
     }
 }
