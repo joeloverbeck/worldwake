@@ -13,7 +13,7 @@ Ticket 002 added the `scope: BlockerScope` field to `BlockerRecordedPayload` and
 ## Assumption Reassessment (2026-05-17)
 
 1. Observer Section 3b "Decision History" lives at `crates/worldwake-cli/src/bin/observer.rs:872`. The `BlockerRecordedPayload` rendering is consumed there through the existing event-log walking code (after ticket 002, the payload carries `scope: BlockerScope`). The target rendering is a one-line-per-event format consistent with the surrounding decision-history table.
-2. Spec source: `specs/S150-cross-goal-blocker-scoping.md` D7's rendering example:
+2. Spec source: `archive/specs/S150-cross-goal-blocker-scoping.md` D7's rendering example:
    ```
    Blocker: RouteSegment(Thornwall ↔ Ashford) — DangerTooHigh — observed tick 1247, expires 1487
    Blocker: Counterparty(Merchant#42) — NoWillingCounterparty — observed tick 1310, expires 1670

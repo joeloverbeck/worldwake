@@ -19,7 +19,7 @@ This ticket adds `golden_cross_goal_blocker_scoping.rs` covering the 8 scenarios
    - `golden_plan_repair.rs` for scenarios that exercise blocker recording during execution
    - `golden_need_projection.rs` for scenarios that assert per-scope behavior through trace surfaces
    Canonical golden authoring guide: `docs/golden-e2e-testing.md`.
-2. Spec source: `specs/S150-cross-goal-blocker-scoping.md` D10's 8-scenario enumeration. The scenarios map to:
+2. Spec source: `archive/specs/S150-cross-goal-blocker-scoping.md` D10's 8-scenario enumeration. The scenarios map to:
    - **Scenario A (RouteSegment multi-goal suppression)**: agent has `BlockerScope::RouteSegment(thornwall ↔ ashford)`; emits multiple route-bearing goals across the same segment; assert the matching candidates are suppressed. Live correction: the current `GoalKind` enum has no `BuyCommodity` variant, and remote `AcquireCommodity` is still visible at candidate-generation time when the offer evidence does not carry both route endpoints; the lower feasibility/search route-blocker seam covers that route. This golden therefore uses two distinct `EscortToSafety` goal keys sharing one segment for the generation-level cross-goal proof.
    - **Scenario B (Counterparty multi-goal suppression)**: agent has `BlockerScope::Counterparty(merchant_42)`; emits both local trade-style `AcquireCommodity` with merchant evidence and `AskWitness` to the same counterparty; assert both candidates are suppressed.
    - **Scenario C (TTL expiry restores emission)**: scenario from A or B, advance ticks past `route_segment_blocker_ticks` (240) or `counterparty_blocker_ticks` (360); assert candidates resume emission.

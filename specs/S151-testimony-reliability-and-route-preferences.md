@@ -35,7 +35,7 @@ Phase 12: AI Architecture Evolution — Draft
 - S109 (Typed Discrepancy Taxonomy, archived) — `Discrepancy::BeliefStale` and `Discrepancy::BeliefContradicted` carry the substrate that surfaces "this source was wrong before."
 - S131 (Source Reliability Wait/Capacity, archived) and S133 (Source Composite Tiebreaker, archived) — provide the precedent for per-source learned state and `ReliabilityRecord` shape.
 - S139 (AskWitness Goal Layer, archived) — provides the testimony-acquisition path that feeds testimony-reliability updates.
-- S150 (Cross-Goal Blocker Scoping, Phase 12) — `RouteSegment` newtype shared; route preferences and route blockers compose (blockers say "currently bad," preferences say "historically [un]safe").
+- S150 (Cross-Goal Blocker Scoping, archived at `archive/specs/S150-cross-goal-blocker-scoping.md`) — `RouteSegment` newtype shared; route preferences and route blockers compose (blockers say "currently bad," preferences say "historically [un]safe").
 - S130 (Survey Records and Frontier Disconfirmation, archived) — provides confirmation-event substrate for testimony validation.
 
 ## Design Goals

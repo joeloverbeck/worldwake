@@ -7,6 +7,7 @@ See `archive/` for detailed completion records.
 
 Completed Phase 12 specs:
 - `S144: Aggregate Scenario Diagnostics` — archived at [archive/specs/S144-aggregate-scenario-diagnostics.md](/home/joeloverbeck/projects/worldwake/archive/specs/S144-aggregate-scenario-diagnostics.md). Landed deterministic aggregate scenario diagnostics over existing traces and the event log, `PercentileBucket`, planning-snapshot cache counters, observer Section 13 text/JSON rendering, diagnostics CLI flags, and the committed `survival-baseline.ron` diagnostics fixture.
+- `S150: Cross-Goal Blocker Scoping` — archived at [archive/specs/S150-cross-goal-blocker-scoping.md](/home/joeloverbeck/projects/worldwake/archive/specs/S150-cross-goal-blocker-scoping.md). Landed typed `BlockerScope` (`Exact`, `RouteSegment`, `Counterparty`), per-scope TTL profile fields, scope-aware blocker/discrepancy memory and clearing, typed observer rendering, S144 per-scope diagnostics, and `golden_cross_goal_blocker_scoping.rs` coverage.
 
 Completed Phase 7 specs:
 - `S59: Expectation and Obligation Substrate` — archived at [archive/specs/S59-expectation-obligation-substrate.md](/home/joeloverbeck/projects/worldwake/archive/specs/S59-expectation-obligation-substrate.md). Time-bounded expectations, overdue detection, search/rescue actions, last-seen propagation. Golden coverage: Scenarios 120–125 in `golden_expectation.rs`.
@@ -652,7 +653,7 @@ Phase 12 runs independently of Phase 7's pending consequence-carrier specs (S60�
 ### Dependency Graph
 
 ```text
-S143 (archived)       S144 (archived)       S145 (archived)       S150 (independent)
+S143 (archived)       S144 (archived)       S145 (archived)       S150 (archived)
    │                                            │                     │
    │                  ┌─────────────────────────┘                     │
    │                  ▼                                               │
@@ -663,11 +664,11 @@ S143 (archived)       S144 (archived)       S145 (archived)       S150 (independ
    │                          │
    │                          └── S149 (soft dep on S148 for shared resume/abandon types)
    │
-   └─── S151 (soft dep on S150 for RouteSegment)
+   └─── S151 (soft dep on archived S150 for RouteSegment)
             │
             └── S152 (soft deps on S146/S148/S151; modifies their profile types)
 
-S153 (hard deps on archived S143, S148, S150, S151)
+S153 (hard deps on archived S143, S148, archived S150, S151)
 ```
 
 ### Active Execution Steps
@@ -676,13 +677,13 @@ S153 (hard deps on archived S143, S148, S150, S151)
 - **S143**: Static Belief-View Trait Separation — completed and archived at `archive/specs/S143-static-belief-view-trait-separation.md`; split `LocalPhysicalObservationView` vs `BelievedAuthorityView` vs `DebugWorldView`; FND-14A widening becomes a compile error.
 - **S144**: ✅ COMPLETED — Aggregate Scenario Diagnostics — archived at [archive/specs/S144-aggregate-scenario-diagnostics.md](/home/joeloverbeck/projects/worldwake/archive/specs/S144-aggregate-scenario-diagnostics.md). Landed `ScenarioDiagnosticsReport` over existing traces, observer Section 13 text/JSON output, `PercentileBucket`, diagnostics flags, and the committed survival-baseline diagnostics fixture; S144 now backs future tuning decisions.
 - **S145**: ✅ COMPLETED — Planning Substrate Hardening — archived at `archive/specs/S145-planning-substrate-hardening.md`; landed stage-aware strategic budget (`2 * stages * max_prerequisite_locations`), shared cache invariant regression suite, cache hit/miss/invalidation counters, and five-stage strategic-budget golden provenance.
-- **S150**: Cross-Goal Blocker Scoping — typed `BlockerScope` enum with `Exact`/`RouteSegment`/`Counterparty` variants, per-scope TTL profile, decision-history surface, S144 aggregation.
+- **S150**: ✅ COMPLETED — archived at [archive/specs/S150-cross-goal-blocker-scoping.md](/home/joeloverbeck/projects/worldwake/archive/specs/S150-cross-goal-blocker-scoping.md). Landed typed `BlockerScope` enum with `Exact`/`RouteSegment`/`Counterparty` variants, per-scope TTL profile, decision-history surface, S144 aggregation, and cross-goal blocker golden coverage.
 
 **Wave 2** (after Wave 1):
 - **S146**: Data-Driven Goal Schema and Per-Goal Planning Budgets — `GoalSchema` registry, `CandidateExtractor` migration of the 18+ `emit_*` functions, `GoalPlanningBudget` preset table (SELF_CARE/TRAVEL_PURCHASE/PRODUCTION/INVESTIGATION/BOUNTY_ESCORT), `AgentSchemaContextProfile` universal component.
   - soft depends on archived S145 (uses `strategic_budget_for_stages` helper)
 - **S151**: Testimony Source Reliability and Route Preferences — `TestimonyReliability` keyed by `(EntityId, TopicScope)`, `RoutePreference` keyed by `RouteSegment`, `TestimonyTrustProfile` / `RoutePreferenceProfile` universal components, ranking damping and travel-cost integration.
-  - soft depends on S150 (`RouteSegment` newtype)
+  - soft depends on archived S150 (`RouteSegment` newtype)
   - HabitMemory portion of PR-8 deferred until S144 diagnostics surface method-thrash pathology
 
 **Wave 3** (parallel, after Wave 2):
@@ -700,7 +701,7 @@ S153 (hard deps on archived S143, S148, S150, S151)
 
 **Wave 5** (final, after Wave 4):
 - **S153**: Golden Gaps — AI Architecture Scaling — three remaining scenarios: false rumor justice (regression for S151), office vacancy → patrol gap (regression for S148 portfolio breadth), scaled contention (regression for S150 cross-goal blockers). Belief-wall trap (regression for S143) is covered by S143STABELVIE-006; 4 PR-15 scenarios deferred (100-goal dense market, 20-agent contention, long production chain, boundary shock).
-  - hard depends on archived S143, S148, S150, S151
+  - hard depends on archived S143, S148, archived S150, S151
 
 ### Phase 12 Gate
 
@@ -717,7 +718,7 @@ S153 (hard deps on archived S143, S148, S150, S151)
 - [ ] S147 HTN method goldens prove method selection + flat-GOAP fallback + method-failure → `Discrepancy::PartialExecutionDrift`
 - [ ] S148 7-slot portfolio golden proves slot occupancy under Normal/Emergency/Idle modes; default `max_plans_normal=6` replaces legacy `max_candidates_to_plan=2`
 - [ ] S149 typed-terminal goldens prove each of the 7 terminal kinds with concrete observability + resume conditions
-- [ ] S150 cross-goal blocker goldens prove `RouteSegment` and `Counterparty` blockers suppress multi-goal candidates and clear on observation
+- [x] S150 archived: cross-goal blocker goldens prove `RouteSegment` and `Counterparty` blockers suppress multi-goal candidates and clear on observation
 - [ ] S151 testimony-reliability golden proves trust update from confirmation/refutation/contradiction; route-preference golden proves dangerous-traversal penalty plus decay
 - [ ] S152 archetype golden proves deterministic seeded assignment + 10-template behavioral diversification + `PersonalityAssigned` event replay
 - [ ] S153 remaining three golden scenarios all pass with byte-stable event log on fixed seeds; belief-wall trap is covered by S143STABELVIE-006
