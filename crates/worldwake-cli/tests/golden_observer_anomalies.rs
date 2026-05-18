@@ -109,10 +109,10 @@ fn maintenance_starvation_fires_on_wash_gap() {
 
     assert_eq!(
         count_anomalies_of_kind(&report, "MAINTENANCE_STARVATION"),
-        2
+        3
     );
     let blocks = anomaly_headers_of_kind(&report, "MAINTENANCE_STARVATION");
-    assert_eq!(blocks.len(), 2);
+    assert_eq!(blocks.len(), 3);
     assert!(blocks.iter().any(|block| block.contains("Mira")));
     assert!(blocks.iter().any(|block| block.contains("Noor")));
     let section = anomaly_section(&report);
