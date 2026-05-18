@@ -4828,12 +4828,16 @@
     ],
     "candidates_emitted_by_slot": [
       {
-        "key": "Survival",
+        "key": "NeedSurvival",
         "count": 2518
       },
       {
-        "key": "Commitment",
-        "count": 3
+        "key": "PainCare",
+        "count": 319
+      },
+      {
+        "key": "EconomicOpportunity",
+        "count": 32
       }
     ],
     "candidates_suppressed_by_category": [
@@ -5325,6 +5329,12 @@
           }
         },
         "count": 211
+      },
+      {
+        "key": {
+          "AbandonConditionFired": "PatienceExhausted"
+        },
+        "count": 34
       }
     ],
     "repair_attempts": 0,
@@ -5358,7 +5368,7 @@
       "mean": 0
     },
     "blocker_counts_by_scope": {
-      "Exact": 1338
+      "Exact": 1372
     }
   },
   "coordination": {

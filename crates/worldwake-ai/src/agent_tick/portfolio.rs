@@ -68,6 +68,15 @@ pub(crate) fn assemble_portfolio(
 }
 
 fn primary_motive_slot(entry: &AgendaEntry) -> SlotKind {
+    // Goal-kind-derived slot takes precedence over motive-derived slot. This
+    // preserves the S112 slot routing where survival/care/duty goals are
+    // bucketed by their nature rather than by which motive contributed the
+    // highest score on a given tick (e.g. `AcquireCommodity(SelfConsume)`
+    // carries both `NeedPressure` and `Greed` motives, but is always a
+    // survival goal regardless of which scored higher).
+    if let Some(slot) = canonical_slot_for_kind(&entry.offer.key.kind) {
+        return slot;
+    }
     entry
         .motive_source_contributions
         .iter()
@@ -81,6 +90,32 @@ fn primary_motive_slot(entry: &AgendaEntry) -> SlotKind {
                 &motive_ref.source,
             ))
         })
+}
+
+fn canonical_slot_for_kind(kind: &worldwake_core::GoalKind) -> Option<SlotKind> {
+    use worldwake_core::CommodityPurpose;
+    use worldwake_core::GoalKind;
+    Some(match kind {
+        GoalKind::ConsumeOwnedCommodity { .. }
+        | GoalKind::AcquireCommodity {
+            purpose: CommodityPurpose::SelfConsume,
+            ..
+        }
+        | GoalKind::Sleep
+        | GoalKind::Relieve
+        | GoalKind::Wash
+        | GoalKind::ReduceDanger
+        | GoalKind::FreeCarryCapacity => SlotKind::NeedSurvival,
+        GoalKind::TreatWounds { .. } => SlotKind::PainCare,
+        GoalKind::PostNotice { .. }
+        | GoalKind::PostBounty { .. }
+        | GoalKind::ReportMissing { .. }
+        | GoalKind::ReportFound { .. }
+        | GoalKind::ClaimOffice { .. }
+        | GoalKind::SupportCandidateForOffice { .. } => SlotKind::ObligationDuty,
+        GoalKind::Accuse { .. } | GoalKind::InvestigateViolation { .. } => SlotKind::SocialMotive,
+        _ => return None,
+    })
 }
 
 fn apply_mode(weights: &PortfolioWeightsProfile, mode: OperatingMode) -> PortfolioWeightsProfile {
@@ -938,9 +973,17 @@ mod tests {
 
     #[test]
     fn primary_motive_slot_picks_highest_weight_contribution() {
+        // Use SellCommodity since it lacks a canonical-slot mapping in
+        // `canonical_slot_for_kind`, isolating motive-weight-based picking.
         let ranked = with_motive_at_tick(
             with_motive_at_tick(
-                ranked_goal(GoalKind::Sleep, 900, OpportunityAnchor::None),
+                ranked_goal(
+                    GoalKind::SellCommodity {
+                        commodity: CommodityKind::Apple,
+                    },
+                    900,
+                    OpportunityAnchor::None,
+                ),
                 MotiveSource::NeedPressure {
                     need: HomeostaticNeedId::Hunger,
                 },
@@ -957,9 +1000,17 @@ mod tests {
 
     #[test]
     fn primary_motive_slot_breaks_ties_with_older_introduced_tick() {
+        // Use SellCommodity to bypass the canonical-slot override so this
+        // exercises the contribution tie-break path explicitly.
         let ranked = with_motive_at_tick(
             with_motive_at_tick(
-                ranked_goal(GoalKind::Sleep, 900, OpportunityAnchor::None),
+                ranked_goal(
+                    GoalKind::SellCommodity {
+                        commodity: CommodityKind::Apple,
+                    },
+                    900,
+                    OpportunityAnchor::None,
+                ),
                 MotiveSource::Pain { wound: WoundId(91) },
                 500,
                 Tick(8),
@@ -969,6 +1020,31 @@ mod tests {
             },
             500,
             Tick(3),
+        );
+
+        assert_eq!(primary_motive_slot(&ranked), SlotKind::NeedSurvival);
+    }
+
+    #[test]
+    fn primary_motive_slot_prefers_canonical_kind_over_motive_weight() {
+        // Sleep is canonically a NeedSurvival goal regardless of which motive
+        // happens to score highest on a given tick. This contract preserves the
+        // S112 slot-routing intent (self-care goals belong in survival slots,
+        // not displaced into PainCare when pain motive bursts higher than need
+        // pressure) and prevents the S148-004 regression where the motive-only
+        // bucketing left agents stuck without active need-care plans.
+        let ranked = with_motive_at_tick(
+            with_motive_at_tick(
+                ranked_goal(GoalKind::Sleep, 900, OpportunityAnchor::None),
+                MotiveSource::NeedPressure {
+                    need: HomeostaticNeedId::Fatigue,
+                },
+                200,
+                Tick(1),
+            ),
+            MotiveSource::Pain { wound: WoundId(90) },
+            700,
+            Tick(2),
         );
 
         assert_eq!(primary_motive_slot(&ranked), SlotKind::NeedSurvival);
