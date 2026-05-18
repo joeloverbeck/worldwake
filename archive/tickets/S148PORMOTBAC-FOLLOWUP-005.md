@@ -33,7 +33,7 @@ Clean `HEAD` before `S148PORMOTBAC-FOLLOWUP-003` passed both tests, so this is n
 1. Observer report comparison showed `maintenance_starvation_wash_gap.ron` still produces concrete dirtiness starvation, but the detector now reports one strongest `MAINTENANCE_STARVATION` anomaly per affected agent (`Mira`, `Noor`) rather than the stale count of 3.
 2. Observer report comparison showed `recipe_monoculture_apples_vs_grain.ron` still produces the intended recipe-monoculture behavior for Agent A (many apple harvest commits and zero grain commits), but the fixture's alternative `FieldPlot` was not retained in Agent A's belief store under the old observation budget, so the detector correctly suppressed the anomaly.
 3. The focused ignored observer tests prove the recalibrated wash-gap count and the repaired recipe-monoculture fixture.
-4. A broader ignored observer-anomaly run exposed a separate `survival-baseline.ron` geographic-convergence calibration failure, now tracked by `tickets/S148PORMOTBAC-FOLLOWUP-006.md`.
+4. A broader ignored observer-anomaly run exposed a separate `survival-baseline.ron` geographic-convergence calibration failure, later resolved by `archive/tickets/S148PORMOTBAC-FOLLOWUP-006.md`.
 
 ## Landed Changes
 
@@ -56,7 +56,7 @@ Updated `recipe_monoculture_apples_vs_grain.ron` so Agent A can lawfully retain 
 
 - `crates/worldwake-cli/tests/golden_observer_anomalies.rs`
 - `crates/worldwake-cli/tests/fixtures/observer_anomalies/recipe_monoculture_apples_vs_grain.ron`
-- `tickets/S148PORMOTBAC-FOLLOWUP-006.md`
+- `archive/tickets/S148PORMOTBAC-FOLLOWUP-006.md`
 
 ## Out of Scope
 
@@ -64,7 +64,7 @@ Updated `recipe_monoculture_apples_vs_grain.ron` so Agent A can lawfully retain 
 - Reintroducing rejected-slot planning bypasses.
 - Weakening the S148 survival baseline, ask/consult, scattered, or patrol goldens.
 - Threshold-only changes that hide a real anomaly without explaining the causal branch.
-- The separate survival-baseline geographic-convergence calibration failure exposed by the broader ignored observer suite; follow-up owner is `tickets/S148PORMOTBAC-FOLLOWUP-006.md`.
+- The separate survival-baseline geographic-convergence calibration failure exposed by the broader ignored observer suite; follow-up owner was `archive/tickets/S148PORMOTBAC-FOLLOWUP-006.md`.
 
 ## Acceptance Result
 
@@ -88,7 +88,7 @@ Changed:
 
 - Recalibrated the wash-gap observer assertion from 3 to 2 `MAINTENANCE_STARVATION` anomalies and asserted that both `Mira` and `Noor` remain represented.
 - Made the recipe-monoculture fixture's alternative grain path observable through an explicit `Scout FieldPlot` Grain source and a bounded Agent A observation budget increase.
-- Created `tickets/S148PORMOTBAC-FOLLOWUP-006.md` for the separate `survival-baseline.ron` geographic-convergence calibration failure found during broader same-suite verification.
+- Created the later-archived `archive/tickets/S148PORMOTBAC-FOLLOWUP-006.md` for the separate `survival-baseline.ron` geographic-convergence calibration failure found during broader same-suite verification.
 
 No production AI or observer detector code changed. The live detector behavior was already honest for the two ticket-owned reports once the stale fixture/count assumptions were corrected.
 
@@ -96,7 +96,7 @@ Deviations:
 
 - The wash-gap repair landed as fixture assertion truthing rather than detector or AI repair because the live report still contains concrete dirtiness starvation for both agents.
 - The recipe-monoculture repair landed in fixture setup because the detector correctly requires final belief-store evidence of an alternative recipe facility before flagging monoculture.
-- The full ignored observer-anomaly binary remains red on `convergence_smell_stays_absent_on_survival_baseline`; that broader calibration question is out of scope here and owned by `tickets/S148PORMOTBAC-FOLLOWUP-006.md`.
+- At completion time, the full ignored observer-anomaly binary remained red on `convergence_smell_stays_absent_on_survival_baseline`; that broader calibration question was out of scope here and is now resolved by `archive/tickets/S148PORMOTBAC-FOLLOWUP-006.md`.
 
 ## Verification Result
 

@@ -2290,8 +2290,8 @@ const ANOMALY_ROLLING_WINDOW_TICKS: usize = 200;
 const ACUTE_NEED_SPIKE_MIN_TICKS: usize = 30;
 const ACUTE_NEED_SPIKE_MAX_TICKS: usize = 100;
 
-fn commodity_is_edible(commodity: CommodityKind) -> bool {
-    commodity.spec().consumable_profile.is_some()
+fn commodity_is_food(commodity: CommodityKind) -> bool {
+    commodity.spec().trade_category == worldwake_core::TradeCategory::Food
 }
 
 fn place_survival_state_summary(
@@ -2312,11 +2312,7 @@ fn place_survival_state_summary(
     let food_source_present = world.query_resource_source().any(|(entity, source)| {
         world.effective_place(entity) == Some(place)
             && source.available_quantity > Quantity(0)
-            && commodity_is_edible(source.commodity)
-    }) || world.query_item_lot().any(|(entity, lot)| {
-        world.effective_place(entity) == Some(place)
-            && lot.quantity > Quantity(0)
-            && commodity_is_edible(lot.commodity)
+            && commodity_is_food(source.commodity)
     });
 
     LocalSurvivalStateSummary {
@@ -5940,11 +5936,11 @@ mod tests {
         IntentionFrame, IntentionResumeCondition, InvalidatorTag, KnownRecipes, MetabolismProfile,
         MethodSchemaId, MotiveSourceDiscriminant, Name, ObservationOmission, ObservationRef,
         OmissionReason, OpportunityAnchor, OpportunityKey, PendingEvent, PercentileBucket,
-        Permille, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
+        Permille, Place, PlaceTag, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
         PlanInvalidationReason, PrototypePlace, Quantity, RankedGoalComparisonDimensionTag,
         RecipeId, RecordRef, ResourceSource, RoutePreferenceSummary, RouteSegment, SaleListing,
         SaliencePolicy, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
-        SleepRecoveryModifier, TestimonyTrustSummary, Tick, TopicScope, VisibilitySpec,
+        SleepRecoveryModifier, TestimonyTrustSummary, Tick, TopicScope, Topology, VisibilitySpec,
         WakeCondition, WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
         WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
         prototype_place_entity,
@@ -6924,58 +6920,106 @@ mod tests {
         }
     }
 
+    fn create_support_source(
+        txn: &mut WorldTxn<'_>,
+        place: EntityId,
+        commodity: CommodityKind,
+        workstation: WorkstationTag,
+    ) -> EntityId {
+        let source = txn.create_entity(EntityKind::Facility);
+        txn.set_component_workstation_marker(source, WorkstationMarker(workstation))
+            .expect("support source marker");
+        txn.set_ground_location(source, place)
+            .expect("support source location");
+        txn.set_component_resource_source(source, support_resource_source(commodity))
+            .expect("support source resource");
+        source
+    }
+
+    fn support_topology() -> Topology {
+        let mut topology = Topology::new();
+        topology
+            .add_place(
+                entity(10),
+                Place {
+                    name: "Support Camp".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::from([PlaceTag::Camp]),
+                },
+            )
+            .expect("camp place");
+        topology
+            .add_place(
+                entity(11),
+                Place {
+                    name: "Food Field".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::from([PlaceTag::Farm]),
+                },
+            )
+            .expect("food place");
+        topology
+    }
+
+    fn support_camp() -> EntityId {
+        entity(10)
+    }
+
+    fn support_food_place() -> EntityId {
+        entity(11)
+    }
+
     fn build_split_support_convergence_world() -> World {
-        let mut world = World::new(build_prototype_world()).expect("world");
+        let mut world = World::new(support_topology()).expect("world");
         let mut txn = new_txn(&mut world, 1);
-        txn.create_item_lot_with_owner(
+        create_support_source(
+            &mut txn,
+            support_food_place(),
             CommodityKind::Apple,
-            Quantity(4),
-            prototype_place_entity(PrototypePlace::OrchardFarm),
-            None,
-        )
-        .expect("orchard food lot");
-        txn.set_component_resource_source(
-            prototype_place_entity(PrototypePlace::BanditCamp),
-            support_resource_source(CommodityKind::Water),
-        )
-        .expect("camp water source");
+            WorkstationTag::OrchardRow,
+        );
+        create_support_source(
+            &mut txn,
+            support_camp(),
+            CommodityKind::Water,
+            WorkstationTag::Well,
+        );
         commit_txn(txn);
         world
     }
 
     fn build_bundled_support_convergence_world() -> World {
-        let mut world = World::new(build_prototype_world()).expect("world");
+        let mut world = World::new(support_topology()).expect("world");
         let mut txn = new_txn(&mut world, 1);
-        txn.set_component_resource_source(
-            prototype_place_entity(PrototypePlace::BanditCamp),
-            support_resource_source(CommodityKind::Water),
-        )
-        .expect("camp water source");
-        txn.create_item_lot_with_owner(
+        let camp = support_camp();
+        create_support_source(&mut txn, camp, CommodityKind::Water, WorkstationTag::Well);
+        create_support_source(
+            &mut txn,
+            camp,
             CommodityKind::Apple,
-            Quantity(4),
-            prototype_place_entity(PrototypePlace::BanditCamp),
-            None,
-        )
-        .expect("camp food lot");
+            WorkstationTag::OrchardRow,
+        );
         commit_txn(txn);
         world
     }
 
     fn build_multi_support_split_convergence_world() -> World {
-        let mut world = World::new(build_prototype_world()).expect("world");
-        let camp = prototype_place_entity(PrototypePlace::BanditCamp);
-        let orchard = prototype_place_entity(PrototypePlace::OrchardFarm);
+        let mut world = World::new(support_topology()).expect("world");
+        let camp = support_camp();
+        let orchard = support_food_place();
         let mut txn = new_txn(&mut world, 1);
         let basin = txn.create_entity(EntityKind::Facility);
         txn.set_component_workstation_marker(basin, WorkstationMarker(WorkstationTag::WashBasin))
             .expect("wash basin marker");
         txn.set_ground_location(basin, camp)
             .expect("basin location");
-        txn.set_component_resource_source(camp, support_resource_source(CommodityKind::Water))
-            .expect("camp water source");
-        txn.create_item_lot_with_owner(CommodityKind::Apple, Quantity(4), orchard, None)
-            .expect("orchard food lot");
+        create_support_source(&mut txn, camp, CommodityKind::Water, WorkstationTag::Well);
+        create_support_source(
+            &mut txn,
+            orchard,
+            CommodityKind::Apple,
+            WorkstationTag::OrchardRow,
+        );
         commit_txn(txn);
         world
     }
@@ -9846,7 +9890,7 @@ mod tests {
 
     #[test]
     fn test_geographic_convergence_suppresses_split_support_food_node() {
-        let orchard = prototype_place_entity(PrototypePlace::OrchardFarm);
+        let orchard = support_food_place();
         let world = build_split_support_convergence_world();
         let stats = BTreeMap::from([
             (
@@ -9871,7 +9915,7 @@ mod tests {
 
     #[test]
     fn test_geographic_convergence_suppresses_multi_support_split_node() {
-        let camp = prototype_place_entity(PrototypePlace::BanditCamp);
+        let camp = support_camp();
         let world = build_multi_support_split_convergence_world();
         let stats = BTreeMap::from([
             (
@@ -9895,8 +9939,45 @@ mod tests {
     }
 
     #[test]
+    fn test_geographic_convergence_ignores_carried_food_when_classifying_place_support() {
+        let camp = support_camp();
+        let mut world = build_multi_support_split_convergence_world();
+        let mut txn = new_txn(&mut world, 2);
+        let carrier = txn
+            .create_agent("Carrier", ControlSource::Ai)
+            .expect("agent");
+        txn.set_ground_location(carrier, camp)
+            .expect("carrier location");
+        let carried_food = txn
+            .create_item_lot_with_owner(CommodityKind::Apple, Quantity(1), camp, None)
+            .expect("carried food");
+        txn.set_possessor(carried_food, carrier)
+            .expect("carried food possessor");
+        commit_txn(txn);
+        let stats = BTreeMap::from([
+            (
+                entity(1),
+                agent_stats_with_locations("Alice", &vec![camp; 250]),
+            ),
+            (
+                entity(2),
+                agent_stats_with_locations("Bob", &vec![camp; 250]),
+            ),
+            (
+                entity(3),
+                agent_stats_with_locations("Carol", &vec![camp; 250]),
+            ),
+        ]);
+        let mut anomalies = Vec::new();
+
+        detect_geographic_convergence(&stats, &world, &mut anomalies);
+
+        assert!(anomalies.is_empty());
+    }
+
+    #[test]
     fn test_geographic_convergence_still_fires_on_bundled_support_hub() {
-        let camp = prototype_place_entity(PrototypePlace::BanditCamp);
+        let camp = support_camp();
         let world = build_bundled_support_convergence_world();
         let stats = BTreeMap::from([
             (
