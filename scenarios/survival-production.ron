@@ -90,6 +90,16 @@
                 landmark_extraction_depth: 3,
                 use_ff_heuristic: true,
             ),
+            portfolio_weights_profile: (
+                need_survival: 1000,
+                pain_care: 900,
+                obligation_duty: 800,
+                economic_opportunity: 600,
+                social_motive: 400,
+                max_plans_normal: 4,
+                max_plans_emergency: 4,
+                max_plans_idle: 4,
+            ),
             execution_budget: (
                 max_prerequisite_locations: 3,
                 beam_width: 12,

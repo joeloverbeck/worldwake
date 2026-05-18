@@ -98,6 +98,16 @@
                 landmark_extraction_depth: 4,
                 use_ff_heuristic: true,
             ),
+            portfolio_weights_profile: (
+                need_survival: 1000,
+                pain_care: 900,
+                obligation_duty: 800,
+                economic_opportunity: 600,
+                social_motive: 400,
+                max_plans_normal: 3,
+                max_plans_emergency: 3,
+                max_plans_idle: 3,
+            ),
             intention_disposition: (
                 commitment_switch_margin: 0,
                 domain_patience: {},
