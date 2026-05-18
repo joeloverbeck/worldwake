@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — removes `max_candidates_to_plan` field from both `CognitiveProfile` (`crates/worldwake-core/src/cognitive_profile.rs:25`) and `ReasoningProfile` (`crates/worldwake-ai/src/lib.rs:174`); migrates all 15+ reader sites to route through `PortfolioWeightsProfile.max_plans_for_mode(runtime.operating_mode)`
-**Deps**: `archive/tickets/S148PORMOTBAC-002.md`, `S148PORMOTBAC-003`, `S148PORMOTBAC-004`, `specs/S148-portfolio-and-motive-backed-intentions.md`
+**Deps**: `archive/tickets/S148PORMOTBAC-002.md`, `archive/tickets/S148PORMOTBAC-003.md`, `S148PORMOTBAC-004`, `specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Problem
 

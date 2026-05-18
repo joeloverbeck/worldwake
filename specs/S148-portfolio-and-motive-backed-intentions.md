@@ -185,6 +185,8 @@ pub enum OperatingMode {
 
 **No `AgentSnapshot` reference** — the spec's earlier draft mistakenly named a non-existent struct; the only `AgentSnapshot` in the codebase is a test profiler at `crates/worldwake-ai/tests/soak_profiler.rs:37`.
 
+**Implementation note (S148PORMOTBAC-003, 2026-05-18)**: `OperatingMode` now exists in core with `Emergency`, `Normal`, and `Idle` variants and defaults to `Normal`. `AgentDecisionRuntime` carries `operating_mode: OperatingMode` with serde defaulting, and `agent_tick/portfolio.rs` provides `derive_operating_mode`. The helper classifies Critical Pain or NeedPressure motive contributions as `Emergency`, all-Background ranked inputs as `Idle`, and all other above-Background ranked inputs as `Normal`. The per-tick call-site wiring and slot-weight consumption remain owned by `S148PORMOTBAC-004`.
+
 ### D4: `MotiveSourceSlotMap` (motive-source-to-slot mapping)
 
 ```rust

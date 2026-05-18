@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, CognitiveProfile, CommodityKind, EntityId, FrameClearReason, FrameState, GoalKey,
-    HomeostaticNeeds, IntentionDomain, IntentionFrame, OpportunityKey, PatrolRoute, Quantity,
-    RepairKind, RoutePreference, TestimonyReliability, Tick, UniqueItemKind, Wound,
+    HomeostaticNeeds, IntentionDomain, IntentionFrame, OperatingMode, OpportunityKey, PatrolRoute,
+    Quantity, RepairKind, RoutePreference, TestimonyReliability, Tick, UniqueItemKind, Wound,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -164,6 +164,8 @@ pub struct AgentDecisionRuntime {
     pub dirty: DirtySet,
     #[serde(default)]
     pub last_priority_class: Option<GoalPriorityClass>,
+    #[serde(default)]
+    pub operating_mode: OperatingMode,
     pub last_effective_place: Option<EntityId>,
     pub last_needs: Option<HomeostaticNeeds>,
     pub last_wounds: Vec<Wound>,
@@ -316,8 +318,8 @@ mod tests {
     use worldwake_core::{
         AcquisitionQuantity, BodyPart, CognitiveProfile, CommodityKind, EntityId, EventId,
         FrameClearReason, FrameState, HomeostaticNeeds, IntentionDomain, IntentionFrame,
-        PatrolRoute, Quantity, RepairKind, RouteSegment, TestimonyReliabilityKey, Tick, TopicScope,
-        UniqueItemKind, Wound, WoundCause, WoundId,
+        OperatingMode, PatrolRoute, Quantity, RepairKind, RouteSegment, TestimonyReliabilityKey,
+        Tick, TopicScope, UniqueItemKind, Wound, WoundCause, WoundId,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -481,6 +483,7 @@ mod tests {
         assert!(!runtime.step_in_flight);
         assert!(runtime.dirty.is_empty());
         assert_eq!(runtime.last_priority_class, None);
+        assert_eq!(runtime.operating_mode, OperatingMode::Normal);
         assert_eq!(runtime.last_effective_place, None);
         assert_eq!(runtime.last_needs, None);
         assert!(runtime.last_wounds.is_empty());
@@ -635,6 +638,7 @@ mod tests {
             step_in_flight: true,
             dirty: DirtySet::NEEDS | DirtySet::POSITION,
             last_priority_class: Some(GoalPriorityClass::Critical),
+            operating_mode: OperatingMode::Emergency,
             last_effective_place: Some(entity(11)),
             last_needs: Some(last_needs),
             last_wounds: vec![Wound {
@@ -748,6 +752,7 @@ mod tests {
         );
         assert_eq!(decoded.dirty, runtime.dirty);
         assert_eq!(decoded.last_priority_class, runtime.last_priority_class);
+        assert_eq!(decoded.operating_mode, runtime.operating_mode);
         assert_eq!(decoded.dead_cleanup_done, runtime.dead_cleanup_done);
         assert_eq!(
             decoded.pending_repair_context,

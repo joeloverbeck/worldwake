@@ -2,11 +2,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{goal_model::AgendaEntry, ranking::OrderedRanked};
+use crate::{GoalPriorityClass, goal_model::AgendaEntry, ranking::OrderedRanked};
 pub use worldwake_core::SlotKind;
 use worldwake_core::{
-    CommodityPurpose, Discrepancy, GoalKind, OpportunityKey, PortfolioWeightsProfile,
+    CommodityPurpose, Discrepancy, EntityId, GoalKind, MotiveSourceDiscriminant, OperatingMode,
+    OpportunityKey, PortfolioWeightsProfile,
 };
+use worldwake_sim::GoalBeliefView;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Portfolio {
@@ -66,6 +68,41 @@ pub(crate) fn assemble_portfolio(
     }
 
     Portfolio { slots }
+}
+
+pub(crate) fn derive_operating_mode<V: GoalBeliefView + ?Sized>(
+    _belief: &V,
+    _agent: EntityId,
+    ranked: &OrderedRanked<'_>,
+) -> OperatingMode {
+    derive_operating_mode_from_ranked(ranked)
+}
+
+fn derive_operating_mode_from_ranked(ranked: &OrderedRanked<'_>) -> OperatingMode {
+    let mut highest_priority = GoalPriorityClass::Background;
+    let mut has_critical_pain_or_need = false;
+
+    for entry in ranked {
+        highest_priority = highest_priority.max(entry.priority_class);
+        if entry.priority_class == GoalPriorityClass::Critical
+            && entry.motive_source_contributions.iter().any(|(source, _)| {
+                matches!(
+                    MotiveSourceDiscriminant::from(&source.source),
+                    MotiveSourceDiscriminant::Pain | MotiveSourceDiscriminant::NeedPressure
+                )
+            })
+        {
+            has_critical_pain_or_need = true;
+        }
+    }
+
+    if has_critical_pain_or_need {
+        OperatingMode::Emergency
+    } else if highest_priority <= GoalPriorityClass::Background {
+        OperatingMode::Idle
+    } else {
+        OperatingMode::Normal
+    }
 }
 
 impl Portfolio {
@@ -205,7 +242,8 @@ fn is_economic_goal(kind: &GoalKind) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        FeasibilityVerdict, Portfolio, PortfolioSlot, SlotKind, assemble_portfolio, opportunity_key,
+        FeasibilityVerdict, Portfolio, PortfolioSlot, SlotKind, assemble_portfolio,
+        derive_operating_mode_from_ranked, opportunity_key,
     };
     use crate::{
         GoalPriorityClass,
@@ -216,8 +254,8 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
         AcquisitionQuantity, ArtifactPostingContext, CommodityKind, CommodityPurpose, Discrepancy,
-        EntityId, GoalKey, GoalKind, NoticeTopic, OpportunityAnchor, OpportunityKey,
-        PortfolioWeightsProfile, Tick,
+        EntityId, GoalKey, GoalKind, HomeostaticNeedId, MotiveSource, MotiveSourceRef, NoticeTopic,
+        OperatingMode, OpportunityAnchor, OpportunityKey, PortfolioWeightsProfile, Tick, WoundId,
     };
 
     #[test]
@@ -287,6 +325,23 @@ mod tests {
     ) -> AgendaEntry {
         let mut ranked = ranked_goal(kind, motive_score, anchor);
         ranked.priority_class = priority_class;
+        ranked
+    }
+
+    fn ranked_goal_with_priority_and_motive(
+        kind: GoalKind,
+        priority_class: GoalPriorityClass,
+        source: MotiveSource,
+    ) -> AgendaEntry {
+        let mut ranked =
+            ranked_goal_with_priority(kind, priority_class, 500, OpportunityAnchor::None);
+        ranked.motive_source_contributions = vec![(
+            MotiveSourceRef {
+                source,
+                introduced_tick: Tick(3),
+            },
+            500,
+        )];
         ranked
     }
 
@@ -574,5 +629,76 @@ mod tests {
 
         assert_eq!(ordered[0].0, SlotKind::NeedSurvival);
         assert_eq!(ordered[1].0, SlotKind::ObligationDuty);
+    }
+
+    #[test]
+    fn derive_operating_mode_returns_emergency_for_critical_need_or_pain() {
+        let ranked = vec![ranked_goal_with_priority_and_motive(
+            GoalKind::Sleep,
+            GoalPriorityClass::Critical,
+            MotiveSource::NeedPressure {
+                need: HomeostaticNeedId::Hunger,
+            },
+        )];
+        let ranked = ranking::OrderedRanked::from_sorted_for_test(&ranked);
+
+        assert_eq!(
+            derive_operating_mode_from_ranked(&ranked),
+            OperatingMode::Emergency
+        );
+
+        let ranked = vec![ranked_goal_with_priority_and_motive(
+            GoalKind::TreatWounds { patient: entity(8) },
+            GoalPriorityClass::Critical,
+            MotiveSource::Pain { wound: WoundId(8) },
+        )];
+        let ranked = ranking::OrderedRanked::from_sorted_for_test(&ranked);
+
+        assert_eq!(
+            derive_operating_mode_from_ranked(&ranked),
+            OperatingMode::Emergency
+        );
+    }
+
+    #[test]
+    fn derive_operating_mode_returns_idle_when_all_candidates_are_background() {
+        let ranked = vec![ranked_goal_with_priority(
+            GoalKind::SellCommodity {
+                commodity: CommodityKind::Bread,
+            },
+            GoalPriorityClass::Background,
+            100,
+            OpportunityAnchor::Place(entity(61)),
+        )];
+        let ranked = ranking::OrderedRanked::from_sorted_for_test(&ranked);
+
+        assert_eq!(
+            derive_operating_mode_from_ranked(&ranked),
+            OperatingMode::Idle
+        );
+    }
+
+    #[test]
+    fn derive_operating_mode_returns_normal_for_non_emergency_pressure() {
+        let ranked = vec![ranked_goal_with_priority_and_motive(
+            GoalKind::SellCommodity {
+                commodity: CommodityKind::Bread,
+            },
+            GoalPriorityClass::High,
+            MotiveSource::Greed {
+                opportunity: OpportunityKey {
+                    goal_key: GoalKey::from(GoalKind::SellCommodity {
+                        commodity: CommodityKind::Bread,
+                    }),
+                    anchor: OpportunityAnchor::Place(entity(62)),
+                },
+            },
+        )];
+        let ranked = ranking::OrderedRanked::from_sorted_for_test(&ranked);
+
+        assert_eq!(
+            derive_operating_mode_from_ranked(&ranked),
+            OperatingMode::Normal
+        );
     }
 }

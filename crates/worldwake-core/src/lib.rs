@@ -89,6 +89,7 @@ pub mod numerics;
 pub mod obligation;
 pub mod observation_context;
 pub mod offices;
+pub mod operating_mode;
 pub mod patrol;
 pub mod percentile;
 pub mod place_dirtiness;
@@ -273,6 +274,7 @@ pub use observation_context::{ObservationContext, PlaceVisibilityProfile};
 pub use offices::{
     EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
 };
+pub use operating_mode::OperatingMode;
 pub use patrol::{PatrolProfile, PatrolRoute};
 pub use percentile::PercentileBucket;
 pub use place_dirtiness::{LatrineFullness, PlaceDirtiness, WashBasinState};
