@@ -1,9 +1,9 @@
 # S148PORMOTBAC-FOLLOWUP-007: Architectural fix for self-care acquisition feasibility filtering without remote-acquisition regression
 
-**Status**: PENDING
+**Status**: REJECTED
 **Priority**: HIGH
 **Effort**: Large
-**Engine Changes**: Yes — `crates/worldwake-ai/src/feasibility_probe.rs`, `crates/worldwake-ai/src/candidate_generation.rs`, `crates/worldwake-ai/src/planning_state.rs`, and likely `crates/worldwake-ai/src/agent_tick/planning.rs` and/or per-tick candidate cap surfaces.
+**Engine Changes**: None — reassessment and implementation attempt only; temporary runtime edits were removed after golden regressions.
 **Deps**: `archive/tickets/S148PORMOTBAC-FOLLOWUP-002.md`, `archive/tickets/S148PORMOTBAC-FOLLOWUP-003.md`
 
 ## Problem
@@ -21,6 +21,8 @@ Together those passed the named survival goldens but silently broke:
 - **`local_unpossessed_commodity_evidence` REMOTE acquisition**: in production, when the actor is at place A and a loose unowned `ItemLot` is at place B, `PerAgentBeliefView::can_control` returns `false` (first branch fails on `effective_place(actor) != effective_place(entity)`; second branch on `can_exercise_control` denies for non-rights actors). The EARLY filter then drops the lot from evidence, so no acquire goal is generated for B. The agent never plans a trip to pick it up. This is exposed by `acquire_multi_source_emits_distinct_place_anchors_and_isolated_evidence`, but is a real production regression, not a test-only artifact.
 
 This ticket reverts FOLLOWUP-003 to restore the unit tests, trade, and remote acquisition, then re-opens the baseline/scattered/preferences contracts that FOLLOWUP-003 was originally fixing — but with full diagnostic context so a proper architectural fix can replace the over-broad filter.
+
+Implementation attempt on 2026-05-18 rejected this combined ticket as an implementable seam. The proposed broad owner joins at least two competing contracts: pressure-only self-care acquire admission is still required by the current baseline/trade survival loops, while durable same-goal search failure persistence is still required by baseline but violates the preferences familiar-source-failure assertion. A successor ticket, `../tickets/S148PORMOTBAC-FOLLOWUP-008.md`, now owns the narrower split design.
 
 ## Assumption Reassessment (2026-05-18)
 
@@ -40,6 +42,9 @@ This ticket reverts FOLLOWUP-003 to restore the unit tests, trade, and remote ac
 7. The preferences `familiar_failed_attempts == 0` contract was added in `commit 8fc9a9c5` (FOLLOWUP-004) under the assumption that FOLLOWUP-003's filter would keep the familiar source out of failure memory. With the revert, one false-failure is recorded; this needs a separate fix at the source reliability layer or the test contract needs to be re-evaluated.
 8. The trade scenario `Merchant Sera` StuckIdleWindow signal was visible in CI before FOLLOWUP-003 landed (run `26017281853`) — it was a pre-existing latent failure masked by other behavior, and FOLLOWUP-003 made it worse by removing acquisition support. Reverting FOLLOWUP-003 makes trade pass again, but the underlying brittleness of the trade contract under tight per-tick caps should be revisited.
 9. Mismatch + correction: `archive/tickets/S148PORMOTBAC-FOLLOWUP-003.md` Acceptance Result lists baseline + scattered + ask_consult + patrol as gates; it did NOT run the 11 worldwake-ai unit tests in `candidate_generation::tests` / `search::tests` that this revert restores, so the regression slipped through.
+10. 2026-05-18 implementation attempt result: removing the pressure-only self-care probe admission from `crates/worldwake-ai/src/feasibility_probe.rs` passed focused probe/lib checks but regressed `golden_survival_baseline` (`Agent C` did not commit `Eat`; `Agent B` exceeded critical hunger for 1179 ticks) and did not fix `golden_survival_trade` (`Buyer Nila` still exceeded critical hunger for a long window). This disproves probe-only tightening as the owner for the combined ticket.
+11. 2026-05-18 implementation attempt result: filtering `ExpectationFailurePhase::Search` + `SameGoalSearchInfeasibleWhileSiblingSucceeded` out of durable `SourceReliability.failed_attempts` fixed the preferences-style focused assertion, but regressed `golden_survival_baseline` (`Agent A` thirst exceeded critical for 550 ticks; stuck idle ticks 1086-1326). Restoring transient source-expectation event emission was not enough; the durable search-failure memory participates in baseline survival behavior.
+12. Mismatch + correction: the remaining work is not one implementation choice among the three shapes below. The next owner must first split durable ranking memory from public/familiar source-failure accounting, and separately preserve self-care pressure behavior without reopening false positives in trade/preferences.
 
 ## Architecture Check
 
@@ -132,3 +137,16 @@ Per the Architecture Check section. The implementation must pass ALL verificatio
 1. `cargo test -p worldwake-ai --lib` (focused unit, fast)
 2. The 6 named golden commands in Verification Layers 3–9 (CI-only, run via golden-survival workflow locally with `--release --ignored --test-threads=1`)
 3. `./scripts/verify.sh`
+
+## Outcome
+
+- **Completion date**: 2026-05-18
+- **What actually changed**: Reassessed and attempted the live implementation. Removed all temporary engine edits after release goldens showed regressions.
+- **Deviations from original plan**: The ticket is rejected as too broad. Probe-only tightening and source-reliability-only narrowing each break a required survival golden contract.
+- **Verification results**:
+  - Passed `cargo test -p worldwake-ai --lib feasibility_probe::tests::` with the temporary probe tightening before it was removed.
+  - Passed `cargo test -p worldwake-ai --lib agent_tick::tests::apply_source_reliability_failure_observations_coalesces_duplicates_without_persisting_search_only_failures -- --exact` with the temporary source-reliability narrowing before it was removed.
+  - Passed `cargo test -p worldwake-ai --lib` with the temporary probe/source edits before release golden regression checks.
+  - Failed `cargo test --release -p worldwake-ai --test golden_survival_baseline -- --ignored --test-threads=1` after probe tightening: `Agent C` did not commit `Eat`; `Agent B` hunger exceeded critical for 1179 ticks.
+  - Failed `cargo test --release -p worldwake-ai --test golden_survival_trade -- --ignored --test-threads=1` after probe tightening: `Buyer Nila` hunger exceeded critical for the substitute market branch.
+  - Failed `cargo test --release -p worldwake-ai --test golden_survival_baseline -- --ignored --test-threads=1` after source-reliability-only narrowing: `Agent A` thirst exceeded critical for 550 ticks; stuck idle ticks 1086-1326.
