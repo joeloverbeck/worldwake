@@ -1141,7 +1141,6 @@ impl<'snapshot> PlanningState<'snapshot> {
         }
         if let PlanningEntityRef::Authoritative(entity_id) = entity
             && let Some(snapshot) = self.snapshot.entities.get(&entity_id)
-            && snapshot.control.controllable_by_actor
             && snapshot.control.owner.is_none()
             && snapshot.inventory.direct_possessor.is_none()
             && snapshot.inventory.direct_container.is_none()
@@ -4234,21 +4233,6 @@ mod tests {
             ),
             Quantity(1)
         );
-    }
-
-    #[test]
-    fn local_loose_authoritative_item_requires_snapshot_control() {
-        let (mut view, actor, _town, _field, bread) = test_view();
-        view.direct_possessions.remove(&actor);
-        view.direct_possessors.remove(&bread);
-
-        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
-        let state = PlanningState::new(&snapshot);
-
-        assert!(!state.can_control_ref(
-            PlanningEntityRef::Authoritative(actor),
-            PlanningEntityRef::Authoritative(bread),
-        ));
     }
 
     #[test]

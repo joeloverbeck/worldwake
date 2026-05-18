@@ -80,7 +80,7 @@ pub(crate) fn probe(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> Feasibi
     if !has_relevant_affordance(ranked, context)
         && !has_synthesized_root_candidate(ranked, context)
         && !remote_self_care_acquire_can_reach_search(ranked, context)
-        && !reachable_remote_resource_self_care_acquire_can_reach_search(ranked, context)
+        && !self_care_acquire_pressure_allows_search_for_goal(ranked, context)
     {
         return FeasibilityVerdict::RejectedBeforeSearch {
             reason: Discrepancy::MissingObservation,
@@ -260,7 +260,7 @@ fn current_place_support_failure(
         .copied()
         .filter(|entity| context.belief_view.effective_place(*entity) == Some(place))
         .collect::<Vec<_>>();
-    if reachable_remote_resource_self_care_acquire_can_reach_search(ranked, context) {
+    if self_care_acquire_pressure_allows_search(ranked, context, commodity) {
         return None;
     }
     if !local_evidence_entities.is_empty()
@@ -271,25 +271,52 @@ fn current_place_support_failure(
     {
         return Some(Discrepancy::MissingObservation);
     }
-    if matches!(
-        ranked.offer.key.kind,
-        GoalKind::AcquireCommodity {
-            purpose: worldwake_core::CommodityPurpose::SelfConsume,
-            ..
-        }
-    ) && local_evidence_entities
-        .iter()
-        .copied()
-        .any(|entity| entity_supports_commodity(context, entity, commodity))
-    {
-        return None;
-    }
     if !has_local_goal_affordance(ranked, context, &local_evidence_entities) {
         return Some(Discrepancy::MissingObservation);
     }
 
     (!place_has_local_commodity_support(context.belief_view, context.agent, place, commodity, None))
         .then_some(Discrepancy::MissingObservation)
+}
+
+fn self_care_acquire_pressure_allows_search(
+    ranked: &AgendaEntry,
+    context: &ProbeContext<'_>,
+    commodity: worldwake_core::CommodityKind,
+) -> bool {
+    if !matches!(
+        ranked.offer.key.kind,
+        GoalKind::AcquireCommodity {
+            purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            ..
+        }
+    ) {
+        return false;
+    }
+
+    let Some(needs) = context.belief_view.homeostatic_needs(context.agent) else {
+        return false;
+    };
+    let Some(thresholds) = context.belief_view.drive_thresholds(context.agent) else {
+        return false;
+    };
+    match commodity {
+        worldwake_core::CommodityKind::Apple
+        | worldwake_core::CommodityKind::Grain
+        | worldwake_core::CommodityKind::Bread => needs.hunger >= thresholds.hunger.low(),
+        worldwake_core::CommodityKind::Water => needs.thirst >= thresholds.thirst.low(),
+        _ => false,
+    }
+}
+
+fn self_care_acquire_pressure_allows_search_for_goal(
+    ranked: &AgendaEntry,
+    context: &ProbeContext<'_>,
+) -> bool {
+    let GoalKind::AcquireCommodity { commodity, .. } = ranked.offer.key.kind else {
+        return false;
+    };
+    self_care_acquire_pressure_allows_search(ranked, context, commodity)
 }
 
 fn entity_supports_commodity(
@@ -317,63 +344,6 @@ fn entity_supports_commodity(
             .any(|lot| lot == entity)
 }
 
-fn reachable_remote_resource_self_care_acquire_can_reach_search(
-    ranked: &AgendaEntry,
-    context: &ProbeContext<'_>,
-) -> bool {
-    let GoalKind::AcquireCommodity {
-        commodity,
-        purpose: worldwake_core::CommodityPurpose::SelfConsume,
-        ..
-    } = ranked.offer.key.kind
-    else {
-        return false;
-    };
-
-    if !relevant_action_defs(ranked, context.semantics_table)
-        .into_iter()
-        .any(|def_id| {
-            context
-                .semantics_table
-                .get(&def_id)
-                .is_some_and(|semantics| semantics.op_kind == PlannerOpKind::Harvest)
-        })
-    {
-        return false;
-    }
-
-    let Some(agent_place) = context.agent_place else {
-        return false;
-    };
-    if place_has_local_commodity_support(
-        context.belief_view,
-        context.agent,
-        agent_place,
-        commodity,
-        None,
-    ) {
-        return false;
-    }
-
-    let mut seen = BTreeSet::from([agent_place]);
-    let mut frontier = vec![agent_place];
-    while let Some(place) = frontier.pop() {
-        for (adjacent, _) in context.belief_view.adjacent_places_with_travel_ticks(place) {
-            if !seen.insert(adjacent) {
-                continue;
-            }
-            if !context
-                .belief_view
-                .resource_sources_at(adjacent, commodity)
-                .is_empty()
-            {
-                return true;
-            }
-            frontier.push(adjacent);
-        }
-    }
-    false
-}
 fn has_local_goal_affordance(
     ranked: &AgendaEntry,
     context: &ProbeContext<'_>,
@@ -1167,7 +1137,7 @@ mod tests {
     }
 
     #[test]
-    fn probe_rejects_low_pressure_self_care_acquire_without_resolvable_evidence() {
+    fn probe_allows_low_pressure_self_care_acquire_to_reach_search() {
         let recipes = build_canonical_production_recipe_registry();
         let registries = build_full_action_registries(&recipes).unwrap();
         let harness = ProbeHarness {
@@ -1229,159 +1199,6 @@ mod tests {
                 &view,
                 agent,
                 Some(place),
-                &DiscrepancyMemory::default(),
-                &BlockerMemory::default(),
-                Tick(5),
-            ),
-        );
-
-        assert_eq!(
-            verdict,
-            FeasibilityVerdict::RejectedBeforeSearch {
-                reason: Discrepancy::MissingObservation,
-            }
-        );
-    }
-
-    #[test]
-    fn probe_allows_pressured_self_care_acquire_with_local_resource_support() {
-        let recipes = build_canonical_production_recipe_registry();
-        let registries = build_full_action_registries(&recipes).unwrap();
-        let harness = ProbeHarness {
-            semantics: build_semantics_table(&registries.defs),
-            defs: registries.defs,
-            handlers: registries.handlers,
-        };
-        let agent = entity(1);
-        let place = entity(2);
-        let well = entity(3);
-        let mut ranked = ranked_goal(
-            GoalKind::AcquireCommodity {
-                commodity: CommodityKind::Water,
-                purpose: crate::CommodityPurpose::SelfConsume,
-                quantity: AcquisitionQuantity::single(),
-            },
-            OpportunityAnchor::Entity(well),
-        );
-        ranked.offer.evidence_entities.insert(well);
-        ranked.offer.evidence_places.insert(place);
-        let mut view = MockView::default();
-        view.alive.insert(agent);
-        view.alive.insert(well);
-        view.entity_kinds.insert(agent, EntityKind::Agent);
-        view.entity_kinds.insert(well, EntityKind::Facility);
-        view.places.insert(agent, place);
-        view.places.insert(well, place);
-        view.resource_sources.insert(
-            well,
-            ResourceSource {
-                commodity: CommodityKind::Water,
-                available_quantity: Quantity(3),
-                max_quantity: Quantity(6),
-                regeneration_ticks_per_unit: None,
-                last_regeneration_tick: None,
-                extraction_slots: std::num::NonZeroU8::new(1).expect("nonzero"),
-                extraction_duration_ticks: NonZeroU32::new(1).expect("nonzero"),
-            },
-        );
-        view.needs.insert(
-            agent,
-            HomeostaticNeeds::new(
-                Permille::new_unchecked(200),
-                Permille::new_unchecked(250),
-                Permille::ZERO,
-                Permille::ZERO,
-                Permille::ZERO,
-            ),
-        );
-        view.thresholds.insert(
-            agent,
-            DriveThresholds {
-                hunger: worldwake_core::ThresholdBand::new(
-                    Permille::new_unchecked(200),
-                    Permille::new_unchecked(400),
-                    Permille::new_unchecked(600),
-                    Permille::new_unchecked(800),
-                )
-                .expect("valid hunger thresholds"),
-                thirst: worldwake_core::ThresholdBand::new(
-                    Permille::new_unchecked(200),
-                    Permille::new_unchecked(400),
-                    Permille::new_unchecked(600),
-                    Permille::new_unchecked(800),
-                )
-                .expect("valid thirst thresholds"),
-                ..DriveThresholds::default()
-            },
-        );
-
-        let verdict = probe(
-            &ranked,
-            &probe_context(
-                &harness,
-                &view,
-                agent,
-                Some(place),
-                &DiscrepancyMemory::default(),
-                &BlockerMemory::default(),
-                Tick(5),
-            ),
-        );
-
-        assert_eq!(verdict, FeasibilityVerdict::Plausible);
-    }
-
-    #[test]
-    fn probe_allows_self_anchored_self_care_acquire_with_reachable_remote_resource_source() {
-        let recipes = build_canonical_production_recipe_registry();
-        let registries = build_full_action_registries(&recipes).unwrap();
-        let harness = ProbeHarness {
-            semantics: build_semantics_table(&registries.defs),
-            defs: registries.defs,
-            handlers: registries.handlers,
-        };
-        let agent = entity(1);
-        let origin = entity(2);
-        let well_place = entity(3);
-        let well = entity(4);
-        let mut ranked = ranked_goal(
-            GoalKind::AcquireCommodity {
-                commodity: CommodityKind::Water,
-                purpose: crate::CommodityPurpose::SelfConsume,
-                quantity: AcquisitionQuantity::single(),
-            },
-            OpportunityAnchor::Entity(agent),
-        );
-        ranked.offer.evidence_entities.insert(agent);
-        ranked.offer.evidence_places.insert(origin);
-        let mut view = MockView::default();
-        view.alive.insert(agent);
-        view.alive.insert(well);
-        view.entity_kinds.insert(agent, EntityKind::Agent);
-        view.entity_kinds.insert(well, EntityKind::Facility);
-        view.places.insert(agent, origin);
-        view.places.insert(well, well_place);
-        view.routes.insert((origin, well_place));
-        view.resource_sources.insert(
-            well,
-            ResourceSource {
-                commodity: CommodityKind::Water,
-                available_quantity: Quantity(3),
-                max_quantity: Quantity(6),
-                regeneration_ticks_per_unit: None,
-                last_regeneration_tick: None,
-                extraction_slots: std::num::NonZeroU8::new(1).expect("nonzero"),
-                extraction_duration_ticks: NonZeroU32::new(1).expect("nonzero"),
-            },
-        );
-
-        let verdict = probe(
-            &ranked,
-            &probe_context(
-                &harness,
-                &view,
-                agent,
-                Some(origin),
                 &DiscrepancyMemory::default(),
                 &BlockerMemory::default(),
                 Tick(5),
@@ -1694,7 +1511,6 @@ mod tests {
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
         believed_target_locations: BTreeMap<(EntityId, EntityId), BeliefValue<Option<EntityId>>>,
-        resource_sources: BTreeMap<EntityId, ResourceSource>,
     }
 
     impl ControlBeliefView for MockView {
@@ -1782,14 +1598,9 @@ mod tests {
 
         fn adjacent_places_with_travel_ticks(
             &self,
-            place: EntityId,
+            _place: EntityId,
         ) -> Vec<(EntityId, NonZeroU32)> {
-            self.routes
-                .iter()
-                .filter_map(|(from, to)| {
-                    (*from == place).then_some((*to, NonZeroU32::new(1).expect("nonzero")))
-                })
-                .collect()
+            Vec::new()
         }
     }
 
@@ -1952,8 +1763,8 @@ mod tests {
             None
         }
 
-        fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
-            self.resource_sources.get(&entity).cloned()
+        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
+            None
         }
 
         fn has_production_job(&self, _entity: EntityId) -> bool {
@@ -1968,18 +1779,12 @@ mod tests {
             Vec::new()
         }
 
-        fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-            self.places
-                .iter()
-                .filter_map(|(entity, entity_place)| {
-                    (*entity_place == place
-                        && self
-                            .resource_sources
-                            .get(entity)
-                            .is_some_and(|source| source.commodity == commodity))
-                    .then_some(*entity)
-                })
-                .collect()
+        fn resource_sources_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
         }
     }
 
