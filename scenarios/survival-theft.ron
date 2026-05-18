@@ -93,7 +93,6 @@
                 conversation_memory_retention_ticks: 96,
             ),
             cognitive_profile: (
-                max_candidates_to_plan: 4,
                 max_candidates_per_expansion: 240,
                 max_plan_depth: 10,
                 snapshot_travel_horizon: 2,
@@ -213,7 +212,6 @@
                 conversation_memory_retention_ticks: 0,
             ),
             cognitive_profile: (
-                max_candidates_to_plan: 4,
                 max_candidates_per_expansion: 240,
                 max_plan_depth: 10,
                 snapshot_travel_horizon: 2,
@@ -340,7 +338,6 @@
                 conversation_memory_retention_ticks: 0,
             ),
             cognitive_profile: (
-                max_candidates_to_plan: 4,
                 max_candidates_per_expansion: 240,
                 max_plan_depth: 10,
                 snapshot_travel_horizon: 2,

@@ -670,7 +670,7 @@ pub(super) fn build_candidate_plans_with_sources(
             (!rejected_opportunities.contains(&opp)).then_some(opp)
         })
         .collect();
-    let candidate_cap = usize::from(cognitive.max_candidates_to_plan);
+    let candidate_cap = usize::from(portfolio_weights.max_plans_for_mode(operating_mode));
 
     // All candidates filtered by exhausted-goal skip set or probe — no snapshot needed.
     if search_order.is_empty() {
@@ -2483,7 +2483,8 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
         }
         plan_search_trace.same_goal_trace = summarize_same_goal_planning_trace(
             plans.search_opportunities(),
-            cognitive.max_candidates_to_plan,
+            ProfileBeliefView::portfolio_weights_profile(&view, agent)
+                .max_plans_for_mode(runtime.operating_mode),
             &plans.plans,
         );
 
@@ -2946,7 +2947,6 @@ mod tests {
 
     fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         CognitiveProfile {
-            max_candidates_to_plan: reasoning.max_candidates_to_plan,
             max_candidates_per_expansion: CognitiveProfile::default().max_candidates_per_expansion,
             max_plan_depth: reasoning.max_plan_depth,
             max_travel_candidates_per_expansion: CognitiveProfile::default()
@@ -4519,7 +4519,7 @@ mod tests {
     }
 
     #[test]
-    fn portfolio_assembly_always_runs_with_max_candidates_to_plan_one() {
+    fn portfolio_assembly_always_runs_when_plan_cap_is_one() {
         fn ranked_slot_goal(
             kind: GoalKind,
             motive_score: u32,
@@ -5628,7 +5628,6 @@ mod tests {
         ];
         let budget = ProfileFixture {
             snapshot_travel_horizon: 0,
-            max_candidates_to_plan: 2,
             ..ProfileFixture::default()
         };
 
@@ -5719,7 +5718,6 @@ mod tests {
         ];
         let budget = ProfileFixture {
             snapshot_travel_horizon: 4,
-            max_candidates_to_plan: 2,
             ..ProfileFixture::default()
         };
 
@@ -5808,7 +5806,6 @@ mod tests {
         ];
         let budget = ProfileFixture {
             snapshot_travel_horizon: 4,
-            max_candidates_to_plan: 2,
             ..ProfileFixture::default()
         };
         let exhausted = OpportunityKey {
@@ -6059,7 +6056,6 @@ mod tests {
         ];
         let budget = ProfileFixture {
             snapshot_travel_horizon: 4,
-            max_candidates_to_plan: 2,
             ..ProfileFixture::default()
         };
         let mut runtime = AgentDecisionRuntime {
@@ -6405,7 +6401,6 @@ mod tests {
         ]);
         let budget = ProfileFixture {
             snapshot_travel_horizon: 4,
-            max_candidates_to_plan: 2,
             max_node_expansions: 0,
             ..ProfileFixture::default()
         };
@@ -6449,7 +6444,8 @@ mod tests {
         assert_eq!(
             super::summarize_same_goal_planning_trace(
                 &plans.plausible_opportunities(),
-                budget.max_candidates_to_plan,
+                worldwake_core::PortfolioWeightsProfile::default()
+                    .max_plans_for_mode(worldwake_core::OperatingMode::Normal),
                 &plans.plans,
             ),
             Some(crate::SameGoalPlanningTrace {
@@ -7026,13 +7022,11 @@ mod tests {
             Tick(10),
             &cognitive(&ProfileFixture {
                 snapshot_travel_horizon: 4,
-                max_candidates_to_plan: 1,
                 max_node_expansions: 128,
                 ..ProfileFixture::default()
             }),
             &execution_budget(&ProfileFixture {
                 snapshot_travel_horizon: 4,
-                max_candidates_to_plan: 1,
                 max_node_expansions: 128,
                 ..ProfileFixture::default()
             }),
@@ -7135,12 +7129,10 @@ mod tests {
             Tick(10),
             &cognitive(&ProfileFixture {
                 snapshot_travel_horizon: 4,
-                max_candidates_to_plan: 2,
                 ..ProfileFixture::default()
             }),
             &execution_budget(&ProfileFixture {
                 snapshot_travel_horizon: 4,
-                max_candidates_to_plan: 2,
                 ..ProfileFixture::default()
             }),
             &semantics,
@@ -7217,12 +7209,10 @@ mod tests {
             Tick(10),
             &cognitive(&ProfileFixture {
                 snapshot_travel_horizon: 4,
-                max_candidates_to_plan: 1,
                 ..ProfileFixture::default()
             }),
             &execution_budget(&ProfileFixture {
                 snapshot_travel_horizon: 4,
-                max_candidates_to_plan: 1,
                 ..ProfileFixture::default()
             }),
             &semantics,

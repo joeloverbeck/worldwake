@@ -1,4 +1,4 @@
-use crate::{Component, Permille, SlotKind};
+use crate::{Component, OperatingMode, Permille, SlotKind};
 use serde::{Deserialize, Serialize};
 
 /// Per-agent portfolio slot weights and planning breadth caps.
@@ -48,6 +48,15 @@ impl PortfolioWeightsProfile {
             SlotKind::SocialMotive => self.social_motive,
         }
     }
+
+    #[must_use]
+    pub fn max_plans_for_mode(&self, mode: OperatingMode) -> u8 {
+        match mode {
+            OperatingMode::Emergency => self.max_plans_emergency,
+            OperatingMode::Normal => self.max_plans_normal,
+            OperatingMode::Idle => self.max_plans_idle,
+        }
+    }
 }
 
 impl Component for PortfolioWeightsProfile {}
@@ -55,7 +64,7 @@ impl Component for PortfolioWeightsProfile {}
 #[cfg(test)]
 mod tests {
     use super::PortfolioWeightsProfile;
-    use crate::{Permille, SlotKind, traits::Component};
+    use crate::{OperatingMode, Permille, SlotKind, traits::Component};
     use ron::{
         de::from_str,
         ser::{PrettyConfig, to_string_pretty},
@@ -112,6 +121,20 @@ mod tests {
             profile.weight_for(SlotKind::SocialMotive),
             profile.social_motive
         );
+    }
+
+    #[test]
+    fn max_plans_for_mode_returns_correct_field_per_mode() {
+        let profile = PortfolioWeightsProfile {
+            max_plans_normal: 6,
+            max_plans_emergency: 4,
+            max_plans_idle: 7,
+            ..PortfolioWeightsProfile::default()
+        };
+
+        assert_eq!(profile.max_plans_for_mode(OperatingMode::Normal), 6);
+        assert_eq!(profile.max_plans_for_mode(OperatingMode::Emergency), 4);
+        assert_eq!(profile.max_plans_for_mode(OperatingMode::Idle), 7);
     }
 
     #[test]

@@ -1753,7 +1753,6 @@ mod tests {
                     location: "Nowhere",
                     control: Ai,
                     cognitive_profile: (
-                        max_candidates_to_plan: 4,
                         max_plan_depth: 10,
                         snapshot_travel_horizon: 6,
                         max_node_expansions: 300,
@@ -1779,7 +1778,6 @@ mod tests {
             .cognitive_profile
             .expect("cognitive profile should deserialize");
 
-        assert_eq!(cognitive.max_candidates_to_plan, 4);
         assert_eq!(
             cognitive.max_candidates_per_expansion,
             CognitiveProfile::default().max_candidates_per_expansion

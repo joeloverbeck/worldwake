@@ -603,7 +603,6 @@ mod tests {
                 gossip_acceptance: Permille::new(540).unwrap(),
             }),
             ComponentValue::CognitiveProfile(CognitiveProfile {
-                max_candidates_to_plan: 3,
                 max_candidates_per_expansion: 180,
                 max_plan_depth: 9,
                 max_travel_candidates_per_expansion: None,

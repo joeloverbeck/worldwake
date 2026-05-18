@@ -4,8 +4,6 @@ use serde::{Deserialize, Serialize};
 /// Stable per-agent cognitive reasoning parameters used by the AI layer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct CognitiveProfile {
-    /// Maximum number of top-scoring goal candidates the planner evaluates per decision cycle.
-    pub max_candidates_to_plan: u8,
     /// Maximum action successors expanded per search node during plan search.
     #[serde(default = "default_max_candidates_per_expansion")]
     pub max_candidates_per_expansion: u16,
@@ -109,7 +107,6 @@ pub struct CognitiveProfile {
 impl Default for CognitiveProfile {
     fn default() -> Self {
         Self {
-            max_candidates_to_plan: 2,
             max_candidates_per_expansion: default_max_candidates_per_expansion(),
             max_plan_depth: 8,
             max_travel_candidates_per_expansion: None,
@@ -272,7 +269,6 @@ mod tests {
     fn cognitive_profile_default_matches_split_defaults() {
         let profile = CognitiveProfile::default();
 
-        assert_eq!(profile.max_candidates_to_plan, 2);
         assert_eq!(profile.max_candidates_per_expansion, 200);
         assert_eq!(profile.max_plan_depth, 8);
         assert_eq!(profile.max_travel_candidates_per_expansion, None);
@@ -325,7 +321,6 @@ mod tests {
     #[test]
     fn cognitive_profile_roundtrips_through_bincode() {
         let profile = CognitiveProfile {
-            max_candidates_to_plan: 3,
             max_candidates_per_expansion: 144,
             max_plan_depth: 10,
             max_travel_candidates_per_expansion: Some(5),

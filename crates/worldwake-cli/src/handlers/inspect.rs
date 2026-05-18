@@ -296,8 +296,8 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
     if let Some(cognitive) = world.get_component_cognitive_profile(entity) {
         println!("  CognitiveProfile:");
         println!(
-            "    candidates={}, depth={}, switch_margin={}",
-            cognitive.max_candidates_to_plan, cognitive.max_plan_depth, cognitive.switch_margin
+            "    depth={}, switch_margin={}",
+            cognitive.max_plan_depth, cognitive.switch_margin
         );
         println!(
             "    snapshot_travel_horizon={}, max_node_expansions={}",
@@ -310,6 +310,13 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
         println!(
             "    initial_cooldown={}, max_cooldown={}",
             cognitive.initial_cooldown_ticks, cognitive.max_cooldown_ticks
+        );
+    }
+    if let Some(weights) = world.get_component_portfolio_weights_profile(entity) {
+        println!("  PortfolioWeightsProfile:");
+        println!(
+            "    max_plans normal/emergency/idle={}/{}/{}",
+            weights.max_plans_normal, weights.max_plans_emergency, weights.max_plans_idle
         );
     }
     if let Some(execution_budget) = world.get_component_execution_budget(entity) {

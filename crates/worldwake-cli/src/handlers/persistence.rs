@@ -182,7 +182,6 @@ mod tests {
     fn test_save_load_roundtrip_preserves_split_agent_profiles() {
         let cognitive_profile = CognitiveProfile {
             max_plan_depth: 12,
-            max_candidates_to_plan: 4,
             snapshot_travel_horizon: 9,
             max_node_expansions: 1024,
             switch_margin: worldwake_core::Permille::new(175).unwrap(),

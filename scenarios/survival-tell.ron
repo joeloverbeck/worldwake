@@ -75,7 +75,6 @@
                 gossip_acceptance: 650,
             ),
             cognitive_profile: (
-                max_candidates_to_plan: 4,
                 max_candidates_per_expansion: 240,
                 max_plan_depth: 10,
                 snapshot_travel_horizon: 6,
@@ -173,7 +172,6 @@
                 gossip_acceptance: 650,
             ),
             cognitive_profile: (
-                max_candidates_to_plan: 4,
                 max_candidates_per_expansion: 240,
                 max_plan_depth: 10,
                 snapshot_travel_horizon: 6,
