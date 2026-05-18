@@ -130,7 +130,7 @@ fn known_target_failure(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> Opt
                 .believed_target_location(context.agent, target);
             match envelope.status {
                 worldwake_sim::belief_view::BeliefStatus::Stale => {
-                    if !political_exact_target_can_reach_search(ranked)
+                    if !stale_exact_target_can_reach_search(ranked)
                         && !local_evidence_supports_exact_target(ranked, context, target)
                     {
                         return Some(Discrepancy::BeliefStale);
@@ -174,10 +174,13 @@ fn known_target_failure(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> Opt
     None
 }
 
-fn political_exact_target_can_reach_search(ranked: &AgendaEntry) -> bool {
+fn stale_exact_target_can_reach_search(ranked: &AgendaEntry) -> bool {
     matches!(
         ranked.offer.key.kind,
-        GoalKind::ClaimOffice { .. } | GoalKind::SupportCandidateForOffice { .. }
+        GoalKind::ClaimOffice { .. }
+            | GoalKind::SupportCandidateForOffice { .. }
+            | GoalKind::EngageHostile { .. }
+            | GoalKind::RaidTarget { .. }
     )
 }
 
@@ -379,8 +382,8 @@ fn relevant_action_defs(
 #[cfg(test)]
 mod tests {
     use super::{
-        ProbeContext, blocker_key_for_probe, local_evidence_supports_exact_target,
-        political_exact_target_can_reach_search, probe, route_place_target,
+        ProbeContext, blocker_key_for_probe, local_evidence_supports_exact_target, probe,
+        route_place_target, stale_exact_target_can_reach_search,
     };
     use crate::{
         AgendaEntry, GoalOffer, GoalPriorityClass, PlannerOpSemantics,
@@ -559,6 +562,46 @@ mod tests {
                     Constraint::ActorNotInTransit,
                 ],
                 targets: vec![TargetSpec::ActorPlace],
+                preconditions: Vec::new(),
+                reservation_requirements: Vec::new(),
+                duration: DurationExpr::Fixed(NonZeroU32::new(1).expect("nonzero")),
+                body_cost_per_tick: BodyCostPerTick::zero(),
+                attention_cost: Permille::ZERO,
+                interruptibility: Interruptibility::FreelyInterruptible,
+                commit_conditions: Vec::new(),
+                visibility: VisibilitySpec::SamePlace,
+                causal_event_tags: BTreeSet::new(),
+                payload: ActionPayload::None,
+                handler,
+                binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+                guard_template: None,
+                expectation_template: vec![],
+                effect_schema: worldwake_sim::EffectSchema::empty(),
+            });
+
+            Self {
+                semantics: build_semantics_table(&defs),
+                defs,
+                handlers,
+            }
+        }
+
+        fn attack_only() -> Self {
+            let mut handlers = ActionHandlerRegistry::new();
+            let handler = handlers.register(ActionHandler::new(
+                noop_start,
+                noop_tick,
+                noop_commit,
+                noop_abort,
+            ));
+
+            let mut defs = ActionDefRegistry::new();
+            defs.register(ActionDef {
+                id: ActionDefId(0),
+                name: "attack".to_owned(),
+                domain: ActionDomain::Combat,
+                actor_constraints: vec![Constraint::ActorAlive],
+                targets: vec![TargetSpec::SpecificEntity(entity(999))],
                 preconditions: Vec::new(),
                 reservation_requirements: Vec::new(),
                 duration: DurationExpr::Fixed(NonZeroU32::new(1).expect("nonzero")),
@@ -847,18 +890,66 @@ mod tests {
     }
 
     #[test]
-    fn political_exact_targets_are_not_pre_rejected_for_stale_location() {
+    fn stale_exact_targets_are_not_pre_rejected_for_search_validated_goals() {
         let office = entity(3);
         let candidate = entity(4);
+        let target = entity(5);
 
-        assert!(political_exact_target_can_reach_search(&ranked_goal(
+        assert!(stale_exact_target_can_reach_search(&ranked_goal(
             GoalKind::ClaimOffice { office },
             OpportunityAnchor::None,
         )));
-        assert!(political_exact_target_can_reach_search(&ranked_goal(
+        assert!(stale_exact_target_can_reach_search(&ranked_goal(
             GoalKind::SupportCandidateForOffice { office, candidate },
             OpportunityAnchor::None,
         )));
+        assert!(stale_exact_target_can_reach_search(&ranked_goal(
+            GoalKind::EngageHostile { target },
+            OpportunityAnchor::Entity(target),
+        )));
+        assert!(stale_exact_target_can_reach_search(&ranked_goal(
+            GoalKind::RaidTarget { target },
+            OpportunityAnchor::Entity(target),
+        )));
+    }
+
+    #[test]
+    fn probe_allows_remote_pursuit_stale_target_belief_to_reach_search() {
+        let harness = ProbeHarness::attack_only();
+        let agent = entity(1);
+        let origin = entity(2);
+        let remote = entity(3);
+        let target = entity(999);
+        let ranked = ranked_goal(
+            GoalKind::EngageHostile { target },
+            OpportunityAnchor::Entity(target),
+        );
+        let mut view = MockView::default();
+        view.alive.extend([agent, target]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        view.places.insert(agent, origin);
+        view.places.insert(target, remote);
+        view.routes.insert((origin, remote));
+        view.believed_target_locations.insert(
+            (agent, target),
+            target_location_belief(Some(remote), BeliefStatus::Stale),
+        );
+
+        let verdict = probe(
+            &ranked,
+            &probe_context(
+                &harness,
+                &view,
+                agent,
+                Some(origin),
+                &DiscrepancyMemory::default(),
+                &BlockerMemory::default(),
+                Tick(5),
+            ),
+        );
+
+        assert_eq!(verdict, FeasibilityVerdict::Plausible);
     }
 
     #[test]

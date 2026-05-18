@@ -38,8 +38,11 @@ For each failing run:
    - `test result: FAILED. ... <name> ... FAILED` (test runner)
    - `Diff in <file> at line N` (rustfmt)
    - `Crate: <name>, Vulnerability: ...` (cargo audit)
+
+   `--log-failed` returns the entire log of failing *steps*, which includes runner setup (toolchain install, cache restore, fetch) and may exceed 200KB for matrix workflows. Always pipe through `grep -E "FAILED|panicked|error\[|assertion|Diff in"` to extract signatures rather than reading whole output.
 3. For matrix workflows (`golden-*.yml`), record which scenarios failed by their job names (e.g., `golden-survival / combat`).
 4. If a single workflow has multiple failed jobs, capture each independently — they may have unrelated root causes.
+5. If grepped output still exceeds the tool-result budget (~32KB), narrow further with `head -<N>`, target a specific job with `gh run view <id> --job <job-id> --log`, or filter by step name with `--log` and `awk '/##\[group\].*Run /{step=$0} step && /FAILED|panicked/{print step; print}'`.
 
 ### 3. Classify each failure
 
@@ -51,9 +54,11 @@ Use the taxonomy below to assign every failure to a class. Each class prescribes
 | **build/compile** | `error[E####]:` in log | `cargo build --workspace` | Fix import / stale literal / type mismatch surfaced by compiler |
 | **unit/integration test** | `test result: FAILED. ... <name> ... FAILED` | `cargo test -p <crate> <test_name>` | Diagnose: real bug vs. test drift. Never adapt test to bug |
 | **clippy** | `error: ... -D <lint>` from `cargo clippy --workspace --all-targets -- -D warnings` | `cargo clippy --workspace --all-targets -- -D warnings` | Fix the lint. Never `#[allow]` to silence |
-| **golden matrix scenario** | Job name `golden-<family> / <scenario>` failing; assertion line in log | `cargo test -p worldwake-ai --test golden_<family>_<scenario>` | Consult [docs/debugging-traces.md](../../../docs/debugging-traces.md). Treat goldens as authoritative; fix the production code |
+| **golden matrix scenario** | Job name `golden-<family> / <scenario>` failing; assertion line in log | `cargo test --release -p worldwake-ai --test golden_<family>_<scenario> -- --ignored --test-threads=1` (see note below) | Consult [docs/debugging-traces.md](../../../docs/debugging-traces.md). Treat goldens as authoritative; fix the production code |
 | **cargo audit** | `audit-check` job; `Crate: <name>, Vulnerability: ...` | `cargo audit` (after `cargo install cargo-audit` if missing) | Bump the dep in `Cargo.toml`. If no fix version exists, escalate per Step 5 |
 | **toolchain/cache/checkout** | Failure in `Checkout`, `Install Rust toolchain`, or `Cache cargo artifacts` step | (no local equivalent) | Re-run via `gh run rerun <run-id>` once. If reproducible, escalate as infra issue, not as a code fix |
+
+The `--release --ignored --test-threads=1` flags on the golden matrix repro command are required because the per-family workflows (`.github/workflows/golden-<family>.yml`) gate these tests with `#[ignore = "CI-only: ..."]`. When in doubt, copy the exact `Run` step from the workflow YAML — it is the source of truth.
 
 ### 4. Reproduce locally
 
@@ -72,7 +77,7 @@ Once the failure reproduces:
 1. Read the failed test, lint, or assertion in the codebase. Trace to root cause.
 2. For golden test failures: consult [docs/debugging-traces.md](../../../docs/debugging-traces.md). Goldens are authoritative — the bug is in production code unless evidence proves the golden's contract is itself stale (in which case CLAUDE.md's `Authoritative-To-AI Impact Rule` applies).
 3. For any fix touching engine architecture, planner pipelines, action validation, or component registration: re-read the relevant sections of [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md).
-4. When the failure is a regression and the branch has multiple commits since `main` (or since the last green CI run), consider bisecting via `git worktree add /tmp/<name>-bisect <commit-sha>` to isolate the introducing commit before deep code-reading. Run the narrowest local repro at each candidate commit. Worktrees are cheaper than `git checkout` and keep your main working tree clean.
+4. When the failure is a regression and the branch has multiple commits since `main` (or since the last green CI run), consider bisecting via `git worktree add /tmp/<name>-bisect <commit-sha>` to isolate the introducing commit before deep code-reading. Run the narrowest local repro at each candidate commit. Worktrees are cheaper than `git checkout` and keep your main working tree clean. Clean up with `git worktree remove --force /tmp/<name>-bisect` for each worktree before committing — leftover worktrees pollute `git worktree list` and consume disk space, especially on space-constrained WSL2/VM disks.
 5. TDD discipline (per CLAUDE.md): never adapt tests to fix bugs. For real bugs, the failing test is already the regression proof.
 
 Apply 1-3-1 (1 problem, 3 options, 1 recommendation) and stop for user direction when:
@@ -82,6 +87,7 @@ Apply 1-3-1 (1 problem, 3 options, 1 recommendation) and stop for user direction
 - The minimal fix would require violating a FOUNDATIONS principle. Never proceed silently — surface the conflict.
 - A `cargo audit` advisory has no fix version. Options: (a) pin to a non-vulnerable version range, (b) replace the dep, (c) document accepted risk and ignore via `cargo audit --ignore`.
 - A toolchain/cache failure reproduces on re-run. This is infra, not a branch fix — surface to the user.
+- A fix recovers most but not all of the original failures (partial coverage). Options: (a) commit the partial fix and open a follow-up ticket for the residual, (b) commit the partial fix and let the user file separately, (c) hold the fix and continue investigating before committing anything.
 
 ### 6. Implement the fix
 
@@ -94,6 +100,7 @@ Apply 1-3-1 (1 problem, 3 options, 1 recommendation) and stop for user direction
    - No `HashMap` / `HashSet` introduced in authoritative state (determinism rule).
    - No floats or wall-clock time introduced in simulation code.
 4. For diagnosed bugs not yet covered by a failing test, add the failing test first, confirm it fails, then fix the code.
+5. If the fix touches scenario `.ron` files or planner behaviour, expect derived artifacts to drift. Regenerate with `cargo run -p worldwake-cli --bin scenario-coverage -- --write` (for `docs/generated/scenario-coverage.md`) and `WORLDWAKE_UPDATE_SCENARIO_DIAGNOSTICS_FIXTURE=1 cargo test --release -p worldwake-ai --test golden_scenario_diagnostics_fixture -- --ignored --test-threads=1` (for `crates/worldwake-ai/tests/fixtures/expected-scenario-diagnostics.json`). Stage and commit alongside the source change.
 
 ### 7. FOUNDATIONS-alignment contract
 
@@ -170,7 +177,7 @@ After push:
    - If `gh run watch` exits or stalls before the run reaches a terminal state (e.g., upstream API 5xx, exit-without-conclusion), fall back to polling: `until gh run view <run-id> --json status --jq '.status' | grep -q completed; do sleep 30; done`, then re-check the conclusion via `gh run view <run-id> --json conclusion --jq '.conclusion'`.
 2. Report the final status:
    - **Green ✓**: report success and stop.
-   - **Red ✗**: summarize the new failures (which jobs, which signatures). Do not auto-loop into another fix-push cycle.
+   - **Red ✗**: summarize the new failures (which jobs, which signatures). Do not auto-loop into another fix-push cycle. If the residual failures need separate investigation, optionally create a follow-up ticket under `tickets/` using `tickets/_TEMPLATE.md`. Cite the bisect-identified introducing commit (if known), the experiments already ruled out, and the suspected investigation surface. Commit the ticket as a separate commit in the same push.
 
 If the re-run is still red, the next iteration is a fresh skill invocation by the user. The skill's contract is one diagnose-fix-push cycle plus one re-run confirmation.
 
@@ -184,7 +191,7 @@ If the re-run is still red, the next iteration is a fresh skill invocation by th
 - Stage files explicitly by name; never `git add -A` or `git add .`.
 - Worktree discipline: if the branch lives under `.claude/worktrees/<name>/`, all file operations use the worktree root as the base path.
 - Reproduce every failure locally before fixing. Hypothesis-driven fixes without local repro are not acceptable.
-- Apply 1-3-1 (1 problem, 3 options, 1 recommendation) when reproduction fails, when multiple root causes are plausible, when a fix would violate FOUNDATIONS, when an audit advisory has no fix, or when a toolchain failure reproduces on re-run.
+- Apply 1-3-1 (1 problem, 3 options, 1 recommendation) when reproduction fails, when multiple root causes are plausible, when a fix would violate FOUNDATIONS, when an audit advisory has no fix, when a toolchain failure reproduces on re-run, or when a fix achieves only partial coverage of the original failures.
 - After the post-push CI re-run, do not auto-loop into another fix-push cycle. Report and stop.
 
 ## Example Usage

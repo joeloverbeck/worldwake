@@ -2,7 +2,8 @@ use crate::GoalDispatchKey;
 use crate::GoalKindPlannerExt;
 use crate::agenda_manager::{RejectionLifecycle, classify_rejection};
 use crate::agent_tick::portfolio::{
-    FeasibilityVerdict, Portfolio, SlotKind, assemble_portfolio, derive_operating_mode,
+    FeasibilityVerdict, Portfolio, PortfolioSlot, SlotKind, assemble_portfolio,
+    derive_operating_mode,
 };
 use crate::candidate_generation::relieved_needs_for_commodity;
 use crate::decision_trace::{
@@ -642,10 +643,10 @@ pub(super) fn build_candidate_plans_with_sources(
         .slots
         .values()
         .filter_map(|slot| {
-            matches!(
+            (matches!(
                 slot.feasibility,
                 crate::agent_tick::portfolio::FeasibilityVerdict::RejectedBeforeSearch { .. }
-            )
+            ) && rejected_portfolio_slot_suppresses_search(slot))
             .then_some(OpportunityKey {
                 goal_key: slot.ranked.offer.key,
                 anchor: slot.ranked.offer.anchor,
@@ -847,6 +848,16 @@ pub(super) fn build_candidate_plans_with_sources(
         planning_state_cache_counters: (planning_state_count > 0)
             .then_some(planning_state_cache_counters),
     }
+}
+
+fn rejected_portfolio_slot_suppresses_search(slot: &PortfolioSlot) -> bool {
+    !matches!(
+        slot.ranked.offer.key.kind,
+        GoalKind::AcquireCommodity {
+            purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            ..
+        }
+    )
 }
 
 fn opportunity_admitted_by_exhaustion(
@@ -2798,8 +2809,9 @@ mod tests {
     use super::{
         CandidatePlanSearch, found_plan_blocks_later_goals, frontier_exhaustion_entry,
         has_pending_budget_retry, plan_completion_tick_for_adoption, plan_search_result_to_trace,
-        planning_time_target_belief_presence, record_exhausted_goals, selected_plan_value,
-        summarize_ranked_goal, summarize_selected_plan, summarize_snapshot_continuation,
+        planning_time_target_belief_presence, record_exhausted_goals,
+        rejected_portfolio_slot_suppresses_search, selected_plan_value, summarize_ranked_goal,
+        summarize_selected_plan, summarize_snapshot_continuation,
     };
     use crate::{
         AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
@@ -6005,6 +6017,65 @@ mod tests {
 
         assert!(found_plan_blocks_later_goals(&satisfied_plan));
         assert!(found_plan_blocks_later_goals(&combat_plan));
+    }
+
+    #[test]
+    fn rejected_self_consume_acquire_slot_still_reaches_search() {
+        let place = place_entity(41);
+        let offer = GoalOffer {
+            key: GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Water,
+                purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
+            }
+            .into(),
+            anchor: OpportunityAnchor::Place(place),
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::from([place]),
+            obligation_source: None,
+            commitment_impact_if_ignored: Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
+            acquisition_quantity: Some(AcquisitionQuantity::single()),
+        };
+        let slot = PortfolioSlot {
+            ranked: ranked_goal(offer),
+            feasibility: FeasibilityVerdict::RejectedBeforeSearch {
+                reason: worldwake_core::Discrepancy::MissingObservation,
+            },
+        };
+
+        assert!(
+            !rejected_portfolio_slot_suppresses_search(&slot),
+            "self-care acquisition candidates should let planner search validate the path"
+        );
+    }
+
+    #[test]
+    fn rejected_non_acquire_slot_suppresses_search_budget() {
+        let offer = GoalOffer {
+            key: GoalKind::Relieve.into(),
+            anchor: OpportunityAnchor::None,
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
+            acquisition_quantity: None,
+        };
+        let slot = PortfolioSlot {
+            ranked: ranked_goal(offer),
+            feasibility: FeasibilityVerdict::RejectedBeforeSearch {
+                reason: worldwake_core::Discrepancy::MissingObservation,
+            },
+        };
+
+        assert!(rejected_portfolio_slot_suppresses_search(&slot));
     }
 
     #[test]
