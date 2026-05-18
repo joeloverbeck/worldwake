@@ -19,9 +19,9 @@ use worldwake_core::{
     LawAbidingProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
     ObligationExecutionTracker, ObligationSatiationProfile, ObservationOmissionLog, OfficeData,
     PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness,
-    PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus,
-    RecordData, RecordKind, RecordedViolation, ResourceExtractionQueues, ResourceSource,
-    RewardEncumbrance, RewardSource, RightKind, RiskWeightProfile, RouteExperience,
+    PlaceTag, PlaceTagSet, PortfolioWeightsProfile, PreferenceProfile, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordData, RecordKind, RecordedViolation, ResourceExtractionQueues,
+    ResourceSource, RewardEncumbrance, RewardSource, RightKind, RiskWeightProfile, RouteExperience,
     RoutePreferenceProfile, SleepQualityProfile, SocialObservation, SourceReliability,
     StockStoragePolicy, SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic,
     TestimonyTrustProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
@@ -582,6 +582,10 @@ pub trait GoalBeliefView: BelievedAuthorityView + LocalPhysicalObservationView {
         let _ = agent;
         None
     }
+    fn portfolio_weights_profile(&self, agent: EntityId) -> PortfolioWeightsProfile {
+        let _ = agent;
+        PortfolioWeightsProfile::default()
+    }
     fn agent_schema_context_profile(&self, agent: EntityId) -> Option<AgentSchemaContextProfile> {
         let _ = agent;
         None
@@ -1067,6 +1071,10 @@ pub trait ProfileBeliefView {
     fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
         let _ = agent;
         None
+    }
+    fn portfolio_weights_profile(&self, agent: EntityId) -> PortfolioWeightsProfile {
+        let _ = agent;
+        PortfolioWeightsProfile::default()
     }
     fn agent_schema_context_profile(&self, agent: EntityId) -> Option<AgentSchemaContextProfile> {
         let _ = agent;
@@ -2194,6 +2202,13 @@ where
         ProfileBeliefView::cognitive_profile(self, agent)
     }
 
+    fn portfolio_weights_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> worldwake_core::PortfolioWeightsProfile {
+        ProfileBeliefView::portfolio_weights_profile(self, agent)
+    }
+
     fn agent_schema_context_profile(
         &self,
         agent: worldwake_core::EntityId,
@@ -2808,11 +2823,11 @@ mod tests {
         InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
         LastProactiveExplorationTick, LatrineFullness, LoadUnits, ObservationOmissionLog,
         OfficeData, PatrolProfile, PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness,
-        Quantity, RecordData, RecordEntryId, RecordKind, ResourceSource, RewardEncumbrance,
-        RewardReservation, RewardSource, RoutePreferenceProfile, ShelterTag, SleepQualityProfile,
-        SleepRecoveryModifier, SuccessionLaw, SurveyMemory, TestimonyTrustProfile, TheftFacts,
-        Tick, UniqueItemKind, ViolationId, VisibilitySpec, WashBasinState, WitnessData,
-        WorkstationTag, World, WorldTxn, build_prototype_world,
+        PortfolioWeightsProfile, Quantity, RecordData, RecordEntryId, RecordKind, ResourceSource,
+        RewardEncumbrance, RewardReservation, RewardSource, RoutePreferenceProfile, ShelterTag,
+        SleepQualityProfile, SleepRecoveryModifier, SuccessionLaw, SurveyMemory,
+        TestimonyTrustProfile, TheftFacts, Tick, UniqueItemKind, ViolationId, VisibilitySpec,
+        WashBasinState, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
     };
 
     fn sample_claim(
@@ -3824,6 +3839,35 @@ mod tests {
         assert_eq!(
             GoalBeliefView::route_preference_profile(&view, agent),
             Some(RoutePreferenceProfile::default())
+        );
+    }
+
+    #[test]
+    fn goal_belief_view_portfolio_weights_profile_returns_world_component() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let custom = PortfolioWeightsProfile {
+            need_survival: Permille::new(910).unwrap(),
+            pain_care: Permille::new(820).unwrap(),
+            obligation_duty: Permille::new(730).unwrap(),
+            economic_opportunity: Permille::new(640).unwrap(),
+            social_motive: Permille::new(550).unwrap(),
+            max_plans_normal: 6,
+            max_plans_emergency: 4,
+            max_plans_idle: 7,
+        };
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_component_portfolio_weights_profile(agent, custom)
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+        let view = PerAgentBeliefView::from_world(agent, &world);
+
+        assert_eq!(
+            GoalBeliefView::portfolio_weights_profile(&view, agent),
+            custom
         );
     }
 

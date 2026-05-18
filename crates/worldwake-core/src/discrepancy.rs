@@ -1,6 +1,6 @@
 use crate::{
     BeliefClaimKey, BlockerReason, BlockerScope, CommodityKind, Component, EntityId, EventId,
-    HomeostaticNeedId, MethodSchemaId, OmissionReason, Tick,
+    HomeostaticNeedId, IntentionAbandonConditionDiscriminant, MethodSchemaId, OmissionReason, Tick,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -44,6 +44,8 @@ pub enum Discrepancy {
     },
     /// A method-level pursuit pattern failed before or during subgoal execution.
     MethodFailure(MethodFailureContext),
+    /// A typed intention abandon predicate fired.
+    AbandonConditionFired(IntentionAbandonConditionDiscriminant),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Hash, Serialize, Deserialize)]
@@ -129,8 +131,8 @@ mod tests {
     };
     use crate::{
         ActionDefId, BeliefClaimKey, BlockerKey, BlockerReason, BlockerScope, CommodityKind,
-        EntityBeliefAspect, EntityId, EventId, GoalKind, MethodSchemaId, OmissionReason,
-        RouteSegment, SaliencePolicy, Tick,
+        EntityBeliefAspect, EntityId, EventId, GoalKind, IntentionAbandonConditionDiscriminant,
+        MethodSchemaId, OmissionReason, RouteSegment, SaliencePolicy, Tick,
         test_utils::{entity_id, sample_goal_key},
         traits::Component,
     };
@@ -235,6 +237,18 @@ mod tests {
             kind: MethodFailureKind::SubgoalUnachievable,
             subgoal_index: Some(2),
         });
+
+        let bytes = bincode::serialize(&discrepancy).unwrap();
+        let roundtrip: Discrepancy = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, discrepancy);
+    }
+
+    #[test]
+    fn discrepancy_abandon_condition_fired_roundtrips_through_bincode() {
+        let discrepancy = Discrepancy::AbandonConditionFired(
+            IntentionAbandonConditionDiscriminant::PatienceExhausted,
+        );
 
         let bytes = bincode::serialize(&discrepancy).unwrap();
         let roundtrip: Discrepancy = bincode::deserialize(&bytes).unwrap();

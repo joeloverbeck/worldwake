@@ -17,11 +17,12 @@ use worldwake_core::{
     GroundComfortTag, HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
     LatrineFullness, LawAbidingProfile, LoadUnits, MetabolismProfile, ObligationSatiationProfile,
     PatrolProfile, PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness,
-    PlaceVisibilityProfile, PreferenceProfile, ProofKind, ProofRequirement, PursuitProfile,
-    Quantity, RevocationReason, RiskWeightProfile, RoutePreferenceProfile, ShelterTag,
-    SleepQualityProfile, SleepRecoveryModifier, SubstitutePreferences, SuccessionLaw, TellProfile,
-    TestimonyTrustProfile, TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
-    ViolationDispositionProfile, WashBasinState, WorkstationTag, items::CommodityKind,
+    PlaceVisibilityProfile, PortfolioWeightsProfile, PreferenceProfile, ProofKind,
+    ProofRequirement, PursuitProfile, Quantity, RevocationReason, RiskWeightProfile,
+    RoutePreferenceProfile, ShelterTag, SleepQualityProfile, SleepRecoveryModifier,
+    SubstitutePreferences, SuccessionLaw, TellProfile, TestimonyTrustProfile,
+    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
+    WashBasinState, WorkstationTag, items::CommodityKind,
     social_artifact::SuspensionReason as ArtifactSuspensionReason, topology::PlaceTag,
 };
 
@@ -591,6 +592,8 @@ pub struct AgentDef {
     pub tell_profile: Option<TellProfile>,
     #[serde(default)]
     pub cognitive_profile: Option<CognitiveProfile>,
+    #[serde(default)]
+    pub portfolio_weights_profile: Option<PortfolioWeightsProfile>,
     #[serde(default)]
     pub agent_schema_context_profile: Option<AgentSchemaContextProfile>,
     #[serde(default)]
@@ -1750,7 +1753,6 @@ mod tests {
                     location: "Nowhere",
                     control: Ai,
                     cognitive_profile: (
-                        max_candidates_to_plan: 4,
                         max_plan_depth: 10,
                         snapshot_travel_horizon: 6,
                         max_node_expansions: 300,
@@ -1776,7 +1778,6 @@ mod tests {
             .cognitive_profile
             .expect("cognitive profile should deserialize");
 
-        assert_eq!(cognitive.max_candidates_to_plan, 4);
         assert_eq!(
             cognitive.max_candidates_per_expansion,
             CognitiveProfile::default().max_candidates_per_expansion

@@ -4,10 +4,13 @@ use crate::{
 };
 use crate::{GoalPriorityClass, ranking::OrderedRanked};
 use worldwake_core::{
-    Blocker, BlockerKey, BlockerMemory, BlockingFact, CognitiveProfile, CommodityKind,
-    ContentionIntents, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
-    EntityId, FrameAssumption, FrameClearReason, FrameState, HomeostaticNeedId, IntentionDomain,
-    IntentionFrame, Permille, Quantity, SourceKey, SuspensionReason, Tick,
+    ArtifactExistence, ArtifactLegalEffectTag, BeliefStatusTag, Blocker, BlockerKey, BlockerMemory,
+    BlockingFact, CognitiveProfile, CommodityKind, ContentionIntents, Discrepancy,
+    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EntityBeliefClaim, EntityId,
+    FrameAssumption, FrameClearReason, FrameState, HomeostaticNeedId, IntentionAbandonCondition,
+    IntentionAbandonConditionDiscriminant, IntentionDomain, IntentionFrame,
+    IntentionResumeCondition, OpportunityAnchor, Permille, Quantity, SourceKey, SuspensionReason,
+    Tick, effective_claim_confidence,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -122,6 +125,11 @@ pub(super) fn update_frame_for_adopted_plan(
         last_progress_tick: None,
         stalled_ticks: 0,
         patience_limit: 30, // default; caller may override from profile
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     })
 }
 
@@ -530,6 +538,234 @@ pub(super) fn apply_assumption_result(
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FrameDecision {
+    Resume,
+    Abandon(IntentionAbandonConditionDiscriminant),
+}
+
+pub(crate) fn evaluate_resume_abandon_conditions(
+    frame: &IntentionFrame,
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    tick: Tick,
+) -> Option<FrameDecision> {
+    for condition in &frame.abandon_conditions {
+        if abandon_condition_holds(condition, frame, view, agent, tick) {
+            return Some(FrameDecision::Abandon(
+                IntentionAbandonConditionDiscriminant::from(condition),
+            ));
+        }
+    }
+
+    if matches!(frame.state, FrameState::Suspended { .. }) {
+        for condition in &frame.resume_conditions {
+            if resume_condition_holds(condition, frame, view, agent, tick) {
+                return Some(FrameDecision::Resume);
+            }
+        }
+    }
+
+    None
+}
+
+fn abandon_condition_holds(
+    condition: &IntentionAbandonCondition,
+    frame: &IntentionFrame,
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    tick: Tick,
+) -> bool {
+    match condition {
+        IntentionAbandonCondition::MotiveSourceLost(discriminant) => !frame
+            .motive_refs
+            .iter()
+            .any(|motive_ref| motive_ref.source.discriminant() == *discriminant),
+        IntentionAbandonCondition::AssumptionPermanentlyBroken(assumption) => matches!(
+            evaluate_assumptions(&[*assumption], view, agent, None, tick),
+            AssumptionEvalResult::CriticalFailure(_)
+        ),
+        IntentionAbandonCondition::OpportunityForeverGone(anchor) => {
+            opportunity_anchor_gone(*anchor, view)
+        }
+        IntentionAbandonCondition::PatienceExhausted => frame.stalled_ticks >= frame.patience_limit,
+        IntentionAbandonCondition::ArtifactDestroyed(artifact) => {
+            known_artifact_state(view, agent, *artifact).is_some_and(|artifact_state| {
+                matches!(
+                    artifact_state.existence,
+                    ArtifactExistence::Destroyed { .. }
+                )
+            })
+        }
+        IntentionAbandonCondition::ArtifactLegalEffectLost(artifact) => {
+            known_artifact_state(view, agent, *artifact).is_some_and(|artifact_state| {
+                ArtifactLegalEffectTag::from(&artifact_state.legal_effect)
+                    != ArtifactLegalEffectTag::Active
+            })
+        }
+    }
+}
+
+fn resume_condition_holds(
+    condition: &IntentionResumeCondition,
+    frame: &IntentionFrame,
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    tick: Tick,
+) -> bool {
+    match condition {
+        IntentionResumeCondition::BeliefStatusChanged {
+            subject,
+            target_status,
+        } => belief_status_matches(view, agent, *subject, *target_status, tick),
+        IntentionResumeCondition::OpportunityVisible(anchor) => {
+            opportunity_anchor_visible(*anchor, view, agent)
+        }
+        IntentionResumeCondition::LocationReached(place) => {
+            view.effective_place(agent) == Some(*place)
+        }
+        IntentionResumeCondition::TickElapsed(elapsed) => {
+            if let FrameState::Suspended { suspended_at, .. } = frame.state {
+                tick.0.saturating_sub(suspended_at.0) >= u64::from(*elapsed)
+            } else {
+                false
+            }
+        }
+        IntentionResumeCondition::ArtifactLegalEffectActive(artifact) => {
+            known_artifact_state(view, agent, *artifact).is_some_and(|artifact_state| {
+                ArtifactLegalEffectTag::from(&artifact_state.legal_effect)
+                    == ArtifactLegalEffectTag::Active
+            })
+        }
+    }
+}
+
+fn opportunity_anchor_gone(anchor: OpportunityAnchor, view: &dyn RuntimeBeliefView) -> bool {
+    match anchor {
+        OpportunityAnchor::Place(place) | OpportunityAnchor::Entity(place)
+            if view.entity_kind(place).is_none() =>
+        {
+            true
+        }
+        OpportunityAnchor::None | OpportunityAnchor::Place(_) => false,
+        OpportunityAnchor::Entity(entity) => view.is_dead(entity),
+    }
+}
+
+fn opportunity_anchor_visible(
+    anchor: OpportunityAnchor,
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+) -> bool {
+    match anchor {
+        OpportunityAnchor::None => true,
+        OpportunityAnchor::Place(place) => view.effective_place(agent) == Some(place),
+        OpportunityAnchor::Entity(entity) => view
+            .effective_place(entity)
+            .is_some_and(|place| view.effective_place(agent) == Some(place)),
+    }
+}
+
+fn known_artifact_state(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    artifact: EntityId,
+) -> Option<worldwake_core::BelievedArtifactState> {
+    view.known_entity_beliefs(agent)
+        .into_iter()
+        .find(|(entity, _)| *entity == artifact)
+        .and_then(|(_, state)| state.believed_artifact)
+}
+
+fn belief_status_matches(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    subject: EntityId,
+    target_status: BeliefStatusTag,
+    tick: Tick,
+) -> bool {
+    let Some(store) = view.agent_belief_store(agent) else {
+        return false;
+    };
+    let Some(claims) = store.entity_claims.get(&subject) else {
+        return false;
+    };
+
+    if target_status == BeliefStatusTag::Disputed {
+        return claims
+            .iter()
+            .filter(|claim| claim.refuted_at_tick.is_none())
+            .take(2)
+            .count()
+            > 1;
+    }
+
+    claims
+        .iter()
+        .any(|claim| belief_status_tag_for_claim(view, agent, claim, tick) == target_status)
+}
+
+fn belief_status_tag_for_claim(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    claim: &EntityBeliefClaim,
+    tick: Tick,
+) -> BeliefStatusTag {
+    if claim.refuted_at_tick.is_some() {
+        return BeliefStatusTag::Contradicted;
+    }
+
+    let effective = effective_claim_confidence(claim, tick, &view.belief_confidence_policy(agent));
+    let threshold = view.claim_confidence_threshold(agent).value();
+    let certain_floor = threshold.saturating_mul(2).min(1000);
+    if effective >= certain_floor {
+        BeliefStatusTag::Certain
+    } else if effective >= threshold {
+        BeliefStatusTag::Probable
+    } else {
+        BeliefStatusTag::Stale
+    }
+}
+
+pub(super) fn push_causal_link_bounded(
+    frame: &mut IntentionFrame,
+    cap: u8,
+    event_id: worldwake_core::EventId,
+) {
+    let cap = usize::from(cap);
+    if cap == 0 {
+        return;
+    }
+    while frame.causal_links.len() >= cap {
+        frame.causal_links.remove(0);
+    }
+    frame.causal_links.push(event_id);
+}
+
+pub(super) fn record_abandon_condition_fired(
+    frame: &IntentionFrame,
+    agent_place: Option<EntityId>,
+    discrepancy_memory: &mut DiscrepancyMemory,
+    tick: Tick,
+    structural_block_ticks: u32,
+    discriminant: IntentionAbandonConditionDiscriminant,
+) {
+    discrepancy_memory.record(DiscrepancyEntry {
+        scope: BlockerKey {
+            goal_key: frame.goal,
+            place: agent_place,
+            target: frame_blocker_target(&frame.domain),
+            action_def: None,
+        }
+        .into(),
+        discrepancy: Discrepancy::AbandonConditionFired(discriminant),
+        observed_tick: tick,
+        expires_tick: tick + u64::from(structural_block_ticks),
+        clearing_condition: DiscrepancyClearing::TtlExpiry,
+        source_event: worldwake_core::EventId(0),
+    });
+}
+
 /// Extract the domain-specific target entity for a `BlockerKey` from an
 /// `IntentionDomain`. Used when creating `Blocker`s on frame exhaustion
 /// (patience or assumption failure).
@@ -551,40 +787,61 @@ pub(super) fn frame_blocker_target(domain: &IntentionDomain) -> Option<EntityId>
 /// The caller must have already incremented `frame.stalled_ticks`. This
 /// function only handles the creation of the blocked intent and state
 /// transition when the threshold is met.
+pub(super) struct PatienceExhaustionContext<'a> {
+    pub agent_place: Option<EntityId>,
+    pub blocked_memory: &'a mut BlockerMemory,
+    pub discrepancy_memory: &'a mut DiscrepancyMemory,
+    pub facility_intents: &'a mut ContentionIntents,
+    pub runtime: &'a mut AgentDecisionRuntime,
+    pub tick: Tick,
+    pub structural_block_ticks: u32,
+    pub causal_links_cap: u8,
+}
+
 pub(super) fn check_patience_exhaustion(
-    frame: &IntentionFrame,
-    agent_place: Option<EntityId>,
-    blocked_memory: &mut BlockerMemory,
-    facility_intents: &mut ContentionIntents,
-    runtime: &mut AgentDecisionRuntime,
-    tick: Tick,
-    structural_block_ticks: u32,
+    frame: &mut IntentionFrame,
+    ctx: &mut PatienceExhaustionContext<'_>,
 ) -> bool {
     if frame.stalled_ticks < frame.patience_limit {
         return false;
     }
-    blocked_memory.record(Blocker {
+    let discriminant = IntentionAbandonConditionDiscriminant::PatienceExhausted;
+    ctx.blocked_memory.record(Blocker {
         scope: BlockerKey {
             goal_key: frame.goal,
-            place: agent_place,
+            place: ctx.agent_place,
             target: frame_blocker_target(&frame.domain),
             action_def: None,
         }
         .into(),
         blocking_fact: BlockingFact::PatienceExhausted,
         diagnostic_context: None,
-        observed_tick: tick,
-        expires_tick: tick + u64::from(structural_block_ticks),
+        observed_tick: ctx.tick,
+        expires_tick: ctx.tick + u64::from(ctx.structural_block_ticks),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
         source_event: worldwake_core::EventId(0),
     });
-    runtime.last_frame_clear_reason = Some(FrameClearReason::PatienceExhausted);
-    runtime.current_plan = None;
-    runtime.current_step_index = 0;
-    runtime.materialization_bindings.clear();
-    facility_intents.intents.clear();
-    runtime.dirty.insert(DirtySet::FRAME_PATIENCE);
+    record_abandon_condition_fired(
+        frame,
+        ctx.agent_place,
+        ctx.discrepancy_memory,
+        ctx.tick,
+        ctx.structural_block_ticks,
+        discriminant,
+    );
+    push_causal_link_bounded(
+        frame,
+        ctx.causal_links_cap,
+        worldwake_core::EventId(ctx.tick.0),
+    );
+    frame.state = FrameState::Exhausted;
+    ctx.runtime.last_frame_clear_reason = Some(FrameClearReason::PatienceExhausted);
+    ctx.runtime.current_plan = None;
+    ctx.runtime.current_step_index = 0;
+    ctx.runtime.materialization_bindings.clear();
+    ctx.facility_intents.intents.clear();
+    ctx.runtime.dirty.insert(DirtySet::FRAME_PATIENCE);
     true
 }
 
@@ -681,12 +938,17 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AcquisitionQuantity, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
+        AcquisitionQuantity, AgentBeliefStore, ArtifactActionability, ArtifactCredibility,
+        ArtifactExistence, ArtifactKind, ArtifactLegalEffect, ArtifactVisibility,
+        BeliefConfidencePolicy, BelievedArtifactState, BelievedEntityState, ClaimId, ClaimValue,
         CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
-        DemandObservation, DriveThresholds, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
-        InTransitOnEdge, IntentionDispositionProfile, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, PerceptionSource, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        DemandObservation, DriveThresholds, EntityBeliefAspect, EntityKind, GoalKey, GoalKind,
+        HomeostaticNeeds, InTransitOnEdge, IntentionAbandonCondition,
+        IntentionAbandonConditionDiscriminant, IntentionDispositionProfile,
+        IntentionResumeCondition, LoadUnits, MerchandiseProfile, MetabolismProfile, MotiveSource,
+        MotiveSourceDiscriminant, MotiveSourceRef, OpportunityAnchor, PerceptionSource, Permille,
+        Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
@@ -827,6 +1089,18 @@ mod tests {
         }
         fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
             self.belief_stores.get(&agent)
+        }
+        fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+            self.belief_stores
+                .get(&agent)
+                .map(|store| {
+                    store
+                        .known_entities
+                        .iter()
+                        .map(|(entity, state)| (*entity, state.clone()))
+                        .collect()
+                })
+                .unwrap_or_default()
         }
     }
 
@@ -970,7 +1244,223 @@ mod tests {
             last_progress_tick: None,
             stalled_ticks: 0,
             patience_limit: 30,
+            motive_refs: Vec::new(),
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            explicit_claims: Vec::new(),
+            causal_links: Vec::new(),
         }
+    }
+
+    fn known_artifact(
+        legal_effect: ArtifactLegalEffect,
+        existence: ArtifactExistence,
+    ) -> BelievedArtifactState {
+        BelievedArtifactState {
+            kind: ArtifactKind::Notice,
+            issuer: make_entity(900),
+            expires_at: None,
+            existence,
+            visibility: ArtifactVisibility::WidelyKnown,
+            legal_effect,
+            credibility: ArtifactCredibility::Credible,
+            actionability: ArtifactActionability::Actionable,
+            bounty_terms: None,
+            notice_topic: None,
+            observed_tick: Tick(1),
+        }
+    }
+
+    fn direct_location_claim(
+        subject: EntityId,
+        place: EntityId,
+    ) -> worldwake_core::EntityBeliefClaim {
+        worldwake_core::EntityBeliefClaim {
+            claim_id: ClaimId(1),
+            subject,
+            aspect: EntityBeliefAspect::Location,
+            value: ClaimValue::Place(Some(place)),
+            source: PerceptionSource::DirectObservation,
+            acquired_tick: Tick(1),
+            claimed_event_tick: Some(Tick(1)),
+            confidence: Permille::new(950).unwrap(),
+            refuted_at_tick: None,
+        }
+    }
+
+    #[test]
+    fn evaluate_resume_condition_variants_fire() {
+        let agent = make_entity(1);
+        let subject = make_entity(2);
+        let place = make_entity(3);
+        let visible = make_entity(4);
+        let artifact = make_entity(5);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, place);
+        view.places.insert(visible, place);
+        let mut store = AgentBeliefStore::default();
+        store
+            .entity_claims
+            .insert(subject, vec![direct_location_claim(subject, place)]);
+        let mut artifact_state = observed_entity_state(place);
+        artifact_state.believed_artifact = Some(known_artifact(
+            ArtifactLegalEffect::Active { expires_at: None },
+            ArtifactExistence::Exists,
+        ));
+        store.known_entities.insert(artifact, artifact_state);
+        view.belief_stores.insert(agent, store);
+
+        let cases = [
+            IntentionResumeCondition::BeliefStatusChanged {
+                subject,
+                target_status: BeliefStatusTag::Certain,
+            },
+            IntentionResumeCondition::OpportunityVisible(OpportunityAnchor::Entity(visible)),
+            IntentionResumeCondition::LocationReached(place),
+            IntentionResumeCondition::TickElapsed(4),
+            IntentionResumeCondition::ArtifactLegalEffectActive(artifact),
+        ];
+
+        for condition in cases {
+            let mut frame = make_frame(
+                IntentionDomain::Generic,
+                FrameState::Suspended {
+                    reason: SuspensionReason::RouteBlocked,
+                    suspended_at: Tick(6),
+                },
+            );
+            frame.resume_conditions.push(condition);
+            assert_eq!(
+                evaluate_resume_abandon_conditions(&frame, &view, agent, Tick(10)),
+                Some(FrameDecision::Resume)
+            );
+        }
+    }
+
+    #[test]
+    fn evaluate_abandon_condition_variants_fire_and_precede_resume() {
+        let agent = make_entity(1);
+        let alive = make_entity(2);
+        let dead = make_entity(3);
+        let place = make_entity(4);
+        let destroyed_artifact = make_entity(5);
+        let inactive_artifact = make_entity(6);
+        let mut view = MockBeliefView::new();
+        view.alive.insert(agent);
+        view.alive.insert(alive);
+        view.places.insert(agent, place);
+        view.places.insert(alive, place);
+        let mut store = AgentBeliefStore::default();
+        let mut destroyed = observed_entity_state(place);
+        destroyed.believed_artifact = Some(known_artifact(
+            ArtifactLegalEffect::Active { expires_at: None },
+            ArtifactExistence::Destroyed {
+                destroyed_at: Tick(3),
+                cause: worldwake_core::DestructionCause::Decay,
+            },
+        ));
+        let mut inactive = observed_entity_state(place);
+        inactive.believed_artifact = Some(known_artifact(
+            ArtifactLegalEffect::Expired {
+                expired_at: Tick(8),
+            },
+            ArtifactExistence::Exists,
+        ));
+        store.known_entities.insert(destroyed_artifact, destroyed);
+        store.known_entities.insert(inactive_artifact, inactive);
+        view.belief_stores.insert(agent, store);
+
+        let cases = [
+            (
+                IntentionAbandonCondition::MotiveSourceLost(MotiveSourceDiscriminant::Greed),
+                IntentionAbandonConditionDiscriminant::MotiveSourceLost,
+            ),
+            (
+                IntentionAbandonCondition::AssumptionPermanentlyBroken(
+                    FrameAssumption::TargetAlive(dead),
+                ),
+                IntentionAbandonConditionDiscriminant::AssumptionPermanentlyBroken,
+            ),
+            (
+                IntentionAbandonCondition::OpportunityForeverGone(OpportunityAnchor::Entity(dead)),
+                IntentionAbandonConditionDiscriminant::OpportunityForeverGone,
+            ),
+            (
+                IntentionAbandonCondition::PatienceExhausted,
+                IntentionAbandonConditionDiscriminant::PatienceExhausted,
+            ),
+            (
+                IntentionAbandonCondition::ArtifactDestroyed(destroyed_artifact),
+                IntentionAbandonConditionDiscriminant::ArtifactDestroyed,
+            ),
+            (
+                IntentionAbandonCondition::ArtifactLegalEffectLost(inactive_artifact),
+                IntentionAbandonConditionDiscriminant::ArtifactLegalEffectLost,
+            ),
+        ];
+
+        for (condition, discriminant) in cases {
+            let mut frame = make_frame(
+                IntentionDomain::Generic,
+                FrameState::Suspended {
+                    reason: SuspensionReason::RouteBlocked,
+                    suspended_at: Tick(1),
+                },
+            );
+            frame.stalled_ticks = 5;
+            frame.patience_limit = 5;
+            frame
+                .resume_conditions
+                .push(IntentionResumeCondition::LocationReached(place));
+            frame.abandon_conditions.push(condition);
+            assert_eq!(
+                evaluate_resume_abandon_conditions(&frame, &view, agent, Tick(10)),
+                Some(FrameDecision::Abandon(discriminant))
+            );
+        }
+    }
+
+    #[test]
+    fn evaluate_motive_source_lost_does_not_fire_when_matching_ref_remains() {
+        let agent = make_entity(1);
+        let view = MockBeliefView::new();
+        let mut frame = make_frame(IntentionDomain::Generic, FrameState::Active);
+        frame
+            .abandon_conditions
+            .push(IntentionAbandonCondition::MotiveSourceLost(
+                MotiveSourceDiscriminant::Greed,
+            ));
+        frame.motive_refs.push(MotiveSourceRef {
+            source: MotiveSource::Greed {
+                opportunity: worldwake_core::OpportunityKey {
+                    goal_key: frame.goal,
+                    anchor: OpportunityAnchor::None,
+                },
+            },
+            introduced_tick: Tick(1),
+        });
+
+        assert_eq!(
+            evaluate_resume_abandon_conditions(&frame, &view, agent, Tick(10)),
+            None
+        );
+    }
+
+    #[test]
+    fn causal_links_cap_evicts_oldest_in_fifo_order() {
+        let mut frame = make_frame(IntentionDomain::Generic, FrameState::Active);
+        for event_id in 1..=5 {
+            push_causal_link_bounded(&mut frame, 3, worldwake_core::EventId(event_id));
+        }
+
+        assert_eq!(
+            frame.causal_links,
+            vec![
+                worldwake_core::EventId(3),
+                worldwake_core::EventId(4),
+                worldwake_core::EventId(5)
+            ]
+        );
     }
 
     fn make_ranked_goal(priority_class: GoalPriorityClass) -> AgendaEntry {
@@ -1246,6 +1736,11 @@ mod tests {
             last_progress_tick: None,
             stalled_ticks: 0,
             patience_limit: 30,
+            motive_refs: Vec::new(),
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            explicit_claims: Vec::new(),
+            causal_links: Vec::new(),
         };
 
         let assumptions = populate_assumptions(&frame, agent, &view, Tick(0), Tick(0));
@@ -2079,6 +2574,11 @@ mod tests {
             last_progress_tick: None,
             stalled_ticks: 0,
             patience_limit: 30,
+            motive_refs: Vec::new(),
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            explicit_claims: Vec::new(),
+            causal_links: Vec::new(),
         }
     }
 
@@ -2140,6 +2640,11 @@ mod tests {
             last_progress_tick: None,
             stalled_ticks: 0,
             patience_limit: 30,
+            motive_refs: Vec::new(),
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            explicit_claims: Vec::new(),
+            causal_links: Vec::new(),
         };
         let mut memory = worldwake_core::DiscrepancyMemory::default();
         let tick = Tick(50);
@@ -2304,6 +2809,11 @@ mod tests {
             last_progress_tick: None,
             stalled_ticks: 0,
             patience_limit: 30,
+            motive_refs: Vec::new(),
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            explicit_claims: Vec::new(),
+            causal_links: Vec::new(),
         };
         let mut memory = worldwake_core::DiscrepancyMemory::default();
         let tick = Tick(50);
@@ -2362,6 +2872,11 @@ mod tests {
             last_progress_tick: None,
             stalled_ticks: 0,
             patience_limit: 3,
+            motive_refs: Vec::new(),
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            explicit_claims: Vec::new(),
+            causal_links: Vec::new(),
         };
         let mut memory = worldwake_core::DiscrepancyMemory::default();
         let tick = Tick(12);

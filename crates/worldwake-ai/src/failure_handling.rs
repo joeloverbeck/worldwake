@@ -165,6 +165,12 @@ pub(crate) fn classify_discrepancy(
         return FailureClassification::Blocker(BlockingFact::DangerTooHigh);
     }
 
+    if let Some(classification @ FailureClassification::Discrepancy(Discrepancy::NoLegalBinding)) =
+        execution_failure.and_then(|failure| map_execution_failure(failure, step))
+    {
+        return classification;
+    }
+
     if local_commodity_availability_contradicted(view, agent, goal_key, step) {
         return FailureClassification::Discrepancy(Discrepancy::BeliefContradicted);
     }
@@ -218,6 +224,10 @@ pub(crate) fn record_failure_classification(
     // scoped to the place, lose facility identity, and can only expire
     // via TTL.
     if !is_contention_blocker(&classification)
+        && !matches!(
+            classification,
+            FailureClassification::Discrepancy(Discrepancy::NoLegalBinding)
+        )
         && should_scope_local_commodity_unavailability_to_place(
             context.view,
             context.agent,
@@ -814,6 +824,11 @@ fn classify_precondition_failure_detail(
 ) -> Option<FailureClassification> {
     let detail = detail.to_ascii_lowercase();
     if detail.contains("exactidentityrequired") {
+        return Some(FailureClassification::Discrepancy(
+            Discrepancy::NoLegalBinding,
+        ));
+    }
+    if detail.contains("targetunownedoractorcontrols") {
         return Some(FailureClassification::Discrepancy(
             Discrepancy::NoLegalBinding,
         ));
@@ -1547,6 +1562,7 @@ fn discrepancy_ttl(discrepancy: Discrepancy, cognitive: &CognitiveProfile) -> u3
         Discrepancy::PartialExecutionDrift => cognitive.partial_drift_backoff_ticks,
         Discrepancy::NeedHorizonExceeded { .. }
         | Discrepancy::ArtifactNotActionable { .. }
+        | Discrepancy::AbandonConditionFired(_)
         | Discrepancy::MethodFailure(_) => cognitive.structural_block_ticks,
     }
 }
@@ -1938,7 +1954,6 @@ mod tests {
 
     fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         CognitiveProfile {
-            max_candidates_to_plan: reasoning.max_candidates_to_plan,
             max_candidates_per_expansion: CognitiveProfile::default().max_candidates_per_expansion,
             max_plan_depth: reasoning.max_plan_depth,
             max_travel_candidates_per_expansion: CognitiveProfile::default()
@@ -1981,7 +1996,6 @@ mod tests {
                 .decision_history_alternatives,
             detour_budget_permille: CognitiveProfile::default().detour_budget_permille,
             compile_opportunity_cap: CognitiveProfile::default().compile_opportunity_cap,
-            slot_weights: worldwake_core::PortfolioSlotWeights::default(),
             repair_budget_fraction: CognitiveProfile::default().repair_budget_fraction,
             causal_links_per_step_cap: CognitiveProfile::default().causal_links_per_step_cap,
         }
@@ -2178,6 +2192,11 @@ mod tests {
             last_progress_tick: None,
             stalled_ticks: 0,
             patience_limit: 10,
+            motive_refs: Vec::new(),
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            explicit_claims: Vec::new(),
+            causal_links: Vec::new(),
         }
     }
 
@@ -2395,6 +2414,73 @@ mod tests {
         assert_eq!(entry.scope.exact_target(), Some(bread_lot));
         assert_eq!(entry.scope.exact_place(), Some(remote_place));
         assert_eq!(entry.scope.exact_action_def(), Some(step.def_id));
+    }
+
+    #[test]
+    fn handle_plan_failure_records_unlawful_pickup_as_exact_target_legal_discrepancy() {
+        let agent = entity(1);
+        let home = entity(10);
+        let owner = entity(3);
+        let water_lot = entity(2);
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Water,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        });
+        let step = move_cargo_step(water_lot);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, owner]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(owner, EntityKind::Agent);
+        view.entity_kinds.insert(water_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(owner, home);
+        view.effective_places.insert(water_lot, home);
+        view.entities_at.insert(home, vec![agent, owner, water_lot]);
+        view.lot_commodities.insert(water_lot, CommodityKind::Water);
+        let mut runtime = runtime_with_plan(goal, step.clone());
+        let mut jc = Some(jc_for_goal(goal));
+        let mut blocked = BlockerMemory::default();
+        let mut discrepancies = DiscrepancyMemory::default();
+
+        let classification = handle_plan_failure(
+            &PlanFailureContext {
+                view: &view,
+                agent,
+                goal_key: goal,
+                failed_step: &step,
+                method_id: None,
+                execution_failure: Some(ExecutionFailure::Start(&ActionStartFailure {
+                    tick: Tick(20),
+                    actor: agent,
+                    def_id: step.def_id,
+                    request: sample_request(1),
+                    reason: ActionStartFailureReason::PreconditionFailed(
+                        "TargetUnownedOrActorControls(0)".to_string(),
+                    ),
+                })),
+                belief_discrepancy: None,
+                current_tick: Tick(20),
+            },
+            &mut runtime,
+            &mut jc,
+            &mut blocked,
+            &mut discrepancies,
+            &mut ContentionIntents::default(),
+            &cognitive(&ProfileFixture::default()),
+        );
+
+        assert_eq!(
+            classification,
+            FailureClassification::Discrepancy(Discrepancy::NoLegalBinding)
+        );
+        assert!(blocked.intents.is_empty());
+        let entry = discrepancies.entries.values().next().unwrap();
+        assert_eq!(entry.discrepancy, Discrepancy::NoLegalBinding);
+        assert_eq!(entry.scope.exact_place(), Some(home));
+        assert_eq!(entry.scope.exact_target(), Some(water_lot));
+        assert_eq!(entry.scope.exact_action_def(), Some(step.def_id));
+        assert_eq!(entry.clearing_condition, DiscrepancyClearing::TtlExpiry);
     }
 
     #[test]

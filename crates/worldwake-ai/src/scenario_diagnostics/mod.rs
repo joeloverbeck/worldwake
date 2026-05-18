@@ -209,7 +209,7 @@ mod tests {
             tick_range: (Tick(3), Tick(9)),
             goal_pressure: GoalPressureMetrics {
                 candidates_emitted_by_kind: BTreeMap::from([(GoalKind::Sleep, 4)]),
-                candidates_emitted_by_slot: BTreeMap::from([(SlotKind::Survival, 3)]),
+                candidates_emitted_by_slot: BTreeMap::from([(SlotKind::NeedSurvival, 3)]),
                 candidates_suppressed_by_category: BTreeMap::from([(
                     CandidateSuppressionCategory::RejectedFeasibilityProbeFailed,
                     2,

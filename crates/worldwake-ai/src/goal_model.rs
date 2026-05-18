@@ -2622,7 +2622,6 @@ mod tests {
 
     fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         CognitiveProfile {
-            max_candidates_to_plan: reasoning.max_candidates_to_plan,
             max_candidates_per_expansion: CognitiveProfile::default().max_candidates_per_expansion,
             max_plan_depth: reasoning.max_plan_depth,
             max_travel_candidates_per_expansion: CognitiveProfile::default()
@@ -2665,7 +2664,6 @@ mod tests {
                 .decision_history_alternatives,
             detour_budget_permille: CognitiveProfile::default().detour_budget_permille,
             compile_opportunity_cap: CognitiveProfile::default().compile_opportunity_cap,
-            slot_weights: worldwake_core::PortfolioSlotWeights::default(),
             repair_budget_fraction: CognitiveProfile::default().repair_budget_fraction,
             causal_links_per_step_cap: CognitiveProfile::default().causal_links_per_step_cap,
         }

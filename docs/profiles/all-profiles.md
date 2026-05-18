@@ -22,6 +22,7 @@ Always applied to every agent with defaults. Scenario definitions may override i
 - [MetabolismProfile](#metabolismprofile) — Per-agent physiology parameters that drive metabolism and recovery.
 - [ObligationSatiationProfile](#obligationsatiationprofile) — Per-agent parameters controlling how obligation-class goals decay after repeated execution within a recent window.
 - [PerceptionProfile](#perceptionprofile) — Per-agent parameters controlling belief retention and observation quality.
+- [PortfolioWeightsProfile](#portfolioweightsprofile) — Per-agent portfolio slot weights and planning breadth caps.
 - [PreferenceProfile](#preferenceprofile) — Per-agent experience-based route and source preference parameters.
 - [RiskWeightProfile](#riskweightprofile) — Per-agent risk-aversion weights used when ranking opportunities.
 - [RoutePreferenceProfile](#routepreferenceprofile) — Per-agent parameters for deriving route preference from traversal history.
@@ -107,7 +108,7 @@ Per-agent defaults for artifact TTL when posting notices and bounties.
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/cognitive_profile.rs:23`
+**Source**: `crates/worldwake-core/src/cognitive_profile.rs:6`
 
 Stable per-agent cognitive reasoning parameters used by the AI layer.
 
@@ -147,7 +148,6 @@ Stable per-agent cognitive reasoning parameters used by the AI layer.
 | `decision_history_alternatives` | `u8` | Maximum number of rejected alternatives recorded in decision history events. (default: `default_decision_history_alternatives()`) |
 | `detour_budget_permille` | `Permille` | Salience budget that allows opportunity-aware travel detours. (default: `default_detour_budget_permille()`) |
 | `compile_opportunity_cap` | `u16` | Soft cap on compiled opportunities retained per decision cycle. (default: `default_compile_opportunity_cap()`) |
-| `slot_weights` | `PortfolioSlotWeights` | Relative slot weights for portfolio candidate ordering. (default: `PortfolioSlotWeights::default()`) |
 | `repair_budget_fraction` | `Permille` | Fraction of max node expansions available to localized plan repair. (default: `default_repair_budget_fraction()`) |
 | `causal_links_per_step_cap` | `u8` | Maximum causal links retained per guarded plan step. (default: `default_causal_links_per_step_cap()`) |
 
@@ -326,6 +326,27 @@ Per-agent parameters controlling belief retention and observation quality.
 | `opportunity_floor_permille` | `Permille` | Opportunity salience floor below which compiled opportunities are not emitted. (default: `default_opportunity_floor_permille()`) |
 | `need_salience_boost` | `Permille` | Observation priority boost for entities relevant to the agent's current needs. (default: `Permille::new(500).unwrap()`) |
 | `need_salience_urgency_threshold` | `Permille` | Need pressure level above which the salience boost activates. (default: `Permille::new(500).unwrap()`) |
+
+---
+
+## PortfolioWeightsProfile
+
+**Category**: Universal (always applied with defaults)
+
+**Source**: `crates/worldwake-core/src/portfolio_weights_profile.rs:6`
+
+Per-agent portfolio slot weights and planning breadth caps.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `need_survival` | `Permille` | Weight applied to need-survival slot candidates. (default: `Permille::new_unchecked(1000)`) |
+| `pain_care` | `Permille` | Weight applied to pain-care slot candidates. (default: `Permille::new_unchecked(900)`) |
+| `obligation_duty` | `Permille` | Weight applied to obligation-duty slot candidates. (default: `Permille::new_unchecked(800)`) |
+| `economic_opportunity` | `Permille` | Weight applied to economic-opportunity slot candidates. (default: `Permille::new_unchecked(600)`) |
+| `social_motive` | `Permille` | Weight applied to social-motive slot candidates. (default: `Permille::new_unchecked(400)`) |
+| `max_plans_normal` | `u8` | Maximum portfolio plans evaluated in normal operating mode. (default: `5`) |
+| `max_plans_emergency` | `u8` | Maximum portfolio plans evaluated in emergency operating mode. (default: `3`) |
+| `max_plans_idle` | `u8` | Maximum portfolio plans evaluated in idle operating mode. (default: `5`) |
 
 ---
 

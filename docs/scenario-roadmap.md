@@ -46,7 +46,7 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Consult-record | Non-zero `social_weight` plus `perception_profile` and record-bearing world state | [`consult_record_actions.rs`](../crates/worldwake-systems/src/consult_record_actions.rs) | Landed in [§5.6](#56-landed-6-survival-ask-consult) |
 | Obligation satiation | `obligation_satiation_profile` present | [`obligation.rs`](../crates/worldwake-core/src/obligation.rs) | Landed in [§4.7](#47-landed-row-11) |
 | Diversification / curiosity | `diversification_profile` present | [`diversification.rs`](../crates/worldwake-core/src/diversification.rs) | Landed in [§4.3](#43-landed-row-7) |
-| Experience preferences | `preference_profile` present | [`experience.rs`](../crates/worldwake-core/src/experience.rs), [`experience_recording.rs`](../crates/worldwake-systems/src/experience_recording.rs) | Landed in [§4.3](#43-landed-row-7) |
+| Experience preferences | `preference_profile` present | [`experience.rs`](../crates/worldwake-core/src/experience.rs), [`experience_recording.rs`](../crates/worldwake-systems/src/experience_recording.rs) | Auxiliary behavior coverage in [`golden_experience_preferences.rs`](../crates/worldwake-ai/tests/golden_experience_preferences.rs), [`golden_source_reliability.rs`](../crates/worldwake-ai/tests/golden_source_reliability.rs), and [`golden_source_composite.rs`](../crates/worldwake-ai/tests/golden_source_composite.rs); no survival-roadmap row currently claims durable Familiar Orchard failure memory |
 | Production (facility-backed craft) | Authored recipe set with at least one non-harvest production recipe | [`production_actions.rs`](../crates/worldwake-systems/src/production_actions.rs) | Landed in [§5.8](#58-landed-8-survival-production) |
 | Merchant selling | `merchandise_profile` present | [`trade_actions.rs`](../crates/worldwake-systems/src/trade_actions.rs) | Landed in [§5.9](#59-landed-9-survival-trade) |
 | Trade negotiation | `trade_disposition` present | [`trade_actions.rs`](../crates/worldwake-systems/src/trade_actions.rs) | Landed in [§5.9](#59-landed-9-survival-trade) |
@@ -91,7 +91,7 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-drive-escalation.ron` | Drive escalation |
 | Landed in `survival-tell.ron` | Tell / peer info transfer |
 | Landed in `survival-ask-consult.ron` | Ask-about-person, Consult-record |
-| Landed in `survival-preferences.ron` | Diversification / curiosity, Experience preferences |
+| Landed in `survival-preferences.ron` | Diversification / curiosity |
 | Landed in `survival-production.ron` | Production (facility-backed craft) |
 | Landed in `survival-trade.ron` | Merchant selling, Trade negotiation, Commodity valuation, Substitute preferences, Facility-queue contention, Stock / transport |
 | Landed in `survival-items-decay.ron` | Item decay, Disposal |
@@ -162,7 +162,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 4 | `survival-drive-escalation` | Authored drive-escalation coverage inside a survival-health-contract scenario | Landed | Converts the old auxiliary wash-priority proof into a real survival-contract landing before later social features depend on it |
 | 5 | `survival-tell` | Tell / peer info transfer | Landed | First belief-mutation feature under survival pressure |
 | 6 | `survival-ask-consult` | Ask-about-person + consult-record | Landed | Explicit epistemic actions competing with self-care |
-| 7 | `survival-preferences` | Experience preferences + diversification / curiosity | Landed | Proves proactive diversification under survival and a durable familiar-source failure memory that later discounts the stale orchard while selecting the discovered novel grove |
+| 7 | `survival-preferences` | Diversification / curiosity | Landed | Proves proactive diversification under survival, later Novel Grove apple recovery, and no false Familiar Orchard failure memory after `archive/tickets/S148PORMOTBAC-FOLLOWUP-004.md` rejected the stale Familiar Orchard failure-memory assertion |
 | 8 | `survival-production` | Production (facility-backed craft) | Landed | First survival row where food depends on a workstation-backed craft branch rather than direct harvest |
 | 9 | `survival-trade` | Merchant selling, trade negotiation, commodity valuation, substitute preferences, facility-queue contention, stock / transport | Landed | Multi-agent coordination and ownership-sensitive planning through substitute-backed local trade, plus authored queue/grant contention at the Market Square well |
 | 10 | `survival-items-decay` | Item decay + disposal | Landed | Ongoing world maintenance pressure added to the landed survival-trade stack |
@@ -183,9 +183,9 @@ Use this template for both planned entries and retrospective landed entries. A r
 **Backing goldens**: [`golden_survival_preferences.rs`](../crates/worldwake-ai/tests/golden_survival_preferences.rs)  
 **Depends on**: landed rows 1-6
 
-`survival-preferences.ron` keeps the survival loop alive while `Scout Ilen` proactively discovers `Novel Grove`, later successfully recovers apples there, and also carries durable failure memory for the stale familiar orchard. The roadmap row now lands both halves of row 7 inside a real 1440-tick survival scenario: diversification / curiosity and experience preferences.
+`survival-preferences.ron` keeps the survival loop alive while `Scout Ilen` proactively discovers `Novel Grove` and later successfully recovers apples there. The golden lands diversification / curiosity inside a real 1440-tick survival scenario.
 
-The golden proves the full causal chain at the live seam that matters: proactive exploration reaches `Novel Grove`; the familiar orchard persists a concrete `SourceReliability.failed_attempts` aftermath after the stale-source contradiction is encountered; and a later apple-acquisition planning pass still sees the familiar orchard as a discounted candidate while selecting the novel grove for the causal reason surfaced in the decision trace.
+`archive/tickets/S148PORMOTBAC-FOLLOWUP-004.md` corrected the stale Familiar Orchard failure-memory assertion: the live branch has no violated Familiar Orchard source expectation, so the golden asserts that no false failed-source memory is created. Experience-preference behavior remains auxiliary evidence outside the survival-roadmap row in `golden_experience_preferences.rs`, `golden_source_reliability.rs`, and `golden_source_composite.rs`; row 7 does not claim a durable Familiar Orchard failure-memory branch.
 
 ### 4.4 Landed Row 8
 
@@ -224,7 +224,7 @@ This is now a truthful substitute-isolation scenario rather than merely a bread-
 
 ### 10. `survival-items-decay`
 
-**Status**: Landed  
+**Status**: Landed
 **Source scenario**: [`scenarios/survival-items-decay.ron`](../scenarios/survival-items-decay.ron)  
 **Backing goldens**: [`golden_survival_items_decay.rs`](../crates/worldwake-ai/tests/golden_survival_items_decay.rs)  
 **Depends on**: landed rows 1-9
@@ -237,7 +237,7 @@ The golden proves the row at the earliest honest surfaces that matter: `Caretake
 
 ### 11. `survival-offices`
 
-**Status**: Landed  
+**Status**: Landed
 **Source scenario**: [`scenarios/survival-offices.ron`](../scenarios/survival-offices.ron)  
 **Backing goldens**: [`golden_survival_offices.rs`](../crates/worldwake-ai/tests/golden_survival_offices.rs)  
 **Depends on**: landed rows 1-10
@@ -412,7 +412,7 @@ The same scenario authors a vacant support-law office with a local `OfficeRegist
 
 ### 5.7 Landed #7: `survival-preferences`
 
-**Status**: Landed  
+**Status**: Landed
 **Source scenario**: [`scenarios/survival-preferences.ron`](../scenarios/survival-preferences.ron)  
 **Backing goldens**: [`golden_survival_preferences.rs`](../crates/worldwake-ai/tests/golden_survival_preferences.rs)
 
@@ -424,11 +424,12 @@ The same scenario authors a vacant support-law office with a local `OfficeRegist
 
 **New landed feature rows**
 - Diversification / curiosity
-- Experience preferences
 
 **Why this golden is valid**
 
-The golden proves the proactive-preference row at the actual branch that matters: `Scout Ilen` reaches `Novel Grove` through a proactive exploration choice, later succeeds there as a real apple source, and carries durable failure memory for the stale familiar orchard that discounts the later retry. The row therefore lands on a concrete planning-and-memory seam inside a real 1440-tick survival contract, not on a decorative visit or a test-only preference probe.
+The golden proves the proactive diversification branch at the actual branch that matters: `Scout Ilen` reaches `Novel Grove` through a proactive exploration choice and later succeeds there as a real apple source. The row does not claim durable Familiar Orchard failure memory: `archive/tickets/S148PORMOTBAC-FOLLOWUP-004.md` showed there is no violated Familiar Orchard source expectation in this run, so the golden's no-false-failure assertion is the truthful source-reliability contract for this scenario.
+
+Experience-preference behavior remains covered outside the survival-roadmap row by auxiliary goldens: `golden_experience_preferences.rs` proves learned route preference effects, `golden_source_reliability.rs` proves concrete source-reliability memory writes, and `golden_source_composite.rs` proves source-composite same-commodity reranking from those memories.
 
 **Deliberately inactive**
 - Place concealment

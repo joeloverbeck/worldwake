@@ -11,11 +11,10 @@ use worldwake_ai::{
     GoalOffer, RankedGoalSummary, motive_source_mapping::derive_default_motive_sources,
 };
 use worldwake_core::{
-    AcquisitionQuantity, ArtifactPostingContext, CauseRef, CommodityKind, CommodityPurpose,
-    DecisionEventPayload, EntityId, EventLog, EventPayload, EventTag, EventView,
-    GoalCommittedPayload, GoalKey, GoalKind, HomeostaticNeedId, MotiveSource, MotiveSourceRef,
-    NoticeTopic, OpportunityAnchor, OpportunityKey, PendingEvent, RejectedAlternativeSummary, Tick,
-    VisibilitySpec, WitnessData, WoundId,
+    AcquisitionQuantity, CauseRef, CommodityKind, CommodityPurpose, DecisionEventPayload, EntityId,
+    EventLog, EventPayload, EventTag, EventView, GoalCommittedPayload, GoalKey, GoalKind,
+    HomeostaticNeedId, MotiveSource, MotiveSourceRef, OpportunityAnchor, OpportunityKey,
+    PendingEvent, RejectedAlternativeSummary, Tick, VisibilitySpec, WitnessData, WoundId,
 };
 
 fn entity(slot: u32) -> EntityId {
@@ -235,7 +234,7 @@ fn golden_motive_sources_pain_contribution_can_dominate_hunger() {
 
 // Scenario 406: S141 Motive Sources Greed Weight Variation Is Profile State
 // Systems: AI
-// GoalKinds: PostNotice
+// GoalKinds: SellCommodity
 // ActionDomains: DecisionHistory
 // Principles: P3, P22
 // Setup: two otherwise identical UtilityProfiles vary only greed_weight.
@@ -244,15 +243,8 @@ fn golden_motive_sources_pain_contribution_can_dominate_hunger() {
 // Cross-system chain: UtilityProfile -> MotiveSource::Greed.
 #[test]
 fn golden_motive_sources_greed_weight_variation_is_profile_state() {
-    let posting = ArtifactPostingContext {
-        posting_place: entity(20),
-        issuing_authority: None,
-        expires_at: Some(Tick(99)),
-        jurisdiction: None,
-    };
-    let goal = GoalKind::PostNotice {
-        posting,
-        topic: NoticeTopic::ThreatWarning { place: entity(21) },
+    let goal = GoalKind::SellCommodity {
+        commodity: CommodityKind::Bread,
     };
     let anchor = OpportunityAnchor::Place(entity(20));
     let sources = derive_default_motive_sources(&goal, &anchor, Tick(30));

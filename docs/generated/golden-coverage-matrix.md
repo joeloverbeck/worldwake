@@ -23,14 +23,14 @@ Scenarios without annotations are not reflected here.
 | FulfillBounty | 388, 389, 390, 391, 392, 434, 435, 436 |
 | InvestigateViolation | 177 |
 | PostBounty | 179 |
-| PostNotice | 175, 406 |
+| PostNotice | 175 |
 | ProduceCommodity | 167, 172, 423, 431, 432, 433 |
 | PunishAccused | 179 |
 | Relieve | 127, 130, 131, 148, 149, 151, 152, 153, 154, 156, 157, 158, 159, 162, 163, 169, 170, 171, 172, 174, 175, 176, 342, 350, 402, 59, 61, 62, 63, 64, 65, 66, 67 |
 | ReportFound | 178 |
 | ReportMissing | 167 |
 | SearchForMissing | 170, 175, 178 |
-| SellCommodity | 176, 350, 75, 76, 88, 96 |
+| SellCommodity | 176, 350, 406, 75, 76, 88, 96 |
 | ShareBelief | 169, 72 |
 | Sleep | 127, 130, 131, 148, 149, 151, 152, 153, 154, 156, 157, 158, 159, 162, 163, 167, 169, 170, 171, 172, 174, 175, 176, 2, 350, 402, 407 |
 | StealItem | 176, 177 |

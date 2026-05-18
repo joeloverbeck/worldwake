@@ -7,6 +7,7 @@ See `archive/` for detailed completion records.
 
 Completed Phase 12 specs:
 - `S144: Aggregate Scenario Diagnostics` — archived at [archive/specs/S144-aggregate-scenario-diagnostics.md](/home/joeloverbeck/projects/worldwake/archive/specs/S144-aggregate-scenario-diagnostics.md). Landed deterministic aggregate scenario diagnostics over existing traces and the event log, `PercentileBucket`, planning-snapshot cache counters, observer Section 13 text/JSON rendering, diagnostics CLI flags, and the committed `survival-baseline.ron` diagnostics fixture.
+- `S147: HTN Method Decomposition for Long Lawful Pursuits` — archived at [archive/specs/S147-htn-method-decomposition.md](/home/joeloverbeck/projects/worldwake/archive/specs/S147-htn-method-decomposition.md). Landed the `MethodSchema` registry, method ids and discriminant mirrors, `AgentSchemaContextProfile.disabled_methods`, `GoalSchema.methods`, method selector/planner integration, method traces and diagnostics, observer rendering, typed `Discrepancy::MethodFailure(MethodFailureContext)`, and staged HTN method goldens for selector/fallback, autonomous production, bounty investigation, direct bounty, escort, and method-failure coverage.
 - `S150: Cross-Goal Blocker Scoping` — archived at [archive/specs/S150-cross-goal-blocker-scoping.md](/home/joeloverbeck/projects/worldwake/archive/specs/S150-cross-goal-blocker-scoping.md). Landed typed `BlockerScope` (`Exact`, `RouteSegment`, `Counterparty`), per-scope TTL profile fields, scope-aware blocker/discrepancy memory and clearing, typed observer rendering, S144 per-scope diagnostics, and `golden_cross_goal_blocker_scoping.rs` coverage.
 
 Completed Phase 7 specs:
@@ -659,16 +660,16 @@ S143 (archived)       S144 (archived)       S145 (archived)       S150 (archived
    │                  ▼                                               │
    │               S146 (archived; soft dep on archived S145; hard deps on archived S138/S141/S134)
    │                  │
-   │                  ├── S147 (hard dep on S146)
-   │                  └── S148 (soft dep on S146; hard deps on archived S112/S115/S141)
+   │                  ├── S147 (archived; hard dep on archived S146)
+   │                  └── S148 (archived; soft dep on archived S146; hard deps on archived S112/S115/S141)
    │                          │
-   │                          └── S149 (soft dep on S148 for shared resume/abandon types)
+   │                          └── S149 (soft dep on archived S148 for shared resume/abandon types)
    │
    └─── S151 (archived; soft dep on archived S150 for RouteSegment)
             │
             └── S152 (soft deps on archived S146/S148/S151; modifies their profile types)
 
-S153 (hard deps on archived S143, S148, archived S150, archived S151)
+S153 (hard deps on archived S143, archived S148, archived S150, archived S151)
 ```
 
 ### Active Execution Steps
@@ -687,21 +688,21 @@ S153 (hard deps on archived S143, S148, archived S150, archived S151)
   - HabitMemory portion of PR-8 deferred until S144 diagnostics surface method-thrash pathology
 
 **Wave 3** (parallel, after Wave 2):
-- **S147**: HTN Method Decomposition for Long Lawful Pursuits — `MethodSchema` registry; first-ship methods for `FulfillBounty` (Direct/Investigation/GroupHunt), `ProduceCommodity`, `RestockCommodity`, `InvestigateViolation` (Scene/Witness/Ledger), `EscortToSafety` (Home/Office); `MethodSelector` integration in strategic search; fallback to flat GOAP when no method applies.
+- **S147**: ✅ COMPLETED — archived at [archive/specs/S147-htn-method-decomposition.md](/home/joeloverbeck/projects/worldwake/archive/specs/S147-htn-method-decomposition.md). Landed the HTN method substrate across `worldwake-core`, `worldwake-ai`, `worldwake-cli`, and save/load surfaces: `MethodSchema` registry, method ids and discriminant mirrors, `AgentSchemaContextProfile.disabled_methods`, `GoalSchema.methods`, method selector/planner integration, method traces and diagnostics, observer rendering, typed `Discrepancy::MethodFailure(MethodFailureContext)`, and staged HTN method goldens.
   - hard depends on archived S146 (`GoalSchema` registry substrate; S147 adds the `methods` registry slot)
-- **S148**: Portfolio Slot Expansion and Motive-Backed Intentions — 7-slot taxonomy (Survival/ImmediateSafety/InjuryOrCare/ObligationDuty/EconomicMaintenance/SocialEpistemic/OpportunisticLocal); `OperatingMode` enum (Emergency/Normal/Idle); `PortfolioWeightsProfile` universal; extended `IntentionFrame` with `motive_refs`/`resume_conditions`/`abandon_conditions`/`explicit_claims`/`causal_links`; raises default `max_plans_normal` from 2 to 6.
+- **S148**: ✅ COMPLETED — archived at [archive/specs/S148-portfolio-and-motive-backed-intentions.md](/home/joeloverbeck/projects/worldwake/archive/specs/S148-portfolio-and-motive-backed-intentions.md). Landed five-slot taxonomy (`NeedSurvival`/`PainCare`/`ObligationDuty`/`EconomicOpportunity`/`SocialMotive`), `OperatingMode`, `PortfolioWeightsProfile`, enriched `IntentionFrame` fields, observer rendering, and focused golden-contract coverage; raises default `max_plans_normal` from 2 to 5.
   - soft depends on archived S146 (`GoalSchema` registry substrate; S148 adds motive-to-slot mapping)
-  - migrates S112's `Commitment`/`Economic` slot names into `ObligationDuty`/`EconomicMaintenance` without alias
+  - migrates S112's `Survival`/`Commitment`/`Economic` slot names into `NeedSurvival`/`ObligationDuty`/`EconomicOpportunity` without alias
 
 **Wave 4** (parallel, after Wave 3):
 - **S149**: Partial Plan Segments and Typed Plan Terminals — typed `PlanTerminalKind` (InformationBarrier/CoordinationBarrier/ResourceBarrier/JurisdictionBarrier/SafetyBarrier/SearchBudgetExhausted); first-class `PartialPlanSegment` storage on `AgendaEntry`; agenda-manager resume-from-prefix path; barrier → `Discrepancy` mapping; companion `AskWitness` synthesis on `InformationBarrier`.
-  - soft depends on S148 (shared `ResumeCondition`/`AbandonCondition` types)
+  - soft depends on archived S148 (shared `ResumeCondition`/`AbandonCondition` types)
 - **S152**: Cognitive Archetypes for Seeded Diversity — `CognitiveArchetype` enum (10 variants); `ArchetypeProfileTemplate` modifying existing universal profiles; `ArchetypeAssignmentPolicy` (`DefaultUniformFive`/`Uniform`/`Weighted`/`PerRole`/`Explicit`); `PersonalityAssigned` event at spawn with seeded RNG and resolved profile snapshot.
   - soft depends on archived S146/S148/S151 (modifies profile types each introduces)
 
 **Wave 5** (final, after Wave 4):
 - **S153**: Golden Gaps — AI Architecture Scaling — three remaining scenarios: false rumor justice (regression for S151), office vacancy → patrol gap (regression for S148 portfolio breadth), scaled contention (regression for S150 cross-goal blockers). Belief-wall trap (regression for S143) is covered by S143STABELVIE-006; 4 PR-15 scenarios deferred (100-goal dense market, 20-agent contention, long production chain, boundary shock).
-  - hard depends on archived S143, S148, archived S150, archived S151
+  - hard depends on archived S143, archived S148, archived S150, archived S151
 
 ### Phase 12 Gate
 
@@ -716,7 +717,7 @@ S153 (hard deps on archived S143, S148, archived S150, archived S151)
 - [x] S145 archived: 5-stage production chain records complete strategic itinerary and non-exhausted stage-aware budget provenance; cache invariant regression suite (3 tests) passes
 - [x] S146 goal-schema registry covers every `GoalDispatchKey` variant (workspace-level coverage test); per-goal search-trace regression proves PRODUCTION-tier `ProduceCommodity` depth/expansions vs SELF_CARE-tier self-care depth/expansions under elevated cognitive ceilings
 - [x] S147 HTN method goldens prove method selection + flat-GOAP fallback + method failure: `archive/tickets/S147HTNMETDEC-011.md` landed the selector/fallback seam; `archive/tickets/S147HTNMETDEC-013.md` landed autonomous production method-trace propagation; `archive/tickets/S147HTNMETDEC-014.md` landed report-backed bounty-investigation coverage; `archive/tickets/S147HTNMETDEC-015.md` landed direct-bounty and escort selector coverage plus typed method-failure producer substrate; `archive/tickets/S147HTNMETDEC-016.md` landed hybrid method-failure golden coverage.
-- [ ] S148 7-slot portfolio golden proves slot occupancy under Normal/Emergency/Idle modes; default `max_plans_normal=6` replaces legacy `max_candidates_to_plan=2`
+- [x] S148 archived: five-slot portfolio contract coverage proves total motive-to-slot mapping, default slot weights and per-mode caps, enriched intention fields, typed abandon discrepancies, and the full-pipeline portfolio golden still asserts five-slot trace names
 - [ ] S149 typed-terminal goldens prove each of the 7 terminal kinds with concrete observability + resume conditions
 - [x] S150 archived: cross-goal blocker goldens prove `RouteSegment` and `Counterparty` blockers suppress multi-goal candidates and clear on observation
 - [x] S151 archived: testimony-reliability goldens prove confirmation/refutation trust summaries and suppressed-goal payload context; route-preference goldens prove dangerous-traversal penalty, decay, and composition with route-segment blockers

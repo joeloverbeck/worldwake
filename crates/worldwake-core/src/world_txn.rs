@@ -2027,9 +2027,10 @@ mod tests {
         InstitutionalKnowledgeSource, InstitutionalRecordEntry, IntentionDispositionProfile,
         LawAbidingProfile, MerchandiseProfile, ObligationSatiationProfile, OfficeData,
         OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
-        PerceptionSource, PreferenceProfile, RecordData, RecordEntryId, RecordKind,
-        RiskWeightProfile, RoutePreferenceProfile, SubstitutePreferences, SuccessionLaw,
-        SurveyMemory, TellProfile, TestimonyTrustProfile, TradeDispositionProfile, UtilityProfile,
+        PerceptionSource, PortfolioWeightsProfile, PreferenceProfile, RecordData, RecordEntryId,
+        RecordKind, RiskWeightProfile, RoutePreferenceProfile, SubstitutePreferences,
+        SuccessionLaw, SurveyMemory, TellProfile, TestimonyTrustProfile, TradeDispositionProfile,
+        UtilityProfile,
         component_schema::with_component_schema_entries,
         test_utils::{
             sample_blocker_memory, sample_demand_memory, sample_merchandise_profile,
@@ -2415,191 +2416,191 @@ mod tests {
             txn.get_component_name(agent),
             Some(&Name("Aster".to_string()))
         );
-        assert_eq!(
-            txn.deltas(),
-            &[
-                StateDelta::Entity(EntityDelta::Created {
-                    entity: agent,
-                    kind: EntityKind::Agent,
+        let expected = vec![
+            StateDelta::Entity(EntityDelta::Created {
+                entity: agent,
+                kind: EntityKind::Agent,
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::Name,
+                before: None,
+                after: ComponentValue::Name(Name("Aster".to_string())),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::ArtifactPostingProfile,
+                before: None,
+                after: ComponentValue::ArtifactPostingProfile(ArtifactPostingProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::AgentData,
+                before: None,
+                after: ComponentValue::AgentData(crate::AgentData {
+                    control_source: ControlSource::Human,
                 }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::Name,
-                    before: None,
-                    after: ComponentValue::Name(Name("Aster".to_string())),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::ArtifactPostingProfile,
-                    before: None,
-                    after: ComponentValue::ArtifactPostingProfile(
-                        ArtifactPostingProfile::default(),
-                    ),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::AgentData,
-                    before: None,
-                    after: ComponentValue::AgentData(crate::AgentData {
-                        control_source: ControlSource::Human,
-                    }),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::SurveyMemory,
-                    before: None,
-                    after: ComponentValue::SurveyMemory(SurveyMemory::default()),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::PreferenceProfile,
-                    before: None,
-                    after: ComponentValue::PreferenceProfile(PreferenceProfile::default()),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::TestimonyTrustProfile,
-                    before: None,
-                    after: ComponentValue::TestimonyTrustProfile(TestimonyTrustProfile::default()),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::RoutePreferenceProfile,
-                    before: None,
-                    after: ComponentValue::RoutePreferenceProfile(RoutePreferenceProfile::default()),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::RiskWeightProfile,
-                    before: None,
-                    after: ComponentValue::RiskWeightProfile(RiskWeightProfile::default()),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::LawAbidingProfile,
-                    before: None,
-                    after: ComponentValue::LawAbidingProfile(LawAbidingProfile::default()),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::AgentBeliefStore,
-                    before: None,
-                    after: ComponentValue::AgentBeliefStore(AgentBeliefStore::new()),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::ExpectationStore,
-                    before: None,
-                    after: ComponentValue::ExpectationStore(ExpectationStore::default()),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::LastSeenMemory,
-                    before: None,
-                    after: ComponentValue::LastSeenMemory(LastSeenMemory::default()),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::PerceptionProfile,
-                    before: None,
-                    after: ComponentValue::PerceptionProfile(PerceptionProfile::default()),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::TellProfile,
-                    before: None,
-                    after: ComponentValue::TellProfile(TellProfile::default()),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::CommunicationProfile,
-                    before: None,
-                    after: ComponentValue::CommunicationProfile(CommunicationProfile::default(),),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::CognitiveProfile,
-                    before: None,
-                    after: ComponentValue::CognitiveProfile(CognitiveProfile::default()),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::AgentSchemaContextProfile,
-                    before: None,
-                    after: ComponentValue::AgentSchemaContextProfile(
-                        AgentSchemaContextProfile::default(),
-                    ),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::AgendaProfile,
-                    before: None,
-                    after: ComponentValue::AgendaProfile(AgendaProfile::default()),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::AcquisitionExhaustionTracker,
-                    before: None,
-                    after: ComponentValue::AcquisitionExhaustionTracker(
-                        AcquisitionExhaustionTracker::default(),
-                    ),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::ExplorationProfile,
-                    before: None,
-                    after: ComponentValue::ExplorationProfile(ExplorationProfile::default()),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::ObligationSatiationProfile,
-                    before: None,
-                    after: ComponentValue::ObligationSatiationProfile(
-                        ObligationSatiationProfile::default(),
-                    ),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::DisposalProfile,
-                    before: None,
-                    after: ComponentValue::DisposalProfile(DisposalProfile::default()),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::ExecutionBudget,
-                    before: None,
-                    after: ComponentValue::ExecutionBudget(ExecutionBudget::default()),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::DriveEscalationProfile,
-                    before: None,
-                    after: ComponentValue::DriveEscalationProfile(
-                        DriveEscalationProfile::default(),
-                    ),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::IntentionDispositionProfile,
-                    before: None,
-                    after: ComponentValue::IntentionDispositionProfile(
-                        IntentionDispositionProfile::default(),
-                    ),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::EpistemicDispositionProfile,
-                    before: None,
-                    after: ComponentValue::EpistemicDispositionProfile(
-                        EpistemicDispositionProfile::default(),
-                    ),
-                }),
-                StateDelta::Relation(RelationDelta::Added {
-                    relation_kind: RelationKind::InTransit,
-                    relation: RelationValue::InTransit { entity: agent },
-                }),
-            ]
-        );
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::SurveyMemory,
+                before: None,
+                after: ComponentValue::SurveyMemory(SurveyMemory::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::PreferenceProfile,
+                before: None,
+                after: ComponentValue::PreferenceProfile(PreferenceProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::TestimonyTrustProfile,
+                before: None,
+                after: ComponentValue::TestimonyTrustProfile(TestimonyTrustProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::RoutePreferenceProfile,
+                before: None,
+                after: ComponentValue::RoutePreferenceProfile(RoutePreferenceProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::RiskWeightProfile,
+                before: None,
+                after: ComponentValue::RiskWeightProfile(RiskWeightProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::LawAbidingProfile,
+                before: None,
+                after: ComponentValue::LawAbidingProfile(LawAbidingProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::AgentBeliefStore,
+                before: None,
+                after: ComponentValue::AgentBeliefStore(AgentBeliefStore::new()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::ExpectationStore,
+                before: None,
+                after: ComponentValue::ExpectationStore(ExpectationStore::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::LastSeenMemory,
+                before: None,
+                after: ComponentValue::LastSeenMemory(LastSeenMemory::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::PerceptionProfile,
+                before: None,
+                after: ComponentValue::PerceptionProfile(PerceptionProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::TellProfile,
+                before: None,
+                after: ComponentValue::TellProfile(TellProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::CommunicationProfile,
+                before: None,
+                after: ComponentValue::CommunicationProfile(CommunicationProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::CognitiveProfile,
+                before: None,
+                after: ComponentValue::CognitiveProfile(CognitiveProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::PortfolioWeightsProfile,
+                before: None,
+                after: ComponentValue::PortfolioWeightsProfile(PortfolioWeightsProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::AgentSchemaContextProfile,
+                before: None,
+                after: ComponentValue::AgentSchemaContextProfile(
+                    AgentSchemaContextProfile::default(),
+                ),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::AgendaProfile,
+                before: None,
+                after: ComponentValue::AgendaProfile(AgendaProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::AcquisitionExhaustionTracker,
+                before: None,
+                after: ComponentValue::AcquisitionExhaustionTracker(
+                    AcquisitionExhaustionTracker::default(),
+                ),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::ExplorationProfile,
+                before: None,
+                after: ComponentValue::ExplorationProfile(ExplorationProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::ObligationSatiationProfile,
+                before: None,
+                after: ComponentValue::ObligationSatiationProfile(
+                    ObligationSatiationProfile::default(),
+                ),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::DisposalProfile,
+                before: None,
+                after: ComponentValue::DisposalProfile(DisposalProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::ExecutionBudget,
+                before: None,
+                after: ComponentValue::ExecutionBudget(ExecutionBudget::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::DriveEscalationProfile,
+                before: None,
+                after: ComponentValue::DriveEscalationProfile(DriveEscalationProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::IntentionDispositionProfile,
+                before: None,
+                after: ComponentValue::IntentionDispositionProfile(
+                    IntentionDispositionProfile::default(),
+                ),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::EpistemicDispositionProfile,
+                before: None,
+                after: ComponentValue::EpistemicDispositionProfile(
+                    EpistemicDispositionProfile::default(),
+                ),
+            }),
+            StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::InTransit,
+                relation: RelationValue::InTransit { entity: agent },
+            }),
+        ];
+        assert_eq!(txn.deltas(), expected.as_slice());
     }
 
     #[test]

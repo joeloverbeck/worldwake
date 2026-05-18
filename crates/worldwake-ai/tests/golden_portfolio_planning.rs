@@ -329,11 +329,12 @@ fn portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal() {
         .expect("winning planning tick should populate a portfolio trace");
     let portfolio_debug = format!("{portfolio:?}");
     assert!(
-        portfolio_debug.contains("Commitment") && portfolio_debug.contains("Economic"),
-        "portfolio trace should expose commitment and economic slots: {portfolio_debug}\nplanning={planning:?}"
+        portfolio_debug.contains("ObligationDuty")
+            && portfolio_debug.contains("EconomicOpportunity"),
+        "portfolio trace should expose obligation-duty and economic-opportunity slots: {portfolio_debug}\nplanning={planning:?}"
     );
     assert!(
-        !portfolio_debug.contains("Survival"),
+        !portfolio_debug.contains("NeedSurvival"),
         "place-scoped blocker should suppress anchored Sleep before portfolio admission: {portfolio_debug}\nplanning={planning:?}"
     );
     assert!(

@@ -725,8 +725,8 @@ mod tests {
         assert_eq!(
             report.goal_pressure.candidates_emitted_by_slot,
             BTreeMap::from([
-                (crate::SlotKind::Survival, 1),
-                (crate::SlotKind::Economic, 1)
+                (crate::SlotKind::NeedSurvival, 1),
+                (crate::SlotKind::EconomicOpportunity, 1)
             ])
         );
         assert_eq!(
@@ -1186,7 +1186,7 @@ mod tests {
                 portfolio: Some(PortfolioTrace {
                     slots: BTreeMap::from([
                         (
-                            crate::SlotKind::Survival,
+                            crate::SlotKind::NeedSurvival,
                             PortfolioSlotTrace {
                                 goal_key: GoalKey::from(GoalKind::Sleep),
                                 motive_score: 10,
@@ -1194,7 +1194,7 @@ mod tests {
                             },
                         ),
                         (
-                            crate::SlotKind::Economic,
+                            crate::SlotKind::EconomicOpportunity,
                             PortfolioSlotTrace {
                                 goal_key: GoalKey::from(wash_goal()),
                                 motive_score: 3,

@@ -6,7 +6,10 @@
 //! structure that tracks assumptions, patience, and suspension/resume lifecycle.
 
 use crate::traits::Component;
-use crate::{CommodityKind, EntityId, GoalKey, GoalKind, HomeostaticNeedId, Tick};
+use crate::{
+    CommodityKind, EntityId, EventId, GoalKey, GoalKind, HomeostaticNeedId,
+    IntentionAbandonCondition, IntentionResumeCondition, MotiveSourceRef, Tick,
+};
 use serde::{Deserialize, Serialize};
 
 /// Domain-specific context carried by an intention frame.
@@ -156,6 +159,23 @@ pub struct IntentionFrame {
     /// Maximum stalled ticks before patience exhaustion. Per-agent, set
     /// from the agent's `IntentionDispositionProfile` at frame creation time.
     pub patience_limit: u32,
+    /// Motive sources that backed adoption of this intention.
+    #[serde(default)]
+    pub motive_refs: Vec<MotiveSourceRef>,
+    /// Conditions that may resume a suspended intention.
+    #[serde(default)]
+    pub resume_conditions: Vec<IntentionResumeCondition>,
+    /// Conditions that may abandon this intention.
+    #[serde(default)]
+    pub abandon_conditions: Vec<IntentionAbandonCondition>,
+    /// Concrete claim artifacts this intention depends on: contention grants,
+    /// sale listings, and social artifacts.
+    #[serde(default)]
+    pub explicit_claims: Vec<EntityId>,
+    /// Event IDs that caused this intention. Push sites must keep this vector
+    /// bounded by `CognitiveProfile.causal_links_per_step_cap`.
+    #[serde(default)]
+    pub causal_links: Vec<EventId>,
 }
 
 impl IntentionFrame {
@@ -179,7 +199,10 @@ impl Component for IntentionFrame {}
 mod tests {
     use super::*;
     use crate::test_utils::entity_id;
-    use crate::{AcquisitionQuantity, CommodityPurpose, GoalKind};
+    use crate::{
+        AcquisitionQuantity, CommodityPurpose, GoalKind, MotiveSource, MotiveSourceDiscriminant,
+        OpportunityAnchor, OpportunityKey,
+    };
     use serde::{Serialize as SerializeTrait, de::DeserializeOwned};
     use std::fmt::Debug;
 
@@ -267,6 +290,11 @@ mod tests {
             last_progress_tick: None,
             stalled_ticks: 0,
             patience_limit: 30,
+            motive_refs: Vec::new(),
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            explicit_claims: Vec::new(),
+            causal_links: Vec::new(),
         }
     }
 
@@ -327,5 +355,69 @@ mod tests {
         );
 
         assert_eq!(frame.expected_commodity(), None);
+    }
+
+    #[test]
+    fn intention_frame_roundtrips_with_bdi_fields() {
+        let opportunity = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            anchor: OpportunityAnchor::Place(entity_id(7, 0)),
+        };
+        let mut frame = sample_frame(IntentionDomain::Generic, GoalKind::Sleep);
+        frame.motive_refs.push(MotiveSourceRef {
+            source: MotiveSource::Greed { opportunity },
+            introduced_tick: Tick(9),
+        });
+        frame
+            .resume_conditions
+            .push(IntentionResumeCondition::LocationReached(entity_id(8, 0)));
+        frame
+            .abandon_conditions
+            .push(IntentionAbandonCondition::MotiveSourceLost(
+                MotiveSourceDiscriminant::Greed,
+            ));
+        frame.explicit_claims.push(entity_id(10, 0));
+        frame.causal_links.push(EventId(11));
+
+        let bytes = bincode::serialize(&frame).unwrap();
+        let roundtrip: IntentionFrame = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, frame);
+    }
+
+    #[test]
+    fn intention_frame_deserializes_pre_s148_state_with_empty_bdi_fields() {
+        #[derive(SerializeTrait, serde::Deserialize)]
+        struct PreS148IntentionFrame {
+            goal: GoalKey,
+            domain: IntentionDomain,
+            assumptions: Vec<FrameAssumption>,
+            state: FrameState,
+            established_at: Tick,
+            last_progress_tick: Option<Tick>,
+            stalled_ticks: u32,
+            patience_limit: u32,
+        }
+
+        let old = PreS148IntentionFrame {
+            goal: GoalKey::from(GoalKind::Sleep),
+            domain: IntentionDomain::Generic,
+            assumptions: vec![FrameAssumption::NoCriticalThreat],
+            state: FrameState::Active,
+            established_at: Tick(1),
+            last_progress_tick: Some(Tick(2)),
+            stalled_ticks: 3,
+            patience_limit: 4,
+        };
+        let encoded = ron::to_string(&old).unwrap();
+        let frame: IntentionFrame = ron::from_str(&encoded).unwrap();
+
+        assert!(frame.motive_refs.is_empty());
+        assert!(frame.resume_conditions.is_empty());
+        assert!(frame.abandon_conditions.is_empty());
+        assert!(frame.explicit_claims.is_empty());
+        assert!(frame.causal_links.is_empty());
+        assert_eq!(frame.goal, old.goal);
+        assert_eq!(frame.assumptions, old.assumptions);
     }
 }

@@ -112,6 +112,7 @@ pub(crate) fn classify_rejection(
         | Discrepancy::SearchBudgetExhausted
         | Discrepancy::NeedHorizonExceeded { .. }
         | Discrepancy::ArtifactNotActionable { .. }
+        | Discrepancy::AbandonConditionFired(_)
         | Discrepancy::MethodFailure(_) => RejectionLifecycle::InfeasibleUntil {
             trigger: RevivalTrigger::TickElapsed {
                 at_tick: Tick(tick.0.saturating_add(u64::from(revive_cooldown_ticks))),

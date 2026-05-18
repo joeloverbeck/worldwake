@@ -17,15 +17,16 @@ use crate::{
     LoadUnits, LotOperation, MemoryCapacityProfile, MerchandiseProfile, MetabolismProfile, Name,
     NoticeContent, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
     OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
-    PlaceDirtiness, PlaceTag, PlaceTagSet, PlaceVisibilityProfile, PreferenceProfile,
-    ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity,
-    RecordData, RelationTables, RepairMemory, ResourceExtractionQueues, ResourceSource,
-    RewardEncumbrance, RiskWeightProfile, RouteExperience, RoutePreferenceProfile, SaleListing,
-    SceneEvidence, SleepEpisode, SleepQualityProfile, SourceReliability, StockAssignment,
-    StockStoragePolicy, SubstitutePreferences, SurveyMemory, TellProfile, TestimonyTrustProfile,
-    TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
-    UtilityProfile, ViolationDispositionProfile, ViolationMemory, WashBasinState,
-    WorkstationMarker, WorldError, WoundList, component_schema::with_component_schema_entries,
+    PlaceDirtiness, PlaceTag, PlaceTagSet, PlaceVisibilityProfile, PortfolioWeightsProfile,
+    PreferenceProfile, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry,
+    PursuitProfile, Quantity, RecordData, RelationTables, RepairMemory, ResourceExtractionQueues,
+    ResourceSource, RewardEncumbrance, RiskWeightProfile, RouteExperience, RoutePreferenceProfile,
+    SaleListing, SceneEvidence, SleepEpisode, SleepQualityProfile, SourceReliability,
+    StockAssignment, StockStoragePolicy, SubstitutePreferences, SurveyMemory, TellProfile,
+    TestimonyTrustProfile, TheftDispositionProfile, Tick, Topology, TradeDispositionProfile,
+    UniqueItem, UniqueItemKind, UtilityProfile, ViolationDispositionProfile, ViolationMemory,
+    WashBasinState, WorkstationMarker, WorldError, WoundList,
+    component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -201,6 +202,10 @@ impl World {
             world.insert_component_perception_profile(entity, PerceptionProfile::default())?;
             world.insert_component_tell_profile(entity, TellProfile::default())?;
             world.insert_component_cognitive_profile(entity, CognitiveProfile::default())?;
+            world.insert_component_portfolio_weights_profile(
+                entity,
+                PortfolioWeightsProfile::default(),
+            )?;
             world.insert_component_agent_schema_context_profile(
                 entity,
                 AgentSchemaContextProfile::default(),

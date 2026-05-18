@@ -32,7 +32,7 @@ Phase 12: AI Architecture Evolution — Draft
 - S132 (Frontier-Exhaustion Strategy as Goal-Kind Property, archived) — current generic `ProgressBarrier` dispatch; S149 refines.
 - S137 (Plan Causal Links and Localized Repair, archived) — provides repair substrate; barrier-typed plans guide repair scope.
 - S139 (AskWitness Goal Layer, archived) — provides epistemic-sensing goals that `InformationBarrier` resume conditions can produce.
-- S148 (Portfolio Slot Expansion, Phase 12) — `IntentionFrame.resume_conditions` / `abandon_conditions` types shared.
+- S148 (Portfolio Slot Expansion, archived at `archive/specs/S148-portfolio-and-motive-backed-intentions.md`) — `IntentionFrame.resume_conditions` / `abandon_conditions` types shared.
 
 ## Design Goals
 
@@ -170,7 +170,7 @@ The agenda manager records the discrepancy through the existing `DiscrepancyMemo
 
 ### D5: Information-barrier subgoal synthesis
 
-When a plan terminal is `InformationBarrier { topic }`, the agenda manager spawns an auxiliary `GoalKind::AskWitness { topic, ... }` (S139 substrate) as a *companion intention* slot-typed `SocialEpistemic` (S148). The companion intention is owned by the suspended primary intention; abandoning the primary cancels the companion. Successful AskWitness commit updates the agent's belief store; the resume condition on the suspended primary fires.
+When a plan terminal is `InformationBarrier { topic }`, the agenda manager spawns an auxiliary `GoalKind::AskWitness { topic, ... }` (S139 substrate) as a *companion intention* slot-typed `SocialMotive` (archived S148). The companion intention is owned by the suspended primary intention; abandoning the primary cancels the companion. Successful AskWitness commit updates the agent's belief store; the resume condition on the suspended primary fires.
 
 ### D6: Coordination-barrier queue listening
 

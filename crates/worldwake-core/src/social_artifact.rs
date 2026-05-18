@@ -124,6 +124,29 @@ pub enum ArtifactLegalEffect {
     },
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum ArtifactLegalEffectTag {
+    None,
+    Active,
+    Suspended,
+    Expired,
+    Revoked,
+    Fulfilled,
+}
+
+impl From<&ArtifactLegalEffect> for ArtifactLegalEffectTag {
+    fn from(effect: &ArtifactLegalEffect) -> Self {
+        match effect {
+            ArtifactLegalEffect::None => Self::None,
+            ArtifactLegalEffect::Active { .. } => Self::Active,
+            ArtifactLegalEffect::Suspended { .. } => Self::Suspended,
+            ArtifactLegalEffect::Expired { .. } => Self::Expired,
+            ArtifactLegalEffect::Revoked { .. } => Self::Revoked,
+            ArtifactLegalEffect::Fulfilled { .. } => Self::Fulfilled,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum ArtifactCredibility {
     Credible,
@@ -290,9 +313,10 @@ pub enum NoticeTopic {
 mod tests {
     use super::{
         ArtifactActionability, ArtifactAxisValue, ArtifactCredibility, ArtifactExistence,
-        ArtifactHeader, ArtifactKind, ArtifactLegalEffect, ArtifactPostingContext,
-        ArtifactPostingProfile, ArtifactTransitionPayload, ArtifactVisibility, AxisName,
-        BountyTarget, BountyTerms, NoticeContent, NoticeTopic, ProofRequirement, RewardSource,
+        ArtifactHeader, ArtifactKind, ArtifactLegalEffect, ArtifactLegalEffectTag,
+        ArtifactPostingContext, ArtifactPostingProfile, ArtifactTransitionPayload,
+        ArtifactVisibility, AxisName, BountyTarget, BountyTerms, NoticeContent, NoticeTopic,
+        ProofRequirement, RewardSource,
     };
     use crate::{
         CommodityKind, EntityId, EventId, InstitutionalClaim, Quantity, Tick, traits::Component,
@@ -320,6 +344,7 @@ mod tests {
         assert_traits::<ArtifactExistence>();
         assert_traits::<ArtifactVisibility>();
         assert_traits::<ArtifactLegalEffect>();
+        assert_traits::<ArtifactLegalEffectTag>();
         assert_traits::<ArtifactCredibility>();
         assert_traits::<ArtifactActionability>();
         assert_traits::<ArtifactTransitionPayload>();
@@ -392,6 +417,52 @@ mod tests {
         let bytes = bincode::serialize(&payload).unwrap();
         let roundtrip: ArtifactTransitionPayload = bincode::deserialize(&bytes).unwrap();
         assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn artifact_legal_effect_tag_mirrors_every_variant() {
+        let cases = [
+            (ArtifactLegalEffect::None, ArtifactLegalEffectTag::None),
+            (
+                ArtifactLegalEffect::Active {
+                    expires_at: Some(Tick(10)),
+                },
+                ArtifactLegalEffectTag::Active,
+            ),
+            (
+                ArtifactLegalEffect::Suspended {
+                    reason: super::SuspensionReason::ProcessReview,
+                    suspended_at: Tick(11),
+                },
+                ArtifactLegalEffectTag::Suspended,
+            ),
+            (
+                ArtifactLegalEffect::Expired {
+                    expired_at: Tick(12),
+                },
+                ArtifactLegalEffectTag::Expired,
+            ),
+            (
+                ArtifactLegalEffect::Revoked {
+                    revoked_at: Tick(13),
+                    by: entity(1),
+                    reason: super::RevocationReason::IssuerWithdrawal,
+                },
+                ArtifactLegalEffectTag::Revoked,
+            ),
+            (
+                ArtifactLegalEffect::Fulfilled {
+                    fulfilled_at: Tick(14),
+                    by: entity(2),
+                    evidence: entity(3),
+                },
+                ArtifactLegalEffectTag::Fulfilled,
+            ),
+        ];
+
+        for (effect, expected) in cases {
+            assert_eq!(ArtifactLegalEffectTag::from(&effect), expected);
+        }
     }
 
     #[test]

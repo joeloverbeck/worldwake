@@ -1,7 +1,9 @@
 use crate::GoalDispatchKey;
 use crate::GoalKindPlannerExt;
 use crate::agenda_manager::{RejectionLifecycle, classify_rejection};
-use crate::agent_tick::portfolio::{FeasibilityVerdict, Portfolio, SlotKind, assemble_portfolio};
+use crate::agent_tick::portfolio::{
+    FeasibilityVerdict, Portfolio, SlotKind, assemble_portfolio, derive_operating_mode,
+};
 use crate::candidate_generation::relieved_needs_for_commodity;
 use crate::decision_trace::{
     BindingRejection, CandidateSource, GoalSwitchSummary, PlanAttemptTrace, PlanSearchOutcome,
@@ -482,6 +484,8 @@ pub(super) fn build_candidate_plans_with_route_preference(
     route_preference: Option<&RoutePreference>,
 ) -> CandidatePlanningPass {
     let opportunity_index = PerceivedOpportunityIndex::default();
+    let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
+    let operating_mode = derive_operating_mode(&view, agent, ranked_candidates);
     build_candidate_plans_with_opportunity_index(
         world,
         scheduler,
@@ -502,6 +506,7 @@ pub(super) fn build_candidate_plans_with_route_preference(
         exhaustion_cache,
         &opportunity_index,
         route_preference,
+        operating_mode,
     )
 }
 
@@ -526,6 +531,7 @@ fn build_candidate_plans_with_opportunity_index(
     exhaustion_cache: &std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
     opportunity_index: &PerceivedOpportunityIndex,
     route_preference: Option<&RoutePreference>,
+    operating_mode: worldwake_core::OperatingMode,
 ) -> CandidatePlanningPass {
     build_candidate_plans_with_sources(
         world,
@@ -548,6 +554,7 @@ fn build_candidate_plans_with_opportunity_index(
         &BTreeMap::new(),
         opportunity_index,
         route_preference,
+        operating_mode,
     )
 }
 
@@ -573,6 +580,7 @@ pub(super) fn build_candidate_plans_with_sources(
     candidate_sources: &BTreeMap<OpportunityKey, CandidateSource>,
     opportunity_index: &PerceivedOpportunityIndex,
     route_preference: Option<&RoutePreference>,
+    operating_mode: worldwake_core::OperatingMode,
 ) -> CandidatePlanningPass {
     let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
     let route_preference_profile =
@@ -603,11 +611,16 @@ pub(super) fn build_candidate_plans_with_sources(
         agent,
         agent_place: SpatialBeliefView::effective_place(&view, agent),
     };
-    let portfolio = assemble_portfolio(&admitted_candidates, committed_opportunity, |ranked| {
-        feasibility_probe::probe(ranked, &probe_context)
-    });
+    let portfolio_weights = ProfileBeliefView::portfolio_weights_profile(&view, agent);
+    let portfolio = assemble_portfolio(
+        &admitted_candidates,
+        committed_opportunity,
+        &portfolio_weights,
+        operating_mode,
+        |ranked| feasibility_probe::probe(ranked, &probe_context),
+    );
     let plausible_slots = portfolio
-        .plausible_slots_by_score(&cognitive.slot_weights)
+        .plausible_slots_by_score(&portfolio_weights)
         .into_iter()
         .map(|(kind, _slot)| kind)
         .collect::<Vec<_>>();
@@ -657,7 +670,7 @@ pub(super) fn build_candidate_plans_with_sources(
             (!rejected_opportunities.contains(&opp)).then_some(opp)
         })
         .collect();
-    let candidate_cap = usize::from(cognitive.max_candidates_to_plan);
+    let candidate_cap = usize::from(portfolio_weights.max_plans_for_mode(operating_mode));
 
     // All candidates filtered by exhausted-goal skip set or probe — no snapshot needed.
     if search_order.is_empty() {
@@ -1953,6 +1966,7 @@ fn plan_and_validate_next_step_with_opportunity_index(
                 runtime.dirty.contains(DirtySet::FACILITIES),
                 runtime.dirty.contains(DirtySet::BLOCKER_CLEANUP),
             );
+            runtime.operating_mode = derive_operating_mode(&view, agent, ranked_candidates);
 
             let plans = build_candidate_plans_with_opportunity_index(
                 world,
@@ -1974,6 +1988,7 @@ fn plan_and_validate_next_step_with_opportunity_index(
                 &runtime.exhaustion_cache,
                 opportunity_index,
                 Some(&runtime.route_preference),
+                runtime.operating_mode,
             );
 
             // Record newly exhausted goals for next tick.
@@ -2402,6 +2417,7 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
                         .as_ref()
                         .map(|active_goal| active_goal.key.goal_key)
             });
+        runtime.operating_mode = derive_operating_mode(&view, agent, ranked_candidates);
 
         let plans = build_candidate_plans_with_sources(
             world,
@@ -2424,6 +2440,7 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
             candidate_sources,
             opportunity_index,
             Some(&runtime.route_preference),
+            runtime.operating_mode,
         );
         snapshot_cache_counters = plans.snapshot_cache_counters;
         planning_state_cache_counters = plans.planning_state_cache_counters;
@@ -2466,7 +2483,8 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
         }
         plan_search_trace.same_goal_trace = summarize_same_goal_planning_trace(
             plans.search_opportunities(),
-            cognitive.max_candidates_to_plan,
+            ProfileBeliefView::portfolio_weights_profile(&view, agent)
+                .max_plans_for_mode(runtime.operating_mode),
             &plans.plans,
         );
 
@@ -2808,11 +2826,11 @@ mod tests {
         CognitiveProfile, CommodityKind, CommodityPurpose, ContentionIntents, ControlSource,
         DecisionEventPayload, EntityId, EventId, EventLog, EventTag, EventView, ExecutionBudget,
         FrameAssumption, GoalCommittedPayload, GoalRejectionReason, HomeostaticNeedId,
-        HomeostaticNeeds, MerchandiseProfile, PerceptionSource, Permille, Place,
-        PlanAdoptedPayload, Quantity, RankedGoalComparisonDimensionTag, RepairKind,
-        RoutePreferenceProfile, RoutePreferenceSummary, RouteSegment, SourceKey, TellTopic,
-        TestimonyTrustProfile, TestimonyTrustSummary, Tick, TopicScope, Topology, TravelEdge,
-        TravelEdgeId, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        HomeostaticNeeds, MerchandiseProfile, MotiveSource, MotiveSourceRef, PerceptionSource,
+        Permille, Place, PlanAdoptedPayload, Quantity, RankedGoalComparisonDimensionTag,
+        RepairKind, RoutePreferenceProfile, RoutePreferenceSummary, RouteSegment, SourceKey,
+        TellTopic, TestimonyTrustProfile, TestimonyTrustSummary, Tick, TopicScope, Topology,
+        TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
         build_believed_entity_state, build_prototype_world,
     };
     use worldwake_sim::{
@@ -2929,7 +2947,6 @@ mod tests {
 
     fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         CognitiveProfile {
-            max_candidates_to_plan: reasoning.max_candidates_to_plan,
             max_candidates_per_expansion: CognitiveProfile::default().max_candidates_per_expansion,
             max_plan_depth: reasoning.max_plan_depth,
             max_travel_candidates_per_expansion: CognitiveProfile::default()
@@ -2972,7 +2989,6 @@ mod tests {
                 .decision_history_alternatives,
             detour_budget_permille: CognitiveProfile::default().detour_budget_permille,
             compile_opportunity_cap: CognitiveProfile::default().compile_opportunity_cap,
-            slot_weights: worldwake_core::PortfolioSlotWeights::default(),
             repair_budget_fraction: CognitiveProfile::default().repair_budget_fraction,
             causal_links_per_step_cap: CognitiveProfile::default().causal_links_per_step_cap,
         }
@@ -4222,6 +4238,11 @@ mod tests {
             last_progress_tick: None,
             stalled_ticks: 0,
             patience_limit: 3,
+            motive_refs: Vec::new(),
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            explicit_claims: Vec::new(),
+            causal_links: Vec::new(),
         };
 
         super::emit_plan_selection_events(
@@ -4498,7 +4519,7 @@ mod tests {
     }
 
     #[test]
-    fn portfolio_assembly_always_runs_with_max_candidates_to_plan_one() {
+    fn portfolio_assembly_always_runs_when_plan_cap_is_one() {
         fn ranked_slot_goal(
             kind: GoalKind,
             motive_score: u32,
@@ -4539,36 +4560,76 @@ mod tests {
             }
         }
 
+        fn with_motive(mut ranked: AgendaEntry, source: MotiveSource, weight: u32) -> AgendaEntry {
+            ranked.motive_source_contributions = vec![(
+                MotiveSourceRef {
+                    source,
+                    introduced_tick: Tick(0),
+                },
+                weight,
+            )];
+            ranked
+        }
+
         let posting_place = entity(40);
         let mut ranked = vec![
-            ranked_slot_goal(GoalKind::Sleep, 900, OpportunityAnchor::None),
-            ranked_slot_goal(
-                GoalKind::PostNotice {
-                    posting: worldwake_core::ArtifactPostingContext {
-                        posting_place,
-                        issuing_authority: None,
-                        expires_at: Some(Tick(5)),
-                        jurisdiction: Some(posting_place),
+            with_motive(
+                ranked_slot_goal(GoalKind::Sleep, 900, OpportunityAnchor::None),
+                MotiveSource::NeedPressure {
+                    need: HomeostaticNeedId::Hunger,
+                },
+                900,
+            ),
+            with_motive(
+                ranked_slot_goal(
+                    GoalKind::PostNotice {
+                        posting: worldwake_core::ArtifactPostingContext {
+                            posting_place,
+                            issuing_authority: None,
+                            expires_at: Some(Tick(5)),
+                            jurisdiction: Some(posting_place),
+                        },
+                        topic: worldwake_core::NoticeTopic::ThreatWarning {
+                            place: posting_place,
+                        },
                     },
-                    topic: worldwake_core::NoticeTopic::ThreatWarning {
-                        place: posting_place,
-                    },
+                    700,
+                    OpportunityAnchor::Place(posting_place),
+                ),
+                MotiveSource::OfficeDuty {
+                    office: posting_place,
                 },
                 700,
-                OpportunityAnchor::Place(posting_place),
             ),
-            ranked_slot_goal(
-                GoalKind::SellCommodity {
-                    commodity: CommodityKind::Apple,
+            with_motive(
+                ranked_slot_goal(
+                    GoalKind::SellCommodity {
+                        commodity: CommodityKind::Apple,
+                    },
+                    500,
+                    OpportunityAnchor::Place(entity(41)),
+                ),
+                MotiveSource::Greed {
+                    opportunity: OpportunityKey {
+                        goal_key: GoalKey::from(GoalKind::SellCommodity {
+                            commodity: CommodityKind::Apple,
+                        }),
+                        anchor: OpportunityAnchor::Place(entity(41)),
+                    },
                 },
                 500,
-                OpportunityAnchor::Place(entity(41)),
             ),
         ];
         let ranked = crate::ranking::sort_in_place(&mut ranked);
-        let portfolio = super::assemble_portfolio(&ranked, None, |_| FeasibilityVerdict::Plausible);
+        let portfolio = super::assemble_portfolio(
+            &ranked,
+            None,
+            &worldwake_core::PortfolioWeightsProfile::default(),
+            worldwake_core::OperatingMode::Normal,
+            |_| FeasibilityVerdict::Plausible,
+        );
         let plausible_slots = portfolio
-            .plausible_slots_by_score(&worldwake_core::PortfolioSlotWeights::default())
+            .plausible_slots_by_score(&worldwake_core::PortfolioWeightsProfile::default())
             .into_iter()
             .map(|(kind, _)| kind)
             .collect::<Vec<_>>();
@@ -4593,9 +4654,9 @@ mod tests {
         let trace = pass.portfolio_trace();
         assert_eq!(trace.slots.len(), 3);
         assert_eq!(trace.slots_attempted, 1);
-        assert!(trace.slots.contains_key(&SlotKind::Survival));
-        assert!(trace.slots.contains_key(&SlotKind::Commitment));
-        assert!(trace.slots.contains_key(&SlotKind::Economic));
+        assert!(trace.slots.contains_key(&SlotKind::NeedSurvival));
+        assert!(trace.slots.contains_key(&SlotKind::ObligationDuty));
+        assert!(trace.slots.contains_key(&SlotKind::EconomicOpportunity));
     }
 
     #[test]
@@ -4740,7 +4801,7 @@ mod tests {
         let portfolio = Portfolio {
             slots: BTreeMap::from([
                 (
-                    SlotKind::Survival,
+                    SlotKind::NeedSurvival,
                     PortfolioSlot {
                         ranked: ranked_candidates[0].clone(),
                         feasibility: FeasibilityVerdict::RejectedBeforeSearch {
@@ -4749,7 +4810,7 @@ mod tests {
                     },
                 ),
                 (
-                    SlotKind::Commitment,
+                    SlotKind::ObligationDuty,
                     PortfolioSlot {
                         ranked: ranked_candidates[1].clone(),
                         feasibility: FeasibilityVerdict::RejectedBeforeSearch {
@@ -4758,7 +4819,7 @@ mod tests {
                     },
                 ),
                 (
-                    SlotKind::Economic,
+                    SlotKind::EconomicOpportunity,
                     PortfolioSlot {
                         ranked: ranked_candidates[2].clone(),
                         feasibility: FeasibilityVerdict::Plausible,
@@ -5567,7 +5628,6 @@ mod tests {
         ];
         let budget = ProfileFixture {
             snapshot_travel_horizon: 0,
-            max_candidates_to_plan: 2,
             ..ProfileFixture::default()
         };
 
@@ -5658,7 +5718,6 @@ mod tests {
         ];
         let budget = ProfileFixture {
             snapshot_travel_horizon: 4,
-            max_candidates_to_plan: 2,
             ..ProfileFixture::default()
         };
 
@@ -5747,7 +5806,6 @@ mod tests {
         ];
         let budget = ProfileFixture {
             snapshot_travel_horizon: 4,
-            max_candidates_to_plan: 2,
             ..ProfileFixture::default()
         };
         let exhausted = OpportunityKey {
@@ -5998,7 +6056,6 @@ mod tests {
         ];
         let budget = ProfileFixture {
             snapshot_travel_horizon: 4,
-            max_candidates_to_plan: 2,
             ..ProfileFixture::default()
         };
         let mut runtime = AgentDecisionRuntime {
@@ -6344,7 +6401,6 @@ mod tests {
         ]);
         let budget = ProfileFixture {
             snapshot_travel_horizon: 4,
-            max_candidates_to_plan: 2,
             max_node_expansions: 0,
             ..ProfileFixture::default()
         };
@@ -6388,7 +6444,8 @@ mod tests {
         assert_eq!(
             super::summarize_same_goal_planning_trace(
                 &plans.plausible_opportunities(),
-                budget.max_candidates_to_plan,
+                worldwake_core::PortfolioWeightsProfile::default()
+                    .max_plans_for_mode(worldwake_core::OperatingMode::Normal),
                 &plans.plans,
             ),
             Some(crate::SameGoalPlanningTrace {
@@ -6965,13 +7022,11 @@ mod tests {
             Tick(10),
             &cognitive(&ProfileFixture {
                 snapshot_travel_horizon: 4,
-                max_candidates_to_plan: 1,
                 max_node_expansions: 128,
                 ..ProfileFixture::default()
             }),
             &execution_budget(&ProfileFixture {
                 snapshot_travel_horizon: 4,
-                max_candidates_to_plan: 1,
                 max_node_expansions: 128,
                 ..ProfileFixture::default()
             }),
@@ -7074,12 +7129,10 @@ mod tests {
             Tick(10),
             &cognitive(&ProfileFixture {
                 snapshot_travel_horizon: 4,
-                max_candidates_to_plan: 2,
                 ..ProfileFixture::default()
             }),
             &execution_budget(&ProfileFixture {
                 snapshot_travel_horizon: 4,
-                max_candidates_to_plan: 2,
                 ..ProfileFixture::default()
             }),
             &semantics,
@@ -7156,12 +7209,10 @@ mod tests {
             Tick(10),
             &cognitive(&ProfileFixture {
                 snapshot_travel_horizon: 4,
-                max_candidates_to_plan: 1,
                 ..ProfileFixture::default()
             }),
             &execution_budget(&ProfileFixture {
                 snapshot_travel_horizon: 4,
-                max_candidates_to_plan: 1,
                 ..ProfileFixture::default()
             }),
             &semantics,

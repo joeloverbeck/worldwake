@@ -1,7 +1,7 @@
 //! Explicit typed component storage.
 
 use crate::{
-    AgendaProfile, AgentSchemaContextProfile, EntityId,
+    AgendaProfile, AgentSchemaContextProfile, EntityId, PortfolioWeightsProfile,
     bandit_camp::{BanditCamp, BanditFactionPolicy},
     belief::{AgentBeliefStore, PerceptionProfile, TellProfile},
     blocker_memory::BlockerMemory,

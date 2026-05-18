@@ -1154,7 +1154,17 @@ impl<'snapshot> PlanningState<'snapshot> {
             )
             && self.effective_place_ref(actor) == self.effective_place_ref(entity)
         {
-            return true;
+            let originally_colocated = match actor {
+                PlanningEntityRef::Authoritative(actor_id) => {
+                    self.snapshot
+                        .entities
+                        .get(&actor_id)
+                        .and_then(|actor_snapshot| actor_snapshot.spatial.effective_place)
+                        == snapshot.spatial.effective_place
+                }
+                PlanningEntityRef::Hypothetical(_) => false,
+            };
+            return !originally_colocated || snapshot.control.controllable_by_actor;
         }
         match entity {
             PlanningEntityRef::Authoritative(entity) => self
@@ -3492,6 +3502,51 @@ mod tests {
         assert_eq!(
             EconomicBeliefView::demand_memory(&state, actor),
             EconomicBeliefView::demand_memory(&view, actor)
+        );
+    }
+
+    #[test]
+    fn can_control_ref_rejects_initially_local_uncontrolled_loose_lot() {
+        let (mut view, actor, town, _field, bread) = test_view();
+        view.direct_possessions.insert(actor, Vec::new());
+        view.direct_possessors.remove(&bread);
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Bread), Quantity(0));
+        view.effective_places.insert(bread, town);
+        view.entities_at.insert(town, vec![actor, bread]);
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::from([bread]), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        assert!(
+            !state.can_control_ref(
+                PlanningEntityRef::Authoritative(actor),
+                PlanningEntityRef::Authoritative(bread),
+            ),
+            "initially co-located loose lots must use the live control predicate"
+        );
+    }
+
+    #[test]
+    fn can_control_ref_allows_remote_loose_lot_after_hypothetical_travel() {
+        let (mut view, actor, town, field, bread) = test_view();
+        view.direct_possessions.insert(actor, Vec::new());
+        view.direct_possessors.remove(&bread);
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Bread), Quantity(0));
+        view.effective_places.insert(bread, field);
+        view.entities_at.insert(town, vec![actor]);
+        view.entities_at.insert(field, vec![bread]);
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::from([bread]), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot).move_actor_to(field);
+
+        assert!(
+            state.can_control_ref(
+                PlanningEntityRef::Authoritative(actor),
+                PlanningEntityRef::Authoritative(bread),
+            ),
+            "remote loose-lot acquisition stays lawful after planned travel"
         );
     }
 

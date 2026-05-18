@@ -44,9 +44,23 @@ pub fn derive_default_motive_sources(
             need: HomeostaticNeedId::Dirtiness,
         },
         GoalKind::ClaimOffice { office } => MotiveSource::OfficeDuty { office: *office },
+        GoalKind::PostNotice { posting, .. } | GoalKind::PostBounty { posting, .. } => {
+            MotiveSource::OfficeDuty {
+                office: posting
+                    .issuing_authority
+                    .or(posting.jurisdiction)
+                    .unwrap_or(posting.posting_place),
+            }
+        }
         GoalKind::SupportCandidateForOffice { candidate, .. } => {
             MotiveSource::Loyalty { other: *candidate }
         }
+        GoalKind::ReportMissing {
+            subject, to_office, ..
+        } => MotiveSource::OfficeDuty {
+            office: to_office.unwrap_or(*subject),
+        },
+        GoalKind::ReportFound { subject, .. } => MotiveSource::OfficeDuty { office: *subject },
         GoalKind::Accuse { violation_id, .. }
         | GoalKind::InvestigateViolation { violation_id, .. } => MotiveSource::Revenge {
             violation: *violation_id,
@@ -176,9 +190,34 @@ mod tests {
     fn maps_social_and_violation_goals_to_specific_sources() {
         let office = entity(10);
         let candidate = entity(11);
+        let posting_place = entity(12);
+        let issuing_authority = entity(13);
+        let subject = entity(14);
         assert_eq!(
             only_source(GoalKind::ClaimOffice { office }),
             MotiveSource::OfficeDuty { office }
+        );
+        assert_eq!(
+            only_source(GoalKind::PostNotice {
+                posting: worldwake_core::ArtifactPostingContext {
+                    posting_place,
+                    issuing_authority: Some(issuing_authority),
+                    expires_at: Some(Tick(99)),
+                    jurisdiction: Some(entity(15)),
+                },
+                topic: worldwake_core::NoticeTopic::ThreatWarning { place: entity(16) },
+            }),
+            MotiveSource::OfficeDuty {
+                office: issuing_authority
+            }
+        );
+        assert_eq!(
+            only_source(GoalKind::ReportMissing {
+                subject,
+                to_office: None,
+                expectation_id: None,
+            }),
+            MotiveSource::OfficeDuty { office: subject }
         );
         assert_eq!(
             only_source(GoalKind::SupportCandidateForOffice { office, candidate }),
@@ -198,14 +237,8 @@ mod tests {
 
     #[test]
     fn maps_remaining_goals_to_opportunity_backed_greed() {
-        let goal_kind = GoalKind::PostNotice {
-            posting: worldwake_core::ArtifactPostingContext {
-                posting_place: entity(20),
-                issuing_authority: Some(entity(21)),
-                expires_at: Some(Tick(99)),
-                jurisdiction: Some(entity(22)),
-            },
-            topic: worldwake_core::NoticeTopic::ThreatWarning { place: entity(23) },
+        let goal_kind = GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
         };
         let anchor = OpportunityAnchor::Place(entity(20));
         let sources = derive_default_motive_sources(&goal_kind, &anchor, Tick(9));

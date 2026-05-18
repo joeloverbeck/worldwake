@@ -1,28 +1,9 @@
 use crate::{Component, Permille};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-pub struct PortfolioSlotWeights {
-    pub survival: Permille,
-    pub commitment: Permille,
-    pub economic: Permille,
-}
-
-impl Default for PortfolioSlotWeights {
-    fn default() -> Self {
-        Self {
-            survival: Permille::new_unchecked(1000),
-            commitment: Permille::new_unchecked(900),
-            economic: Permille::new_unchecked(700),
-        }
-    }
-}
-
 /// Stable per-agent cognitive reasoning parameters used by the AI layer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct CognitiveProfile {
-    /// Maximum number of top-scoring goal candidates the planner evaluates per decision cycle.
-    pub max_candidates_to_plan: u8,
     /// Maximum action successors expanded per search node during plan search.
     #[serde(default = "default_max_candidates_per_expansion")]
     pub max_candidates_per_expansion: u16,
@@ -115,9 +96,6 @@ pub struct CognitiveProfile {
     /// Soft cap on compiled opportunities retained per decision cycle.
     #[serde(default = "default_compile_opportunity_cap")]
     pub compile_opportunity_cap: u16,
-    /// Relative slot weights for portfolio candidate ordering.
-    #[serde(default)]
-    pub slot_weights: PortfolioSlotWeights,
     /// Fraction of max node expansions available to localized plan repair.
     #[serde(default = "default_repair_budget_fraction")]
     pub repair_budget_fraction: Permille,
@@ -129,7 +107,6 @@ pub struct CognitiveProfile {
 impl Default for CognitiveProfile {
     fn default() -> Self {
         Self {
-            max_candidates_to_plan: 2,
             max_candidates_per_expansion: default_max_candidates_per_expansion(),
             max_plan_depth: 8,
             max_travel_candidates_per_expansion: None,
@@ -163,7 +140,6 @@ impl Default for CognitiveProfile {
             decision_history_alternatives: default_decision_history_alternatives(),
             detour_budget_permille: default_detour_budget_permille(),
             compile_opportunity_cap: default_compile_opportunity_cap(),
-            slot_weights: PortfolioSlotWeights::default(),
             repair_budget_fraction: default_repair_budget_fraction(),
             causal_links_per_step_cap: default_causal_links_per_step_cap(),
         }
@@ -270,7 +246,7 @@ const fn default_survey_memory_retention_ticks() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{CognitiveProfile, PortfolioSlotWeights};
+    use super::CognitiveProfile;
     use crate::{ControlSource, EntityKind, Tick, Topology, World, traits::Component};
     use ron::{
         de::from_str,
@@ -287,14 +263,12 @@ mod tests {
     fn cognitive_profile_component_bounds() {
         assert_component_bounds::<CognitiveProfile>();
         assert_value_bounds::<CognitiveProfile>();
-        assert_value_bounds::<PortfolioSlotWeights>();
     }
 
     #[test]
     fn cognitive_profile_default_matches_split_defaults() {
         let profile = CognitiveProfile::default();
 
-        assert_eq!(profile.max_candidates_to_plan, 2);
         assert_eq!(profile.max_candidates_per_expansion, 200);
         assert_eq!(profile.max_plan_depth, 8);
         assert_eq!(profile.max_travel_candidates_per_expansion, None);
@@ -337,7 +311,6 @@ mod tests {
             crate::Permille::new(150).unwrap()
         );
         assert_eq!(profile.compile_opportunity_cap, 16);
-        assert_eq!(profile.slot_weights, PortfolioSlotWeights::default());
         assert_eq!(
             profile.repair_budget_fraction,
             crate::Permille::new(250).unwrap()
@@ -348,7 +321,6 @@ mod tests {
     #[test]
     fn cognitive_profile_roundtrips_through_bincode() {
         let profile = CognitiveProfile {
-            max_candidates_to_plan: 3,
             max_candidates_per_expansion: 144,
             max_plan_depth: 10,
             max_travel_candidates_per_expansion: Some(5),
@@ -382,11 +354,6 @@ mod tests {
             decision_history_alternatives: 8,
             detour_budget_permille: crate::Permille::new(275).unwrap(),
             compile_opportunity_cap: 23,
-            slot_weights: PortfolioSlotWeights {
-                survival: crate::Permille::new(950).unwrap(),
-                commitment: crate::Permille::new(800).unwrap(),
-                economic: crate::Permille::new(650).unwrap(),
-            },
             repair_budget_fraction: crate::Permille::new(375).unwrap(),
             causal_links_per_step_cap: 12,
         };
@@ -500,44 +467,6 @@ mod tests {
             profile.causal_links_per_step_cap,
             super::default_causal_links_per_step_cap()
         );
-    }
-
-    #[test]
-    fn cognitive_profile_deserialization_defaults_slot_weights() {
-        let serialized = to_string_pretty(
-            &CognitiveProfile {
-                slot_weights: PortfolioSlotWeights {
-                    survival: crate::Permille::new(850).unwrap(),
-                    commitment: crate::Permille::new(750).unwrap(),
-                    economic: crate::Permille::new(650).unwrap(),
-                },
-                ..CognitiveProfile::default()
-            },
-            PrettyConfig::default(),
-        )
-        .unwrap();
-        let mut skipping_slot_weights = false;
-        let without_field = serialized
-            .lines()
-            .filter(|line| {
-                let trimmed = line.trim();
-                if skipping_slot_weights {
-                    if trimmed == ")," {
-                        skipping_slot_weights = false;
-                    }
-                    return false;
-                }
-                if trimmed.starts_with("slot_weights: (") {
-                    skipping_slot_weights = true;
-                    return false;
-                }
-                true
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        let profile: CognitiveProfile = from_str(&without_field).unwrap();
-
-        assert_eq!(profile.slot_weights, PortfolioSlotWeights::default());
     }
 
     #[test]

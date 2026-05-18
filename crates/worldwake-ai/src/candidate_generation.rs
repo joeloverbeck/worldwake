@@ -6869,7 +6869,7 @@ fn local_unpossessed_commodity_evidence(
         if view
             .believed_owner_of(entity)
             .known_or_stale_value()
-            .is_some_and(|owner| owner == agent)
+            .is_some()
             || view
                 .believed_rights(agent, entity)
                 .iter()
@@ -10460,6 +10460,53 @@ mod tests {
                 quantity: AcquisitionQuantity::single(),
             }
         ));
+    }
+
+    #[test]
+    fn local_other_owned_loose_water_does_not_emit_pickup_acquire_goal() {
+        let agent = entity(1);
+        let owner = entity(2);
+        let place = entity(10);
+        let water_lot = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, owner, water_lot]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(owner, EntityKind::Agent);
+        view.entity_kinds.insert(water_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(owner, place);
+        view.effective_places.insert(water_lot, place);
+        view.entities_at
+            .insert(place, vec![agent, owner, water_lot]);
+        view.homeostatic_needs.insert(agent, thirst(200));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.lot_commodities.insert(water_lot, CommodityKind::Water);
+        view.consumable_profiles.insert(
+            water_lot,
+            CommodityKind::Water.spec().consumable_profile.unwrap(),
+        );
+        view.believed_owners.insert(water_lot, owner);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(
+            !contains_goal(
+                &candidates,
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Water,
+                    purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
+                }
+            ),
+            "known other-owned loose stock cannot satisfy the pick_up precondition"
+        );
     }
 
     #[test]

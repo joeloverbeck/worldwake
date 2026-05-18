@@ -71,6 +71,7 @@ fn check_profile_homogeneity(scenario: &ScenarioDef, report: &mut LintReport) {
     }
 
     let varies = option_field_varies(&ai_agents, |agent| agent.cognitive_profile.as_ref())
+        || option_field_varies(&ai_agents, |agent| agent.portfolio_weights_profile.as_ref())
         || option_field_varies(&ai_agents, |agent| agent.utility_profile.as_ref())
         || utility_profile_motive_class_weight_varies(&ai_agents)
         || option_field_varies(&ai_agents, |agent| agent.perception_profile.as_ref())
@@ -89,7 +90,7 @@ fn check_profile_homogeneity(scenario: &ScenarioDef, report: &mut LintReport) {
         rule: LintRule::ProfileHomogeneity,
         affected_agents: ai_agents.iter().map(|agent| agent.name.clone()).collect(),
         detail:
-            "AI agent population shares profiles across all checked fields, including agent_schema_context_profile.disabled_extractors, agent_schema_context_profile.budget_overrides, and agent_schema_context_profile.disabled_methods; FND-22 requires concrete per-agent variation"
+            "AI agent population shares profiles across all checked fields, including portfolio_weights_profile, agent_schema_context_profile.disabled_extractors, agent_schema_context_profile.budget_overrides, and agent_schema_context_profile.disabled_methods; FND-22 requires concrete per-agent variation"
                 .into(),
     });
 }
@@ -239,8 +240,8 @@ mod tests {
     use worldwake_core::{
         AgentSchemaContextProfile, CognitiveProfile, CommodityKind, ControlSource,
         DiversificationProfile, EpistemicDispositionProfile, IntentionDispositionProfile,
-        MethodSchemaId, PerceptionProfile, Permille, PlaceTag, Quantity, SuccessionLaw,
-        UtilityProfile,
+        MethodSchemaId, PerceptionProfile, Permille, PlaceTag, PortfolioWeightsProfile, Quantity,
+        SuccessionLaw, UtilityProfile,
     };
 
     fn minimal_agent(name: &str, control: ControlSource) -> AgentDef {
@@ -257,6 +258,7 @@ mod tests {
             perception_profile: None,
             tell_profile: None,
             cognitive_profile: None,
+            portfolio_weights_profile: None,
             agent_schema_context_profile: None,
             risk_weight_profile: None,
             law_abiding_profile: None,
@@ -381,6 +383,7 @@ mod tests {
     fn fully_profiled_ai(name: &str) -> AgentDef {
         AgentDef {
             cognitive_profile: Some(CognitiveProfile::default()),
+            portfolio_weights_profile: Some(PortfolioWeightsProfile::default()),
             utility_profile: Some(UtilityProfile::default()),
             perception_profile: Some(PerceptionProfile::default()),
             exploration_profile: Some(default_exploration_profile()),
@@ -716,6 +719,7 @@ mod tests {
     fn fully_profiled_human(name: &str) -> AgentDef {
         AgentDef {
             cognitive_profile: Some(CognitiveProfile::default()),
+            portfolio_weights_profile: Some(PortfolioWeightsProfile::default()),
             utility_profile: Some(UtilityProfile::default()),
             perception_profile: Some(PerceptionProfile::default()),
             exploration_profile: Some(default_exploration_profile()),
@@ -730,6 +734,7 @@ mod tests {
     fn unreachable_homogeneous_ai(name: &str) -> AgentDef {
         AgentDef {
             cognitive_profile: Some(CognitiveProfile::default()),
+            portfolio_weights_profile: Some(PortfolioWeightsProfile::default()),
             utility_profile: Some(UtilityProfile::default()),
             perception_profile: Some(PerceptionProfile::default()),
             exploration_profile: Some(ExplorationProfileDef {

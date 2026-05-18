@@ -171,7 +171,6 @@ pub use worldwake_core::{
 #[cfg(test)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProfileFixture {
-    pub max_candidates_to_plan: u8,
     pub max_plan_depth: u8,
     pub snapshot_travel_horizon: u8,
     pub max_node_expansions: u16,
@@ -188,7 +187,6 @@ pub struct ProfileFixture {
 impl Default for ProfileFixture {
     fn default() -> Self {
         Self {
-            max_candidates_to_plan: 2,
             max_plan_depth: 8,
             snapshot_travel_horizon: 6,
             max_node_expansions: 224,

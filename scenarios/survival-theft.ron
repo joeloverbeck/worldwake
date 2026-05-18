@@ -93,7 +93,6 @@
                 conversation_memory_retention_ticks: 96,
             ),
             cognitive_profile: (
-                max_candidates_to_plan: 4,
                 max_candidates_per_expansion: 240,
                 max_plan_depth: 10,
                 snapshot_travel_horizon: 2,
@@ -107,6 +106,16 @@
                 max_snapshot_entities_per_place: 50,
                 landmark_extraction_depth: 3,
                 use_ff_heuristic: true,
+            ),
+            portfolio_weights_profile: (
+                need_survival: 1000,
+                pain_care: 900,
+                obligation_duty: 800,
+                economic_opportunity: 600,
+                social_motive: 400,
+                max_plans_normal: 4,
+                max_plans_emergency: 4,
+                max_plans_idle: 4,
             ),
             execution_budget: (
                 max_prerequisite_locations: 2,
@@ -213,7 +222,6 @@
                 conversation_memory_retention_ticks: 0,
             ),
             cognitive_profile: (
-                max_candidates_to_plan: 4,
                 max_candidates_per_expansion: 240,
                 max_plan_depth: 10,
                 snapshot_travel_horizon: 2,
@@ -227,6 +235,16 @@
                 max_snapshot_entities_per_place: 50,
                 landmark_extraction_depth: 3,
                 use_ff_heuristic: true,
+            ),
+            portfolio_weights_profile: (
+                need_survival: 1000,
+                pain_care: 900,
+                obligation_duty: 800,
+                economic_opportunity: 600,
+                social_motive: 400,
+                max_plans_normal: 4,
+                max_plans_emergency: 4,
+                max_plans_idle: 4,
             ),
             execution_budget: (
                 max_prerequisite_locations: 2,
@@ -340,7 +358,6 @@
                 conversation_memory_retention_ticks: 0,
             ),
             cognitive_profile: (
-                max_candidates_to_plan: 4,
                 max_candidates_per_expansion: 240,
                 max_plan_depth: 10,
                 snapshot_travel_horizon: 2,
@@ -354,6 +371,16 @@
                 max_snapshot_entities_per_place: 50,
                 landmark_extraction_depth: 3,
                 use_ff_heuristic: true,
+            ),
+            portfolio_weights_profile: (
+                need_survival: 1000,
+                pain_care: 900,
+                obligation_duty: 800,
+                economic_opportunity: 600,
+                social_motive: 400,
+                max_plans_normal: 4,
+                max_plans_emergency: 4,
+                max_plans_idle: 4,
             ),
             execution_budget: (
                 max_prerequisite_locations: 2,

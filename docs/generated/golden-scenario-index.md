@@ -918,7 +918,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 403: S141 Motive Sources Hunger And Greed Sum For Market Offer
 
-- Source: `golden_motive_sources.rs:101`
+- Source: `golden_motive_sources.rs:100`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Needs, Trade
@@ -930,7 +930,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 404: S141 Motive Sources Commit Payload Preserves Hunger And Greed
 
-- Source: `golden_motive_sources.rs:143`
+- Source: `golden_motive_sources.rs:142`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -942,7 +942,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 405: S141 Motive Sources Pain Contribution Dominates Hunger
 
-- Source: `golden_motive_sources.rs:190`
+- Source: `golden_motive_sources.rs:189`
 - Systems: AI
 - GoalKinds: TreatWounds, ConsumeOwnedCommodity
 - ActionDomains: Medical, Needs
@@ -954,9 +954,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 406: S141 Motive Sources Greed Weight Variation Is Profile State
 
-- Source: `golden_motive_sources.rs:236`
+- Source: `golden_motive_sources.rs:235`
 - Systems: AI
-- GoalKinds: PostNotice
+- GoalKinds: SellCommodity
 - ActionDomains: DecisionHistory
 - Principles: P3, P22
 
@@ -966,7 +966,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 407: S141 Motive Sources Empty Offer Assertion
 
-- Source: `golden_motive_sources.rs:268`
+- Source: `golden_motive_sources.rs:260`
 - Systems: AI
 - GoalKinds: Sleep
 - ActionDomains: DecisionHistory
@@ -1776,7 +1776,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 356: Sleep Episode Lifecycle
 
-- Source: `golden_sleep_episode.rs:162`
+- Source: `golden_sleep_episode.rs:167`
 
 **Setup**: One fatigued AI agent at a default-quality place with no competing needs.
 
@@ -1786,7 +1786,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 357: Projected Hunger Breach Wakes Sleep
 
-- Source: `golden_sleep_episode.rs:221`
+- Source: `golden_sleep_episode.rs:226`
 
 **Setup**: A scripted human-controlled sleep start preserves a preloaded S126 NeedSafeUntilTick(Hunger) assumption.
 
@@ -1796,7 +1796,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 358: Sleep Place Quality Modulates Recovery
 
-- Source: `golden_sleep_episode.rs:250`
+- Source: `golden_sleep_episode.rs:255`
 
 **Setup**: Two human-controlled sleepers start identical episodes at places with 900 and 700 recovery modifiers.
 
@@ -1806,7 +1806,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 359: Interrupted Sleep Records Partial Recovery
 
-- Source: `golden_sleep_episode.rs:276`
+- Source: `golden_sleep_episode.rs:281`
 
 **Setup**: A projected hunger breach cuts off sleep before full recovery.
 
@@ -1816,7 +1816,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 360: Sleep Site Preference Ranks Higher Quality Place
 
-- Source: `golden_sleep_episode.rs:301`
+- Source: `golden_sleep_episode.rs:306`
 
 **Setup**: A fatigued AI agent knows both its current 900-quality camp and a reachable 1000-quality orchard.
 
@@ -1826,7 +1826,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 361: Sleep Episode Events Carry Decision-History Payloads
 
-- Source: `golden_sleep_episode.rs:353`
+- Source: `golden_sleep_episode.rs:358`
 
 **Setup**: A minimal scripted sleep episode runs to completion through the full action registry.
 
@@ -2224,18 +2224,18 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 171: Survival Preferences Keeps Proactive Diversification Alive Under Survival
 
-- Source: `golden_survival_preferences.rs:356`
+- Source: `golden_survival_preferences.rs:277`
 - Systems: AI, Needs, Travel, Production, proactive diversification
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Travel, Production, Needs
 - Places: Willow Camp, Familiar Orchard, Novel Grove
 - Principles: 6, 7, 14, 20, 22, 22A
 
-**Setup**: Run the authored survival preferences scenario for 1440 ticks. The
+**Setup**: Run the authored survival preferences scenario for 1440 ticks; Scout starts beside Familiar Orchard, proactively reaches Novel Grove before hunger harvesting, survives through camp self-care, and later uses Novel Grove for apples.
 
-**Proves**: the agent satisfies the authored survival contract; proactive
+**Proves**: the agent satisfies the authored survival contract; proactive exploration reaches Novel Grove; Familiar Orchard is not misrecorded as failed without a violated source expectation; and Novel Grove becomes a concrete apple source.
 
-**Cross-system chain**: proactive ExploreLocation selection -> travel arrival at Novel Grove
+**Cross-system chain**: proactive ExploreLocation selection -> travel arrival at Novel Grove -> retained survival loop through camp self-care -> later apple acquisition succeeds at Novel Grove.
 
 ### Scenario 172: Survival Production Lands Roadmap Row Eight
 

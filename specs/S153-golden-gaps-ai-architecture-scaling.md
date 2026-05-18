@@ -12,7 +12,7 @@ Four scenarios deferred until substrate ships: 100-goal dense market (needs S144
 
 Each remaining S153 scenario block follows the project's golden-gaps convention: per-scenario Setup, Assertion, GoalKinds/ActionDomains exercised, emergence justification, and "Why it is not a duplicate." The remaining scenarios are committed RON files (`scenarios/golden-*.ron`) plus golden test files (`crates/worldwake-ai/tests/golden_*.rs`) — same shape as archived `S81-golden-gaps-simulation-remediation.md` and `S76-golden-gaps-simulation-observer.md`.
 
-This spec is the final wave of Phase 12: it validates the other accepted specs by exercising them under adversarial conditions. After S143STABELVIE-006, the remaining S153 goldens diagnose regressions in S148, S150, and S151 directly; the S143 belief-wall regression is covered by the landed S143 golden.
+This spec is the final wave of Phase 12: it validates the other accepted specs by exercising them under adversarial conditions. After S143STABELVIE-006, the remaining S153 goldens diagnose regressions in archived S148, archived S150, and archived S151 directly; the S143 belief-wall regression is covered by the landed S143 golden.
 
 ## Phase and Status
 
@@ -27,7 +27,7 @@ Phase 12: AI Architecture Evolution — Draft
 ## Dependencies
 
 - S143 (Static Belief-View Trait Separation, Phase 12, archived at `archive/specs/S143-static-belief-view-trait-separation.md`) — provides the trait fences the belief-wall trap golden exercises; `S143STABELVIE-006` already landed that regression.
-- S148 (Portfolio Slot Expansion, Phase 12) — provides the seven-slot portfolio the office-vacancy golden exercises.
+- S148 (Portfolio Slot Expansion, archived at `archive/specs/S148-portfolio-and-motive-backed-intentions.md`) — provides the five-slot portfolio the office-vacancy golden exercises.
 - S150 (Cross-Goal Blocker Scoping, archived at `archive/specs/S150-cross-goal-blocker-scoping.md`) — provides the typed scopes the scaled-contention golden checks.
 - S151 (Testimony Reliability and Route Preferences, archived at `archive/specs/S151-testimony-reliability-and-route-preferences.md`) — provides the testimony substrate the false-rumor-justice golden exercises.
 - S125 (Institutional Treasuries and Bounty Funding, archived) — used by office-vacancy scenario for institutional bounty issuance.
@@ -57,7 +57,7 @@ Phase 12: AI Architecture Evolution — Draft
 | FND-15 (Knowledge Is Acquired Locally and Travels Physically) | False-rumor justice golden traces rumor propagation through testimony carriers and reliability updates. |
 | FND-21 (Intentions Are Revisable Commitments) | Office-vacancy golden requires agents to suspend / abandon office-dependent commitments when succession fails. |
 | FND-25 (Social Artifacts Are First-Class) | Scaled-contention golden exercises queue tickets and grants as world artifacts. |
-| FND-31 (Validation and Falsification Are First-Class) | The whole spec exists to keep the remaining S148/S150/S151 scenarios falsifiable through committed scenarios while preserving the already-landed S143 belief-wall regression. |
+| FND-31 (Validation and Falsification Are First-Class) | The whole spec exists to keep the remaining archived S148/S150/S151 scenarios falsifiable through committed scenarios while preserving the already-landed S143 belief-wall regression. |
 
 ## Deliverables
 
@@ -77,7 +77,7 @@ The earlier RON-backed sketch and suppression-reason wording are superseded by t
 1. M's `TestimonyReliability` for W has `direct_refutations >= 2` from prior unreliable testimony (pre-seeded).
 2. M receives W's claim — the belief enters M's store with low confidence (because trust < threshold).
 3. M ranks `Accuse(A)` candidate against W's testimony; the candidate is damped per S151 ranking integration.
-4. M asks V for corroborating testimony (`AskWitness` candidate emitted from `SocialEpistemic` slot per S148).
+4. M asks V for corroborating testimony (`AskWitness` candidate emitted from the `SocialMotive` slot per archived S148).
 5. V's testimony contradicts W's; M's belief contradiction surfaces via S109 `Discrepancy::BeliefContradicted`.
 6. M does *not* commit `Accuse` — the contradiction holds enough weight that the decision payload (S136) records the comparison.
 7. W's `TestimonyReliability` `contradicted_claims` increments — M learns W's prior pattern.
@@ -96,7 +96,7 @@ The earlier RON-backed sketch and suppression-reason wording are superseded by t
 1. After the magistrate dies, the office is observable as vacant (S140 lifecycle `ArtifactLegalEffect::Suspended`).
 2. Each guard's `ObligationDuty` slot (S148) still ranks the patrol obligation initially.
 3. Within the next 200 ticks, the patrol obligations expire (S59 substrate) — `ExpectationFailure` events emit.
-4. With patrols expired, guards' `ObligationDuty` slot empties for that obligation; `EconomicMaintenance` or `OpportunisticLocal` slot wins instead.
+4. With patrols expired, guards' `ObligationDuty` slot empties for that obligation; `EconomicOpportunity` or `SocialMotive` can win instead.
 5. The bandit traverses an unpatrolled route — visible in event log as a route-traversal event with no guard interception.
 6. A traveling merchant observes the bandit; route preferences (S151) record the dangerous traversal.
 
@@ -112,7 +112,7 @@ The earlier RON-backed sketch and suppression-reason wording are superseded by t
 
 **Assertions**:
 1. Wells issue `ContentionGrant`s up to capacity; waiting agents enter the queue.
-2. When wells are full, hungry-not-thirsty agents prefer the orchard over waiting (existing portfolio behavior under S148 with EconomicMaintenance vs Survival weighting).
+2. When wells are full, hungry-not-thirsty agents prefer the orchard over waiting (existing portfolio behavior under archived S148 with `EconomicOpportunity` vs `NeedSurvival` weighting).
 3. The remote route gets used by agents whose `RoutePreference` is neutral or positive; agents with negative preference (S151) detour or wait.
 4. `RouteSegment` blocker (S150) on the remote route is recorded by at least one agent after an ambush event. The blocker persists per TTL.
 5. After blocker TTL, the remote route becomes usable again per `BlockerClearingCondition::TtlExpiry`.
@@ -176,7 +176,7 @@ Not applicable.
 
 ## Cross-System Interactions
 
-Goldens exercise integration paths between archived S143 and the remaining S148 / S150 / S151 substrate; no new cross-system interaction is introduced.
+Goldens exercise integration paths between archived S143, archived S148, archived S150, and archived S151 substrate; no new cross-system interaction is introduced.
 
 ## Profile-Driven Parameters
 

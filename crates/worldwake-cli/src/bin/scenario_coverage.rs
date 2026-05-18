@@ -1286,6 +1286,7 @@ fn authored_agent_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str> {
             perception_profile,
             tell_profile,
             cognitive_profile: _,
+            portfolio_weights_profile,
             agent_schema_context_profile,
             risk_weight_profile,
             law_abiding_profile,
@@ -1332,6 +1333,10 @@ fn authored_agent_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str> {
             (trade_disposition.is_some(), "trade_disposition"),
             (perception_profile.is_some(), "perception_profile"),
             (tell_profile.is_some(), "tell_profile"),
+            (
+                portfolio_weights_profile.is_some(),
+                "portfolio_weights_profile",
+            ),
             (
                 agent_schema_context_profile.is_some(),
                 "agent_schema_context_profile",

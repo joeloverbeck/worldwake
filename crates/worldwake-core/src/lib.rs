@@ -73,6 +73,7 @@ pub mod goal_dispatch_key;
 pub mod goal_planning_budget;
 pub mod ids;
 pub mod institutional;
+pub mod intention_condition;
 pub mod intention_disposition;
 pub mod intention_frame;
 pub mod items;
@@ -83,15 +84,18 @@ pub mod materialization_tag;
 pub mod memory_capacity_profile;
 pub mod method_schema_id;
 pub mod motive_source;
+pub mod motive_source_slot_map;
 pub mod needs;
 pub mod numerics;
 pub mod obligation;
 pub mod observation_context;
 pub mod offices;
+pub mod operating_mode;
 pub mod patrol;
 pub mod percentile;
 pub mod place_dirtiness;
 pub mod plan_step_guards;
+pub mod portfolio_weights_profile;
 pub mod production;
 pub mod pursuit;
 pub mod relations;
@@ -102,6 +106,7 @@ pub mod risk_weight_profile;
 pub mod route_preference;
 pub mod route_preference_profile;
 pub mod sleep_episode;
+pub mod slot_kind;
 pub mod social_artifact;
 pub mod survey_memory;
 pub mod test_utils;
@@ -155,7 +160,7 @@ pub use canonical::{
 };
 pub use causal_link::{CausalLink, CausalProvider, PlanningFact, RecordTopic};
 pub use cause::CauseRef;
-pub use cognitive_profile::{CognitiveProfile, PortfolioSlotWeights};
+pub use cognitive_profile::CognitiveProfile;
 pub use combat::{CombatProfile, CombatStance, DeadAt, DeathCause};
 pub use communication::{CommunicationClass, CommunicationProfile, classify_communication};
 pub use component_tables::ComponentTables;
@@ -239,6 +244,9 @@ pub use institutional::{
     InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
     InstitutionalRecordError, RecordData, RecordEntryId, RecordKind,
 };
+pub use intention_condition::{
+    IntentionAbandonCondition, IntentionAbandonConditionDiscriminant, IntentionResumeCondition,
+};
 pub use intention_disposition::IntentionDispositionProfile;
 pub use intention_frame::{
     FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionDomainTag,
@@ -260,6 +268,7 @@ pub use materialization_tag::MaterializationTag;
 pub use memory_capacity_profile::MemoryCapacityProfile;
 pub use method_schema_id::MethodSchemaId;
 pub use motive_source::{MotiveSource, MotiveSourceDiscriminant, MotiveSourceRef};
+pub use motive_source_slot_map::slot_for as motive_source_slot_for;
 pub use needs::{
     BodyCostPerTick, DeprivationExposure, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile,
 };
@@ -269,12 +278,14 @@ pub use observation_context::{ObservationContext, PlaceVisibilityProfile};
 pub use offices::{
     EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
 };
+pub use operating_mode::OperatingMode;
 pub use patrol::{PatrolProfile, PatrolRoute};
 pub use percentile::PercentileBucket;
 pub use place_dirtiness::{LatrineFullness, PlaceDirtiness, WashBasinState};
 pub use plan_step_guards::{
     ExpectationKindTag, InvalidatorTag, MismatchDetail, ObservationPredicate, StatePredicate,
 };
+pub use portfolio_weights_profile::PortfolioWeightsProfile;
 pub use production::{
     CarryCapacity, HARVEST_TRACE_MAX_ENTRIES, HARVEST_TRACE_RETENTION_TICKS, HarvestTraceEntry,
     InTransitOnEdge, KnownRecipes, LastHarvestTrace, ProductionJob, ProductionOutputOwner,
@@ -292,12 +303,13 @@ pub use sleep_episode::{
     GroundComfortTag, ShelterTag, SleepEpisode, SleepQualityProfile, SleepRecoveryModifier,
     WakeCondition,
 };
+pub use slot_kind::SlotKind;
 pub use social_artifact::{
     ArtifactActionability, ArtifactAxisValue, ArtifactCredibility, ArtifactExistence,
-    ArtifactHeader, ArtifactKind, ArtifactLegalEffect, ArtifactPostingContext,
-    ArtifactPostingProfile, ArtifactTransitionPayload, ArtifactVisibility, AxisName, BlockerReason,
-    BountyTarget, BountyTerms, CloseCause, DestructionCause, NoticeContent, NoticeTopic, ProofKind,
-    ProofRequirement, RevocationReason, RewardSource,
+    ArtifactHeader, ArtifactKind, ArtifactLegalEffect, ArtifactLegalEffectTag,
+    ArtifactPostingContext, ArtifactPostingProfile, ArtifactTransitionPayload, ArtifactVisibility,
+    AxisName, BlockerReason, BountyTarget, BountyTerms, CloseCause, DestructionCause,
+    NoticeContent, NoticeTopic, ProofKind, ProofRequirement, RevocationReason, RewardSource,
 };
 pub use survey_memory::{SurveyMemory, SurveyRecord};
 pub use testimony_reliability::{

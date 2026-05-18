@@ -1080,6 +1080,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                portfolio_weights_profiles,
+                PortfolioWeightsProfile,
+                insert_portfolio_weights_profile,
+                get_portfolio_weights_profile,
+                get_portfolio_weights_profile_mut,
+                remove_portfolio_weights_profile,
+                has_portfolio_weights_profile,
+                iter_portfolio_weights_profiles,
+                insert_component_portfolio_weights_profile,
+                get_component_portfolio_weights_profile,
+                get_component_portfolio_weights_profile_mut,
+                remove_component_portfolio_weights_profile,
+                has_component_portfolio_weights_profile,
+                entities_with_portfolio_weights_profile,
+                query_portfolio_weights_profile,
+                count_with_portfolio_weights_profile,
+                "PortfolioWeightsProfile",
+                |kind| kind == EntityKind::Agent,
+                PortfolioWeightsProfile,
+                crate::PortfolioWeightsProfile,
+                set_component_portfolio_weights_profile,
+                clear_component_portfolio_weights_profile,
+                txn_simple_set
+            }
+            {
                 agent_schema_context_profiles,
                 AgentSchemaContextProfile,
                 insert_agent_schema_context_profile,

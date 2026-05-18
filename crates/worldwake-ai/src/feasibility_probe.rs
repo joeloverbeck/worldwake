@@ -77,7 +77,10 @@ pub(crate) fn probe(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> Feasibi
         return FeasibilityVerdict::RejectedBeforeSearch { reason };
     }
 
-    if !has_relevant_affordance(ranked, context) && !has_synthesized_root_candidate(ranked, context)
+    if !has_relevant_affordance(ranked, context)
+        && !has_synthesized_root_candidate(ranked, context)
+        && !remote_self_care_acquire_can_reach_search(ranked, context)
+        && !self_care_acquire_pressure_allows_search_for_goal(ranked, context)
     {
         return FeasibilityVerdict::RejectedBeforeSearch {
             reason: Discrepancy::MissingObservation,
@@ -130,7 +133,12 @@ fn known_target_failure(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> Opt
                 .believed_target_location(context.agent, target);
             match envelope.status {
                 worldwake_sim::belief_view::BeliefStatus::Stale => {
-                    return Some(Discrepancy::BeliefStale);
+                    if !stale_exact_target_can_reach_search(ranked)
+                        && !local_evidence_supports_exact_target(ranked, context, target)
+                        && !remote_self_care_acquire_can_reach_search(ranked, context)
+                    {
+                        return Some(Discrepancy::BeliefStale);
+                    }
                 }
                 worldwake_sim::belief_view::BeliefStatus::Contradicted => {
                     return Some(Discrepancy::BeliefContradicted);
@@ -159,10 +167,7 @@ fn known_target_failure(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> Opt
         }
     }
 
-    let place = match ranked.offer.anchor {
-        OpportunityAnchor::Place(place) => Some(place),
-        OpportunityAnchor::Entity(_) | OpportunityAnchor::None => ranked.offer.key.place,
-    };
+    let place = route_place_target(ranked);
     if let (Some(agent_place), Some(target_place)) = (context.agent_place, place)
         && agent_place != target_place
         && !context.belief_view.route_exists(agent_place, target_place)
@@ -171,6 +176,42 @@ fn known_target_failure(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> Opt
     }
 
     None
+}
+
+fn stale_exact_target_can_reach_search(ranked: &AgendaEntry) -> bool {
+    matches!(
+        ranked.offer.key.kind,
+        GoalKind::ClaimOffice { .. }
+            | GoalKind::SupportCandidateForOffice { .. }
+            | GoalKind::EngageHostile { .. }
+            | GoalKind::RaidTarget { .. }
+    )
+}
+
+fn local_evidence_supports_exact_target(
+    ranked: &AgendaEntry,
+    context: &ProbeContext<'_>,
+    target: EntityId,
+) -> bool {
+    let Some(agent_place) = context.agent_place else {
+        return false;
+    };
+    ranked.offer.evidence_entities.contains(&target)
+        && ranked.offer.evidence_places.contains(&agent_place)
+}
+
+fn route_place_target(ranked: &AgendaEntry) -> Option<EntityId> {
+    match ranked.offer.anchor {
+        OpportunityAnchor::Place(place) => Some(place),
+        OpportunityAnchor::Entity(_) => None,
+        OpportunityAnchor::None => match ranked.offer.key.kind {
+            // `GoalKey::place` stores the supported candidate for this goal so
+            // the office and candidate both participate in identity. It is not
+            // a travel/place target.
+            GoalKind::SupportCandidateForOffice { .. } => None,
+            _ => ranked.offer.key.place,
+        },
+    }
 }
 
 fn requires_exact_identity_target(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> bool {
@@ -219,6 +260,9 @@ fn current_place_support_failure(
         .copied()
         .filter(|entity| context.belief_view.effective_place(*entity) == Some(place))
         .collect::<Vec<_>>();
+    if self_care_acquire_pressure_allows_search(ranked, context, commodity) {
+        return None;
+    }
     if !local_evidence_entities.is_empty()
         && !local_evidence_entities
             .iter()
@@ -233,6 +277,46 @@ fn current_place_support_failure(
 
     (!place_has_local_commodity_support(context.belief_view, context.agent, place, commodity, None))
         .then_some(Discrepancy::MissingObservation)
+}
+
+fn self_care_acquire_pressure_allows_search(
+    ranked: &AgendaEntry,
+    context: &ProbeContext<'_>,
+    commodity: worldwake_core::CommodityKind,
+) -> bool {
+    if !matches!(
+        ranked.offer.key.kind,
+        GoalKind::AcquireCommodity {
+            purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            ..
+        }
+    ) {
+        return false;
+    }
+
+    let Some(needs) = context.belief_view.homeostatic_needs(context.agent) else {
+        return false;
+    };
+    let Some(thresholds) = context.belief_view.drive_thresholds(context.agent) else {
+        return false;
+    };
+    match commodity {
+        worldwake_core::CommodityKind::Apple
+        | worldwake_core::CommodityKind::Grain
+        | worldwake_core::CommodityKind::Bread => needs.hunger >= thresholds.hunger.low(),
+        worldwake_core::CommodityKind::Water => needs.thirst >= thresholds.thirst.low(),
+        _ => false,
+    }
+}
+
+fn self_care_acquire_pressure_allows_search_for_goal(
+    ranked: &AgendaEntry,
+    context: &ProbeContext<'_>,
+) -> bool {
+    let GoalKind::AcquireCommodity { commodity, .. } = ranked.offer.key.kind else {
+        return false;
+    };
+    self_care_acquire_pressure_allows_search(ranked, context, commodity)
 }
 
 fn entity_supports_commodity(
@@ -330,6 +414,42 @@ fn has_synthesized_root_candidate(ranked: &AgendaEntry, context: &ProbeContext<'
         })
 }
 
+fn remote_self_care_acquire_can_reach_search(
+    ranked: &AgendaEntry,
+    context: &ProbeContext<'_>,
+) -> bool {
+    let GoalKind::AcquireCommodity {
+        purpose: worldwake_core::CommodityPurpose::SelfConsume,
+        ..
+    } = ranked.offer.key.kind
+    else {
+        return false;
+    };
+
+    if relevant_action_defs(ranked, context.semantics_table).is_empty() {
+        return false;
+    }
+
+    let Some(agent_place) = context.agent_place else {
+        return false;
+    };
+    let target_place = match ranked.offer.anchor {
+        OpportunityAnchor::Place(place) => place,
+        OpportunityAnchor::None => match ranked.offer.key.place {
+            Some(place) => place,
+            None => return false,
+        },
+        OpportunityAnchor::Entity(entity) => match context.belief_view.effective_place(entity) {
+            Some(place) => place,
+            None => return false,
+        },
+    };
+
+    target_place != agent_place
+        && ranked.offer.evidence_places.contains(&target_place)
+        && context.belief_view.route_exists(agent_place, target_place)
+}
+
 fn relevant_action_defs(
     ranked: &AgendaEntry,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
@@ -344,7 +464,10 @@ fn relevant_action_defs(
 
 #[cfg(test)]
 mod tests {
-    use super::{ProbeContext, blocker_key_for_probe, probe};
+    use super::{
+        ProbeContext, blocker_key_for_probe, local_evidence_supports_exact_target, probe,
+        route_place_target, stale_exact_target_can_reach_search,
+    };
     use crate::{
         AgendaEntry, GoalOffer, GoalPriorityClass, PlannerOpSemantics,
         agent_tick::portfolio::FeasibilityVerdict, build_semantics_table,
@@ -370,6 +493,9 @@ mod tests {
         InventoryBeliefView, PoliticalBeliefView, ProfileBeliefView, RuntimeBeliefView,
         SocialBeliefView, SpatialBeliefView, TargetSpec, TemporalBeliefView,
         belief_view::{BeliefStatus, BeliefValue},
+    };
+    use worldwake_systems::{
+        build_canonical_production_recipe_registry, build_full_action_registries,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -522,6 +648,46 @@ mod tests {
                     Constraint::ActorNotInTransit,
                 ],
                 targets: vec![TargetSpec::ActorPlace],
+                preconditions: Vec::new(),
+                reservation_requirements: Vec::new(),
+                duration: DurationExpr::Fixed(NonZeroU32::new(1).expect("nonzero")),
+                body_cost_per_tick: BodyCostPerTick::zero(),
+                attention_cost: Permille::ZERO,
+                interruptibility: Interruptibility::FreelyInterruptible,
+                commit_conditions: Vec::new(),
+                visibility: VisibilitySpec::SamePlace,
+                causal_event_tags: BTreeSet::new(),
+                payload: ActionPayload::None,
+                handler,
+                binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+                guard_template: None,
+                expectation_template: vec![],
+                effect_schema: worldwake_sim::EffectSchema::empty(),
+            });
+
+            Self {
+                semantics: build_semantics_table(&defs),
+                defs,
+                handlers,
+            }
+        }
+
+        fn attack_only() -> Self {
+            let mut handlers = ActionHandlerRegistry::new();
+            let handler = handlers.register(ActionHandler::new(
+                noop_start,
+                noop_tick,
+                noop_commit,
+                noop_abort,
+            ));
+
+            let mut defs = ActionDefRegistry::new();
+            defs.register(ActionDef {
+                id: ActionDefId(0),
+                name: "attack".to_owned(),
+                domain: ActionDomain::Combat,
+                actor_constraints: vec![Constraint::ActorAlive],
+                targets: vec![TargetSpec::SpecificEntity(entity(999))],
                 preconditions: Vec::new(),
                 reservation_requirements: Vec::new(),
                 duration: DurationExpr::Fixed(NonZeroU32::new(1).expect("nonzero")),
@@ -783,6 +949,113 @@ mod tests {
     }
 
     #[test]
+    fn local_evidence_allows_stale_exact_target_to_reach_search() {
+        let harness = ProbeHarness::sleep_only();
+        let agent = entity(1);
+        let place = entity(2);
+        let office = entity(3);
+        let mut ranked = ranked_goal(GoalKind::ClaimOffice { office }, OpportunityAnchor::None);
+        ranked.offer.evidence_entities.insert(office);
+        ranked.offer.evidence_places.insert(place);
+        let view = MockView::default();
+        let discrepancy_memory = DiscrepancyMemory::default();
+        let blocker_memory = BlockerMemory::default();
+        let context = probe_context(
+            &harness,
+            &view,
+            agent,
+            Some(place),
+            &discrepancy_memory,
+            &blocker_memory,
+            Tick(5),
+        );
+
+        assert!(local_evidence_supports_exact_target(
+            &ranked, &context, office
+        ));
+    }
+
+    #[test]
+    fn stale_exact_targets_are_not_pre_rejected_for_search_validated_goals() {
+        let office = entity(3);
+        let candidate = entity(4);
+        let target = entity(5);
+
+        assert!(stale_exact_target_can_reach_search(&ranked_goal(
+            GoalKind::ClaimOffice { office },
+            OpportunityAnchor::None,
+        )));
+        assert!(stale_exact_target_can_reach_search(&ranked_goal(
+            GoalKind::SupportCandidateForOffice { office, candidate },
+            OpportunityAnchor::None,
+        )));
+        assert!(stale_exact_target_can_reach_search(&ranked_goal(
+            GoalKind::EngageHostile { target },
+            OpportunityAnchor::Entity(target),
+        )));
+        assert!(stale_exact_target_can_reach_search(&ranked_goal(
+            GoalKind::RaidTarget { target },
+            OpportunityAnchor::Entity(target),
+        )));
+    }
+
+    #[test]
+    fn probe_allows_remote_pursuit_stale_target_belief_to_reach_search() {
+        let harness = ProbeHarness::attack_only();
+        let agent = entity(1);
+        let origin = entity(2);
+        let remote = entity(3);
+        let target = entity(999);
+        let ranked = ranked_goal(
+            GoalKind::EngageHostile { target },
+            OpportunityAnchor::Entity(target),
+        );
+        let mut view = MockView::default();
+        view.alive.extend([agent, target]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        view.places.insert(agent, origin);
+        view.places.insert(target, remote);
+        view.routes.insert((origin, remote));
+        view.believed_target_locations.insert(
+            (agent, target),
+            target_location_belief(Some(remote), BeliefStatus::Stale),
+        );
+
+        let verdict = probe(
+            &ranked,
+            &probe_context(
+                &harness,
+                &view,
+                agent,
+                Some(origin),
+                &DiscrepancyMemory::default(),
+                &BlockerMemory::default(),
+                Tick(5),
+            ),
+        );
+
+        assert_eq!(verdict, FeasibilityVerdict::Plausible);
+    }
+
+    #[test]
+    fn support_candidate_goal_key_place_is_not_a_route_target() {
+        let office = entity(3);
+        let candidate = entity(4);
+        let mut ranked = ranked_goal(
+            GoalKind::SupportCandidateForOffice { office, candidate },
+            OpportunityAnchor::None,
+        );
+        assert_eq!(ranked.offer.key.entity, Some(office));
+        assert_eq!(ranked.offer.key.place, Some(candidate));
+
+        assert_eq!(route_place_target(&ranked), None);
+
+        ranked.offer.anchor = OpportunityAnchor::Place(office);
+        assert_eq!(route_place_target(&ranked), Some(office));
+    }
+
+    #[test]
     fn probe_rejects_contradicted_exact_target_belief_before_search() {
         let harness = ProbeHarness::heal_only();
         let agent = entity(1);
@@ -861,6 +1134,169 @@ mod tests {
                 reason: Discrepancy::MissingObservation,
             }
         );
+    }
+
+    #[test]
+    fn probe_allows_low_pressure_self_care_acquire_to_reach_search() {
+        let recipes = build_canonical_production_recipe_registry();
+        let registries = build_full_action_registries(&recipes).unwrap();
+        let harness = ProbeHarness {
+            semantics: build_semantics_table(&registries.defs),
+            defs: registries.defs,
+            handlers: registries.handlers,
+        };
+        let agent = entity(1);
+        let place = entity(2);
+        let mut ranked = ranked_goal(
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Water,
+                purpose: crate::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
+            },
+            OpportunityAnchor::Entity(agent),
+        );
+        ranked.offer.evidence_entities.insert(agent);
+        ranked.offer.evidence_places.insert(place);
+        let mut view = MockView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.places.insert(agent, place);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(
+                Permille::new_unchecked(200),
+                Permille::new_unchecked(250),
+                Permille::ZERO,
+                Permille::ZERO,
+                Permille::ZERO,
+            ),
+        );
+        view.thresholds.insert(
+            agent,
+            DriveThresholds {
+                hunger: worldwake_core::ThresholdBand::new(
+                    Permille::new_unchecked(200),
+                    Permille::new_unchecked(400),
+                    Permille::new_unchecked(600),
+                    Permille::new_unchecked(800),
+                )
+                .expect("valid hunger thresholds"),
+                thirst: worldwake_core::ThresholdBand::new(
+                    Permille::new_unchecked(200),
+                    Permille::new_unchecked(400),
+                    Permille::new_unchecked(600),
+                    Permille::new_unchecked(800),
+                )
+                .expect("valid thirst thresholds"),
+                ..DriveThresholds::default()
+            },
+        );
+
+        let verdict = probe(
+            &ranked,
+            &probe_context(
+                &harness,
+                &view,
+                agent,
+                Some(place),
+                &DiscrepancyMemory::default(),
+                &BlockerMemory::default(),
+                Tick(5),
+            ),
+        );
+
+        assert_eq!(verdict, FeasibilityVerdict::Plausible);
+    }
+
+    #[test]
+    fn probe_allows_remote_self_care_acquire_with_believed_route_to_reach_search() {
+        let recipes = build_canonical_production_recipe_registry();
+        let registries = build_full_action_registries(&recipes).unwrap();
+        let harness = ProbeHarness {
+            semantics: build_semantics_table(&registries.defs),
+            defs: registries.defs,
+            handlers: registries.handlers,
+        };
+        let agent = entity(1);
+        let origin = entity(2);
+        let well_place = entity(3);
+        let mut ranked = ranked_goal(
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Water,
+                purpose: crate::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
+            },
+            OpportunityAnchor::Place(well_place),
+        );
+        ranked.offer.evidence_places.insert(well_place);
+        let mut view = MockView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.places.insert(agent, origin);
+        view.routes.insert((origin, well_place));
+
+        let verdict = probe(
+            &ranked,
+            &probe_context(
+                &harness,
+                &view,
+                agent,
+                Some(origin),
+                &DiscrepancyMemory::default(),
+                &BlockerMemory::default(),
+                Tick(5),
+            ),
+        );
+
+        assert_eq!(verdict, FeasibilityVerdict::Plausible);
+    }
+
+    #[test]
+    fn probe_allows_remote_entity_anchored_self_care_acquire_to_reach_search() {
+        let recipes = build_canonical_production_recipe_registry();
+        let registries = build_full_action_registries(&recipes).unwrap();
+        let harness = ProbeHarness {
+            semantics: build_semantics_table(&registries.defs),
+            defs: registries.defs,
+            handlers: registries.handlers,
+        };
+        let agent = entity(1);
+        let origin = entity(2);
+        let well_place = entity(3);
+        let well = entity(4);
+        let mut ranked = ranked_goal(
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Water,
+                purpose: crate::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
+            },
+            OpportunityAnchor::Entity(well),
+        );
+        ranked.offer.evidence_entities.insert(well);
+        ranked.offer.evidence_places.insert(well_place);
+        let mut view = MockView::default();
+        view.alive.insert(agent);
+        view.alive.insert(well);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(well, EntityKind::Facility);
+        view.places.insert(agent, origin);
+        view.places.insert(well, well_place);
+        view.routes.insert((origin, well_place));
+
+        let verdict = probe(
+            &ranked,
+            &probe_context(
+                &harness,
+                &view,
+                agent,
+                Some(origin),
+                &DiscrepancyMemory::default(),
+                &BlockerMemory::default(),
+                Tick(5),
+            ),
+        );
+
+        assert_eq!(verdict, FeasibilityVerdict::Plausible);
     }
 
     #[test]
@@ -1072,6 +1508,8 @@ mod tests {
         entity_kinds: BTreeMap<EntityId, EntityKind>,
         places: BTreeMap<EntityId, EntityId>,
         routes: BTreeSet<(EntityId, EntityId)>,
+        needs: BTreeMap<EntityId, HomeostaticNeeds>,
+        thresholds: BTreeMap<EntityId, DriveThresholds>,
         believed_target_locations: BTreeMap<(EntityId, EntityId), BeliefValue<Option<EntityId>>>,
     }
 
@@ -1117,12 +1555,12 @@ mod tests {
     }
 
     impl ProfileBeliefView for MockView {
-        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
-            None
+        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+            self.needs.get(&agent).copied()
         }
 
-        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
-            None
+        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+            self.thresholds.get(&agent).copied()
         }
 
         fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {

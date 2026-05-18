@@ -9,16 +9,34 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 
 - cli-evaluation: agent field `intention_disposition` is not mapped by any FeatureDef
 - cli-evaluation: agent field `last_seen_memory` is not mapped by any FeatureDef
+- cli-evaluation: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
+- final-integration: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-ask-consult: agent field `expectation_store` is not mapped by any FeatureDef
 - survival-ask-consult: agent field `last_seen_memory` is not mapped by any FeatureDef
+- survival-ask-consult: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
+- survival-baseline: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
+- survival-combat: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
+- survival-contested: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
+- survival-escort: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
+- survival-items-decay: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-justice: agent field `expectation_store` is not mapped by any FeatureDef
 - survival-justice: agent field `last_seen_memory` is not mapped by any FeatureDef
+- survival-justice: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-justice: agent field `social_observations` is not mapped by any FeatureDef
 - survival-need-projection: agent field `intention_disposition` is not mapped by any FeatureDef
+- survival-need-projection: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-offices: agent field `expectation_store` is not mapped by any FeatureDef
 - survival-offices: agent field `last_seen_memory` is not mapped by any FeatureDef
+- survival-offices: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-offices: agent field `social_observations` is not mapped by any FeatureDef
 - survival-patrol: agent field `last_seen_memory` is not mapped by any FeatureDef
+- survival-patrol: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
+- survival-preferences: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
+- survival-production: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
+- survival-scattered: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
+- survival-tell: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
+- survival-theft: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
+- survival-trade: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 
 ## Feature x Scenario Matrix
 
