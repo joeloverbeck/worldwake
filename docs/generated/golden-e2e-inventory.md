@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 53
-- Files contributing `golden_*` tests: 53
-- Total `golden_*` tests: 254
+- Golden test files: 54
+- Files contributing `golden_*` tests: 54
+- Total `golden_*` tests: 259
 
 ## Per-File Inventory
 
@@ -38,6 +38,7 @@ Do not hand-edit it.
 | `golden_plan_repair.rs` | 7 |
 | `golden_planner_pathology.rs` | 2 |
 | `golden_planner_pathology_degenerate.rs` | 1 |
+| `golden_portfolio_five_slots.rs` | 5 |
 | `golden_portfolio_planning.rs` | 1 |
 | `golden_quantity_aware_acquisition.rs` | 5 |
 | `golden_route_preferences.rs` | 4 |
@@ -298,6 +299,14 @@ Do not hand-edit it.
 ### `golden_planner_pathology_degenerate.rs`
 
 - `degenerate_zero_step_loop_blocks_actionable_goals`
+
+### `golden_portfolio_five_slots.rs`
+
+- `all_motive_discriminants_map_onto_the_five_s148_slots`
+- `portfolio_weights_profile_exposes_s148_slot_weights_and_mode_caps`
+- `enriched_intention_frame_roundtrips_every_s148_field`
+- `resume_condition_variants_remain_distinct_and_serializable`
+- `abandon_condition_variants_have_typed_discrepancy_discriminants`
 
 ### `golden_portfolio_planning.rs`
 

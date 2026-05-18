@@ -428,10 +428,10 @@ Reader migration (15+ sites identified at validation time):
 Per CLAUDE.md's Authoritative-to-AI Impact Rule, S148 modifies candidate emission (slot assembly determines what gets planned) and adds new abandon-path control flow. All seven checkpoints must hold:
 
 1. `get_affordances` — **N/A** (no affordance change).
-2. `generate_candidates` — **flag**: the five-slot taxonomy plus operating-mode-modulated weights changes which candidates win their slot. D14 includes a golden specifically asserting that under each operating mode, candidates emitted at low weight are not silently dropped (they still emit; their winning slot may differ).
+2. `generate_candidates` — **flag**: the five-slot taxonomy plus operating-mode-modulated weights changes which candidates win their slot. D14 coverage now splits between a full-pipeline portfolio golden and focused golden-contract tests for the public S148 slot/weight surfaces; lower-level `agent_tick::portfolio` tests remain the exact operating-mode suppression proof.
 3. `search_plan` — **pass** (no precondition change).
 4. `BestEffort` action start — **N/A** (no precondition change).
-5. `handle_plan_failure` — **flag**: when an `IntentionAbandonCondition` fires inside the D10 evaluator, the produced `Discrepancy::AbandonConditionFired(_)` routes through the existing `handle_plan_failure` path (`agent_tick.rs`). D14 includes a golden asserting that a fired `MotiveSourceLost` condition causes replan with the abandoned intention's motive correctly removed from the contributing set.
+5. `handle_plan_failure` — **flag**: when an `IntentionAbandonCondition` fires inside the D10 evaluator, the produced `Discrepancy::AbandonConditionFired(_)` routes through the existing `handle_plan_failure` path (`agent_tick.rs`). D14 locks the public typed discrepancy contract in a golden-contract test; the evaluator and routing behavior are covered by the focused `agent_tick::frame` and `agent_tick` tests landed in S148PORMOTBAC-007.
 6. Payload revalidation — **N/A** (no payload change).
 7. Golden tests — **flag**: see D14.
 
@@ -449,6 +449,8 @@ Add `crates/worldwake-ai/tests/golden_portfolio_five_slots.rs` covering:
 - `causal_links` cap enforcement: when 1+ events beyond `causal_links_per_step_cap` are pushed, the oldest is evicted.
 
 Audit and migrate the existing portfolio goldens at `crates/worldwake-ai/tests/golden_portfolio_planning.rs` (currently 6 tests on the three-slot model) — each test either (a) updates its slot assertions to the new five-slot variants while preserving its scenario, or (b) pins its `PortfolioWeightsProfile` to a fixture isolating the asserted slot.
+
+**Implementation note (S148PORMOTBAC-010, 2026-05-18)**: The live `golden_portfolio_planning.rs` suite already contained one full-pipeline portfolio-admission golden using the five-slot names (`ObligationDuty`, `EconomicOpportunity`, and suppressed `NeedSurvival`). S148PORMOTBAC-010 added `golden_portfolio_five_slots.rs` as a focused golden-contract suite over the public S148 surfaces: total motive-discriminant-to-slot mapping, default slot weights and per-mode plan caps, enriched `IntentionFrame` round-trip persistence, all resume-condition variants, all abandon-condition variants, and `Discrepancy::AbandonConditionFired` round-trips. This keeps D14 proof aligned with the strongest live proof surfaces instead of adding brittle ad hoc full-scenario fixtures for behavior already proven by focused `agent_tick::portfolio`, `agent_tick::frame`, and `agent_tick` tests. `scripts/golden_inventory.py --write --check-docs` updated the generated golden inventory for the new file.
 
 ## FND-01 Section H Analysis (18-point coverage)
 

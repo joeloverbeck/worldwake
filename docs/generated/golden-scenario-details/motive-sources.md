@@ -7,7 +7,7 @@ Scenarios: 5
 
 ### Scenario 403: S141 Motive Sources Hunger And Greed Sum For Market Offer
 
-- Source: `golden_motive_sources.rs:101`
+- Source: `golden_motive_sources.rs:100`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Needs, Trade
@@ -22,7 +22,7 @@ Scenarios: 5
 
 ### Scenario 404: S141 Motive Sources Commit Payload Preserves Hunger And Greed
 
-- Source: `golden_motive_sources.rs:143`
+- Source: `golden_motive_sources.rs:142`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -37,7 +37,7 @@ Scenarios: 5
 
 ### Scenario 405: S141 Motive Sources Pain Contribution Dominates Hunger
 
-- Source: `golden_motive_sources.rs:190`
+- Source: `golden_motive_sources.rs:189`
 - Systems: AI
 - GoalKinds: TreatWounds, ConsumeOwnedCommodity
 - ActionDomains: Medical, Needs
@@ -52,9 +52,9 @@ Scenarios: 5
 
 ### Scenario 406: S141 Motive Sources Greed Weight Variation Is Profile State
 
-- Source: `golden_motive_sources.rs:236`
+- Source: `golden_motive_sources.rs:235`
 - Systems: AI
-- GoalKinds: PostNotice
+- GoalKinds: SellCommodity
 - ActionDomains: DecisionHistory
 - Principles: P3, P22
 - Primary tests: `golden_motive_sources_greed_weight_variation_is_profile_state`
@@ -67,7 +67,7 @@ Scenarios: 5
 
 ### Scenario 407: S141 Motive Sources Empty Offer Assertion
 
-- Source: `golden_motive_sources.rs:268`
+- Source: `golden_motive_sources.rs:260`
 - Systems: AI
 - GoalKinds: Sleep
 - ActionDomains: DecisionHistory
