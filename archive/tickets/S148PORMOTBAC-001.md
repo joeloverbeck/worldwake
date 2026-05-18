@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — relocates `SlotKind` from `worldwake-ai/src/agent_tick/portfolio.rs` to `worldwake-core/src/slot_kind.rs`; expands to five variants (`NeedSurvival`, `PainCare`, `ObligationDuty`, `EconomicOpportunity`, `SocialMotive`); adds `motive_source_slot_map::slot_for` total mapping over `MotiveSourceDiscriminant`
-**Deps**: `specs/S148-portfolio-and-motive-backed-intentions.md`
+**Deps**: `archive/specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Problem
 

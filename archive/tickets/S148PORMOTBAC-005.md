@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes - added core-resident `IntentionResumeCondition` and `IntentionAbandonCondition` enums; added payload-free `ArtifactLegalEffectTag` in `social_artifact.rs`; exported the new types from `worldwake-core`
-**Deps**: `specs/S148-portfolio-and-motive-backed-intentions.md`
+**Deps**: `archive/specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Problem
 

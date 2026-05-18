@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new core `OperatingMode` enum; new `operating_mode: OperatingMode` field on `AgentDecisionRuntime` (per-tick cache, not authoritative state); new `derive_operating_mode` helper in `agent_tick/portfolio.rs`
-**Deps**: `specs/S148-portfolio-and-motive-backed-intentions.md`
+**Deps**: `archive/specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Problem
 

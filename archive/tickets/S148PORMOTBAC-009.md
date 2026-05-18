@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: No — observer-only rendering changes in `crates/worldwake-cli/src/bin/observer.rs`, plus the matching observer golden fixture update
-**Deps**: `archive/tickets/S148PORMOTBAC-004.md`, `archive/tickets/S148PORMOTBAC-006.md`, `archive/tickets/S148PORMOTBAC-007.md`, `specs/S148-portfolio-and-motive-backed-intentions.md`
+**Deps**: `archive/tickets/S148PORMOTBAC-004.md`, `archive/tickets/S148PORMOTBAC-006.md`, `archive/tickets/S148PORMOTBAC-007.md`, `archive/specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Problem
 
@@ -23,13 +23,13 @@ When the committed goal still matches the agent's current `IntentionFrame`, the 
 - Added artifact-claim dispatch for contention grants, sale listings, social artifacts, and unknown entities.
 - Added focused observer tests for populated and empty frame rendering, condition formatter coverage, sale-listing claim dispatch, and integrated Decision History rendering.
 - Updated `crates/worldwake-cli/tests/fixtures/observer_decision_history/survival_baseline_5_ticks.md` for the new committed slot rows.
-- Added a D11 implementation note to `specs/S148-portfolio-and-motive-backed-intentions.md`.
+- Added a D11 implementation note to `archive/specs/S148-portfolio-and-motive-backed-intentions.md`.
 
 ## Landed Files
 
 - `crates/worldwake-cli/src/bin/observer.rs`
 - `crates/worldwake-cli/tests/fixtures/observer_decision_history/survival_baseline_5_ticks.md`
-- `specs/S148-portfolio-and-motive-backed-intentions.md`
+- `archive/specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Accepted Invariants
 

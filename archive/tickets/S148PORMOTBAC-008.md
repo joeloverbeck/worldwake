@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — removed the legacy `CognitiveProfile.max_candidates_to_plan` field and migrated live planning-cap reads to `PortfolioWeightsProfile.max_plans_for_mode(runtime.operating_mode)`. The ticket's drafted `ReasoningProfile` target was stale: no live `ReasoningProfile` exists in the current codebase, so the same-seam work removed the test-only `ProfileFixture.max_candidates_to_plan` relay instead.
-**Deps**: `archive/tickets/S148PORMOTBAC-002.md`, `archive/tickets/S148PORMOTBAC-003.md`, `archive/tickets/S148PORMOTBAC-004.md`, `specs/S148-portfolio-and-motive-backed-intentions.md`
+**Deps**: `archive/tickets/S148PORMOTBAC-002.md`, `archive/tickets/S148PORMOTBAC-003.md`, `archive/tickets/S148PORMOTBAC-004.md`, `archive/specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Problem
 

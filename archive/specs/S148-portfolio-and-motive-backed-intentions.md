@@ -1,6 +1,6 @@
 # S148: Portfolio Slot Expansion and Motive-Backed Intentions
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
@@ -564,3 +564,15 @@ All weights are `Permille` per the spec-drafting-rules.md requirement; per-agent
 - Unit tests on `derive_operating_mode` decision logic.
 - Unit tests on `motive_source_slot_map::slot_for` confirming totality over `MotiveSourceDiscriminant`.
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
+
+## Outcome
+
+Completed: 2026-05-18.
+
+S148 landed the five-slot portfolio taxonomy and motive-backed intention substrate across ten archived tickets. `SlotKind` now lives in core with `NeedSurvival`, `PainCare`, `ObligationDuty`, `EconomicOpportunity`, and `SocialMotive`; `motive_source_slot_for` maps every current `MotiveSourceDiscriminant` onto those slots. `PortfolioWeightsProfile` is a universal agent component with per-slot weights and per-mode plan caps, and planning reads caps through `max_plans_for_mode(runtime.operating_mode)` after removing the legacy `CognitiveProfile.max_candidates_to_plan` path.
+
+`OperatingMode` is derived and cached on `AgentDecisionRuntime`; slot assembly consumes operating mode and portfolio weights. `IntentionFrame` now carries motive refs, resume conditions, abandon conditions, explicit claims, and causal links. Core resume/abandon condition enums, typed abandon-condition discrepancies, evaluator wiring, observer Decision History rendering, and focused golden-contract coverage all landed.
+
+Deviations from the draft were kept explicit in the ticket closeouts: the live code had no production `ReasoningProfile`, so ticket 008 removed the stale test-only relay instead; observer full-frame sub-bullets render only when the committed goal still matches the current frame because decision events do not carry historical full-frame snapshots; D14 coverage uses one full-pipeline portfolio golden plus focused golden-contract tests rather than nine brittle new scenario fixtures.
+
+Verification included focused package tests, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and `python3 scripts/golden_inventory.py --write --check-docs` on the final ticket.

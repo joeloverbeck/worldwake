@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: No — test-only golden coverage and generated golden-inventory docs
-**Deps**: `archive/tickets/S148PORMOTBAC-001.md`, `archive/tickets/S148PORMOTBAC-002.md`, `archive/tickets/S148PORMOTBAC-003.md`, `archive/tickets/S148PORMOTBAC-004.md`, `archive/tickets/S148PORMOTBAC-005.md`, `archive/tickets/S148PORMOTBAC-006.md`, `archive/tickets/S148PORMOTBAC-007.md`, `archive/tickets/S148PORMOTBAC-008.md`, `archive/tickets/S148PORMOTBAC-009.md`, `specs/S148-portfolio-and-motive-backed-intentions.md`
+**Deps**: `archive/tickets/S148PORMOTBAC-001.md`, `archive/tickets/S148PORMOTBAC-002.md`, `archive/tickets/S148PORMOTBAC-003.md`, `archive/tickets/S148PORMOTBAC-004.md`, `archive/tickets/S148PORMOTBAC-005.md`, `archive/tickets/S148PORMOTBAC-006.md`, `archive/tickets/S148PORMOTBAC-007.md`, `archive/tickets/S148PORMOTBAC-008.md`, `archive/tickets/S148PORMOTBAC-009.md`, `archive/specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Problem
 
@@ -27,7 +27,7 @@ The live `golden_portfolio_planning.rs` audit found that the full-pipeline portf
 - Added `golden_portfolio_five_slots.rs` with five new golden tests.
 - Kept `golden_portfolio_planning.rs` behavior intact after confirming it already asserts five-slot trace names under the full pipeline.
 - Updated generated golden inventory docs with `scripts/golden_inventory.py --write --check-docs`.
-- Added a D14 implementation note to `specs/S148-portfolio-and-motive-backed-intentions.md` describing the live proof split.
+- Added a D14 implementation note to `archive/specs/S148-portfolio-and-motive-backed-intentions.md` describing the live proof split.
 
 ## Landed Files
 
@@ -37,7 +37,7 @@ The live `golden_portfolio_planning.rs` audit found that the full-pipeline portf
 - `docs/generated/golden-scenario-details/motive-sources.md`
 - `docs/generated/golden-scenario-details/sleep-episode.md`
 - `docs/generated/golden-scenario-index.md`
-- `specs/S148-portfolio-and-motive-backed-intentions.md`
+- `archive/specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Accepted Invariants
 

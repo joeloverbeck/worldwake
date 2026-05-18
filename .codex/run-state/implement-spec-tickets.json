@@ -1,6 +1,6 @@
 {
   "originating_spec": "specs/S148-portfolio-and-motive-backed-intentions.md",
-  "archived_spec": null,
+  "archived_spec": "archive/specs/S148-portfolio-and-motive-backed-intentions.md",
   "worktree_root": "/home/joeloverbeck/projects/worldwake",
   "starting_branch": "main",
   "current_branch": "implemented-S148-portfolio-and-motive-backed-intentions",

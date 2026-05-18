@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes - extended `agent_tick/portfolio.rs::assemble_portfolio` to consume `&PortfolioWeightsProfile` and `OperatingMode`; added motive-backed slot classification through `primary_motive_slot`; cached operating mode in the planning pipeline; preserved same-seam political and reporting/notice goldens exposed by the broader proof run
-**Deps**: `archive/tickets/S148PORMOTBAC-001.md`, `archive/tickets/S148PORMOTBAC-002.md`, `archive/tickets/S148PORMOTBAC-003.md`, `specs/S148-portfolio-and-motive-backed-intentions.md`
+**Deps**: `archive/tickets/S148PORMOTBAC-001.md`, `archive/tickets/S148PORMOTBAC-002.md`, `archive/tickets/S148PORMOTBAC-003.md`, `archive/specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Problem
 
@@ -54,7 +54,7 @@ Tickets 001-003 landed the substrate: five `SlotKind` variants plus `motive_sour
    - Preserved existing post/report motive scoring while those goals now use `OfficeDuty` as their default motive source.
 6. `crates/worldwake-ai/tests/golden_motive_sources.rs`
    - Updated the greed-weight golden to use `SellCommodity`, keeping the test aligned with the new obligation mapping for notices.
-7. `specs/S148-portfolio-and-motive-backed-intentions.md`
+7. `archive/specs/S148-portfolio-and-motive-backed-intentions.md`
    - Corrected D5 status so plan-cap migration stays owned by ticket 008.
 
 ## Out of Scope

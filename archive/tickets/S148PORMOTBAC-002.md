@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — removes `PortfolioSlotWeights` from `CognitiveProfile`; introduces `PortfolioWeightsProfile` universal ECS component on `EntityKind::Agent`; threads weights read through a new `GoalBeliefView` accessor
-**Deps**: `archive/tickets/S148PORMOTBAC-001.md`, `specs/S148-portfolio-and-motive-backed-intentions.md`
+**Deps**: `archive/tickets/S148PORMOTBAC-001.md`, `archive/specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Problem
 
@@ -219,7 +219,7 @@ Completed on 2026-05-17.
 - Registered the component through the core component schema, macro expansion imports, agent creation/default deltas, scenario `AgentDef` authoring, and `spawn_agent()` default attachment.
 - Added `GoalBeliefView`/`ProfileBeliefView` forwarding for `portfolio_weights_profile` and updated AI portfolio planning to read weights through that belief-view surface.
 - Extended scenario coverage/lint/test fixtures and regenerated `docs/profiles/all-profiles.md`.
-- Truth-synced `specs/S148-portfolio-and-motive-backed-intentions.md` so it records ticket 002 as landed and leaves plan-cap removal to ticket 008.
+- Truth-synced `archive/specs/S148-portfolio-and-motive-backed-intentions.md` so it records ticket 002 as landed and leaves plan-cap removal to ticket 008.
 
 ## Deviations
 
