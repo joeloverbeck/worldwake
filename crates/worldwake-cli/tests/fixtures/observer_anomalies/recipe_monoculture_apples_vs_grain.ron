@@ -41,7 +41,7 @@
                 entity_activation_threshold: 100,
                 claim_confidence_threshold: 50,
                 observation_buffer_capacity: 12,
-                observation_budget: 80,
+                observation_budget: 240,
                 need_salience_boost: 550,
                 need_salience_urgency_threshold: 425,
                 observation_fidelity: 900,
@@ -263,6 +263,7 @@
     resource_sources: [
         (commodity: Water, location: "Scout Post", facility: "Scout Well", regeneration_ticks_per_unit: 3, capacity: 20),
         (commodity: Apple, location: "Scout Post", facility: "Scout Orchard", regeneration_ticks_per_unit: 2, capacity: 24),
+        (commodity: Grain, location: "Scout Post", facility: "Scout FieldPlot", regeneration_ticks_per_unit: 40, capacity: 1),
         (commodity: Water, location: "Orchard Home", facility: "Home Well", regeneration_ticks_per_unit: 3, capacity: 20),
         (commodity: Apple, location: "Orchard Home", facility: "Home Orchard", regeneration_ticks_per_unit: 2, capacity: 24),
     ],
