@@ -5389,11 +5389,11 @@
     "opportunity_compiled_count": {
       "n": 2722,
       "min": 0,
-      "p50": 23,
-      "p95": 27,
-      "p99": 36,
-      "max": 36,
-      "mean": 20
+      "p50": 16,
+      "p95": 16,
+      "p99": 16,
+      "max": 16,
+      "mean": 14
     },
     "opportunity_salience_floored": {
       "n": 2722,
