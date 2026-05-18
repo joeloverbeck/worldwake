@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implemented-S148-portfolio-and-motive-backed-intentions",
   "base_head": "a59b314ac8e46c0cf4e9b810d4100fbcb0e79c74",
-  "last_ticket": "archive/tickets/S148PORMOTBAC-006.md",
+  "last_ticket": "archive/tickets/S148PORMOTBAC-007.md",
   "last_result": "completed_archived",
   "last_work_commit": "25ec2e7450291446a376c6405ad9ff3de79bde71",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S148PORMOTBAC-007.md",
+  "next_target": "tickets/S148PORMOTBAC-008.md",
   "queue": [
-    "tickets/S148PORMOTBAC-007.md",
     "tickets/S148PORMOTBAC-008.md",
     "tickets/S148PORMOTBAC-009.md",
     "tickets/S148PORMOTBAC-010.md"

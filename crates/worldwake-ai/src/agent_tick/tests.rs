@@ -8009,12 +8009,12 @@ fn tracing_disabled_produces_identical_behavior() {
 
 #[test]
 fn check_patience_exhaustion_creates_blocked_intent() {
-    use super::frame::check_patience_exhaustion;
+    use super::frame::{PatienceExhaustionContext, check_patience_exhaustion};
 
     let goal = GoalKey::from(GoalKind::Sleep);
     let destination = entity(20);
     let place = entity(10);
-    let frame = IntentionFrame {
+    let mut frame = IntentionFrame {
         goal,
         domain: IntentionDomain::Travel { destination },
         assumptions: Vec::new(),
@@ -8030,17 +8030,23 @@ fn check_patience_exhaustion_creates_blocked_intent() {
         causal_links: Vec::new(),
     };
     let mut blocked_memory = BlockerMemory::default();
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    let mut facility_intents = ContentionIntents::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
     let budget = ProfileFixture::default();
 
     let exhausted = check_patience_exhaustion(
-        &frame,
-        Some(place),
-        &mut blocked_memory,
-        &mut ContentionIntents::default(),
-        &mut runtime,
-        Tick(10),
-        budget.structural_block_ticks,
+        &mut frame,
+        &mut PatienceExhaustionContext {
+            agent_place: Some(place),
+            blocked_memory: &mut blocked_memory,
+            discrepancy_memory: &mut discrepancy_memory,
+            facility_intents: &mut facility_intents,
+            runtime: &mut runtime,
+            tick: Tick(10),
+            structural_block_ticks: budget.structural_block_ticks,
+            causal_links_cap: 8,
+        },
     );
 
     assert!(exhausted, "should detect patience exhaustion");
@@ -8062,13 +8068,21 @@ fn check_patience_exhaustion_creates_blocked_intent() {
     );
     assert!(runtime.current_plan.is_none());
     assert!(!runtime.dirty.is_empty());
+    assert_eq!(frame.state, FrameState::Exhausted);
+    assert_eq!(frame.causal_links, vec![worldwake_core::EventId(10)]);
+    assert!(discrepancy_memory.entries.values().any(|entry| {
+        entry.discrepancy
+            == Discrepancy::AbandonConditionFired(
+                worldwake_core::IntentionAbandonConditionDiscriminant::PatienceExhausted,
+            )
+    }));
 }
 
 #[test]
 fn check_patience_exhaustion_below_limit_returns_false() {
-    use super::frame::check_patience_exhaustion;
+    use super::frame::{PatienceExhaustionContext, check_patience_exhaustion};
 
-    let frame = IntentionFrame {
+    let mut frame = IntentionFrame {
         goal: GoalKey::from(GoalKind::Sleep),
         domain: IntentionDomain::Generic,
         assumptions: Vec::new(),
@@ -8084,30 +8098,37 @@ fn check_patience_exhaustion_below_limit_returns_false() {
         causal_links: Vec::new(),
     };
     let mut blocked_memory = BlockerMemory::default();
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    let mut facility_intents = ContentionIntents::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
 
     let exhausted = check_patience_exhaustion(
-        &frame,
-        None,
-        &mut blocked_memory,
-        &mut ContentionIntents::default(),
-        &mut runtime,
-        Tick(10),
-        200,
+        &mut frame,
+        &mut PatienceExhaustionContext {
+            agent_place: None,
+            blocked_memory: &mut blocked_memory,
+            discrepancy_memory: &mut discrepancy_memory,
+            facility_intents: &mut facility_intents,
+            runtime: &mut runtime,
+            tick: Tick(10),
+            structural_block_ticks: 200,
+            causal_links_cap: 8,
+        },
     );
 
     assert!(!exhausted);
     assert!(blocked_memory.intents.is_empty());
+    assert!(discrepancy_memory.entries.is_empty());
     assert_eq!(runtime.last_frame_clear_reason, None);
 }
 
 #[test]
 fn patience_exhaustion_care_domain_uses_patient_as_target() {
-    use super::frame::check_patience_exhaustion;
+    use super::frame::{PatienceExhaustionContext, check_patience_exhaustion};
 
     let patient = entity(5);
     let goal = GoalKey::from(GoalKind::Sleep);
-    let frame = IntentionFrame {
+    let mut frame = IntentionFrame {
         goal,
         domain: IntentionDomain::Care { patient },
         assumptions: Vec::new(),
@@ -8123,16 +8144,22 @@ fn patience_exhaustion_care_domain_uses_patient_as_target() {
         causal_links: Vec::new(),
     };
     let mut blocked_memory = BlockerMemory::default();
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    let mut facility_intents = ContentionIntents::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
 
     check_patience_exhaustion(
-        &frame,
-        Some(entity(99)),
-        &mut blocked_memory,
-        &mut ContentionIntents::default(),
-        &mut runtime,
-        Tick(20),
-        100,
+        &mut frame,
+        &mut PatienceExhaustionContext {
+            agent_place: Some(entity(99)),
+            blocked_memory: &mut blocked_memory,
+            discrepancy_memory: &mut discrepancy_memory,
+            facility_intents: &mut facility_intents,
+            runtime: &mut runtime,
+            tick: Tick(20),
+            structural_block_ticks: 100,
+            causal_links_cap: 8,
+        },
     );
 
     let intent = blocked_memory.intents.values().next().unwrap();
@@ -8145,9 +8172,9 @@ fn patience_exhaustion_care_domain_uses_patient_as_target() {
 
 #[test]
 fn patience_exhaustion_generic_domain_uses_none_target() {
-    use super::frame::check_patience_exhaustion;
+    use super::frame::{PatienceExhaustionContext, check_patience_exhaustion};
 
-    let frame = IntentionFrame {
+    let mut frame = IntentionFrame {
         goal: GoalKey::from(GoalKind::Sleep),
         domain: IntentionDomain::Generic,
         assumptions: Vec::new(),
@@ -8163,16 +8190,22 @@ fn patience_exhaustion_generic_domain_uses_none_target() {
         causal_links: Vec::new(),
     };
     let mut blocked_memory = BlockerMemory::default();
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    let mut facility_intents = ContentionIntents::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
 
     check_patience_exhaustion(
-        &frame,
-        Some(entity(99)),
-        &mut blocked_memory,
-        &mut ContentionIntents::default(),
-        &mut runtime,
-        Tick(5),
-        100,
+        &mut frame,
+        &mut PatienceExhaustionContext {
+            agent_place: Some(entity(99)),
+            blocked_memory: &mut blocked_memory,
+            discrepancy_memory: &mut discrepancy_memory,
+            facility_intents: &mut facility_intents,
+            runtime: &mut runtime,
+            tick: Tick(5),
+            structural_block_ticks: 100,
+            causal_links_cap: 8,
+        },
     );
 
     let intent = blocked_memory.intents.values().next().unwrap();

@@ -1,14 +1,14 @@
 # S148PORMOTBAC-007: Resume/Abandon condition evaluator with Discrepancy::AbandonConditionFired variant
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — new `evaluate_resume_abandon_conditions` evaluator in `crates/worldwake-ai/src/agent_tick/frame.rs` alongside existing `patience_limit` consumption at line 547+; new `Discrepancy::AbandonConditionFired(IntentionAbandonConditionDiscriminant)` variant in `crates/worldwake-core/src/discrepancy.rs` with payload-free discriminant mirror; FIFO cap enforcement at `causal_links` push sites
 **Deps**: `archive/tickets/S148PORMOTBAC-005.md`, `archive/tickets/S148PORMOTBAC-006.md`, `specs/S148-portfolio-and-motive-backed-intentions.md`
 
-## Problem
+## Outcome
 
-S148 PR-1's lifecycle extension makes intention resume and abandon decisions inspectable. Today's `frame.rs` consumes `patience_limit` at line 547+ and transitions `FrameState::Active ↔ Suspended ↔ Exhausted` (e.g., the existing Suspended→Active resume at line 519-523), but the transitions are decided implicitly by stall counters and have no typed cause record. After tickets 005-006 land the condition enum types and the `IntentionFrame.resume_conditions`/`abandon_conditions`/`causal_links` fields, ticket 007 wires the evaluator: each tick (alongside the existing `patience_limit` check), the evaluator walks the suspended frame's `resume_conditions` (resume if any holds) and the active/suspended frame's `abandon_conditions` (abandon if any holds), emits a typed `Discrepancy::AbandonConditionFired` variant when abandoning, and pushes the firing event into `causal_links` (bounded by `CognitiveProfile.causal_links_per_step_cap` per spec D9).
+S148 PR-1's lifecycle extension now makes intention resume and abandon decisions inspectable. Before this ticket, `frame.rs` consumed `patience_limit` and transitioned `FrameState::Active ↔ Suspended ↔ Exhausted`, but those transitions had no typed cause record. This ticket wired the D10 evaluator over `IntentionFrame.resume_conditions`/`abandon_conditions`/`causal_links`, added `Discrepancy::AbandonConditionFired(IntentionAbandonConditionDiscriminant)`, and bounds evaluator-pushed causal links by `CognitiveProfile.causal_links_per_step_cap`.
 
 ## Assumption Reassessment (2026-05-17)
 
@@ -28,14 +28,14 @@ S148 PR-1's lifecycle extension makes intention resume and abandon decisions ins
 3. FND-28 alignment: `PatienceExhausted` is unified under the typed abandon-condition surface rather than living as a special-case parallel path. The existing `patience_limit` check at line 547+ continues to fire, but routes its decision through the new evaluator's typed cause record.
 4. FND-29A alignment: `causal_links` cap is enforced FIFO at push sites; per-intention growth is bounded by the existing `CognitiveProfile.causal_links_per_step_cap` profile field (no new magic constant).
 
-## Verification Layers
+## Verified Layers
 
 1. Evaluator decision correctness → focused unit tests in `crates/worldwake-ai/src/agent_tick/frame.rs::tests`: for each `IntentionResumeCondition` variant, construct a fixture frame and belief view that triggers the condition, assert `evaluate_resume_abandon_conditions` returns `FrameDecision::Resume`; for each `IntentionAbandonCondition` variant, assert `FrameDecision::Abandon(discriminant)`
 2. `Discrepancy::AbandonConditionFired` emission → focused unit test asserting that when the evaluator decides Abandon, the existing discrepancy-emission path receives the new variant with the correct discriminant
 3. `causal_links` cap enforcement → focused unit test pushing `causal_links_per_step_cap + 2` events and asserting `vec.len() == cap` with the oldest two evicted
 4. Cross-crate exhaustive-match completeness → workspace compilation under `cargo clippy --workspace --all-targets -- -D warnings` — every match site listed in Assumption Reassessment item 3 either gains an arm for `AbandonConditionFired` or routes through an updated catch-all
 
-## What to Change
+## Landed Changes
 
 ### 1. Add `IntentionAbandonConditionDiscriminant` to `intention_condition.rs`
 
@@ -160,17 +160,15 @@ fn push_causal_link_bounded(frame: &mut IntentionFrame, cap: u32, event_id: Even
 
 The cap value is read from `CognitiveProfile.causal_links_per_step_cap` at the agent's cognitive profile (available through the existing belief-view accessor or runtime read pattern at the call site).
 
-## Files to Touch
+## Landed Files
 
 - `crates/worldwake-core/src/intention_condition.rs` (modify — add `IntentionAbandonConditionDiscriminant` enum + `From<&IntentionAbandonCondition>` impl; tests)
 - `crates/worldwake-core/src/lib.rs` (modify — re-export the new discriminant)
 - `crates/worldwake-core/src/discrepancy.rs` (modify — add `AbandonConditionFired` variant; verify Ord derive stability)
 - `crates/worldwake-ai/src/agent_tick/frame.rs` (modify — add `FrameDecision` enum + `evaluate_resume_abandon_conditions` + predicate helpers + cap helper; integrate into existing transition path at lines 506+, 519-523, 547+; rewrite existing `patience_limit` check to route through the evaluator)
-- `crates/worldwake-core/src/event_record.rs` (modify — 9 exhaustive `match.*Discrepancy` sites need new arm)
-- `crates/worldwake-systems/src/perception.rs` (modify — 7 exhaustive match sites)
-- `crates/worldwake-core/src/belief.rs` (modify — 5 exhaustive match sites)
-- `crates/worldwake-ai/src/failure_handling.rs` (modify — 1 exhaustive match site)
-- `crates/worldwake-ai/tests/golden_perception_omission.rs` (modify — 1 exhaustive match site)
+- `crates/worldwake-ai/src/agenda_manager.rs` (modify — live exhaustive `Discrepancy` match gained `AbandonConditionFired` handling)
+- `crates/worldwake-ai/src/agent_tick/mod.rs` (modify — live exhaustive evidence match gained `AbandonConditionFired` handling; evaluator wired into the per-tick frame lifecycle)
+- `crates/worldwake-ai/src/failure_handling.rs` (modify — live exhaustive TTL match gained `AbandonConditionFired` handling)
 
 ## Out of Scope
 
@@ -179,16 +177,17 @@ The cap value is read from `CognitiveProfile.causal_links_per_step_cap` at the a
 - Golden coverage exercising each `IntentionResumeCondition` and `IntentionAbandonCondition` branch (ticket 010)
 - Cross-crate discrepancy consumers beyond the 23 exhaustive match sites (catch-all `_` arms in non-exhaustive sites continue to work without modification)
 
-## Acceptance Criteria
+## Accepted Invariants
 
-### Tests That Must Pass
+### Passing Proof
 
-1. `cargo test -p worldwake-core intention_condition::tests::abandon_condition_discriminant_*` — new tests: `From<&IntentionAbandonCondition>` correctness for each variant
-2. `cargo test -p worldwake-core discrepancy` — new variant's serde round-trip, ord stability
-3. `cargo test -p worldwake-ai agent_tick::frame::tests::evaluate_*` — new focused tests covering each resume and abandon condition variant
-4. `cargo test -p worldwake-ai agent_tick::frame::tests::causal_links_cap_*` — FIFO eviction at and above cap
-5. Existing suite: `cargo test --workspace`
-6. Lint: `cargo clippy --workspace --all-targets -- -D warnings`
+1. Passed: `cargo test -p worldwake-core intention_condition` covered `abandon_condition_discriminant_mirrors_every_variant`.
+2. Passed: `cargo test -p worldwake-core discrepancy` covered `Discrepancy::AbandonConditionFired` bincode round-trip.
+3. Passed: `cargo test -p worldwake-ai agent_tick::frame::tests::evaluate_` covered every resume and abandon condition variant plus abandon-over-resume precedence.
+4. Passed: `cargo test -p worldwake-ai agent_tick::frame::tests::causal_links_cap` covered FIFO eviction at and above cap.
+5. Passed: `cargo test -p worldwake-ai agent_tick::frame`.
+6. Passed: `cargo clippy --workspace --all-targets -- -D warnings`.
+7. Passed: `cargo test --workspace`.
 
 ### Invariants
 
@@ -197,16 +196,24 @@ The cap value is read from `CognitiveProfile.causal_links_per_step_cap` at the a
 3. `frame.causal_links.len() <= cognitive.causal_links_per_step_cap` at all times after push; FIFO eviction guarantees the bound.
 4. No `Discrepancy` exhaustive match site is missing an `AbandonConditionFired` arm.
 
-## Test Plan
+## Verification Result
 
-### New/Modified Tests
+### Tests Landed
 
-1. `crates/worldwake-core/src/intention_condition.rs::tests` — add: `abandon_condition_discriminant_mirrors_every_variant`
-2. `crates/worldwake-core/src/discrepancy.rs::tests` — extend with `abandon_condition_fired_serde_round_trip`
-3. `crates/worldwake-ai/src/agent_tick/frame.rs::tests` — add ~12 focused tests: one per resume condition variant + one per abandon condition variant; `causal_links_cap_evicts_oldest_in_fifo_order`; `patience_exhausted_routes_through_evaluator`; `abandon_takes_precedence_over_resume_when_both_fire`
+1. Passed: `crates/worldwake-core/src/intention_condition.rs::tests::abandon_condition_discriminant_mirrors_every_variant`.
+2. Passed: `crates/worldwake-core/src/discrepancy.rs::tests::discrepancy_abandon_condition_fired_roundtrips_through_bincode`.
+3. Passed: `crates/worldwake-ai/src/agent_tick/frame.rs::tests::evaluate_resume_condition_variants_fire`, `evaluate_abandon_condition_variants_fire_and_precede_resume`, `evaluate_motive_source_lost_does_not_fire_when_matching_ref_remains`, and `causal_links_cap_evicts_oldest_in_fifo_order`.
+4. Passed: `crates/worldwake-ai/src/agent_tick/tests.rs::check_patience_exhaustion_creates_blocked_intent` now asserts typed discrepancy emission, exhausted state, and bounded causal-link push for the patience path.
 
-### Commands
+### Commands Run
 
-1. `cargo test -p worldwake-core intention_condition discrepancy`
-2. `cargo test -p worldwake-ai agent_tick::frame`
-3. `./scripts/verify.sh`
+1. Passed: `cargo fmt --all`
+2. Passed: `cargo test -p worldwake-core intention_condition`
+3. Passed: `cargo test -p worldwake-core discrepancy`
+4. Passed: `cargo test -p worldwake-ai agent_tick::frame::tests::evaluate_`
+5. Passed: `cargo test -p worldwake-ai agent_tick::frame::tests::causal_links_cap`
+6. Passed: `cargo test -p worldwake-ai agent_tick::frame`
+7. Passed: `cargo clippy --workspace --all-targets -- -D warnings`
+8. Passed: `cargo test --workspace`
+
+`cargo test -p worldwake-core intention_condition discrepancy` was not a valid Cargo invocation because Cargo accepts only one test-name filter. The two filters were run as separate commands. `./scripts/verify.sh` was not run as a single wrapper; its relevant local gates were run explicitly with `cargo fmt --all`, `cargo test --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings`.

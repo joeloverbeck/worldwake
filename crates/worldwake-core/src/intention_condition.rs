@@ -36,9 +36,36 @@ pub enum IntentionAbandonCondition {
     ArtifactLegalEffectLost(EntityId),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum IntentionAbandonConditionDiscriminant {
+    MotiveSourceLost,
+    AssumptionPermanentlyBroken,
+    OpportunityForeverGone,
+    PatienceExhausted,
+    ArtifactDestroyed,
+    ArtifactLegalEffectLost,
+}
+
+impl From<&IntentionAbandonCondition> for IntentionAbandonConditionDiscriminant {
+    fn from(condition: &IntentionAbandonCondition) -> Self {
+        match condition {
+            IntentionAbandonCondition::MotiveSourceLost(_) => Self::MotiveSourceLost,
+            IntentionAbandonCondition::AssumptionPermanentlyBroken(_) => {
+                Self::AssumptionPermanentlyBroken
+            }
+            IntentionAbandonCondition::OpportunityForeverGone(_) => Self::OpportunityForeverGone,
+            IntentionAbandonCondition::PatienceExhausted => Self::PatienceExhausted,
+            IntentionAbandonCondition::ArtifactDestroyed(_) => Self::ArtifactDestroyed,
+            IntentionAbandonCondition::ArtifactLegalEffectLost(_) => Self::ArtifactLegalEffectLost,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{IntentionAbandonCondition, IntentionResumeCondition};
+    use super::{
+        IntentionAbandonCondition, IntentionAbandonConditionDiscriminant, IntentionResumeCondition,
+    };
     use crate::{
         BeliefStatusTag, EntityId, FrameAssumption, MotiveSourceDiscriminant, OpportunityAnchor,
     };
@@ -139,5 +166,49 @@ mod tests {
                 IntentionAbandonCondition::ArtifactDestroyed(entity(1)),
             ]
         );
+    }
+
+    #[test]
+    fn abandon_condition_discriminant_mirrors_every_variant() {
+        let cases = [
+            (
+                IntentionAbandonCondition::MotiveSourceLost(MotiveSourceDiscriminant::Greed),
+                IntentionAbandonConditionDiscriminant::MotiveSourceLost,
+            ),
+            (
+                IntentionAbandonCondition::AssumptionPermanentlyBroken(
+                    FrameAssumption::RouteExists {
+                        from: entity(1),
+                        to: entity(2),
+                    },
+                ),
+                IntentionAbandonConditionDiscriminant::AssumptionPermanentlyBroken,
+            ),
+            (
+                IntentionAbandonCondition::OpportunityForeverGone(OpportunityAnchor::Place(
+                    entity(9),
+                )),
+                IntentionAbandonConditionDiscriminant::OpportunityForeverGone,
+            ),
+            (
+                IntentionAbandonCondition::PatienceExhausted,
+                IntentionAbandonConditionDiscriminant::PatienceExhausted,
+            ),
+            (
+                IntentionAbandonCondition::ArtifactDestroyed(entity(3)),
+                IntentionAbandonConditionDiscriminant::ArtifactDestroyed,
+            ),
+            (
+                IntentionAbandonCondition::ArtifactLegalEffectLost(entity(4)),
+                IntentionAbandonConditionDiscriminant::ArtifactLegalEffectLost,
+            ),
+        ];
+
+        for (condition, expected) in cases {
+            assert_eq!(
+                IntentionAbandonConditionDiscriminant::from(&condition),
+                expected
+            );
+        }
     }
 }

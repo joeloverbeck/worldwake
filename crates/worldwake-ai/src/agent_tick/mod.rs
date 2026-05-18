@@ -18,9 +18,11 @@ use execution::{
     plan_finished,
 };
 use frame::{
-    AssumptionEvalResult, apply_assumption_result, check_patience_exhaustion, evaluate_assumptions,
+    AssumptionEvalResult, FrameDecision, PatienceExhaustionContext, apply_assumption_result,
+    check_patience_exhaustion, evaluate_assumptions, evaluate_resume_abandon_conditions,
     handle_recoverable_travel_step_blockage, plan_completion_tick, populate_assumptions,
-    record_assumption_failure, record_source_invalidation, update_frame_for_adopted_plan,
+    push_causal_link_bounded, record_abandon_condition_fired, record_assumption_failure,
+    record_source_invalidation, update_frame_for_adopted_plan,
 };
 pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
 use learned_state_observation::record_learned_state_updates;
@@ -302,6 +304,7 @@ pub(super) fn decisive_evidence_from_discrepancy_entry(
         | Discrepancy::SearchBudgetExhausted
         | Discrepancy::PartialExecutionDrift
         | Discrepancy::NeedHorizonExceeded { .. }
+        | Discrepancy::AbandonConditionFired(_)
         | Discrepancy::MethodFailure(_) => {}
     }
     refs.capped(cap)
@@ -1474,70 +1477,126 @@ fn process_agent(
                 action_defs,
                 recipe_registry,
             );
-            let frame = current_frame.as_mut().unwrap();
-            let completion_tick = plan_completion_tick(runtime, tick);
-            frame.assumptions = populate_assumptions(frame, agent, &view, tick, completion_tick);
-            let eval = evaluate_assumptions(&frame.assumptions, &view, agent, None, tick);
-            if !matches!(eval, AssumptionEvalResult::Deferred) {
-                let pre_state = current_frame.as_ref().unwrap().state;
-                current_frame = Some(apply_assumption_result(
-                    current_frame.as_ref().unwrap(),
-                    &eval,
-                    tick,
-                    runtime,
-                ));
-                emit_assumption_transitions(&pre_state, &eval, tick, &mut frame_transitions);
-                if matches!(eval, AssumptionEvalResult::CriticalFailure(_)) {
-                    let AssumptionEvalResult::CriticalFailure(assumption) = eval else {
-                        unreachable!()
-                    };
-                    // Create blocked intent so the agent doesn't immediately
-                    // re-adopt the same goal after assumption failure. The
-                    // structural block-ticks TTL preserves the pre-S109
-                    // suppression duration of `BlockingFact::AssumptionFailed`
-                    // — a failed plan-level assumption is structural, not a
-                    // transient drift.
-                    record_assumption_failure(
-                        current_frame.as_ref().unwrap(),
-                        view.effective_place(agent),
-                        current_step(runtime)
-                            .and_then(|step| step.targets.first().copied())
-                            .and_then(authoritative_target),
-                        &mut discrepancy_memory,
-                        tick,
-                        cognitive.structural_block_ticks,
-                        assumption,
-                    );
-                    let plan_for_assumption_refs = runtime.current_plan.clone();
-                    let _ = persist_expectation_store_update(
-                        ctx.world,
-                        ctx.event_log,
-                        agent,
-                        tick,
-                        expire_plan_step_expectations,
-                    )?;
-                    runtime.current_plan = None;
-                    runtime.current_step_index = 0;
-                    runtime.materialization_bindings.clear();
-                    current_facility_intents.intents.clear();
-                    runtime.dirty.insert(crate::DirtySet::ASSUMPTION_FAILED);
-                    if let Some(goal_key) = original_plan_goal
-                        .or(current_active_goal.as_ref().map(|goal| goal.key.goal_key))
-                    {
-                        let reason = PlanInvalidationReason::AssumptionFailed { assumption };
-                        emit_plan_invalidated(ctx.event_log, tick, agent, goal_key, reason);
-                        emit_replan_triggered(
-                            ctx.event_log,
+            if let Some(decision) = current_frame
+                .as_ref()
+                .and_then(|frame| evaluate_resume_abandon_conditions(frame, &view, agent, tick))
+            {
+                match decision {
+                    FrameDecision::Abandon(discriminant) => {
+                        let frame = current_frame.as_mut().unwrap();
+                        record_abandon_condition_fired(
+                            frame,
+                            view.effective_place(agent),
+                            &mut discrepancy_memory,
                             tick,
-                            agent,
-                            goal_key,
-                            ReplanReason::PlanInvalidated { reason },
-                            current_frame
-                                .as_ref()
-                                .map_or(&[][..], |frame| frame.assumptions.as_slice()),
-                            cognitive.decision_history_alternatives,
-                            plan_for_assumption_refs.as_ref(),
+                            cognitive.structural_block_ticks,
+                            discriminant,
                         );
+                        push_causal_link_bounded(
+                            frame,
+                            cognitive.causal_links_per_step_cap,
+                            worldwake_core::EventId(tick.0),
+                        );
+                        frame.state = worldwake_core::FrameState::Exhausted;
+                        runtime.last_frame_clear_reason =
+                            Some(worldwake_core::FrameClearReason::AssumptionFailed);
+                        runtime.current_plan = None;
+                        runtime.current_step_index = 0;
+                        runtime.materialization_bindings.clear();
+                        current_facility_intents.intents.clear();
+                        runtime.dirty.insert(crate::DirtySet::FRAME_PATIENCE);
+                        if let Some(ref mut ft) = frame_transitions {
+                            ft.push(FrameTransitionKind::Exhausted {
+                                stalled_ticks: frame.stalled_ticks,
+                                patience_limit: frame.patience_limit,
+                                blocked_intent_recorded: false,
+                            });
+                        }
+                    }
+                    FrameDecision::Resume => {
+                        let frame = current_frame.as_mut().unwrap();
+                        frame.state = worldwake_core::FrameState::Active;
+                        push_causal_link_bounded(
+                            frame,
+                            cognitive.causal_links_per_step_cap,
+                            worldwake_core::EventId(tick.0),
+                        );
+                        if let Some(ref mut ft) = frame_transitions {
+                            ft.push(FrameTransitionKind::Resumed { tick });
+                        }
+                    }
+                }
+            }
+            if current_frame
+                .as_ref()
+                .is_some_and(|frame| !matches!(frame.state, worldwake_core::FrameState::Exhausted))
+            {
+                let frame = current_frame.as_mut().unwrap();
+                let completion_tick = plan_completion_tick(runtime, tick);
+                frame.assumptions =
+                    populate_assumptions(frame, agent, &view, tick, completion_tick);
+                let eval = evaluate_assumptions(&frame.assumptions, &view, agent, None, tick);
+                if !matches!(eval, AssumptionEvalResult::Deferred) {
+                    let pre_state = current_frame.as_ref().unwrap().state;
+                    current_frame = Some(apply_assumption_result(
+                        current_frame.as_ref().unwrap(),
+                        &eval,
+                        tick,
+                        runtime,
+                    ));
+                    emit_assumption_transitions(&pre_state, &eval, tick, &mut frame_transitions);
+                    if matches!(eval, AssumptionEvalResult::CriticalFailure(_)) {
+                        let AssumptionEvalResult::CriticalFailure(assumption) = eval else {
+                            unreachable!()
+                        };
+                        // Create blocked intent so the agent doesn't immediately
+                        // re-adopt the same goal after assumption failure. The
+                        // structural block-ticks TTL preserves the pre-S109
+                        // suppression duration of `BlockingFact::AssumptionFailed`
+                        // — a failed plan-level assumption is structural, not a
+                        // transient drift.
+                        record_assumption_failure(
+                            current_frame.as_ref().unwrap(),
+                            view.effective_place(agent),
+                            current_step(runtime)
+                                .and_then(|step| step.targets.first().copied())
+                                .and_then(authoritative_target),
+                            &mut discrepancy_memory,
+                            tick,
+                            cognitive.structural_block_ticks,
+                            assumption,
+                        );
+                        let plan_for_assumption_refs = runtime.current_plan.clone();
+                        let _ = persist_expectation_store_update(
+                            ctx.world,
+                            ctx.event_log,
+                            agent,
+                            tick,
+                            expire_plan_step_expectations,
+                        )?;
+                        runtime.current_plan = None;
+                        runtime.current_step_index = 0;
+                        runtime.materialization_bindings.clear();
+                        current_facility_intents.intents.clear();
+                        runtime.dirty.insert(crate::DirtySet::ASSUMPTION_FAILED);
+                        if let Some(goal_key) = original_plan_goal
+                            .or(current_active_goal.as_ref().map(|goal| goal.key.goal_key))
+                        {
+                            let reason = PlanInvalidationReason::AssumptionFailed { assumption };
+                            emit_plan_invalidated(ctx.event_log, tick, agent, goal_key, reason);
+                            emit_replan_triggered(
+                                ctx.event_log,
+                                tick,
+                                agent,
+                                goal_key,
+                                ReplanReason::PlanInvalidated { reason },
+                                current_frame
+                                    .as_ref()
+                                    .map_or(&[][..], |frame| frame.assumptions.as_slice()),
+                                cognitive.decision_history_alternatives,
+                                plan_for_assumption_refs.as_ref(),
+                            );
+                        }
                     }
                 }
             }
@@ -2181,13 +2240,17 @@ fn process_agent(
             recipe_registry,
         );
         let exhausted = check_patience_exhaustion(
-            current_frame.as_ref().unwrap(),
-            view.effective_place(agent),
-            &mut blocked_memory,
-            &mut current_facility_intents,
-            runtime,
-            tick,
-            cognitive.structural_block_ticks,
+            current_frame.as_mut().unwrap(),
+            &mut PatienceExhaustionContext {
+                agent_place: view.effective_place(agent),
+                blocked_memory: &mut blocked_memory,
+                discrepancy_memory: &mut discrepancy_memory,
+                facility_intents: &mut current_facility_intents,
+                runtime,
+                tick,
+                structural_block_ticks: cognitive.structural_block_ticks,
+                causal_links_cap: cognitive.causal_links_per_step_cap,
+            },
         );
         if exhausted {
             let _ =
@@ -2202,10 +2265,6 @@ fn process_agent(
                     blocked_intent_recorded: true,
                 });
             }
-            current_frame = Some(IntentionFrame {
-                state: worldwake_core::FrameState::Exhausted,
-                ..current_frame.take().unwrap()
-            });
         }
     }
 

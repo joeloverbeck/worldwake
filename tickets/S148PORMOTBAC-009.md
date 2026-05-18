@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: No — observer-only changes to `crates/worldwake-cli/src/bin/observer.rs` Decision History section; renders the new five-slot winners and the enriched `IntentionFrame` field set
-**Deps**: `archive/tickets/S148PORMOTBAC-004.md`, `archive/tickets/S148PORMOTBAC-006.md`, `S148PORMOTBAC-007`, `specs/S148-portfolio-and-motive-backed-intentions.md`
+**Deps**: `archive/tickets/S148PORMOTBAC-004.md`, `archive/tickets/S148PORMOTBAC-006.md`, `archive/tickets/S148PORMOTBAC-007.md`, `specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Problem
 

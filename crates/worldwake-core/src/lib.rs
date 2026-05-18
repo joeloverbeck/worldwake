@@ -244,7 +244,9 @@ pub use institutional::{
     InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
     InstitutionalRecordError, RecordData, RecordEntryId, RecordKind,
 };
-pub use intention_condition::{IntentionAbandonCondition, IntentionResumeCondition};
+pub use intention_condition::{
+    IntentionAbandonCondition, IntentionAbandonConditionDiscriminant, IntentionResumeCondition,
+};
 pub use intention_disposition::IntentionDispositionProfile;
 pub use intention_frame::{
     FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionDomainTag,

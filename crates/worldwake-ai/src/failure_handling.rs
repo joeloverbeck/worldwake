@@ -1547,6 +1547,7 @@ fn discrepancy_ttl(discrepancy: Discrepancy, cognitive: &CognitiveProfile) -> u3
         Discrepancy::PartialExecutionDrift => cognitive.partial_drift_backoff_ticks,
         Discrepancy::NeedHorizonExceeded { .. }
         | Discrepancy::ArtifactNotActionable { .. }
+        | Discrepancy::AbandonConditionFired(_)
         | Discrepancy::MethodFailure(_) => cognitive.structural_block_ticks,
     }
 }
