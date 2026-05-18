@@ -9,8 +9,9 @@ use golden_harness::*;
 use worldwake_ai::DecisionOutcome;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
 use worldwake_core::{
-    CommodityKind, DriveThresholds, EntityId, ExplorationMotivation, PerceptionSource, SourceKey,
-    Tick, WorkstationTag,
+    CommodityKind, DecisionEventPayload, DriveThresholds, EntityId, EventTag, EventView,
+    ExpectationFailureCauseTag, ExpectationFailurePhaseTag, ExplorationMotivation,
+    PerceptionSource, SourceAttributionOutcomeTag, SourceKey, Tick, WorkstationTag,
 };
 use worldwake_sim::ActionTraceKind;
 
@@ -85,6 +86,51 @@ fn orchard_at_place(h: &GoldenHarness, place: EntityId) -> EntityId {
                 ))
         })
         .unwrap_or_else(|| panic!("expected orchard workstation at place {place:?}"))
+}
+
+fn source_failure_payload_counts_as_familiar_failed_attempt(
+    phase: ExpectationFailurePhaseTag,
+    cause: ExpectationFailureCauseTag,
+    attribution_outcome: SourceAttributionOutcomeTag,
+) -> bool {
+    if attribution_outcome == SourceAttributionOutcomeTag::CoalescedDuplicate {
+        return false;
+    }
+    matches!(
+        (phase, cause),
+        (
+            ExpectationFailurePhaseTag::Observation
+                | ExpectationFailurePhaseTag::CandidateGeneration,
+            ExpectationFailureCauseTag::SourceAbsentLocally
+                | ExpectationFailureCauseTag::SourceDepletedLocally,
+        )
+    )
+}
+
+fn familiar_public_failed_attempts(h: &GoldenHarness, agent: EntityId, source: SourceKey) -> u16 {
+    h.event_log
+        .events_by_tag(EventTag::SourceExpectationFailure)
+        .iter()
+        .filter_map(|event_id| h.event_log.get(*event_id))
+        .filter_map(|record| record.decision_payload())
+        .filter_map(|payload| match payload {
+            DecisionEventPayload::SourceExpectationFailure(payload) => Some(payload),
+            _ => None,
+        })
+        .filter(|payload| payload.agent == agent)
+        .filter(|payload| {
+            payload.source.entity == source.entity && payload.source.commodity == source.commodity
+        })
+        .filter(|payload| {
+            source_failure_payload_counts_as_familiar_failed_attempt(
+                payload.phase,
+                payload.cause,
+                payload.attribution_outcome,
+            )
+        })
+        .count()
+        .try_into()
+        .expect("familiar failure count should fit in u16")
 }
 
 fn contract_run_limit_overrides(
@@ -260,16 +306,14 @@ fn run_survival_preferences() -> SurvivalPreferencesObservation {
                 "scenario should later use the proactively discovered Novel Grove for successful apple acquisition; committed_actions={committed_actions:?}; traces={trace_summaries:?}"
             )
         }),
-        familiar_failed_attempts: h
-            .world
-            .get_component_source_reliability(agent)
-            .and_then(|reliability| {
-                reliability.sources.get(&SourceKey {
-                    entity: familiar_orchard,
-                    commodity: CommodityKind::Apple,
-                })
-            })
-            .map_or(0, |record| record.failed_attempts),
+        familiar_failed_attempts: familiar_public_failed_attempts(
+            &h,
+            agent,
+            SourceKey {
+                entity: familiar_orchard,
+                commodity: CommodityKind::Apple,
+            },
+        ),
     }
 }
 
@@ -330,8 +374,27 @@ fn survival_preferences_keeps_proactive_diversification_alive_under_survival() {
     );
     assert_eq!(
         observation.familiar_failed_attempts, 0,
-        "the familiar orchard should not be misrecorded as source failure memory without a violated source expectation; observation={observation:?}"
+        "the familiar orchard should not be counted as a public failed source without a violated source expectation; observation={observation:?}"
     );
+}
+
+#[test]
+fn familiar_failed_attempt_accounting_excludes_search_only_sibling_failures() {
+    assert!(!source_failure_payload_counts_as_familiar_failed_attempt(
+        ExpectationFailurePhaseTag::Search,
+        ExpectationFailureCauseTag::SameGoalSearchInfeasibleWhileSiblingSucceeded,
+        SourceAttributionOutcomeTag::SourceReliabilityDecremented,
+    ));
+    assert!(source_failure_payload_counts_as_familiar_failed_attempt(
+        ExpectationFailurePhaseTag::Observation,
+        ExpectationFailureCauseTag::SourceDepletedLocally,
+        SourceAttributionOutcomeTag::SourceReliabilityDecremented,
+    ));
+    assert!(!source_failure_payload_counts_as_familiar_failed_attempt(
+        ExpectationFailurePhaseTag::Observation,
+        ExpectationFailureCauseTag::SourceDepletedLocally,
+        SourceAttributionOutcomeTag::CoalescedDuplicate,
+    ));
 }
 
 #[test]

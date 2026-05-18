@@ -22,7 +22,7 @@ Together those passed the named survival goldens but silently broke:
 
 This ticket reverts FOLLOWUP-003 to restore the unit tests, trade, and remote acquisition, then re-opens the baseline/scattered/preferences contracts that FOLLOWUP-003 was originally fixing — but with full diagnostic context so a proper architectural fix can replace the over-broad filter.
 
-Implementation attempt on 2026-05-18 rejected this combined ticket as an implementable seam. The proposed broad owner joins at least two competing contracts: pressure-only self-care acquire admission is still required by the current baseline/trade survival loops, while durable same-goal search failure persistence is still required by baseline but violates the preferences familiar-source-failure assertion. A successor ticket, `../tickets/S148PORMOTBAC-FOLLOWUP-008.md`, now owns the narrower split design.
+Implementation attempt on 2026-05-18 rejected this combined ticket as an implementable seam. The proposed broad owner joins at least two competing contracts: pressure-only self-care acquire admission is still required by the current baseline/trade survival loops, while durable same-goal search failure persistence is still required by baseline but violates the preferences familiar-source-failure assertion. The now-archived successor ticket, `archive/tickets/S148PORMOTBAC-FOLLOWUP-008.md`, owns the narrower split design.
 
 ## Assumption Reassessment (2026-05-18)
 
