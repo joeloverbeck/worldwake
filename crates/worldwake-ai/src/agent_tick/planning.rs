@@ -170,7 +170,8 @@ impl std::ops::Deref for CandidatePlanningPass {
 
 fn found_plan_blocks_later_goals(plan: &PlannedPlan) -> bool {
     match plan.terminal_kind {
-        crate::PlanTerminalKind::GoalSatisfied | crate::PlanTerminalKind::CombatCommitment => true,
+        crate::PlanTerminalKind::GoalSatisfied => true,
+        crate::PlanTerminalKind::CombatCommitment => true,
         crate::PlanTerminalKind::ProgressBarrier => {
             !matches!(plan.goal.kind, GoalKind::InvestigateViolation { .. })
         }
@@ -874,7 +875,10 @@ pub(super) fn summarize_same_goal_planning_trace(
     let candidate_cap_hit = plausible_opportunities.len() > admitted_cap;
     let continuation_trigger = plans
         .iter()
-        .find(|plan| plan.result.is_found())
+        .find(|plan| {
+            plan.selected_plan()
+                .is_some_and(found_plan_blocks_later_goals)
+        })
         .map(|plan| plan.opportunity);
     let stop_reason =
         if let Some(found_goal) = continuation_trigger.map(|opportunity| opportunity.goal_key) {

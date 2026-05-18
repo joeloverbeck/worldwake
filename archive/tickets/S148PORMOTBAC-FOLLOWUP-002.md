@@ -65,7 +65,7 @@ Completed on 2026-05-18.
 
 - The selected implementation did not consult the full affordance graph inside `current_place_support_failure`; it uses the live belief-view pressure and route evidence as a cheap probe contract for planner-resolvable self-care acquisition. The named focused tests and seven golden gates cover the intended surface.
 - Post-ticket review moved the completed ticket to `archive/tickets/S148PORMOTBAC-FOLLOWUP-002.md`.
-- Post-ticket review created `tickets/S148PORMOTBAC-FOLLOWUP-003.md` to tighten the cheap pressure proxy into a more explicitly planner-resolvable probe predicate without reopening this completed restoration.
+- Post-ticket review created the now-archived `archive/tickets/S148PORMOTBAC-FOLLOWUP-003.md` to tighten the cheap pressure proxy into a more explicitly planner-resolvable probe predicate without reopening this completed restoration.
 
 ## Verified Layers
 
