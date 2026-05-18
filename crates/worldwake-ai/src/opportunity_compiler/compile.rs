@@ -112,7 +112,6 @@ pub fn compile_opportunities(
                 continue;
             }
 
-            load.compiled_count = load.compiled_count.saturating_add(1);
             opportunities.push(Opportunity {
                 key,
                 perceived_at: current_tick,
@@ -146,6 +145,7 @@ pub fn compile_opportunities(
         load.cap_truncated = u32::try_from(opportunities.len() - cap).unwrap_or(u32::MAX);
         opportunities.truncate(cap);
     }
+    load.compiled_count = u32::try_from(opportunities.len()).unwrap_or(u32::MAX);
 
     (opportunities, load)
 }
@@ -382,6 +382,7 @@ mod tests {
         let (opportunities, load) = compile_opportunities(agent, &view, &index());
 
         assert_eq!(opportunities.len(), 2);
+        assert_eq!(load.compiled_count, 2);
         assert_eq!(load.salience_floored, 1);
         assert_eq!(load.cap_truncated, 2);
         assert!(opportunities[0].salience >= opportunities[1].salience);

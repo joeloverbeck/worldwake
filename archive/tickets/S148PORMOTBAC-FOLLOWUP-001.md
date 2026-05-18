@@ -63,7 +63,7 @@ The live fix did not change `found_plan_blocks_later_goals`, `derive_operating_m
 - Passed: `cargo test --release -p worldwake-ai --test golden_survival_patrol survival_patrol_proves_patrol_and_remote_pursuit_execution -- --ignored --test-threads=1`
 - Passed: `cargo test --release -p worldwake-ai --test golden_survival_ask_consult survival_ask_consult_lands_row_six -- --ignored --test-threads=1`
 - Passed: `cargo clippy --workspace --all-targets -- -D warnings`
-- Blocked, covered by `tickets/S138OPPCOM-012.md`: `cargo test -p worldwake-ai` fails in `golden_opportunity_compiler::survival_baseline_replay_is_deterministic_and_compiler_load_is_bounded` because `compile_opportunities` records `OpportunityCompilerLoad.compiled_count` before truncating to `compile_opportunity_cap`, producing `max=23` against the test's `<= 16` assertion. This is a compiler-load accounting/cap assertion and was not changed by this ticket's feasibility/search-admission fix.
+- Blocked at this ticket's closeout, later covered by the now-archived `archive/tickets/S138OPPCOM-012.md`: `cargo test -p worldwake-ai` failed in `golden_opportunity_compiler::survival_baseline_replay_is_deterministic_and_compiler_load_is_bounded` because `compile_opportunities` recorded `OpportunityCompilerLoad.compiled_count` before truncating to `compile_opportunity_cap`, producing `max=23` against the test's `<= 16` assertion. This was a compiler-load accounting/cap assertion and was not changed by this ticket's feasibility/search-admission fix.
 
 ## Out of Scope
 

@@ -979,9 +979,13 @@ pub struct RootCandidateTrace {
     Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize,
 )]
 pub struct OpportunityCompilerLoad {
+    /// Number of opportunities emitted after salience filtering and cap truncation.
     pub compiled_count: u32,
+    /// Number of otherwise viable opportunities skipped by the salience floor.
     pub salience_floored: u32,
+    /// Number of emitted or filtered opportunities whose salience was damped by memory.
     pub learned_memory_damped: u32,
+    /// Number of viable opportunities dropped because they exceeded the per-agent cap.
     pub cap_truncated: u32,
 }
 
