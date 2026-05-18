@@ -130,7 +130,11 @@ fn known_target_failure(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> Opt
                 .believed_target_location(context.agent, target);
             match envelope.status {
                 worldwake_sim::belief_view::BeliefStatus::Stale => {
-                    return Some(Discrepancy::BeliefStale);
+                    if !political_exact_target_can_reach_search(ranked)
+                        && !local_evidence_supports_exact_target(ranked, context, target)
+                    {
+                        return Some(Discrepancy::BeliefStale);
+                    }
                 }
                 worldwake_sim::belief_view::BeliefStatus::Contradicted => {
                     return Some(Discrepancy::BeliefContradicted);
@@ -159,10 +163,7 @@ fn known_target_failure(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> Opt
         }
     }
 
-    let place = match ranked.offer.anchor {
-        OpportunityAnchor::Place(place) => Some(place),
-        OpportunityAnchor::Entity(_) | OpportunityAnchor::None => ranked.offer.key.place,
-    };
+    let place = route_place_target(ranked);
     if let (Some(agent_place), Some(target_place)) = (context.agent_place, place)
         && agent_place != target_place
         && !context.belief_view.route_exists(agent_place, target_place)
@@ -171,6 +172,39 @@ fn known_target_failure(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> Opt
     }
 
     None
+}
+
+fn political_exact_target_can_reach_search(ranked: &AgendaEntry) -> bool {
+    matches!(
+        ranked.offer.key.kind,
+        GoalKind::ClaimOffice { .. } | GoalKind::SupportCandidateForOffice { .. }
+    )
+}
+
+fn local_evidence_supports_exact_target(
+    ranked: &AgendaEntry,
+    context: &ProbeContext<'_>,
+    target: EntityId,
+) -> bool {
+    let Some(agent_place) = context.agent_place else {
+        return false;
+    };
+    ranked.offer.evidence_entities.contains(&target)
+        && ranked.offer.evidence_places.contains(&agent_place)
+}
+
+fn route_place_target(ranked: &AgendaEntry) -> Option<EntityId> {
+    match ranked.offer.anchor {
+        OpportunityAnchor::Place(place) => Some(place),
+        OpportunityAnchor::Entity(_) => None,
+        OpportunityAnchor::None => match ranked.offer.key.kind {
+            // `GoalKey::place` stores the supported candidate for this goal so
+            // the office and candidate both participate in identity. It is not
+            // a travel/place target.
+            GoalKind::SupportCandidateForOffice { .. } => None,
+            _ => ranked.offer.key.place,
+        },
+    }
 }
 
 fn requires_exact_identity_target(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> bool {
@@ -344,7 +378,10 @@ fn relevant_action_defs(
 
 #[cfg(test)]
 mod tests {
-    use super::{ProbeContext, blocker_key_for_probe, probe};
+    use super::{
+        ProbeContext, blocker_key_for_probe, local_evidence_supports_exact_target,
+        political_exact_target_can_reach_search, probe, route_place_target,
+    };
     use crate::{
         AgendaEntry, GoalOffer, GoalPriorityClass, PlannerOpSemantics,
         agent_tick::portfolio::FeasibilityVerdict, build_semantics_table,
@@ -780,6 +817,65 @@ mod tests {
                 reason: Discrepancy::BeliefStale,
             }
         );
+    }
+
+    #[test]
+    fn local_evidence_allows_stale_exact_target_to_reach_search() {
+        let harness = ProbeHarness::sleep_only();
+        let agent = entity(1);
+        let place = entity(2);
+        let office = entity(3);
+        let mut ranked = ranked_goal(GoalKind::ClaimOffice { office }, OpportunityAnchor::None);
+        ranked.offer.evidence_entities.insert(office);
+        ranked.offer.evidence_places.insert(place);
+        let view = MockView::default();
+        let discrepancy_memory = DiscrepancyMemory::default();
+        let blocker_memory = BlockerMemory::default();
+        let context = probe_context(
+            &harness,
+            &view,
+            agent,
+            Some(place),
+            &discrepancy_memory,
+            &blocker_memory,
+            Tick(5),
+        );
+
+        assert!(local_evidence_supports_exact_target(
+            &ranked, &context, office
+        ));
+    }
+
+    #[test]
+    fn political_exact_targets_are_not_pre_rejected_for_stale_location() {
+        let office = entity(3);
+        let candidate = entity(4);
+
+        assert!(political_exact_target_can_reach_search(&ranked_goal(
+            GoalKind::ClaimOffice { office },
+            OpportunityAnchor::None,
+        )));
+        assert!(political_exact_target_can_reach_search(&ranked_goal(
+            GoalKind::SupportCandidateForOffice { office, candidate },
+            OpportunityAnchor::None,
+        )));
+    }
+
+    #[test]
+    fn support_candidate_goal_key_place_is_not_a_route_target() {
+        let office = entity(3);
+        let candidate = entity(4);
+        let mut ranked = ranked_goal(
+            GoalKind::SupportCandidateForOffice { office, candidate },
+            OpportunityAnchor::None,
+        );
+        assert_eq!(ranked.offer.key.entity, Some(office));
+        assert_eq!(ranked.offer.key.place, Some(candidate));
+
+        assert_eq!(route_place_target(&ranked), None);
+
+        ranked.offer.anchor = OpportunityAnchor::Place(office);
+        assert_eq!(route_place_target(&ranked), Some(office));
     }
 
     #[test]

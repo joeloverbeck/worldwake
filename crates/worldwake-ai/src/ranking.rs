@@ -1162,7 +1162,18 @@ fn score_motive_source(
             need_pressure_motive_score(*need, candidate, context)
         }
         MotiveSource::Pain { .. } => pain_motive_score(candidate, context),
-        MotiveSource::OfficeDuty { .. } => u32::from(context.utility.office_duty_weight.value()),
+        MotiveSource::OfficeDuty { .. } => match &candidate.key.kind {
+            GoalKind::PostBounty { posting, terms } => {
+                post_bounty_motive(context, *posting, *terms)
+            }
+            GoalKind::PostNotice { posting, topic } => {
+                post_notice_motive(context, *posting, *topic)
+            }
+            GoalKind::ReportMissing { .. } | GoalKind::ReportFound { .. } => {
+                expectation_response_motive(&candidate.key.kind, context)
+            }
+            _ => u32::from(context.utility.office_duty_weight.value()),
+        },
         MotiveSource::Loyalty { other } => context
             .view
             .loyalty_to(context.agent, *other)

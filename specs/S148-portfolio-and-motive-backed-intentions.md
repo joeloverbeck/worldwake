@@ -276,7 +276,7 @@ fn apply_mode(weights: &PortfolioWeightsProfile, mode: OperatingMode) -> Portfol
 
 The existing `Portfolio::plausible_slots_by_score(&effective_weights)` at `portfolio.rs:80` continues to operate on the assembled portfolio; the only change at that call site (`planning.rs:4571`) is the source of the weights (now `PortfolioWeightsProfile` instead of `cognitive.slot_weights`).
 
-**Plan-attempt cap consumed at the planning gate**: `agent_tick/planning.rs:610` reads `weights.max_plans_for_mode(mode)` (replacing the old `cognitive.max_candidates_to_plan` read at planning.rs:660 and its sibling sites).
+**Implementation note (S148PORMOTBAC-004, 2026-05-18)**: `assemble_portfolio` now consumes `&PortfolioWeightsProfile` and `OperatingMode`, applies Emergency-mode suppression by zeroing `EconomicOpportunity` and `SocialMotive`, and selects each slot's candidate from the highest-weight motive-source contribution with older `introduced_tick` winning ties. The main planning paths now derive and cache `AgentDecisionRuntime.operating_mode` before assembly. Plan-attempt cap migration remains owned by S148PORMOTBAC-008; `CognitiveProfile.max_candidates_to_plan` still controls the live planning cap after this ticket.
 
 ### D6: `IntentionFrame` extension
 
