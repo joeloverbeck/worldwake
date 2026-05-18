@@ -307,8 +307,8 @@ Field types `goal: GoalKey` (`core/src/goal.rs:314`) and `domain: IntentionDomai
 
 ```rust
 // crates/worldwake-core/src/intention_condition.rs (new)
-use crate::{ArtifactLegalEffectTag, BeliefStatusTag, EntityId, FrameAssumption,
-           MotiveSourceDiscriminant, OpportunityAnchor, Tick};
+use crate::{BeliefStatusTag, EntityId, FrameAssumption,
+           MotiveSourceDiscriminant, OpportunityAnchor};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -347,6 +347,8 @@ pub enum IntentionAbandonCondition {
 
 **`ArtifactLegalEffectTag` prerequisite**: Add a payload-free discriminant mirror `ArtifactLegalEffectTag` to `worldwake-core/src/social_artifact.rs` following the `BeliefStatusTag` precedent (`decision_event_payload.rs:281`, mechanical mirror of `BeliefStatus`). Variants: `None, Active, Suspended, Expired, Revoked, Fulfilled`. Derives: `Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize`. Single conversion site `ArtifactLegalEffect → ArtifactLegalEffectTag` lives alongside the existing axis-projection helpers in `social_artifact.rs`. This is the standard Core-Side Mirror pattern from `worldwake-validation-patterns.md`.
 
+**Implementation note (S148PORMOTBAC-005, 2026-05-18)**: `IntentionResumeCondition` and `IntentionAbandonCondition` now live in `crates/worldwake-core/src/intention_condition.rs` and are re-exported from `worldwake-core`. `ArtifactLegalEffectTag` now mirrors `ArtifactLegalEffect` in `social_artifact.rs` with a single `From<&ArtifactLegalEffect>` conversion. `IntentionFrame` field integration remains owned by S148PORMOTBAC-006, and evaluator/discrepancy integration remains owned by S148PORMOTBAC-007.
+
 ### D8: `explicit_claims` tracking (with correct artifact references)
 
 `IntentionFrame.explicit_claims: Vec<EntityId>` references existing world artifacts the intention depends on, scoped to entity kinds the agent might claim against:
@@ -371,13 +373,13 @@ Add `crates/worldwake-ai/src/agent_tick/frame.rs::evaluate_resume_abandon_condit
 ```rust
 pub(crate) enum FrameDecision {
     Resume,                                 // a resume_condition fired; transition Suspended → Active
-    Abandon(IntentionAbandonCondition),     // an abandon_condition fired; mark Exhausted, emit Discrepancy
+    Abandon(IntentionAbandonConditionDiscriminant), // abandon condition fired; mark Exhausted, emit Discrepancy
 }
 ```
 
 **Call site**: invoked from inside `frame.rs` alongside the existing `patience_limit` consumption at line 547+. The existing `FrameState::Suspended → Active` resume path (`frame.rs:519-523`) gains a pre-check against `resume_conditions`; the existing `Exhausted` transition path gains a pre-check against `abandon_conditions`.
 
-**Discrepancy emission**: when an `IntentionAbandonCondition` fires, the evaluator emits a `Discrepancy::AbandonConditionFired(IntentionAbandonCondition)` variant — a new variant added to `worldwake-core/src/discrepancy.rs`. Per the Discrepancy as Failure-Attribution Surface pattern: this is option (1) — a first-class typed variant. Payload must derive `Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize` (the same bounds `Discrepancy` already requires). `IntentionAbandonCondition` is `Clone + Eq + Ord` but not `Copy` (carries variant-bearing payload like `OpportunityAnchor`); the variant therefore wraps it in `Box<IntentionAbandonCondition>` to stay within `Discrepancy`'s `Copy` budget — or, alternatively, the variant carries only the discriminant `IntentionAbandonConditionDiscriminant` (a new payload-free mirror following the `MotiveSourceDiscriminant` precedent). Adopt the discriminant approach so `Discrepancy` retains `Copy`; the full condition is recoverable from `frame.abandon_conditions` if needed.
+**Discrepancy emission**: when an `IntentionAbandonCondition` fires, the evaluator emits a `Discrepancy::AbandonConditionFired(IntentionAbandonConditionDiscriminant)` variant — a new variant added to `worldwake-core/src/discrepancy.rs`. Per the Discrepancy as Failure-Attribution Surface pattern, this is a first-class typed variant while preserving `Discrepancy`'s existing `Copy` derive. `IntentionAbandonCondition` is `Clone + Eq + Ord` but not `Copy` because it carries payloads like `OpportunityAnchor`; the payload-free discriminant mirrors the condition enum one-for-one. The full condition remains recoverable from `frame.abandon_conditions` if needed.
 
 **Multi-substrate hook note**: This evaluator runs in `frame.rs`. It does *not* duplicate the responsibilities of `agenda_manager.rs::tick_agenda` (which revives previously-rejected candidates by re-checking their feasibility). Per the Multi-Substrate Hook Coverage pattern: explicit-claim invalidation that originates from queue grants (`facility_queue.rs`) and from resource-extraction queues (`production_actions.rs`) are both relevant substrates; the evaluator queries `belief.facility_grant(facility)` and the equivalent resource-source-queue belief accessor and treats absence of the grant the same way for both.
 

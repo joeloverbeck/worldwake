@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — extends `IntentionFrame` (`crates/worldwake-core/src/intention_frame.rs:138`) with five new authoritative fields: `motive_refs`, `resume_conditions`, `abandon_conditions`, `explicit_claims`, `causal_links`; migrates 18+ strict-literal construction sites and ~70 looser-match construction sites across 17 files
-**Deps**: `S148PORMOTBAC-005`, `specs/S148-portfolio-and-motive-backed-intentions.md`
+**Deps**: `archive/tickets/S148PORMOTBAC-005.md`, `specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Problem
 

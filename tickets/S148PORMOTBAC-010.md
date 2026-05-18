@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: No — test-only ticket; adds new golden suite `crates/worldwake-ai/tests/golden_portfolio_five_slots.rs` covering 8 scenarios per spec D14; audits the existing `crates/worldwake-ai/tests/golden_portfolio_planning.rs` suite after the S148PORMOTBAC-001 enum rename and migrates any remaining expectations to the five-slot taxonomy where appropriate
-**Deps**: `archive/tickets/S148PORMOTBAC-001.md`, `archive/tickets/S148PORMOTBAC-002.md`, `archive/tickets/S148PORMOTBAC-003.md`, `archive/tickets/S148PORMOTBAC-004.md`, `S148PORMOTBAC-005`, `S148PORMOTBAC-006`, `S148PORMOTBAC-007`, `S148PORMOTBAC-008`, `specs/S148-portfolio-and-motive-backed-intentions.md`
+**Deps**: `archive/tickets/S148PORMOTBAC-001.md`, `archive/tickets/S148PORMOTBAC-002.md`, `archive/tickets/S148PORMOTBAC-003.md`, `archive/tickets/S148PORMOTBAC-004.md`, `archive/tickets/S148PORMOTBAC-005.md`, `S148PORMOTBAC-006`, `S148PORMOTBAC-007`, `S148PORMOTBAC-008`, `specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Problem
 

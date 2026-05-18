@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — new `evaluate_resume_abandon_conditions` evaluator in `crates/worldwake-ai/src/agent_tick/frame.rs` alongside existing `patience_limit` consumption at line 547+; new `Discrepancy::AbandonConditionFired(IntentionAbandonConditionDiscriminant)` variant in `crates/worldwake-core/src/discrepancy.rs` with payload-free discriminant mirror; FIFO cap enforcement at `causal_links` push sites
-**Deps**: `S148PORMOTBAC-005`, `S148PORMOTBAC-006`, `specs/S148-portfolio-and-motive-backed-intentions.md`
+**Deps**: `archive/tickets/S148PORMOTBAC-005.md`, `S148PORMOTBAC-006`, `specs/S148-portfolio-and-motive-backed-intentions.md`
 
 ## Problem
 

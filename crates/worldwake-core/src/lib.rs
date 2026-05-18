@@ -73,6 +73,7 @@ pub mod goal_dispatch_key;
 pub mod goal_planning_budget;
 pub mod ids;
 pub mod institutional;
+pub mod intention_condition;
 pub mod intention_disposition;
 pub mod intention_frame;
 pub mod items;
@@ -243,6 +244,7 @@ pub use institutional::{
     InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
     InstitutionalRecordError, RecordData, RecordEntryId, RecordKind,
 };
+pub use intention_condition::{IntentionAbandonCondition, IntentionResumeCondition};
 pub use intention_disposition::IntentionDispositionProfile;
 pub use intention_frame::{
     FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionDomainTag,
@@ -302,10 +304,10 @@ pub use sleep_episode::{
 pub use slot_kind::SlotKind;
 pub use social_artifact::{
     ArtifactActionability, ArtifactAxisValue, ArtifactCredibility, ArtifactExistence,
-    ArtifactHeader, ArtifactKind, ArtifactLegalEffect, ArtifactPostingContext,
-    ArtifactPostingProfile, ArtifactTransitionPayload, ArtifactVisibility, AxisName, BlockerReason,
-    BountyTarget, BountyTerms, CloseCause, DestructionCause, NoticeContent, NoticeTopic, ProofKind,
-    ProofRequirement, RevocationReason, RewardSource,
+    ArtifactHeader, ArtifactKind, ArtifactLegalEffect, ArtifactLegalEffectTag,
+    ArtifactPostingContext, ArtifactPostingProfile, ArtifactTransitionPayload, ArtifactVisibility,
+    AxisName, BlockerReason, BountyTarget, BountyTerms, CloseCause, DestructionCause,
+    NoticeContent, NoticeTopic, ProofKind, ProofRequirement, RevocationReason, RewardSource,
 };
 pub use survey_memory::{SurveyMemory, SurveyRecord};
 pub use testimony_reliability::{
