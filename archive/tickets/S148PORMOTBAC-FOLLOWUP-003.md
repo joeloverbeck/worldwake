@@ -20,7 +20,7 @@ The intended invariant was narrower: self-care acquisition may reach search when
 4. Final diagnosis refined the planner-side owner. `golden_survival_baseline` still failed after the probe fix because candidate generation and planning-state control checks treated loose item lots as self-care acquisition support even when the actor could not lawfully control them.
 5. `local_unpossessed_commodity_evidence` in `crates/worldwake-ai/src/candidate_generation.rs` now requires legal control evidence before loose lots become self-care acquisition support, and it excludes known other-owned loose lots when the actor cannot control them, plus actor ownership-right paths, from the "unpossessed loose lot" lane.
 6. `PlanningState::can_control_ref` in `crates/worldwake-ai/src/planning_state.rs` now requires the snapshot's `controllable_by_actor` flag before the local ownerless-loose-item shortcut can return true.
-7. The survival-preferences golden failure separated into a stale scenario contract: diagnostics showed the familiar orchard did not deplete, so the expected durable failure memory had no concrete local depletion event to attach to. That branch is tracked by `tickets/S148PORMOTBAC-FOLLOWUP-004.md`.
+7. The survival-preferences golden failure separated into a stale scenario contract: diagnostics showed the familiar orchard did not deplete, so the expected durable failure memory had no concrete local depletion event to attach to. That branch was resolved by the now-archived `archive/tickets/S148PORMOTBAC-FOLLOWUP-004.md`.
 8. Two CLI observer anomaly calibration gates also changed under this implementation while passing on clean pre-003 `HEAD`; those are tracked by `tickets/S148PORMOTBAC-FOLLOWUP-005.md` because they need separate observer-fixture/detector reassessment rather than pressure-escape restoration.
 
 ## Architecture Check
@@ -55,14 +55,14 @@ The intended invariant was narrower: self-care acquisition may reach search when
 - `crates/worldwake-ai/src/planning_state.rs`
 - `crates/worldwake-ai/src/agent_tick/planning.rs`
 - `archive/tickets/S148PORMOTBAC-FOLLOWUP-003.md`
-- `tickets/S148PORMOTBAC-FOLLOWUP-004.md`
+- `archive/tickets/S148PORMOTBAC-FOLLOWUP-004.md`
 - `tickets/S148PORMOTBAC-FOLLOWUP-005.md`
 
 ## Out of Scope
 
 - Reintroducing `rejected_portfolio_slot_suppresses_search` or any planning-layer bypass.
 - Changing global ranking weights, portfolio weights, candidate caps, scenario `.ron` files, observer thresholds, or S138 opportunity compiler accounting.
-- Repairing the survival-preferences familiar-source depletion contract; this moved to `tickets/S148PORMOTBAC-FOLLOWUP-004.md`.
+- Repairing the survival-preferences familiar-source depletion contract; this moved to the now-archived `archive/tickets/S148PORMOTBAC-FOLLOWUP-004.md`.
 
 ## Acceptance Result
 
@@ -71,7 +71,7 @@ The intended invariant was narrower: self-care acquisition may reach search when
 3. `golden_survival_baseline::all_agents_perform_survival_actions` passed after the legal-control fix.
 4. `golden_survival_scattered::all_agents_survive_1440_ticks` passed after the final source diff.
 5. `golden_survival_patrol::survival_patrol_proves_patrol_and_remote_pursuit_execution` passed after the final source diff.
-6. The survival-preferences gate was waived from this ticket and moved to `tickets/S148PORMOTBAC-FOLLOWUP-004.md` because the live failure is a stale familiar-source depletion contract, not the probe/legal-control seam.
+6. The survival-preferences gate was waived from this ticket and moved to the now-archived `archive/tickets/S148PORMOTBAC-FOLLOWUP-004.md` because the live failure is a stale familiar-source depletion contract, not the probe/legal-control seam.
 7. The observer anomaly gates were waived from this ticket and moved to `tickets/S148PORMOTBAC-FOLLOWUP-005.md` because they are calibration-fixture/detector questions outside this probe/legal-control seam.
 
 ## Focused Tests
@@ -93,7 +93,7 @@ The intended invariant was narrower: self-care acquisition may reach search when
 - Passed `cargo test --release -p worldwake-ai --test golden_survival_baseline all_agents_perform_survival_actions -- --ignored --test-threads=1`
 - Passed `cargo test --release -p worldwake-ai --test golden_survival_scattered all_agents_survive_1440_ticks -- --ignored --test-threads=1`
 - Passed `cargo test --release -p worldwake-ai --test golden_survival_patrol survival_patrol_proves_patrol_and_remote_pursuit_execution -- --ignored --test-threads=1`
-- Waived `cargo test --release -p worldwake-ai --test golden_survival_preferences survival_preferences_keeps_proactive_diversification_alive_under_survival -- --ignored --test-threads=1` for this ticket because live diagnostics showed a distinct stale familiar-source depletion contract now owned by `tickets/S148PORMOTBAC-FOLLOWUP-004.md`.
+- Waived `cargo test --release -p worldwake-ai --test golden_survival_preferences survival_preferences_keeps_proactive_diversification_alive_under_survival -- --ignored --test-threads=1` for this ticket because live diagnostics showed a distinct stale familiar-source depletion contract resolved by the now-archived `archive/tickets/S148PORMOTBAC-FOLLOWUP-004.md`.
 - Waived `cargo test --release -p worldwake-cli --test golden_observer_anomalies maintenance_starvation_fires_on_wash_gap -- --ignored --test-threads=1` for this ticket because the final implementation reports 2 `MAINTENANCE_STARVATION` anomalies instead of 3; clean pre-003 `HEAD` passed, and follow-up ownership is `tickets/S148PORMOTBAC-FOLLOWUP-005.md`.
 - Waived `cargo test --release -p worldwake-cli --test golden_observer_anomalies recipe_monoculture_fires_on_single_food_dependency -- --ignored --test-threads=1` for this ticket because the final implementation reports 0 `RECIPE_MONOCULTURE` anomalies instead of 1; clean pre-003 `HEAD` passed, and follow-up ownership is `tickets/S148PORMOTBAC-FOLLOWUP-005.md`.
 
@@ -110,7 +110,7 @@ Changed:
 
 Deviations:
 
-- The survival-preferences familiar-source depletion branch was split to `tickets/S148PORMOTBAC-FOLLOWUP-004.md`.
+- The survival-preferences familiar-source depletion branch was split to the now-archived `archive/tickets/S148PORMOTBAC-FOLLOWUP-004.md`.
 - Two observer anomaly calibration regressions were split to `tickets/S148PORMOTBAC-FOLLOWUP-005.md`.
 
 Verification:

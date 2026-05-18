@@ -7,7 +7,7 @@ Scenarios: 1
 
 ### Scenario 171: Survival Preferences Keeps Proactive Diversification Alive Under Survival
 
-- Source: `golden_survival_preferences.rs:356`
+- Source: `golden_survival_preferences.rs:277`
 - Systems: AI, Needs, Travel, Production, proactive diversification
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Travel, Production, Needs
@@ -17,8 +17,8 @@ Scenarios: 1
 - Replay tests: `survival_preferences_replays_deterministically`
 - All tests: `survival_preferences_keeps_proactive_diversification_alive_under_survival`, `survival_preferences_replays_deterministically`
 
-**Setup**: Run the authored survival preferences scenario for 1440 ticks. The
+**Setup**: Run the authored survival preferences scenario for 1440 ticks; Scout starts beside Familiar Orchard, proactively reaches Novel Grove before hunger harvesting, survives through camp self-care, and later uses Novel Grove for apples.
 
-**Proves**: the agent satisfies the authored survival contract; proactive
+**Proves**: the agent satisfies the authored survival contract; proactive exploration reaches Novel Grove; Familiar Orchard is not misrecorded as failed without a violated source expectation; and Novel Grove becomes a concrete apple source.
 
-**Cross-system chain**: proactive ExploreLocation selection -> travel arrival at Novel Grove
+**Cross-system chain**: proactive ExploreLocation selection -> travel arrival at Novel Grove -> retained survival loop through camp self-care -> later apple acquisition succeeds at Novel Grove.

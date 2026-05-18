@@ -9,9 +9,8 @@ use golden_harness::*;
 use worldwake_ai::DecisionOutcome;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
 use worldwake_core::{
-    AcquisitionQuantity, CommodityKind, CommodityPurpose, DriveThresholds, EntityId,
-    ExplorationMotivation, GoalKind, OpportunityAnchor, PerceptionSource, SourceKey, Tick,
-    WorkstationTag,
+    CommodityKind, DriveThresholds, EntityId, ExplorationMotivation, PerceptionSource, SourceKey,
+    Tick, WorkstationTag,
 };
 use worldwake_sim::ActionTraceKind;
 
@@ -33,9 +32,7 @@ struct SurvivalPreferencesObservation {
     proactive_tick: Tick,
     proactive_arrival_tick: Tick,
     novel_success_tick: Tick,
-    familiar_memory_tick: Tick,
     familiar_failed_attempts: u16,
-    discounted_familiar_retry_tick: Tick,
 }
 
 fn scenario_path() -> PathBuf {
@@ -134,8 +131,6 @@ fn run_survival_preferences() -> SurvivalPreferencesObservation {
     let mut proactive_tick = None;
     let mut proactive_arrival_tick = None;
     let mut novel_success_tick = None;
-    let mut familiar_memory_tick = None;
-    let mut discounted_familiar_retry_tick = None;
 
     for tick_num in 0..SURVIVAL_TICKS {
         h.step_once();
@@ -220,70 +215,6 @@ fn run_survival_preferences() -> SurvivalPreferencesObservation {
         {
             novel_success_tick = Some(tick);
         }
-
-        if familiar_memory_tick.is_none()
-            && h.world
-                .get_component_source_reliability(agent)
-                .and_then(|reliability| {
-                    reliability.sources.get(&SourceKey {
-                        entity: familiar_orchard,
-                        commodity: CommodityKind::Apple,
-                    })
-                })
-                .is_some_and(|record| record.failed_attempts > 0)
-        {
-            familiar_memory_tick = Some(tick);
-        }
-
-        if familiar_memory_tick.is_some()
-            && discounted_familiar_retry_tick.is_none()
-            && h.driver
-                .trace_sink()
-                .expect("decision tracing should be enabled")
-                .trace_at(agent, tick)
-                .is_some_and(|trace| match &trace.outcome {
-                    DecisionOutcome::Planning(planning) => {
-                        planning.selection.selected_goal().is_some_and(|goal| {
-                            goal.kind
-                                == GoalKind::AcquireCommodity {
-                                    commodity: CommodityKind::Apple,
-                                    purpose: CommodityPurpose::SelfConsume,
-                                    quantity: AcquisitionQuantity::single(),
-                                }
-                        }) && planning.selection.selected_opportunity
-                            == Some(worldwake_core::OpportunityKey {
-                                goal_key: worldwake_core::GoalKey::from(
-                                    GoalKind::AcquireCommodity {
-                                        commodity: CommodityKind::Apple,
-                                        purpose: CommodityPurpose::SelfConsume,
-                                        quantity: AcquisitionQuantity::single(),
-                                    },
-                                ),
-                                anchor: OpportunityAnchor::Place(novel_grove_place),
-                            })
-                            && planning.candidates.ranked.iter().any(|ranked| {
-                                ranked.opportunity.goal_key.kind
-                                    == GoalKind::AcquireCommodity {
-                                        commodity: CommodityKind::Apple,
-                                        purpose: CommodityPurpose::SelfConsume,
-                                        quantity: AcquisitionQuantity::single(),
-                                    }
-                                    && ranked.opportunity.anchor
-                                        == OpportunityAnchor::Place(familiar_orchard_place)
-                                    && ranked.source_reliability_discount.as_ref().is_some_and(
-                                        |discount| {
-                                            discount.source_entity == familiar_orchard
-                                                && discount.commodity == CommodityKind::Apple
-                                                && discount.failure_ratio_permille > 0
-                                        },
-                                    )
-                            })
-                    }
-                    _ => false,
-                })
-        {
-            discounted_familiar_retry_tick = Some(tick);
-        }
     }
 
     let committed_actions = h
@@ -329,11 +260,6 @@ fn run_survival_preferences() -> SurvivalPreferencesObservation {
                 "scenario should later use the proactively discovered Novel Grove for successful apple acquisition; committed_actions={committed_actions:?}; traces={trace_summaries:?}"
             )
         }),
-        familiar_memory_tick: familiar_memory_tick.unwrap_or_else(|| {
-            panic!(
-                "scenario should turn a locally observed familiar-source depletion into durable failure memory; committed_actions={committed_actions:?}; traces={trace_summaries:?}"
-            )
-        }),
         familiar_failed_attempts: h
             .world
             .get_component_source_reliability(agent)
@@ -344,11 +270,6 @@ fn run_survival_preferences() -> SurvivalPreferencesObservation {
                 })
             })
             .map_or(0, |record| record.failed_attempts),
-        discounted_familiar_retry_tick: discounted_familiar_retry_tick.unwrap_or_else(|| {
-            panic!(
-                "scenario should later rank the familiar orchard with a stored failure discount while selecting Novel Grove for apples; traces={trace_summaries:?}"
-            )
-        }),
     }
 }
 
@@ -362,18 +283,11 @@ fn run_survival_preferences() -> SurvivalPreferencesObservation {
 // Places: Willow Camp, Familiar Orchard, Novel Grove
 // Principles: 6, 7, 14, 20, 22, 22A
 //
-// Setup: Run the authored survival preferences scenario for 1440 ticks. The
-// tracked scout starts beside a familiar orchard, survives through camp-based
-// water/wash loops, and proactively discovers a novel grove before later using
-// that grove for real apple recovery inside the same survival envelope.
+// Setup: Run the authored survival preferences scenario for 1440 ticks; Scout starts beside Familiar Orchard, proactively reaches Novel Grove before hunger harvesting, survives through camp self-care, and later uses Novel Grove for apples.
 //
-// Proves: the agent satisfies the authored survival contract; proactive
-// exploration reaches Novel Grove; and that discovered grove later becomes a
-// concrete successful apple source rather than remaining a decorative visit.
+// Proves: the agent satisfies the authored survival contract; proactive exploration reaches Novel Grove; Familiar Orchard is not misrecorded as failed without a violated source expectation; and Novel Grove becomes a concrete apple source.
 //
-// Chain: proactive ExploreLocation selection -> travel arrival at Novel Grove
-// -> retained survival loop through camp water/wash -> later apple acquisition
-// succeeds at the discovered grove.
+// Chain: proactive ExploreLocation selection -> travel arrival at Novel Grove -> retained survival loop through camp self-care -> later apple acquisition succeeds at Novel Grove.
 #[test]
 #[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn survival_preferences_keeps_proactive_diversification_alive_under_survival() {
@@ -414,9 +328,9 @@ fn survival_preferences_keeps_proactive_diversification_alive_under_survival() {
         observation.proactive_arrival_tick < observation.novel_success_tick,
         "the discovered grove should later become a real apple source after the proactive arrival, not just a visited place; observation={observation:?}"
     );
-    assert!(
-        observation.familiar_memory_tick <= observation.discounted_familiar_retry_tick,
-        "the later apple-choice divergence should happen only after familiar-source depletion becomes durable memory; observation={observation:?}"
+    assert_eq!(
+        observation.familiar_failed_attempts, 0,
+        "the familiar orchard should not be misrecorded as source failure memory without a violated source expectation; observation={observation:?}"
     );
 }
 

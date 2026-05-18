@@ -1,8 +1,9 @@
 // Survival preferences scenario for Worldwake.
 //
 // Purpose: land roadmap row seven by keeping the survival loop alive while one
-// agent first diversifies into a novel grove under comfort, then later relies
-// on learned source reliability after a familiar orchard fails.
+// agent first diversifies into a novel grove under comfort, then later proves
+// that discovered grove can become a real apple source inside the same survival
+// envelope.
 (
     seed: 619007,
     survival_health_contract: (
