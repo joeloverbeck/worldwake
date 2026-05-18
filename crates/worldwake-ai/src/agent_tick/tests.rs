@@ -1869,6 +1869,11 @@ fn effective_goal_switch_margin_uses_route_margin_for_any_intention_frame() {
         last_progress_tick: None,
         stalled_ticks: 0,
         patience_limit: 10,
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     });
 
     assert_eq!(
@@ -1916,6 +1921,11 @@ fn effective_goal_switch_margin_panics_when_committed_agent_lacks_intention_prof
         last_progress_tick: None,
         stalled_ticks: 0,
         patience_limit: 10,
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     });
 
     let _ = effective_goal_switch_margin(&view, actor, jc_active.as_ref(), &cognitive(&budget));
@@ -2387,6 +2397,11 @@ fn frame_snapshot_reports_profile_margin_source_for_active_journey() {
                 last_progress_tick: None,
                 stalled_ticks: 0,
                 patience_limit: 10,
+                motive_refs: Vec::new(),
+                resume_conditions: Vec::new(),
+                abandon_conditions: Vec::new(),
+                explicit_claims: Vec::new(),
+                causal_links: Vec::new(),
             },
         )
         .unwrap();
@@ -2542,6 +2557,11 @@ fn non_travel_plan_adoption_suspends_intention_frame() {
         last_progress_tick: Some(Tick(7)),
         stalled_ticks: 2,
         patience_limit: 10,
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     });
     let mut runtime = crate::AgentDecisionRuntime::default();
 
@@ -2580,6 +2600,11 @@ fn same_goal_same_destination_replan_preserves_intention_frame() {
         last_progress_tick: Some(Tick(6)),
         stalled_ticks: 3,
         patience_limit: 10,
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     });
     let mut runtime = crate::AgentDecisionRuntime {
         ..crate::AgentDecisionRuntime::default()
@@ -2619,6 +2644,11 @@ fn same_goal_different_destination_replan_restarts_intention_frame() {
         last_progress_tick: Some(Tick(6)),
         stalled_ticks: 3,
         patience_limit: 10,
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     });
     let mut runtime = crate::AgentDecisionRuntime {
         ..crate::AgentDecisionRuntime::default()
@@ -2651,6 +2681,11 @@ fn travel_leg_completion_updates_progress_tick_and_resets_blocked_counter() {
         last_progress_tick: None,
         stalled_ticks: 5,
         patience_limit: 10,
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     });
     let mut runtime = crate::AgentDecisionRuntime {
         current_plan: Some(PlannedPlan::new(
@@ -2718,6 +2753,11 @@ fn recoverable_blocked_travel_step_increments_consecutive_blocked_ticks_and_forc
         last_progress_tick: None,
         stalled_ticks: 1,
         patience_limit: 10,
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     });
     let mut runtime = crate::AgentDecisionRuntime {
         current_plan: Some(plan.clone()),
@@ -2797,6 +2837,11 @@ fn blocked_leg_patience_exhaustion_clears_commitment_and_records_blocker() {
         last_progress_tick: Some(Tick(4)),
         stalled_ticks: 1,
         patience_limit: 10,
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     });
     let mut runtime = crate::AgentDecisionRuntime {
         current_plan: Some(plan),
@@ -2918,6 +2963,11 @@ fn dead_ai_agent_is_skipped_by_ai_driver() {
                 last_progress_tick: None,
                 stalled_ticks: 0,
                 patience_limit: 10,
+                motive_refs: Vec::new(),
+                resume_conditions: Vec::new(),
+                abandon_conditions: Vec::new(),
+                explicit_claims: Vec::new(),
+                causal_links: Vec::new(),
             },
         )
         .unwrap();
@@ -2965,6 +3015,11 @@ fn progress_barrier_completion_preserves_goal_and_forces_replan() {
         last_progress_tick: None,
         stalled_ticks: 0,
         patience_limit: 10,
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     });
     let mut runtime = crate::AgentDecisionRuntime {
         current_plan: Some(PlannedPlan::new(
@@ -3030,6 +3085,11 @@ fn suspended_detour_completion_preserves_commitment_and_reactivates_it() {
         last_progress_tick: Some(Tick(3)),
         stalled_ticks: 0,
         patience_limit: 10,
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     });
     let mut runtime = crate::AgentDecisionRuntime {
         current_plan: Some(PlannedPlan::new(
@@ -3093,6 +3153,11 @@ fn goal_completion_records_goal_satisfied_clear_reason() {
         last_progress_tick: None,
         stalled_ticks: 0,
         patience_limit: 10,
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     });
     let mut runtime = crate::AgentDecisionRuntime {
         current_plan: Some(PlannedPlan::new(
@@ -7958,6 +8023,11 @@ fn check_patience_exhaustion_creates_blocked_intent() {
         last_progress_tick: None,
         stalled_ticks: 5, // >= patience_limit of 5
         patience_limit: 5,
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     };
     let mut blocked_memory = BlockerMemory::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
@@ -8007,6 +8077,11 @@ fn check_patience_exhaustion_below_limit_returns_false() {
         last_progress_tick: None,
         stalled_ticks: 4, // < patience_limit of 5
         patience_limit: 5,
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     };
     let mut blocked_memory = BlockerMemory::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
@@ -8041,6 +8116,11 @@ fn patience_exhaustion_care_domain_uses_patient_as_target() {
         last_progress_tick: None,
         stalled_ticks: 10,
         patience_limit: 10,
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     };
     let mut blocked_memory = BlockerMemory::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
@@ -8076,6 +8156,11 @@ fn patience_exhaustion_generic_domain_uses_none_target() {
         last_progress_tick: None,
         stalled_ticks: 3,
         patience_limit: 3,
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     };
     let mut blocked_memory = BlockerMemory::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
@@ -8114,6 +8199,11 @@ fn assumption_failure_creates_discrepancy_memory_entry() {
         last_progress_tick: None,
         stalled_ticks: 0,
         patience_limit: 30,
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     };
     let mut discrepancy_memory = DiscrepancyMemory::default();
     let cognitive = CognitiveProfile::default();
@@ -8184,6 +8274,11 @@ fn committed_source_invalidation_records_source_invalidated_and_forces_replan() 
         last_progress_tick: None,
         stalled_ticks: 0,
         patience_limit: 8,
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     };
     let mut discrepancy_memory = DiscrepancyMemory::default();
     let mut facility_intents = ContentionIntents::default();
@@ -8359,6 +8454,11 @@ fn commodity_assumption_fixture(
                 last_progress_tick: None,
                 stalled_ticks: 0,
                 patience_limit: 30,
+                motive_refs: Vec::new(),
+                resume_conditions: Vec::new(),
+                abandon_conditions: Vec::new(),
+                explicit_claims: Vec::new(),
+                causal_links: Vec::new(),
             },
         )
         .unwrap();

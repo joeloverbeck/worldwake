@@ -1,14 +1,14 @@
 # S148PORMOTBAC-006: IntentionFrame BDI extension with motive refs and lifecycle conditions
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — extends `IntentionFrame` (`crates/worldwake-core/src/intention_frame.rs:138`) with five new authoritative fields: `motive_refs`, `resume_conditions`, `abandon_conditions`, `explicit_claims`, `causal_links`; migrates 18+ strict-literal construction sites and ~70 looser-match construction sites across 17 files
 **Deps**: `archive/tickets/S148PORMOTBAC-005.md`, `specs/S148-portfolio-and-motive-backed-intentions.md`
 
-## Problem
+## Outcome
 
-S148 PR-1's BDI extension folds the assessment's recommended motive-backed intention fields into `IntentionFrame`. Today's frame carries goal, domain, assumptions, state, established_at, last_progress_tick, stalled_ticks, patience_limit — but no record of *why* it was adopted (motives), *what holds it together* (claims, causal links), or *when it should resume or abandon* (lifecycle conditions). Spec S148 D6 adds five new fields; D8 (subsumed) defines the `explicit_claims: Vec<EntityId>` semantics against real artifact types (`ContentionGrant`-bearing facility queues, `SaleListing`-bearing lots, `ArtifactHeader`-bearing social artifacts); D9 (subsumed) documents the `causal_links_per_step_cap` contract (enforcement lands in ticket 007 where push sites materialize).
+S148 PR-1's BDI extension now carries the assessment's recommended motive-backed intention fields on `IntentionFrame`. Before this ticket, the frame carried goal, domain, assumptions, state, established_at, last_progress_tick, stalled_ticks, and patience_limit, but no record of *why* it was adopted (motives), *what holds it together* (claims, causal links), or *when it should resume or abandon* (lifecycle conditions). This ticket added the S148 D6 fields; D8's `explicit_claims: Vec<EntityId>` semantics are documented against existing artifact types (`ContentionGrant`-bearing facility queues, `SaleListing`-bearing lots, `ArtifactHeader`-bearing social artifacts); D9's `causal_links_per_step_cap` contract is documented on the field, with enforcement still owned by ticket 007 where push sites materialize.
 
 ## Assumption Reassessment (2026-05-17)
 
@@ -25,13 +25,13 @@ S148 PR-1's BDI extension folds the assessment's recommended motive-backed inten
 3. FND-28 clean migration: new fields appended at the end of the struct; `#[serde(default)]` annotations let pre-bump save state deserialize without a custom impl; no parallel struct, no shim, no version bump.
 4. New fields are all `Vec<T>` with natural `Default` (`Vec::new()`); construction sites add five `: Vec::new()` initializers mechanically. No structural surprise.
 
-## Verification Layers
+## Verified Layers
 
 1. `IntentionFrame` serde round-trip with new fields → focused unit test in `crates/worldwake-core/src/intention_frame.rs::tests` exercising serialization with non-empty vectors
 2. Pre-bump serialized state tolerance → focused test asserting that an `IntentionFrame` serialized before the new fields were added still deserializes (constructs the new fields as `Vec::new()` via `#[serde(default)]`)
 3. Construction-site migration completeness → workspace compilation under `cargo clippy --workspace --all-targets -- -D warnings` (any unmigrated `IntentionFrame {…}` literal fails compile)
 
-## What to Change
+## Landed Changes
 
 ### 1. Extend `IntentionFrame` with five new fields
 
@@ -100,7 +100,7 @@ Grep `IntentionFrame \{` workspace-wide and apply the same field-append to every
 
 Grep `scenarios/**/*.ron` for `IntentionFrame` references. Since `IntentionFrame` is runtime-generated state (not scenario-authored), there should be no RON references. If any are found, they require migration; otherwise the audit confirms no scenario impact.
 
-## Files to Touch
+## Landed Files
 
 - `crates/worldwake-core/src/intention_frame.rs` (modify — extend struct definition with five new fields + doc-comments; migrate construction site at line 261; extend existing tests)
 - `crates/worldwake-ai/src/feasibility.rs` (modify — construction site at line 567)
@@ -128,14 +128,14 @@ Grep `scenarios/**/*.ron` for `IntentionFrame` references. Since `IntentionFrame
 - Golden coverage exercising the new fields (ticket 010)
 - Per-call-site population of `motive_refs` with real motive sources (ticket 007 wires the agenda-manager promotion path; this ticket initializes to `Vec::new()` at construction)
 
-## Acceptance Criteria
+## Accepted Invariants
 
-### Tests That Must Pass
+### Passing Proof
 
-1. `cargo test -p worldwake-core intention_frame` — new and migrated tests pass: serde round-trip including non-empty new fields; pre-bump serialized state tolerance test (deserializes serialized-without-new-fields blob and verifies new fields are `Vec::new()`)
-2. Existing `agent_tick/frame.rs::tests` (10+ tests) pass after construction-site migration
-3. Existing suite: `cargo test --workspace`
-4. Lint: `cargo clippy --workspace --all-targets -- -D warnings`
+1. `cargo test -p worldwake-core intention_frame` passed with the new and migrated tests: serde round-trip including non-empty fields, and pre-S148 serialized state tolerance with empty default vectors.
+2. `cargo test -p worldwake-ai agent_tick::frame` passed after construction-site migration.
+3. `cargo test --workspace` passed.
+4. `cargo clippy --workspace --all-targets -- -D warnings` passed.
 
 ### Invariants
 
@@ -143,16 +143,28 @@ Grep `scenarios/**/*.ron` for `IntentionFrame` references. Since `IntentionFrame
 2. Every existing `IntentionFrame {` construction site compiles after migration (the absence of unmigrated sites is enforced by the compiler since the struct does not derive `Default`).
 3. `SAVE_FORMAT_VERSION` is not bumped (= 90 stable); pre-S148 serialized `IntentionFrame` state deserializes via `#[serde(default)]` with the new fields populated as `Vec::new()`.
 
-## Test Plan
+## Verification Result
 
-### New/Modified Tests
+### Tests Landed
 
-1. `crates/worldwake-core/src/intention_frame.rs::tests` — add: `intention_frame_serde_round_trip_with_new_fields`, `intention_frame_deserializes_pre_s148_state_with_serde_default`
-2. `crates/worldwake-ai/src/agent_tick/frame.rs::tests` — existing tests continue passing after fixture migration; no new tests required (lifecycle tests land with ticket 007's evaluator)
+1. Passed: `crates/worldwake-core/src/intention_frame.rs::tests` now covers `intention_frame_roundtrips_with_bdi_fields` and `intention_frame_deserializes_pre_s148_state_with_empty_bdi_fields`.
+2. Passed: Existing `crates/worldwake-ai/src/agent_tick/frame.rs::tests` passed after fixture migration. Lifecycle tests remain in ticket 007's evaluator scope.
 
-### Commands
+### Commands Run
 
-1. `cargo test -p worldwake-core intention_frame`
-2. `cargo test -p worldwake-ai agent_tick::frame`
-3. `cargo test --workspace` (the wide test surface catches construction-site fix-ups)
-4. `./scripts/verify.sh`
+1. Passed: `cargo fmt --all`
+2. Passed: `cargo test -p worldwake-core intention_frame`
+3. Passed: `cargo test -p worldwake-ai agent_tick::frame`
+4. Passed: `cargo clippy --workspace --all-targets -- -D warnings`
+5. Passed: `cargo test --workspace`
+6. Passed: `rg -n "IntentionFrame|intention_frame|motive_refs|resume_conditions|abandon_conditions|explicit_claims|causal_links" scenarios` returned no scenario references requiring migration.
+
+`./scripts/verify.sh` was not run as a single wrapper during this ticket closeout. Its relevant local gates were run explicitly: `cargo fmt --all`, `cargo test --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings`.
+
+## Implementation Result
+
+Implemented in `crates/worldwake-core/src/intention_frame.rs` by appending exactly five `#[serde(default)]` `Vec` fields to `IntentionFrame`: `motive_refs`, `resume_conditions`, `abandon_conditions`, `explicit_claims`, and `causal_links`. The field docs name the existing claim entity classes and the `CognitiveProfile.causal_links_per_step_cap` bound, while enforcement and real population remain owned by S148PORMOTBAC-007.
+
+All `IntentionFrame` construction sites in core, AI, systems, and golden fixtures were migrated to initialize the new fields. `crates/worldwake-core/src/delta.rs` was updated for the widened component value fixture. `crates/worldwake-core/src/world_txn.rs` also needed a same-seam test fixture adjustment from a large stack array to a `Vec` because the widened `IntentionFrame` tripped `clippy::large_stack_arrays`.
+
+Added focused core tests for non-empty BDI-field serialization round-trip and pre-S148 deserialization with empty default vectors. The scenario RON audit found no references to the new frame fields or `IntentionFrame`, so no scenario migration was required.

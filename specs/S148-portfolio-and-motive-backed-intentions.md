@@ -303,6 +303,8 @@ pub struct IntentionFrame {
 
 Field types `goal: GoalKey` (`core/src/goal.rs:314`) and `domain: IntentionDomain` (`intention_frame.rs:17`) are preserved unchanged — the earlier draft's `GoalOffer`/`GoalDomain` names were drift. The five new fields are appended with `#[serde(default)]` so existing serialized state continues to deserialize (per the spec-drafting-rules.md 5c requirement; `IntentionFrame` is part of save/replay state via `AgentBeliefStore`-adjacent serialization).
 
+**Implementation note (S148PORMOTBAC-006, 2026-05-18)**: `IntentionFrame` now carries the five appended `#[serde(default)]` vectors in `crates/worldwake-core/src/intention_frame.rs`: `motive_refs`, `resume_conditions`, `abandon_conditions`, `explicit_claims`, and `causal_links`. Existing construction sites across core, AI, systems, and golden fixtures initialize those fields explicitly, and focused serde tests prove both non-empty round-trip behavior and pre-S148 deserialization to empty vectors. A scenario RON audit found no authored `IntentionFrame` references. Evaluator semantics, causal-link push-site enforcement, and real motive-ref population remain owned by S148PORMOTBAC-007.
+
 ### D7: `IntentionResumeCondition` and `IntentionAbandonCondition` (core-resident)
 
 ```rust
@@ -347,7 +349,7 @@ pub enum IntentionAbandonCondition {
 
 **`ArtifactLegalEffectTag` prerequisite**: Add a payload-free discriminant mirror `ArtifactLegalEffectTag` to `worldwake-core/src/social_artifact.rs` following the `BeliefStatusTag` precedent (`decision_event_payload.rs:281`, mechanical mirror of `BeliefStatus`). Variants: `None, Active, Suspended, Expired, Revoked, Fulfilled`. Derives: `Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize`. Single conversion site `ArtifactLegalEffect → ArtifactLegalEffectTag` lives alongside the existing axis-projection helpers in `social_artifact.rs`. This is the standard Core-Side Mirror pattern from `worldwake-validation-patterns.md`.
 
-**Implementation note (S148PORMOTBAC-005, 2026-05-18)**: `IntentionResumeCondition` and `IntentionAbandonCondition` now live in `crates/worldwake-core/src/intention_condition.rs` and are re-exported from `worldwake-core`. `ArtifactLegalEffectTag` now mirrors `ArtifactLegalEffect` in `social_artifact.rs` with a single `From<&ArtifactLegalEffect>` conversion. `IntentionFrame` field integration remains owned by S148PORMOTBAC-006, and evaluator/discrepancy integration remains owned by S148PORMOTBAC-007.
+**Implementation note (S148PORMOTBAC-005, 2026-05-18)**: `IntentionResumeCondition` and `IntentionAbandonCondition` now live in `crates/worldwake-core/src/intention_condition.rs` and are re-exported from `worldwake-core`. `ArtifactLegalEffectTag` now mirrors `ArtifactLegalEffect` in `social_artifact.rs` with a single `From<&ArtifactLegalEffect>` conversion. `IntentionFrame` field integration was completed by S148PORMOTBAC-006, and evaluator/discrepancy integration remains owned by S148PORMOTBAC-007.
 
 ### D8: `explicit_claims` tracking (with correct artifact references)
 

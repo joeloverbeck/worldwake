@@ -153,6 +153,11 @@ fn seed_intention_frame_with_hunger_breach(h: &mut GoldenHarness, agent: EntityI
             last_progress_tick: None,
             stalled_ticks: 0,
             patience_limit: 16,
+            motive_refs: Vec::new(),
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            explicit_claims: Vec::new(),
+            causal_links: Vec::new(),
         },
     )
     .unwrap();

@@ -122,6 +122,11 @@ pub(super) fn update_frame_for_adopted_plan(
         last_progress_tick: None,
         stalled_ticks: 0,
         patience_limit: 30, // default; caller may override from profile
+        motive_refs: Vec::new(),
+        resume_conditions: Vec::new(),
+        abandon_conditions: Vec::new(),
+        explicit_claims: Vec::new(),
+        causal_links: Vec::new(),
     })
 }
 
@@ -970,6 +975,11 @@ mod tests {
             last_progress_tick: None,
             stalled_ticks: 0,
             patience_limit: 30,
+            motive_refs: Vec::new(),
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            explicit_claims: Vec::new(),
+            causal_links: Vec::new(),
         }
     }
 
@@ -1246,6 +1256,11 @@ mod tests {
             last_progress_tick: None,
             stalled_ticks: 0,
             patience_limit: 30,
+            motive_refs: Vec::new(),
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            explicit_claims: Vec::new(),
+            causal_links: Vec::new(),
         };
 
         let assumptions = populate_assumptions(&frame, agent, &view, Tick(0), Tick(0));
@@ -2079,6 +2094,11 @@ mod tests {
             last_progress_tick: None,
             stalled_ticks: 0,
             patience_limit: 30,
+            motive_refs: Vec::new(),
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            explicit_claims: Vec::new(),
+            causal_links: Vec::new(),
         }
     }
 
@@ -2140,6 +2160,11 @@ mod tests {
             last_progress_tick: None,
             stalled_ticks: 0,
             patience_limit: 30,
+            motive_refs: Vec::new(),
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            explicit_claims: Vec::new(),
+            causal_links: Vec::new(),
         };
         let mut memory = worldwake_core::DiscrepancyMemory::default();
         let tick = Tick(50);
@@ -2304,6 +2329,11 @@ mod tests {
             last_progress_tick: None,
             stalled_ticks: 0,
             patience_limit: 30,
+            motive_refs: Vec::new(),
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            explicit_claims: Vec::new(),
+            causal_links: Vec::new(),
         };
         let mut memory = worldwake_core::DiscrepancyMemory::default();
         let tick = Tick(50);
@@ -2362,6 +2392,11 @@ mod tests {
             last_progress_tick: None,
             stalled_ticks: 0,
             patience_limit: 3,
+            motive_refs: Vec::new(),
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            explicit_claims: Vec::new(),
+            causal_links: Vec::new(),
         };
         let mut memory = worldwake_core::DiscrepancyMemory::default();
         let tick = Tick(12);
