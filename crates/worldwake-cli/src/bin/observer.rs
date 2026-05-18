@@ -31,9 +31,10 @@ use worldwake_core::{
     ActionInterruptReasonTag, AgentBeliefStore, ArtifactAxisValue, ArtifactHeader, AxisName,
     CommodityKind, DeadAt, DeathCause, DecisionEventPayload, EntityId, EntityKind, EventId,
     EventTag, EventView, GoalAbandonReason, GoalCommittedPayload, GoalKey, HomeostaticNeedId,
-    KnownRecipes, MetabolismProfile, MethodSchemaId, MotiveSource, MotiveSourceRef,
-    OpportunityAnchor, PlaceTag, PlanInvalidationReason, Quantity, RecipeId, ReplanReason,
-    RoutePreferenceSummary, TestimonyTrustSummary, Tick, WorkstationTag,
+    IntentionAbandonCondition, IntentionFrame, IntentionResumeCondition, KnownRecipes,
+    MetabolismProfile, MethodSchemaId, MotiveSource, MotiveSourceRef, OpportunityAnchor, PlaceTag,
+    PlanInvalidationReason, Quantity, RecipeId, ReplanReason, RoutePreferenceSummary, SlotKind,
+    TestimonyTrustSummary, Tick, WorkstationTag,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionTraceEvent, ActionTraceKind, ActionTraceSink,
@@ -964,6 +965,9 @@ fn render_decision_history_section(
             for line in goal_committed_context_lines(inner, Some(world)) {
                 writeln!(out, "|  |  |  | {line} |").unwrap();
             }
+            for line in goal_committed_intention_lines(inner, world, traces, record.tick()) {
+                writeln!(out, "|  |  |  | {line} |").unwrap();
+            }
             for line in goal_committed_motive_source_lines(inner, traces, record.tick()) {
                 writeln!(out, "|  |  |  | {line} |").unwrap();
             }
@@ -1108,6 +1112,211 @@ fn repair_attempt_trace_for_payload<'a>(
                 .iter()
                 .find(|attempt| attempt.breach.goal_key == payload.goal_key)
         })
+}
+
+fn goal_committed_intention_lines(
+    payload: &GoalCommittedPayload,
+    world: &worldwake_core::World,
+    traces: Option<&DecisionTraceSink>,
+    tick: Tick,
+) -> Vec<String> {
+    let frame = world
+        .get_component_intention_frame(payload.agent)
+        .filter(|frame| frame.goal == payload.goal_key);
+    let Some(slot) = committed_slot_for(payload, frame, traces, tick) else {
+        return Vec::new();
+    };
+    let weights = world
+        .get_component_portfolio_weights_profile(payload.agent)
+        .copied()
+        .unwrap_or_default();
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "Committed: {} (Slot: {:?}, weight {})",
+        format_goal_kind(world, &payload.goal_key.kind),
+        slot,
+        weights.weight_for(slot).value()
+    ));
+    if let Some(frame) = frame {
+        lines.extend(render_intention_frame_extended(frame, world));
+    }
+    lines
+}
+
+fn committed_slot_for(
+    payload: &GoalCommittedPayload,
+    frame: Option<&IntentionFrame>,
+    traces: Option<&DecisionTraceSink>,
+    tick: Tick,
+) -> Option<SlotKind> {
+    frame
+        .and_then(|frame| primary_slot_from_sources(&frame.motive_refs))
+        .or_else(|| primary_slot_from_sources(&payload.decisive_motive_sources))
+        .or_else(|| {
+            ranked_goal_summary_for_commit(traces, payload.agent, tick, payload.goal_key).and_then(
+                |summary| {
+                    let sources = summary
+                        .motive_source_contributions
+                        .iter()
+                        .map(|(source, _)| source.clone())
+                        .collect::<Vec<_>>();
+                    primary_slot_from_sources(&sources)
+                },
+            )
+        })
+}
+
+fn primary_slot_from_sources(sources: &[MotiveSourceRef]) -> Option<SlotKind> {
+    sources
+        .iter()
+        .min_by_key(|source| source.introduced_tick)
+        .map(|source| worldwake_core::motive_source_slot_for(source.source.discriminant()))
+}
+
+fn render_intention_frame_extended(
+    frame: &IntentionFrame,
+    world: &worldwake_core::World,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    if !frame.motive_refs.is_empty() {
+        lines.push("&nbsp;&nbsp;Motives:".to_string());
+        for motive_ref in &frame.motive_refs {
+            lines.push(format!(
+                "&nbsp;&nbsp;&nbsp;&nbsp;- {} introduced t={}",
+                format_motive_source_ref(motive_ref),
+                motive_ref.introduced_tick.0
+            ));
+        }
+    }
+    if !frame.explicit_claims.is_empty() {
+        lines.push("&nbsp;&nbsp;Claims:".to_string());
+        for claim in &frame.explicit_claims {
+            lines.push(format!(
+                "&nbsp;&nbsp;&nbsp;&nbsp;- {}",
+                format_artifact_claim(world, *claim)
+            ));
+        }
+    }
+    for condition in &frame.resume_conditions {
+        lines.push(format!(
+            "&nbsp;&nbsp;Resume on: {}",
+            format_resume_condition(world, condition)
+        ));
+    }
+    if !frame.abandon_conditions.is_empty() {
+        lines.push("&nbsp;&nbsp;Abandon if:".to_string());
+        for condition in &frame.abandon_conditions {
+            lines.push(format!(
+                "&nbsp;&nbsp;&nbsp;&nbsp;- {}",
+                format_abandon_condition(world, condition)
+            ));
+        }
+    }
+    if !frame.causal_links.is_empty() {
+        lines.push(format!(
+            "&nbsp;&nbsp;Causal links: {}",
+            frame
+                .causal_links
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    lines
+}
+
+fn format_resume_condition(
+    world: &worldwake_core::World,
+    condition: &IntentionResumeCondition,
+) -> String {
+    match condition {
+        IntentionResumeCondition::BeliefStatusChanged {
+            subject,
+            target_status,
+        } => format!(
+            "BeliefStatusChanged({}, {:?})",
+            entity_display_name(world, *subject),
+            target_status
+        ),
+        IntentionResumeCondition::OpportunityVisible(anchor) => {
+            format!(
+                "OpportunityVisible({})",
+                format_opportunity_anchor(world, *anchor)
+            )
+        }
+        IntentionResumeCondition::LocationReached(place) => {
+            format!("LocationReached({})", entity_display_name(world, *place))
+        }
+        IntentionResumeCondition::TickElapsed(ticks) => format!("TickElapsed({ticks})"),
+        IntentionResumeCondition::ArtifactLegalEffectActive(artifact) => format!(
+            "ArtifactLegalEffectActive({})",
+            format_artifact_claim(world, *artifact)
+        ),
+    }
+}
+
+fn format_abandon_condition(
+    world: &worldwake_core::World,
+    condition: &IntentionAbandonCondition,
+) -> String {
+    match condition {
+        IntentionAbandonCondition::MotiveSourceLost(discriminant) => {
+            format!("MotiveSourceLost({discriminant:?})")
+        }
+        IntentionAbandonCondition::AssumptionPermanentlyBroken(assumption) => {
+            format!("AssumptionPermanentlyBroken({assumption:?})")
+        }
+        IntentionAbandonCondition::OpportunityForeverGone(anchor) => {
+            format!(
+                "OpportunityForeverGone({})",
+                format_opportunity_anchor(world, *anchor)
+            )
+        }
+        IntentionAbandonCondition::PatienceExhausted => "PatienceExhausted".to_string(),
+        IntentionAbandonCondition::ArtifactDestroyed(artifact) => {
+            format!(
+                "ArtifactDestroyed({})",
+                format_artifact_claim(world, *artifact)
+            )
+        }
+        IntentionAbandonCondition::ArtifactLegalEffectLost(artifact) => format!(
+            "ArtifactLegalEffectLost({})",
+            format_artifact_claim(world, *artifact)
+        ),
+    }
+}
+
+fn format_opportunity_anchor(world: &worldwake_core::World, anchor: OpportunityAnchor) -> String {
+    match anchor {
+        OpportunityAnchor::None => "None".to_string(),
+        OpportunityAnchor::Place(place) => format!("Place({})", entity_display_name(world, place)),
+        OpportunityAnchor::Entity(entity) => {
+            format!("Entity({})", entity_display_name(world, entity))
+        }
+    }
+}
+
+fn format_artifact_claim(world: &worldwake_core::World, entity: EntityId) -> String {
+    if let Some(queue) = world.get_component_contention_queue(entity)
+        && queue.granted.is_some()
+    {
+        return format!("ContentionGrant#{entity}");
+    }
+    if world.get_component_sale_listing(entity).is_some() {
+        return world.get_component_item_lot(entity).map_or_else(
+            || format!("SaleListing on {}", entity_display_name(world, entity)),
+            |lot| format!("SaleListing on {:?}", lot.commodity),
+        );
+    }
+    if let Some(header) = world.get_component_artifact_header(entity) {
+        return format!(
+            "{:?} artifact {}",
+            header.kind,
+            entity_display_name(world, entity)
+        );
+    }
+    entity_display_name(world, entity)
 }
 
 fn format_optional_entity(entity: Option<EntityId>) -> String {
@@ -5680,15 +5889,16 @@ mod tests {
         detect_geographic_convergence, detect_maintenance_starvation, detect_recipe_monoculture,
         failed_plan_breakdown, failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
         failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
-        format_affordance_summary, format_anomaly_header, format_behavioral_transition,
-        format_budget_exhaustion_snapshots, format_death_cause, format_opportunity_line,
-        format_report, goal_committed_context_lines, method_trace_details, method_trace_summary,
+        format_abandon_condition, format_affordance_summary, format_anomaly_header,
+        format_artifact_claim, format_behavioral_transition, format_budget_exhaustion_snapshots,
+        format_death_cause, format_opportunity_line, format_report, format_resume_condition,
+        goal_committed_context_lines, method_trace_details, method_trace_summary,
         need_high_threshold, post_travel_affordance_snapshots, primary_satisfied_need,
         recipe_usage_rows, render_artifact_lifecycle_section, render_contention_section,
-        render_decision_history_section, render_maintenance_rates_table,
-        render_opportunity_compiler_section, render_recipe_usage_table,
-        render_scenario_diagnostics_section, testimony_trust_context_lines,
-        unknown_location_entity_groups,
+        render_decision_history_section, render_intention_frame_extended,
+        render_maintenance_rates_table, render_opportunity_compiler_section,
+        render_recipe_usage_table, render_scenario_diagnostics_section,
+        testimony_trust_context_lines, unknown_location_entity_groups,
     };
     use crate::ObserverCli;
     use clap::Parser;
@@ -5723,18 +5933,21 @@ mod tests {
         BodyCostPerTick, CauseRef, ClaimantOutcome, CloseCause, CommodityKind, CommodityPurpose,
         ContentionClaimant, ContentionEventPayload, ContentionResolutionRule, ControlSource,
         DeadAt, DeathCause, DecisionEventPayload, DriveThresholds, EmitterTag, EntityBeliefAspect,
-        EntityId, EntityKind, EventLog, EventPayload, EventTag, FrameAssumption, GoalAbandonReason,
-        GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind, GoalOfferedPayload,
-        GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
-        HomeostaticNeedId, InvalidatorTag, KnownRecipes, MetabolismProfile, MethodSchemaId, Name,
-        ObservationOmission, ObservationRef, OmissionReason, OpportunityAnchor, PendingEvent,
-        PercentileBucket, Permille, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
+        EntityId, EntityKind, EventLog, EventPayload, EventTag, FrameAssumption, FrameState,
+        GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind,
+        GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
+        GoalSwitchReason, HomeostaticNeedId, IntentionAbandonCondition, IntentionDomain,
+        IntentionFrame, IntentionResumeCondition, InvalidatorTag, KnownRecipes, MetabolismProfile,
+        MethodSchemaId, MotiveSourceDiscriminant, Name, ObservationOmission, ObservationRef,
+        OmissionReason, OpportunityAnchor, OpportunityKey, PendingEvent, PercentileBucket,
+        Permille, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
         PlanInvalidationReason, PrototypePlace, Quantity, RankedGoalComparisonDimensionTag,
-        RecipeId, RecordRef, ResourceSource, RoutePreferenceSummary, RouteSegment, SaliencePolicy,
-        SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepRecoveryModifier,
-        TestimonyTrustSummary, Tick, TopicScope, VisibilitySpec, WakeCondition, WakeReason,
-        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, build_prototype_world, prototype_place_entity,
+        RecipeId, RecordRef, ResourceSource, RoutePreferenceSummary, RouteSegment, SaleListing,
+        SaliencePolicy, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
+        SleepRecoveryModifier, TestimonyTrustSummary, Tick, TopicScope, VisibilitySpec,
+        WakeCondition, WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
+        prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionHandlerId, ActionInstanceId, ActionPayload,
@@ -8129,6 +8342,265 @@ mod tests {
 
         assert!(out.contains("motive sources:"));
         assert!(out.contains("NeedPressure(Hunger) → 14200"));
+    }
+
+    #[test]
+    fn render_intention_frame_extended_full_population() {
+        let world = World::new(build_prototype_world()).unwrap();
+        let claim = entity(907);
+        let frame = IntentionFrame {
+            goal: GoalKey::from(GoalKind::Sleep),
+            domain: IntentionDomain::Generic,
+            assumptions: Vec::new(),
+            state: FrameState::Active,
+            established_at: Tick(410),
+            last_progress_tick: None,
+            stalled_ticks: 0,
+            patience_limit: 8,
+            motive_refs: vec![worldwake_core::MotiveSourceRef {
+                source: worldwake_core::MotiveSource::NeedPressure {
+                    need: HomeostaticNeedId::Hunger,
+                },
+                introduced_tick: Tick(412),
+            }],
+            resume_conditions: vec![IntentionResumeCondition::TickElapsed(4)],
+            abandon_conditions: vec![IntentionAbandonCondition::MotiveSourceLost(
+                MotiveSourceDiscriminant::NeedPressure,
+            )],
+            explicit_claims: vec![claim],
+            causal_links: vec![worldwake_core::EventId(9)],
+        };
+
+        let lines = render_intention_frame_extended(&frame, &world);
+
+        assert!(lines.contains(&"&nbsp;&nbsp;Motives:".to_string()));
+        assert!(lines.contains(
+            &"&nbsp;&nbsp;&nbsp;&nbsp;- NeedPressure(Hunger) introduced t=412".to_string()
+        ));
+        assert!(lines.contains(&"&nbsp;&nbsp;Claims:".to_string()));
+        assert!(lines.iter().any(|line| line.contains("Unknown#907")));
+        assert!(lines.contains(&"&nbsp;&nbsp;Resume on: TickElapsed(4)".to_string()));
+        assert!(lines.contains(&"&nbsp;&nbsp;Abandon if:".to_string()));
+        assert!(
+            lines.contains(&"&nbsp;&nbsp;&nbsp;&nbsp;- MotiveSourceLost(NeedPressure)".to_string())
+        );
+        assert!(lines.iter().any(|line| line.contains("Causal links: ev9")));
+    }
+
+    #[test]
+    fn render_intention_frame_extended_empty_vectors_skip_subsections() {
+        let world = World::new(build_prototype_world()).unwrap();
+        let frame = IntentionFrame {
+            goal: GoalKey::from(GoalKind::Sleep),
+            domain: IntentionDomain::Generic,
+            assumptions: Vec::new(),
+            state: FrameState::Active,
+            established_at: Tick(410),
+            last_progress_tick: None,
+            stalled_ticks: 0,
+            patience_limit: 8,
+            motive_refs: Vec::new(),
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            explicit_claims: Vec::new(),
+            causal_links: Vec::new(),
+        };
+
+        let lines = render_intention_frame_extended(&frame, &world);
+
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn condition_formatters_cover_resume_and_abandon_variants() {
+        let world = World::new(build_prototype_world()).unwrap();
+
+        assert_eq!(
+            format_resume_condition(
+                &world,
+                &IntentionResumeCondition::BeliefStatusChanged {
+                    subject: entity(901),
+                    target_status: BeliefStatusTag::Certain,
+                },
+            ),
+            "BeliefStatusChanged(Unknown#901, Certain)"
+        );
+        assert_eq!(
+            format_resume_condition(
+                &world,
+                &IntentionResumeCondition::OpportunityVisible(OpportunityAnchor::Place(entity(
+                    902
+                ),)),
+            ),
+            "OpportunityVisible(Place(Unknown#902))"
+        );
+        assert_eq!(
+            format_resume_condition(
+                &world,
+                &IntentionResumeCondition::LocationReached(entity(903))
+            ),
+            "LocationReached(Unknown#903)"
+        );
+        assert_eq!(
+            format_resume_condition(&world, &IntentionResumeCondition::TickElapsed(5)),
+            "TickElapsed(5)"
+        );
+        assert!(
+            format_resume_condition(
+                &world,
+                &IntentionResumeCondition::ArtifactLegalEffectActive(entity(904)),
+            )
+            .contains("ArtifactLegalEffectActive(Unknown#904")
+        );
+        assert_eq!(
+            format_abandon_condition(
+                &world,
+                &IntentionAbandonCondition::MotiveSourceLost(MotiveSourceDiscriminant::Greed),
+            ),
+            "MotiveSourceLost(Greed)"
+        );
+        assert_eq!(
+            format_abandon_condition(
+                &world,
+                &IntentionAbandonCondition::AssumptionPermanentlyBroken(
+                    FrameAssumption::NoCriticalThreat,
+                ),
+            ),
+            "AssumptionPermanentlyBroken(NoCriticalThreat)"
+        );
+        assert_eq!(
+            format_abandon_condition(
+                &world,
+                &IntentionAbandonCondition::OpportunityForeverGone(OpportunityAnchor::Entity(
+                    entity(905),
+                )),
+            ),
+            "OpportunityForeverGone(Entity(Unknown#905))"
+        );
+        assert_eq!(
+            format_abandon_condition(&world, &IntentionAbandonCondition::PatienceExhausted),
+            "PatienceExhausted"
+        );
+        assert!(
+            format_abandon_condition(
+                &world,
+                &IntentionAbandonCondition::ArtifactDestroyed(entity(906))
+            )
+            .contains("ArtifactDestroyed(Unknown#906")
+        );
+        assert!(
+            format_abandon_condition(
+                &world,
+                &IntentionAbandonCondition::ArtifactLegalEffectLost(entity(907)),
+            )
+            .contains("ArtifactLegalEffectLost(Unknown#907")
+        );
+    }
+
+    #[test]
+    fn format_artifact_claim_dispatches_sale_listing_component() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let lot = {
+            let mut txn = new_txn(&mut world, 1);
+            let lot = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            txn.set_component_sale_listing(lot, SaleListing { listed_at: Tick(1) })
+                .unwrap();
+            commit_txn(txn);
+            lot
+        };
+
+        assert_eq!(format_artifact_claim(&world, lot), "SaleListing on Bread");
+    }
+
+    #[test]
+    fn decision_history_renders_current_intention_details_for_matching_commit() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Agent A", ControlSource::Ai).unwrap();
+            let claim = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            txn.set_component_sale_listing(claim, SaleListing { listed_at: Tick(1) })
+                .unwrap();
+            let source = worldwake_core::MotiveSourceRef {
+                source: worldwake_core::MotiveSource::Greed {
+                    opportunity: OpportunityKey {
+                        goal_key: GoalKey::from(GoalKind::Sleep),
+                        anchor: OpportunityAnchor::None,
+                    },
+                },
+                introduced_tick: Tick(412),
+            };
+            txn.set_component_intention_frame(
+                agent,
+                IntentionFrame {
+                    goal: GoalKey::from(GoalKind::Sleep),
+                    domain: IntentionDomain::Generic,
+                    assumptions: Vec::new(),
+                    state: FrameState::Active,
+                    established_at: Tick(412),
+                    last_progress_tick: None,
+                    stalled_ticks: 0,
+                    patience_limit: 8,
+                    motive_refs: vec![source],
+                    resume_conditions: vec![IntentionResumeCondition::TickElapsed(3)],
+                    abandon_conditions: vec![IntentionAbandonCondition::MotiveSourceLost(
+                        MotiveSourceDiscriminant::Greed,
+                    )],
+                    explicit_claims: vec![claim],
+                    causal_links: Vec::new(),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            agent
+        };
+        let source = worldwake_core::MotiveSourceRef {
+            source: worldwake_core::MotiveSource::Greed {
+                opportunity: OpportunityKey {
+                    goal_key: GoalKey::from(GoalKind::Sleep),
+                    anchor: OpportunityAnchor::None,
+                },
+            },
+            introduced_tick: Tick(412),
+        };
+        let mut log = EventLog::new();
+        emit_decision_event(
+            &mut log,
+            412,
+            agent,
+            EventTag::GoalCommitted,
+            DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
+                agent,
+                goal_key: GoalKey::from(GoalKind::Sleep),
+                motive_score: 600,
+                decisive_motive_sources: vec![source],
+                rejected_alternatives: Vec::new(),
+                assumptions: Vec::new(),
+                testimony_trust_context: Vec::new(),
+                route_preference_context: Vec::new(),
+            }),
+        );
+
+        let mut out = String::new();
+        render_decision_history_section(
+            &mut out,
+            &world,
+            &log,
+            &[(agent, "Agent A".to_string())],
+            None,
+        );
+
+        assert!(out.contains("Committed: Sleep (Slot: EconomicOpportunity, weight 600)"));
+        assert!(out.contains("&nbsp;&nbsp;Motives:"));
+        assert!(out.contains("Greed("));
+        assert!(out.contains("&nbsp;&nbsp;Claims:"));
+        assert!(out.contains("SaleListing on Bread"));
+        assert!(out.contains("&nbsp;&nbsp;Resume on: TickElapsed(3)"));
+        assert!(out.contains("&nbsp;&nbsp;&nbsp;&nbsp;- MotiveSourceLost(Greed)"));
     }
 
     #[test]
