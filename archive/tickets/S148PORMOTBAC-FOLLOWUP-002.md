@@ -1,6 +1,6 @@
 # S148PORMOTBAC-FOLLOWUP-002: Restore ask_consult self-care AcquireCommodity without re-introducing baseline/scattered/preferences regressions
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — investigation surface is `crates/worldwake-ai/src/agent_tick/planning.rs` and `crates/worldwake-ai/src/feasibility_probe.rs`; resolution may also require deeper changes in `crates/worldwake-ai/src/opportunity_compiler/` or `crates/worldwake-ai/src/agent_tick/portfolio.rs`.
@@ -23,7 +23,7 @@ Change (2) silently regressed five other CI-only goldens that had been green at 
 
 CI run `26013605898` made the regression invisible at closeout because the observer suite produced the expected anomaly counts on that runner; CI run `26014846392` (same branch HEAD + cosmetic doc commit) reproduces the local-deterministic failure. Local reproduction at branch HEAD is 100%.
 
-The stop-gap landed in the current branch (this ticket's parent fix) reverts (2) and keeps (1). Patrol stays green, baseline/scattered/preferences/observer anomalies stay green, and ask_consult is re-broken until this ticket is implemented.
+Before this ticket, the parent stop-gap had reverted (2) and kept (1). Patrol, baseline, scattered, preferences, and observer anomalies were green, while ask_consult was re-broken.
 
 ## Assumption Reassessment (2026-05-18)
 
@@ -52,38 +52,33 @@ The stop-gap landed in the current branch (this ticket's parent fix) reverts (2)
 3. The combined effect must NOT re-introduce the `S138OPPCOM-012` accounting regression: `compile_opportunities` already records `compiled_count` post-truncation. The fix must not move it back.
 4. Cross-system effects must propagate through state (`FND-26`): no direct cross-crate planner-to-systems calls; the affordance-graph reasoning if added in (1) is inside `worldwake-ai`.
 
-## Verification Layers
+## Outcome
 
-1. Probe rejects-but-planner-resolves contract -> focused unit test in `feasibility_probe.rs` proves a probe-rejected `AcquireCommodity { commodity: Water, purpose: SelfConsume }` with a remembered place + route + recipe is admitted as Plausible (option 1) OR exposed via a planner-search admission predicate (option 2).
-2. `golden_survival_ask_consult::survival_ask_consult_lands_row_six` passes -> golden E2E.
-3. `golden_survival_patrol::survival_patrol_proves_patrol_and_remote_pursuit_execution` continues to pass -> golden E2E (the `stale_exact_target_can_reach_search` change from the parent ticket is preserved).
-4. `golden_survival_baseline::all_agents_perform_survival_actions` continues to pass -> golden E2E.
-5. `golden_survival_scattered::all_agents_survive_1440_ticks` continues to pass -> golden E2E.
-6. `golden_survival_preferences::survival_preferences_keeps_proactive_diversification_alive_under_survival` continues to pass -> golden E2E.
-7. `golden_observer_anomalies::maintenance_starvation_fires_on_wash_gap` and `::recipe_monoculture_fires_on_single_food_dependency` continue to pass -> observer-binary E2E.
-8. Decision-trace surface proves the bypass admits the intended slot and does not silently extend admission to non-self-care goals.
+Completed on 2026-05-18.
 
-## What to Change
+- Chose the probe-side shape. `feasibility_probe::probe` now treats low-or-higher self-care pressure as enough to let `AcquireCommodity { purpose: SelfConsume, .. }` reach search instead of being stopped by current-place or final missing-observation checks.
+- Added a remote self-care acquisition probe escape for believed route topologies, including entity-anchored remote sources, so the probe does not reject a planner-resolvable travel path before search.
+- Preserved `agent_tick::planning` search-order semantics. The rejected-slot bypass was not reintroduced, so the parent regression mechanism stays removed.
+- Preserved the S138 post-cap `OpportunityCompilerLoad.compiled_count` contract; this ticket did not edit opportunity compiler accounting.
 
-### 1. Pick one of the two architectural shapes from Architecture Check #1
+## Deviations
 
-- If probe-side: extend `feasibility_probe::current_place_support_failure` to consult the affordance graph (or a cheap proxy thereof) for the agent at the anchor place, and only return `MissingObservation` when no planner expansion can close the gap. Refactor `known_target_failure` so route-unknown over a believed-route topology can defer to the search.
-- If selection-aware bypass: re-introduce `rejected_portfolio_slot_suppresses_search` returning `false` for self-care `AcquireCommodity`, but gate that bypass on the absence of a sibling `ConsumeOwnedCommodity { commodity: <same> }` in `admitted_candidates`. Add a unit test for both directions of the gate.
+- The selected implementation did not consult the full affordance graph inside `current_place_support_failure`; it uses the live belief-view pressure and route evidence as a cheap probe contract for planner-resolvable self-care acquisition. The named focused tests and seven golden gates cover the intended surface.
+- Post-ticket review moved the completed ticket to `archive/tickets/S148PORMOTBAC-FOLLOWUP-002.md`.
+- Post-ticket review created `tickets/S148PORMOTBAC-FOLLOWUP-003.md` to tighten the cheap pressure proxy into a more explicitly planner-resolvable probe predicate without reopening this completed restoration.
 
-### 2. Restore ask_consult coverage
+## Verified Layers
 
-The ticket must restore `golden_survival_ask_consult::survival_ask_consult_lands_row_six` without re-regressing the five tests named in Problem.
+1. Probe-side self-care acquisition admission is covered by `feasibility_probe::tests::probe_allows_low_pressure_self_care_acquire_to_reach_search`.
+2. Remote self-care acquisition over believed route topology is covered by `probe_allows_remote_self_care_acquire_with_believed_route_to_reach_search` and `probe_allows_remote_entity_anchored_self_care_acquire_to_reach_search`.
+3. `golden_survival_ask_consult::survival_ask_consult_lands_row_six` passes with Witness Mira committing Drink.
+4. The parent regression goldens stay green: baseline, scattered, preferences, patrol, and the two observer anomaly cases all passed.
+5. The full `./scripts/verify.sh` wrapper passed after the final source edit.
 
-### 3. Document the decision
+## Landed Files
 
-Record which shape was chosen and why under Outcome / Deviations sections of the ticket, since the parent ticket's narrower bypass deferred this trade-off.
-
-## Files to Touch
-
-- `crates/worldwake-ai/src/feasibility_probe.rs` (modify, if shape 1)
-- `crates/worldwake-ai/src/agent_tick/planning.rs` (modify, if shape 2)
-- `crates/worldwake-ai/src/agent_tick/portfolio.rs` (possibly modify, depending on whether the gate inspects sibling slots)
-- `tickets/S148PORMOTBAC-FOLLOWUP-002.md` (move to `archive/tickets/` on completion)
+- `crates/worldwake-ai/src/feasibility_probe.rs`
+- `archive/tickets/S148PORMOTBAC-FOLLOWUP-002.md`
 
 ## Out of Scope
 
@@ -93,33 +88,32 @@ Record which shape was chosen and why under Outcome / Deviations sections of the
 - Changes to observer anomaly detector thresholds in `crates/worldwake-cli/src/bin/observer.rs`.
 - Re-litigation of `archive/tickets/S138OPPCOM-012.md`'s `compiled_count` semantic change.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+1. Passed `cargo test --release -p worldwake-ai --test golden_survival_ask_consult survival_ask_consult_lands_row_six -- --ignored --test-threads=1`.
+2. Passed `cargo test --release -p worldwake-ai --test golden_survival_baseline all_agents_perform_survival_actions -- --ignored --test-threads=1`.
+3. Passed `cargo test --release -p worldwake-ai --test golden_survival_scattered all_agents_survive_1440_ticks -- --ignored --test-threads=1`.
+4. Passed `cargo test --release -p worldwake-ai --test golden_survival_preferences survival_preferences_keeps_proactive_diversification_alive_under_survival -- --ignored --test-threads=1`.
+5. Passed `cargo test --release -p worldwake-ai --test golden_survival_patrol survival_patrol_proves_patrol_and_remote_pursuit_execution -- --ignored --test-threads=1`.
+6. Passed `cargo test --release -p worldwake-cli --test golden_observer_anomalies maintenance_starvation_fires_on_wash_gap -- --ignored --test-threads=1`.
+7. Passed `cargo test --release -p worldwake-cli --test golden_observer_anomalies recipe_monoculture_fires_on_single_food_dependency -- --ignored --test-threads=1`.
+8. Passed `./scripts/verify.sh`.
 
-1. `cargo test --release -p worldwake-ai --test golden_survival_ask_consult survival_ask_consult_lands_row_six -- --ignored --test-threads=1`
-2. `cargo test --release -p worldwake-ai --test golden_survival_baseline all_agents_perform_survival_actions -- --ignored --test-threads=1`
-3. `cargo test --release -p worldwake-ai --test golden_survival_scattered all_agents_survive_1440_ticks -- --ignored --test-threads=1`
-4. `cargo test --release -p worldwake-ai --test golden_survival_preferences survival_preferences_keeps_proactive_diversification_alive_under_survival -- --ignored --test-threads=1`
-5. `cargo test --release -p worldwake-ai --test golden_survival_patrol survival_patrol_proves_patrol_and_remote_pursuit_execution -- --ignored --test-threads=1`
-6. `cargo test --release -p worldwake-cli --test golden_observer_anomalies maintenance_starvation_fires_on_wash_gap -- --ignored --test-threads=1`
-7. `cargo test --release -p worldwake-cli --test golden_observer_anomalies recipe_monoculture_fires_on_single_food_dependency -- --ignored --test-threads=1`
-8. Existing suite: `./scripts/verify.sh`
+## Test Plan Result
 
-### Invariants
+1. Passed `cargo test -p worldwake-ai --lib feasibility_probe::tests::`.
+2. Passed the seven golden commands listed in Acceptance Result.
+3. Passed `./scripts/verify.sh`.
 
-1. Self-care acquisition that the planner can resolve through travel → harvest → consume must reach `select_best_plan`. The bypass mechanism (if used) must be selection-aware: a sibling `ConsumeOwnedCommodity { same commodity }` admitted candidate must take precedence so that "already have it, just eat" beats "go get more".
-2. `OpportunityCompilerLoad.compiled_count` accounting from `S138OPPCOM-012` must remain post-cap; this ticket must not regress it.
+## Verification Result
 
-## Test Plan
-
-### New/Modified Tests
-
-1. `crates/worldwake-ai/src/feasibility_probe.rs` (if shape 1) — focused unit: probe-rejected self-care acquire over a believed-route topology with a co-located harvest affordance is admitted as Plausible.
-2. `crates/worldwake-ai/src/agent_tick/planning.rs` (if shape 2) — focused unit: bypass admits self-care acquire when no sibling consume admitted; suppresses when a sibling consume IS admitted.
-
-### Commands
-
-1. `cargo test -p worldwake-ai --lib feasibility_probe::tests::` (or `planning::tests::`) — focused unit gate first.
-2. The seven golden commands listed under Acceptance Criteria.
-3. `./scripts/verify.sh` — full pre-PR gate.
+- Passed `cargo test -p worldwake-ai --lib feasibility_probe::tests::probe_allows_low_pressure_self_care_acquire_to_reach_search -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib feasibility_probe::tests::`.
+- Passed `cargo test --release -p worldwake-ai --test golden_survival_ask_consult survival_ask_consult_lands_row_six -- --ignored --test-threads=1`.
+- Passed `cargo test --release -p worldwake-ai --test golden_survival_baseline all_agents_perform_survival_actions -- --ignored --test-threads=1`.
+- Passed `cargo test --release -p worldwake-ai --test golden_survival_scattered all_agents_survive_1440_ticks -- --ignored --test-threads=1`.
+- Passed `cargo test --release -p worldwake-ai --test golden_survival_preferences survival_preferences_keeps_proactive_diversification_alive_under_survival -- --ignored --test-threads=1`.
+- Passed `cargo test --release -p worldwake-ai --test golden_survival_patrol survival_patrol_proves_patrol_and_remote_pursuit_execution -- --ignored --test-threads=1`.
+- Passed `cargo test --release -p worldwake-cli --test golden_observer_anomalies maintenance_starvation_fires_on_wash_gap -- --ignored --test-threads=1`.
+- Passed `cargo test --release -p worldwake-cli --test golden_observer_anomalies recipe_monoculture_fires_on_single_food_dependency -- --ignored --test-threads=1`.
+- Passed `./scripts/verify.sh`.
