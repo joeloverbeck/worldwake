@@ -46,15 +46,15 @@ When the ticket is an audit-then-fix (e.g., "verify path X, fix if needed"), tre
 
 #### Golden-specific reassessment
 
-- Claimed missing scenarios are not already covered by current `golden_*` suites or generated golden inventory/docs.
-- Identify the strongest existing owning `golden_*` suite before accepting the ticket's proposed file list; reuse existing ownership surfaces instead of creating new golden files.
+- Claimed missing scenarios are not already covered by current scenario golden suites or generated golden inventory/docs.
+- Identify the strongest existing owning `tests/scenarios/*.rs` suite before accepting the ticket's proposed file list; reuse existing ownership surfaces instead of creating new golden files.
 - When a shared concept has both upstream producers and downstream consumers, compare their semantics directly. If the consumer already supports a broader shape, correct the ticket to own that parity fix.
 - If a claimed divergence is proved at lower layers but not stably isolatable as a golden without scenario-distorting scaffolding, correct the ticket to the strongest honest golden contract and record which lower-layer proof remains authoritative.
 - For golden communication or information-path tickets, verify separately what actually degrades: provenance, confidence, communication class, eligibility, ranking, or another distinct mechanism.
 - When a ticket proposes extending an existing trace/debug carrier, verify the exact live coverage of that carrier before coding. If the current trace only covers one subpath, correct the ticket to either stay within that subpath or explicitly widen the trace surface as owned scope.
 - When the ticket adds candidate generation or goal model integration for a domain that already has golden coverage (e.g., Care, Combat, Expectation), run the existing golden suites for that domain as part of reassessment, before implementation begins. This catches cross-goal interference early — a new candidate emitter can cause goal-switching collisions with existing goal families for the same target entity.
 - When a golden ticket proposes specific GoalKind pairs to exercise a contention, planning, or action-lifecycle invariant, verify that each goal's declared ops (in `goal_dispatch_decl.rs`) include the required PlannerOpKind. If the goal family lacks the required op, correct the ticket's domain before coding.
-- When the ticket claims a specific scenario ID is free, verify by scanning all `golden_*.rs` files for that ID before accepting it. Update the ticket if the ID is already taken.
+- When the ticket claims a specific scenario ID is free, verify by scanning all `tests/scenarios/*.rs` files for that ID before accepting it. Update the ticket if the ID is already taken.
 
 #### Shared type, serialization, and persisted-shape sweep
 

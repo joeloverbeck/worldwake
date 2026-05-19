@@ -71,7 +71,7 @@ Before any Cargo command:
 - Do not bundle it with `rg`, `sed`, `git status`, `git diff`, or any other read-only helper command.
 - Poll or wait for any known in-flight Cargo session before starting another one.
 - For focused Rust test selectors, use full listed IDs when exactness matters. An exact run of a prefix or bare name that executes zero tests is a false start, not proof; use `references/verification.md` for library, integration-test, and bin-local selector examples.
-- On WSL2, VMs, or other space-constrained disks, consult `docs/cargo-artifact-hygiene.md` before broad verification and prefer `./scripts/verify-space-conscious.sh` for local broad proof unless the ticket, user, or PR-prep context specifically requires the canonical `./scripts/verify.sh` wrapper.
+- On WSL2, VMs, or other space-constrained disks, consult `docs/cargo-artifact-hygiene.md` before broad verification. `./scripts/verify.sh` is now space-conscious by default (workspace `[profile.*] debug = "line-tables-only"` + `CARGO_INCREMENTAL=0` for the run); use it directly for local broad proof.
 
 For CLI smoke checks where the ticket drafts a Cargo command piped to a read-only filter, such as `cargo run ... -- --help | grep flag-name`, keep the Cargo execution itself unambiguous. Prefer one of these proof shapes:
 - Run the Cargo command alone and inspect or relay the relevant output line.

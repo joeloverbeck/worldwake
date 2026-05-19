@@ -54,9 +54,10 @@ Use the taxonomy below to assign every failure to a class. Each class prescribes
 | **build/compile** | `error[E####]:` in log | `cargo build --workspace` | Fix import / stale literal / type mismatch surfaced by compiler |
 | **unit/integration test** | `test result: FAILED. ... <name> ... FAILED` | `cargo test -p <crate> <test_name>` | Diagnose: real bug vs. test drift. Never adapt test to bug |
 | **clippy** | `error: ... -D <lint>` from `cargo clippy --workspace --all-targets -- -D warnings` | `cargo clippy --workspace --all-targets -- -D warnings` | Fix the lint. Never `#[allow]` to silence |
-| **golden matrix scenario** | Job name `golden-<family> / <scenario>` failing; assertion line in log | `cargo test --release -p worldwake-ai --test golden_<family>_<scenario> -- --ignored --test-threads=1` (see note below) | Consult [docs/debugging-traces.md](../../../docs/debugging-traces.md). Treat goldens as authoritative; fix the production code |
+| **golden matrix scenario** | Job name `golden-<family> / <scenario>` failing; assertion line in log | `cargo test --release -p worldwake-ai --test golden_ai <scenario> -- --ignored --test-threads=1` (see note below) | Consult [docs/debugging-traces.md](../../../docs/debugging-traces.md). Treat goldens as authoritative; fix the production code |
 | **cargo audit** | `audit-check` job; `Crate: <name>, Vulnerability: ...` | `cargo audit` (after `cargo install cargo-audit` if missing) | Bump the dep in `Cargo.toml`. If no fix version exists, escalate per Step 5 |
 | **toolchain/cache/checkout** | Failure in `Checkout`, `Install Rust toolchain`, or `Cache cargo artifacts` step | (no local equivalent) | Re-run via `gh run rerun <run-id>` once. If reproducible, escalate as infra issue, not as a code fix |
+| **fixture drift** | `"scenario diagnostics fixture drifted; regenerate expected-scenario-diagnostics.json intentionally"` or a fixture-stable golden panics with no production code change | `cargo test --release -p worldwake-ai --test golden_ai scenario_diagnostics_fixture -- --ignored --test-threads=1` | Regenerate via `WORLDWAKE_UPDATE_SCENARIO_DIAGNOSTICS_FIXTURE=1`; commit message must cite which intentional behavior change caused the drift (see Step 7's FND-1 row) |
 
 The `--release --ignored --test-threads=1` flags on the golden matrix repro command are required because the per-family workflows (`.github/workflows/golden-<family>.yml`) gate these tests with `#[ignore = "CI-only: ..."]`. When in doubt, copy the exact `Run` step from the workflow YAML — it is the source of truth.
 
@@ -79,9 +80,10 @@ Once the failure reproduces:
 1. Read the failed test, lint, or assertion in the codebase. Trace to root cause.
 2. For golden test failures: consult [docs/debugging-traces.md](../../../docs/debugging-traces.md). Goldens are authoritative — the bug is in production code unless evidence proves the golden's contract is itself stale (in which case CLAUDE.md's `Authoritative-To-AI Impact Rule` applies).
 3. For any fix touching engine architecture, planner pipelines, action validation, or component registration: re-read the relevant sections of [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md).
-4. When the failure is a regression and the branch has multiple commits since `main` (or since the last green CI run), consider bisecting via `git worktree add /tmp/<name>-bisect <commit-sha>` to isolate the introducing commit before deep code-reading. Run the narrowest local repro at each candidate commit. Worktrees are cheaper than `git checkout` and keep your main working tree clean. Clean up with `git worktree remove --force /tmp/<name>-bisect` for each worktree before committing — leftover worktrees pollute `git worktree list` and consume disk space, especially on space-constrained WSL2/VM disks.
+4. When the failure is a regression and the branch has multiple commits since `main` (or since the last green CI run), consider bisecting via `git worktree add /tmp/<name>-bisect <commit-sha>` to isolate the introducing commit before deep code-reading. Run the narrowest local repro at each candidate commit. Worktrees are cheaper than `git checkout` and keep your main working tree clean. Clean up with `git worktree remove --force /tmp/<name>-bisect` for each worktree before committing — leftover worktrees pollute `git worktree list` and consume disk space, especially on space-constrained WSL2/VM disks. If the chosen remediation is a revert and `git revert <commit> --no-commit` conflicts on non-code files (e.g., an archived ticket that subsequent commits further modified), abort with `git revert --abort` and apply a targeted file-level revert via `git checkout <commit>^ -- <code-file1> <code-file2>` to restore only the source files. Verify scope with `git diff --stat HEAD` before staging.
 5. If the failure reproduces locally but a prior CI run on an ancestor commit reported success for the same test, check 2-3 ancestor commits' CI runs (`gh run list --branch <branch> --workflow=<name>.yml --limit 10`) for that test before assuming the most recent commit introduced it. A single green CI run in the history may have been a flake; the actual regression may live further back. Bisecting from a "last green CI run" that was itself a flake will land on the wrong commit.
 6. TDD discipline (per CLAUDE.md): never adapt tests to fix bugs. For real bugs, the failing test is already the regression proof.
+7. When the fix changes AI, planner, or observer behavior — especially reverting a prior change — run `git log --oneline -- <touched-files>` and grep `archive/tickets/` plus `crates/worldwake-*/tests/fixtures/` for the names of OTHER tests or fixtures previously calibrated to the behavior being changed. Calibrations downstream of the change (e.g., a follow-up ticket that adjusted an observer-anomaly count or regenerated a diagnostics fixture under the now-being-reverted behavior) will likely fail on the next push and should be addressed in the same commit batch. Skipping this scoping move drives the whack-a-mole pattern across consecutive cycles.
 
 Apply 1-3-1 (1 problem, 3 options, 1 recommendation) and stop for user direction when:
 
@@ -106,7 +108,7 @@ When stopping for user direction, use the `AskUserQuestion` tool with one questi
    - No `HashMap` / `HashSet` introduced in authoritative state (determinism rule).
    - No floats or wall-clock time introduced in simulation code.
 4. For diagnosed bugs not yet covered by a failing test, add the failing test first, confirm it fails, then fix the code.
-5. If the fix touches scenario `.ron` files or planner behaviour, expect derived artifacts to drift. Regenerate with `cargo run -p worldwake-cli --bin scenario-coverage -- --write` (for `docs/generated/scenario-coverage.md`) and `WORLDWAKE_UPDATE_SCENARIO_DIAGNOSTICS_FIXTURE=1 cargo test --release -p worldwake-ai --test golden_scenario_diagnostics_fixture -- --ignored --test-threads=1` (for `crates/worldwake-ai/tests/fixtures/expected-scenario-diagnostics.json`). Stage and commit alongside the source change.
+5. If the fix touches scenario `.ron` files or planner behaviour, expect derived artifacts to drift. Regenerate with `cargo run -p worldwake-cli --bin scenario-coverage -- --write` (for `docs/generated/scenario-coverage.md`) and `WORLDWAKE_UPDATE_SCENARIO_DIAGNOSTICS_FIXTURE=1 cargo test --release -p worldwake-ai --test golden_ai scenario_diagnostics_fixture -- --ignored --test-threads=1` (for `crates/worldwake-ai/tests/fixtures/expected-scenario-diagnostics.json`). Stage and commit alongside the source change.
 
 ### 7. FOUNDATIONS-alignment contract
 
@@ -120,6 +122,7 @@ The fix must respect:
 | Determinism (CLAUDE.md) | Never introduce `HashMap`/`HashSet` in authoritative state, floats, or wall-clock time as a fix shortcut |
 | Conservation (CLAUDE.md) | Item-handling fixes must not bypass `verify_conservation` |
 | TDD bugfixing (CLAUDE.md) | For diagnosed bugs, add a failing test that captures the bug, confirm it fails, then fix |
+| FND-1 truth-adjustment | A test assertion update or fixture regeneration is a legitimate fix when the underlying production behavior change is intentional and verified by a separate golden — never to mask a bug. The commit message must cite the architectural change that motivated the new value, plus the golden(s) that prove the underlying behavior is correct |
 
 If a fix would violate any of these, stop and apply 1-3-1.
 
@@ -130,6 +133,8 @@ Run the narrowest correct verification first, then broaden.
 1. The class-specific repro command from Step 4 — confirm it now passes.
 2. Crate-level tests for the affected crate (e.g., `cargo test -p worldwake-ai`).
 3. `./scripts/verify.sh` — the canonical pre-PR gate; matches CI exactly.
+
+When the fix touches only test code, fixture data, or other files outside `crates/worldwake-{core,sim,systems,ai,cli}/src/`, the verification scope shrinks to (a) the originally-failing tests and (b) sibling tests in the same `--test` target or fixture module. Production-code goldens (e.g., baseline, scattered, preferences, trade) need not be re-run unless their own scenario `.ron` or fixture file also changed in the commit. State explicitly in the approval summary that "no production code changed → goldens X/Y/Z not re-run" so the reviewer can confirm the scope shrink.
 
 If a broader run fails outside the original failure class, classify the new failure and loop back to Step 3 within the same skill invocation. Do not push partial fixes.
 
@@ -182,6 +187,7 @@ After push:
    - `gh run watch <run-id>` to stream status until completion.
    - If `gh run watch` exits or stalls before the run reaches a terminal state (e.g., upstream API 5xx, exit-without-conclusion), fall back to polling: `until gh run view <run-id> --json status --jq '.status' | grep -q completed; do sleep 30; done`, then re-check the conclusion via `gh run view <run-id> --json conclusion --jq '.conclusion'`.
    - For CI runs that may exceed the prompt-cache TTL (Golden Survival typically takes 15+ minutes), pair the polling background task with a `ScheduleWakeup` fallback at 1200-1800s so the loop survives if the background watcher stalls or its notification is lost. The polling background task fires its own notification on success, so the wakeup only matters as a fallback.
+   - Exit codes from background `cargo test` and `gh run view` invocations can be misleading — a backgrounded `cargo test` whose tests panic has been observed to surface `exit code 0` in the harness notification even though `test result: FAILED` is in the captured output. Always grep the captured output for `test result: FAILED|panicked|conclusion.*failure` before trusting the notification's exit code.
 2. Report the final status:
    - **Green ✓**: report success and stop.
    - **Red ✗**: summarize the new failures (which jobs, which signatures). Do not auto-loop into another fix-push cycle. If the residual failures need separate investigation, optionally create a follow-up ticket under `tickets/` using `tickets/_TEMPLATE.md`. Cite the bisect-identified introducing commit (if known), the experiments already ruled out, and the suspected investigation surface. Commit the ticket as a separate commit in the same push (combining the ticket with the fix is acceptable when the ticket's primary purpose is to document the residual failure created by the fix itself — e.g., a revert + follow-up-investigation ticket; in that case the commit message body must name the follow-up ticket file).

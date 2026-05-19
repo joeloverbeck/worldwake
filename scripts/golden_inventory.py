@@ -27,9 +27,7 @@ SCENARIO_HEADER_RE = re.compile(
     r"^// Scenario (?P<identifier>[A-Za-z0-9_-]+)(?::| —) (?P<title>.+)$"
 )
 DOC_TEST_REF_RE = re.compile(r"`(golden_[a-z0-9_]+)`")
-RUNNING_GOLDEN_BINARY_RE = re.compile(r"^\s*Running tests/(golden_[^ ]+\.rs) ")
-RUNNING_ANY_BINARY_RE = re.compile(r"^\s*Running ")
-LISTED_TEST_RE = re.compile(r"^([a-z][a-z0-9_]+): test$", re.MULTILINE)
+LISTED_TEST_RE = re.compile(r"^([a-z][a-z0-9_:]*): test$", re.MULTILINE)
 REPLAY_TEST_RE = re.compile(
     r"_(?:replays_deterministically|deterministic_replay)$"
 )
@@ -74,9 +72,18 @@ class ScenarioEntry:
 
 def parse_source_inventory(tests_dir: pathlib.Path) -> OrderedDict[str, list[str]]:
     inventory: OrderedDict[str, list[str]] = OrderedDict()
-    for path in sorted(tests_dir.glob("golden_*.rs")):
+    for path in _golden_source_paths(tests_dir):
         inventory[path.name] = _extract_test_functions(path)
     return inventory
+
+
+def _golden_source_paths(tests_dir: pathlib.Path) -> list[pathlib.Path]:
+    scenarios_dir = tests_dir / "scenarios"
+    return sorted(
+        path
+        for path in scenarios_dir.glob("*.rs")
+        if path.name != "mod.rs"
+    )
 
 
 def _extract_test_functions(path: pathlib.Path) -> list[str]:
@@ -100,7 +107,7 @@ def _extract_test_functions(path: pathlib.Path) -> list[str]:
 
 def parse_source_scenarios(tests_dir: pathlib.Path) -> list[ScenarioEntry]:
     scenarios: list[ScenarioEntry] = []
-    for path in sorted(tests_dir.glob("golden_*.rs")):
+    for path in _golden_source_paths(tests_dir):
         current_identifier: str | None = None
         current_title: str | None = None
         current_line_number: int | None = None
@@ -202,49 +209,38 @@ def parse_source_scenarios(tests_dir: pathlib.Path) -> list[ScenarioEntry]:
 
 def parse_cargo_test_list_output(output: str) -> OrderedDict[str, list[str]]:
     inventory: OrderedDict[str, list[str]] = OrderedDict()
-    current_file: str | None = None
     for raw_line in output.splitlines():
         line = raw_line.rstrip()
-        running_match = RUNNING_GOLDEN_BINARY_RE.match(line)
-        if running_match:
-            current_file = running_match.group(1)
-            inventory.setdefault(current_file, [])
-            continue
-        if RUNNING_ANY_BINARY_RE.match(line):
-            current_file = None
-            continue
-        if current_file is None:
-            continue
         listed_match = LISTED_TEST_RE.match(line)
         if listed_match:
-            inventory[current_file].append(listed_match.group(1))
+            test_path = listed_match.group(1)
+            parts = test_path.split("::")
+            test_name = parts[-1]
+            if len(parts) >= 3 and parts[0] == "scenarios":
+                inventory.setdefault(f"{parts[1]}.rs", []).append(test_name)
+            continue
     return inventory
 
 
 def run_cargo_test_list(root: pathlib.Path) -> OrderedDict[str, list[str]]:
-    inventory: OrderedDict[str, list[str]] = OrderedDict()
-    for path in sorted(TESTS_DIR.glob("golden_*.rs")):
-        # Detect feature-gated test files.
-        needs_soak = '#![cfg(feature = "soak")]' in path.read_text(errors="replace")
-        cmd = [
-            "cargo",
-            "test",
-            "-p",
-            "worldwake-ai",
-        ]
-        if needs_soak:
-            cmd.extend(["--features", "soak"])
-        cmd.extend(["--test", path.stem, "--", "--list"])
-        result = subprocess.run(
-            cmd,
-            cwd=root,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        combined = result.stdout + "\n" + result.stderr
-        inventory[path.name] = LISTED_TEST_RE.findall(combined)
-    return inventory
+    cmd = [
+        "cargo",
+        "test",
+        "-p",
+        "worldwake-ai",
+        "--test",
+        "golden_ai",
+        "--",
+        "--list",
+    ]
+    result = subprocess.run(
+        cmd,
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return parse_cargo_test_list_output(result.stdout + "\n" + result.stderr)
 
 
 def flatten_inventory(inventory: OrderedDict[str, list[str]]) -> list[str]:
@@ -321,11 +317,11 @@ def render_inventory_markdown(inventory: OrderedDict[str, list[str]]) -> str:
         "",
         "## Summary",
         "",
-        f"- Golden test files: {total_files}",
+        f"- Golden scenario source files: {total_files}",
         f"- Files contributing `golden_*` tests: {contributing_files}",
         f"- Total `golden_*` tests: {total_tests}",
         "",
-        "## Per-File Inventory",
+        "## Per-Scenario-File Inventory",
         "",
         "| File | `golden_*` tests |",
         "|------|------------------|",
@@ -358,8 +354,8 @@ def _split_csv(value: str) -> list[str]:
 
 
 def _file_stem_to_detail_name(file_name: str) -> str:
-    """Convert ``golden_foo_bar.rs`` to ``foo-bar.md``."""
-    stem = file_name.removesuffix(".rs").removeprefix("golden_")
+    """Convert ``foo_bar.rs`` to ``foo-bar.md``."""
+    stem = file_name.removesuffix(".rs")
     return stem.replace("_", "-") + ".md"
 
 
@@ -375,13 +371,13 @@ def render_scenario_index_markdown(scenarios: list[ScenarioEntry]) -> str:
         "Do not hand-edit it.",
         "",
         "Gameplay-level overview of all source-declared `// Scenario ...` blocks in",
-        "`crates/worldwake-ai/tests/golden_*.rs`. For test-name-level detail, see",
+        "`crates/worldwake-ai/tests/scenarios/*.rs`. For test-name-level detail, see",
         "the per-file documents in `docs/generated/golden-scenario-details/`.",
         "",
         "## Summary",
         "",
         f"- Scenario blocks: {len(scenarios)}",
-        f"- Contributing golden test files: {contributing_files}",
+        f"- Contributing golden scenario source files: {contributing_files}",
         f"- Associated tests: {total_tests}",
         "",
     ]

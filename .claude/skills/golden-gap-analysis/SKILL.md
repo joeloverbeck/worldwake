@@ -29,7 +29,7 @@ python3 scripts/golden_inventory.py --write --check-docs
 
 If this script fails, **stop and report the error**. Do not analyze stale generated docs.
 
-Exception: if the refresh fails because live `golden_*` source has missing or duplicate `// Scenario` metadata that the inventory tool reports directly, fix that local metadata problem first, rerun the command, and only stop if the refresh still fails or the failure is not clearly a local mechanical annotation issue.
+Exception: if the refresh fails because live `tests/scenarios/*.rs` source has missing or duplicate `// Scenario` metadata that the inventory tool reports directly, fix that local metadata problem first, rerun the command, and only stop if the refresh still fails or the failure is not clearly a local mechanical annotation issue.
 
 Exception: if the refresh fails because the golden test target or its dependencies do not compile, diagnose and fix the build error before retrying. Use systematic debugging if the cause is not immediately obvious. Only stop if the build failure persists after investigation or is unrelated to the golden test target.
 
@@ -72,7 +72,7 @@ Using `docs/generated/golden-coverage-matrix.md`, identify:
 - Systems exercised by the spec that have thin coverage
 - Foundation principles the spec exercises that lack golden demonstration
 
-Focus on meaningful gaps, not mere count imbalances. If the generated matrix and scenario map disagree, or if newly added scenarios appear with thin metadata, treat the generated artifacts as incomplete for that slice and inspect the owning live `golden_*` source before judging coverage gaps.
+Focus on meaningful gaps, not mere count imbalances. If the generated matrix and scenario map disagree, or if newly added scenarios appear with thin metadata, treat the generated artifacts as incomplete for that slice and inspect the owning live `tests/scenarios/*.rs` source before judging coverage gaps.
 
 ### Step 3: Identify Cross-System Emergent Scenarios
 
@@ -92,7 +92,7 @@ The highest-value golden tests are those that demonstrate **emergent behavior ac
 
 Before proposing any scenario, verify it is NOT already covered by:
 1. **Existing scenarios** in `docs/generated/golden-scenario-index.md` and per-file details in `docs/generated/golden-scenario-details/`
-2. **Live golden suites** — when the generated docs alone are too coarse to tell whether the candidate proves a materially distinct contract, inspect the relevant live `golden_*` source directly
+2. **Live golden suites** — when the generated docs alone are too coarse to tell whether the candidate proves a materially distinct contract, inspect the relevant live `tests/scenarios/*.rs` source directly
 
 If a proposed scenario exercises the same code paths as an existing or rejected scenario, do not propose it. Explain why it was filtered.
 

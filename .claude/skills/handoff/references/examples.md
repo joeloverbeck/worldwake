@@ -25,7 +25,7 @@ Root cause identified (`BeamState::push` unbounded insert). Partial fix in worki
 ## 5. Relevant files and symbols
 - `crates/worldwake-ai/src/search.rs:412` — `search_plan`
 - `crates/worldwake-ai/src/search.rs:87` — `BeamState::push`
-- `crates/worldwake-ai/tests/golden_travel_chain.rs`
+- `crates/worldwake-ai/tests/scenarios/travel_physiology.rs`
 
 ## 6. Workspace state
 ```
@@ -92,7 +92,7 @@ Investigating intermittent `golden_merchant_stall` failure. No code changes this
 
 ## 5. Relevant files and symbols
 - `crates/worldwake-systems/src/trade.rs`
-- `crates/worldwake-ai/tests/golden_merchant_stall.rs`
+- `crates/worldwake-ai/tests/scenarios/merchant_selling.rs`
 
 ## 6. Workspace state
 ```

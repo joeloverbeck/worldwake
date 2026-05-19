@@ -35,7 +35,7 @@ This phase combines test discovery and source tracing. They are deeply interleav
 **Recommended agent grouping** (adapt if volume shifts):
 - **Agent A** — Stages 1–3: goal ranking, candidate generation, affordance queries (pipeline entry).
 - **Agent B** — Stage 4: strategic + tactical search internals (landmarks, frontier, heuristic, `PlanningSnapshot`).
-- **Agent C** — Stages 5–8 + test discovery: revalidation, dispatch, replanning, cognitive parameters, plus the `tests/golden_*.rs` inventory.
+- **Agent C** — Stages 5–8 + test discovery: revalidation, dispatch, replanning, cognitive parameters, plus the `tests/scenarios/*.rs` inventory.
 
 **From golden E2E tests** (`crates/worldwake-ai/tests/`): For each test, extract planning-relevant elements:
 
