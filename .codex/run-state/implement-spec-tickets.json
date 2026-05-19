@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implemented-S154-test-binary-consolidation",
   "base_head": "9b4b764424391e8683bfa4706a78d1a2eb971a7d",
-  "last_ticket": "archive/tickets/S154TESBINCON-001.md",
+  "last_ticket": "archive/tickets/S154TESBINCON-002.md",
   "last_result": "completed_archived",
-  "last_work_commit": "4b38b89c0a60978f16033450542c8ec2184d10fa",
+  "last_work_commit": "c86da09d0e56442a2e7e16b0aab390fa073b5ced",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S154TESBINCON-002.md",
+  "next_target": "tickets/S154TESBINCON-003.md",
   "queue": [
-    "tickets/S154TESBINCON-002.md",
     "tickets/S154TESBINCON-003.md",
     "tickets/S154TESBINCON-004.md",
     "tickets/S154TESBINCON-005.md"
