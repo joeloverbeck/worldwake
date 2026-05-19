@@ -151,6 +151,8 @@ $implement-ticket <ticket> . Rely on <originating-spec>
 
 Use the live Worldwake `implement-ticket` skill exactly. The child skill owns reassessment, implementation, proof, closeout wording, and any decision to create a follow-up ticket needed for an honest closeout.
 
+For broad expected-pass proof commands that run inside the child phase, such as `scripts/verify.sh`, keep command output compact where the tool surface allows it. Preserve complete failure diagnostics when a command fails, but for passing broad gates prefer capped output plus a concise recorded gate list so successful verification does not saturate the context before the required handoff/reset boundary. For broad Cargo proof that is expected to pass, prefer capped tool output and quiet Cargo output when compatible with the command, such as `cargo test --workspace --quiet`; if the broad command fails or quiet output hides the useful cause, rerun the failing narrow command or same command without quiet/capping as needed to capture actionable diagnostics.
+
 If implementation ends blocked:
 
 - if a concrete follow-up ticket was created or named as the next owner, put that follow-up at the front of the queue and continue the loop
@@ -244,8 +246,6 @@ If non-destructive git index commands needed for this harness step fail because 
 
 If nothing changed after an iteration, do not create an empty commit. Record that there was no commit for that iteration and why.
 
-For broad expected-pass proof commands such as `scripts/verify.sh`, keep command output compact where the tool surface allows it. Preserve complete failure diagnostics when a command fails, but for passing broad gates prefer capped output plus a concise recorded gate list so successful verification does not saturate the context before the required handoff/reset boundary. For broad Cargo proof that is expected to pass, prefer capped tool output and quiet Cargo output when compatible with the command, such as `cargo test --workspace --quiet`; if the broad command fails or quiet output hides the useful cause, rerun the failing narrow command or same command without quiet/capping as needed to capture actionable diagnostics.
-
 ### 6. Persist State And Prepare Context Reset
 
 After each iteration work commit, update `.codex/run-state/implement-spec-tickets.json` before context compaction or a fresh-session restart. Include:
@@ -265,6 +265,8 @@ After each iteration work commit, update `.codex/run-state/implement-spec-ticket
 - blocker summary when blocked
 - dirty-state classification
 - `updated_at`
+
+Before staging the state file, validate its schema against the allowed marker vocabulary in this skill. Audit markers must be exact values: `implement_ticket_audit` and `last_implement_ticket_audit` are `done`, `pending`, or `skipped:<reason>`; `post_ticket_review_audit` and `last_post_ticket_review_audit` are `done`, `pending`, `not_required`, or `skipped:<reason>`. Do not encode audit-result detail such as "completed_no_findings" in these enum fields; put that detail in the printed handoff or review/audit blocks. Also check that `last_state_commit` / `last_state_commit_kind`, `next_target`, queue paths, and `dirty_state` match the allowed shapes before committing the state file.
 
 Normalize `dirty_state` after committing owned paths: refresh `git status --short` and record only remaining uncommitted paths. When Cargo or package/tool commands ran, or prior state already names ignored artifacts, also refresh ignored-aware status for affected paths before writing `dirty_state`. Classify remaining paths as `unrelated dirty`, `expected ignored artifacts`, or `blocked owned leftovers`.
 
