@@ -77,7 +77,7 @@ Update line 50 example: replace `cargo test -p worldwake-ai --test golden_foo` w
 
 - `docs/plans/*` (5 plan docs that reference the old convention) — per spec, these describe past state at time of writing; no edit required
 - `archive/specs/*` and `archive/tickets/*` — historical records, not edited
-- Source-file moves, generated-doc regeneration, script cleanup, campaigns harness — tickets 002 / 003 / 004
+- Source-file moves, generated-doc regeneration, script cleanup, retired campaigns harness — archive/tickets/S154TESBINCON-002.md / archive/tickets/S154TESBINCON-003.md / archive/tickets/S154TESBINCON-004.md
 
 ## Acceptance Criteria
 

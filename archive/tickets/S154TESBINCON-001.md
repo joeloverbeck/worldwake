@@ -68,7 +68,7 @@ The test file now includes cases for the post-T2 layout (`tests/scenarios/foo.rs
 - Post-T2 regeneration of `docs/generated/*` — ticket 003's scope. This ticket includes only the pre-existing generated-doc freshness correction exposed by its required pre-T2 proof command.
 - Retiring the dual-layout branches in `golden_inventory.py` — ticket 003's scope (the cleanup target referenced by this ticket's placeholder)
 - Doc edits to `docs/golden-e2e-testing.md`, `docs/debugging-traces.md`, `.claude/skills/*.md`, or `CLAUDE.md` — ticket 005's scope
-- `campaigns/golden-perf/harness.sh` — ticket 004's scope
+- `campaigns/golden-perf/harness.sh` — retired by archive/tickets/S154TESBINCON-004.md
 
 ## Acceptance Result
 

@@ -107,7 +107,7 @@ Pre-move, grep each moved file for `static mut`, `std::env::set_var`, and `lazy_
 - Regeneration of `docs/generated/*` — ticket 003's scope
 - Retirement of ticket 001's dual-glob fallback — ticket 003's scope
 - Doc edits to `docs/golden-e2e-testing.md`, `docs/debugging-traces.md`, `.claude/skills/*.md`, `CLAUDE.md` — ticket 005's scope
-- `campaigns/golden-perf/harness.sh` rework — ticket 004's scope
+- `campaigns/golden-perf/harness.sh` retirement — archive/tickets/S154TESBINCON-004.md
 - `worldwake-systems/tests/`, `worldwake-cli/tests/`, `worldwake-core/tests/` consolidation (per spec Non-Goals)
 
 ## Acceptance Result

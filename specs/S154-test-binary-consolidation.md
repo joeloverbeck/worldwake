@@ -145,7 +145,7 @@ land them in safe order.
 |---|---|---|---|
 | `scripts/golden_inventory.py` | Globs `tests/golden_*.rs`; runs `cargo test --test <stem>` per file; parses `Running tests/golden_*.rs (target/debug/deps/...)`; maps filename → per-file detail page via `_file_stem_to_detail_name()` | Breaks. Rewrite glob to `tests/scenarios/*.rs`; replace 54 per-file cargo invocations with one `cargo test --test golden_ai -- --list`; reshape per-binary parsing to per-source-file grouping. | T1 |
 | `scripts/test_golden_inventory.py` | Unit tests for the above (test fixtures embed the `Running tests/golden_*.rs` cargo-output format). | Breaks. Rewrite fixtures + expected outputs. | T1 |
-| `campaigns/golden-perf/harness.sh` | `find tests/ -name 'golden_*.rs'` then `cargo test --test <suite>` per file; ranks the 5 slowest test **binaries**. | Conceptually broken after consolidation (single binary). Either repurpose to per-scenario timing via `cargo test -- --report-time`, or retire. Decision deferred to T4. | T4 |
+| `campaigns/golden-perf/harness.sh` | `find tests/ -name 'golden_*.rs'` then `cargo test --test <suite>` per file; ranks the 5 slowest test **binaries**. | Conceptually broken after consolidation (single binary). T4 retired the dormant campaign rather than introducing a nightly-only per-scenario timing replacement. | T4 |
 | `docs/generated/golden-e2e-inventory.md` | Auto-generated; per-file table; "Golden test files: N" summary line. | Regenerates fine once T1 lands; schema shifts (no per-file count — only scenarios). | T3 |
 | `docs/generated/golden-scenario-index.md` | Scenario blocks across files; `Source: golden_foo.rs:NNN`. | Regenerates fine; source paths shift to `scenarios/foo.rs:NNN`. | T3 |
 | `docs/generated/golden-scenario-details/*.md` | One markdown file per source file, named via `_file_stem_to_detail_name()`. | Regenerates fine with updated naming derivation. | T3 |
@@ -172,10 +172,10 @@ chosen to de-risk: tooling first (so the inventory script keeps reporting
 correctly through the move), then the move itself, then the doc sweep.
 
 ```text
-T1 (tooling rewrite)  →  T2 (source moves)  →  T3 (regenerate docs/generated/
+T1 (tooling rewrite)  ->  T2 (source moves)  ->  T3 (regenerate docs/generated/
                                                   + retire dual-glob fallback)
-                                            →  T4 (campaigns/golden-perf rework)
-                                            →  T5 (hand-authored doc + skill sweep)
+                                            ->  T4 (campaigns/golden-perf retirement)
+                                            ->  T5 (hand-authored doc + skill sweep)
 ```
 
 ### T1: Tooling Rewrite (`scripts/golden_inventory.py` + `scripts/test_golden_inventory.py`)
@@ -294,21 +294,24 @@ scripts/test_golden_inventory.py` returns matches only in docstrings or
 generated-output strings, never in glob/invocation code paths. (3)
 `scripts/test_golden_inventory.py` passes.
 
-### T4: `campaigns/golden-perf/harness.sh` Rework
+### T4: `campaigns/golden-perf/harness.sh` Retirement
 
 **Deliverable**: One of:
 
 1. **Repurpose**: rewrite the harness to drive `cargo test -p worldwake-ai
    --test golden_ai -- -Z unstable-options --report-time --test-threads=1`,
    parse the per-test duration output, rank the 5 slowest scenarios. (Requires
-   nightly-only flag or alternative timing surface — investigate during ticket.)
+   nightly-only flag or alternative timing surface — investigated during ticket.)
 2. **Retire**: if the campaign infrastructure is no longer actively used,
    delete `campaigns/golden-perf/` entirely and remove any references.
 
-Decision deferred to ticket implementation, based on current use.
+T4 outcome: retired. Live implementation found no CI/workflow invocation, no
+live doc/script references outside this spec and the active T4 ticket, only
+March 2026 campaign commits, and a header-only `results.tsv`. The stale
+per-binary timing campaign was removed instead of keeping a dead or nightly-only
+replacement surface.
 
-**Verification**: harness exits 0 with intelligible output, OR removal is
-clean (no dangling references).
+**Verification**: removal is clean (no dangling references).
 
 ### T5: Hand-Authored Doc + Skill Sweep
 

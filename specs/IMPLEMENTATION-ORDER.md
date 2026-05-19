@@ -507,7 +507,7 @@ S154 (PROPOSED; independent; no spec deps)
   T1 tooling rewrite (`scripts/golden_inventory.py` +
   `scripts/test_golden_inventory.py`), T2 source moves + entry-binary
   plumbing, T3 `docs/generated/*` regeneration, T4 `campaigns/golden-perf`
-  harness rework, T5 hand-authored doc + skill sweep
+  campaign retirement, T5 hand-authored doc + skill sweep
   (`docs/golden-e2e-testing.md`, `docs/debugging-traces.md`, five
   `.claude/skills/*` files, CLAUDE.md). Target: `target/` cap of ~8–15 GiB
   after a full broad gate.
