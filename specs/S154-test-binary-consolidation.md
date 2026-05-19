@@ -95,6 +95,7 @@ crates/worldwake-ai/tests/
 │     mod scenarios;
 ├── integration_ai.rs                 ← single binary entry for 9 non-goldens
 │   contents:
+│     mod golden_harness;
 │     mod integration;
 ├── scenarios/
 │   ├── mod.rs                        ← `pub mod merchant_selling; pub mod epistemic_sensing; ...`
@@ -218,7 +219,9 @@ breaking docs/generated.
   non-golden top-level files into it.
 - Create `crates/worldwake-ai/tests/golden_ai.rs` with
   `mod golden_harness; mod planner_pathology_harness; mod scenario_diagnostics_harness; mod scenarios;`.
-- Create `crates/worldwake-ai/tests/integration_ai.rs` with `mod integration;`.
+- Create `crates/worldwake-ai/tests/integration_ai.rs` with
+  `mod golden_harness; mod integration;` because several non-golden
+  integration tests use the shared golden helper module.
 - Rename `golden_planner_pathology_harness/` →
   `planner_pathology_harness/`; rename `golden_scenario_diagnostics_harness/`
   → `scenario_diagnostics_harness/`. `golden_harness/` keeps its prefix
@@ -233,7 +236,11 @@ breaking docs/generated.
 
 **Verification**:
 
-- `cargo test -p worldwake-ai` passes (full identical test count to pre-T2).
+- `cargo test -p worldwake-ai` passes with all authored scenario and
+  integration tests reachable under `golden_ai` and `integration_ai`. Raw
+  helper self-test execution count is not identical because consolidation
+  intentionally removes repeated helper-module self-test execution that came
+  from declaring the same helper module in many top-level binaries.
 - `cargo test -p worldwake-ai --test golden_ai <scenario>` works as a
   per-scenario filter on each pre-existing scenario name. The bare
   `<scenario>` is the de-prefixed module name (e.g.,
@@ -242,8 +249,8 @@ breaking docs/generated.
   `tests/scenarios/place_dirtiness.rs`); cargo passes it as a substring
   filter against the test path `scenarios::place_dirtiness::*`. Use
   `scenarios::<scenario>` if a more precise path filter is needed.
-- `cargo test -p worldwake-ai --features soak` still passes for soak-gated
-  tests.
+- `cargo test -p worldwake-ai --features soak --test integration_ai soak_profiler`
+  still passes for the soak-gated profiler test.
 - `target/debug/deps/` contains `golden_ai-<hash>` and
   `integration_ai-<hash>` and **no** `golden_<scenario>-<hash>` binaries
   after a clean build.

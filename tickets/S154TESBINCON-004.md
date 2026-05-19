@@ -4,7 +4,7 @@
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: 002
+**Deps**: archive/tickets/S154TESBINCON-002.md
 
 ## Problem
 

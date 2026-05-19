@@ -60,7 +60,7 @@ The test file now includes cases for the post-T2 layout (`tests/scenarios/foo.rs
 - `docs/generated/golden-scenario-index.md` (regenerate — pre-existing Scenario 171 line/test correction)
 - `docs/generated/golden-scenario-details/survival-preferences.md` (regenerate — pre-existing Scenario 171 line/test correction)
 - `specs/S154-test-binary-consolidation.md` (truth-sync T1 verification wording)
-- `tickets/S154TESBINCON-002.md` (post-archive dependency/path repair)
+- `archive/tickets/S154TESBINCON-002.md` (post-archive dependency/path repair)
 
 ## Out of Scope
 
