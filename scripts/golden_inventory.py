@@ -27,9 +27,9 @@ SCENARIO_HEADER_RE = re.compile(
     r"^// Scenario (?P<identifier>[A-Za-z0-9_-]+)(?::| —) (?P<title>.+)$"
 )
 DOC_TEST_REF_RE = re.compile(r"`(golden_[a-z0-9_]+)`")
-RUNNING_GOLDEN_BINARY_RE = re.compile(r"^\s*Running tests/(golden_[^ ]+\.rs) ")
+RUNNING_TEST_BINARY_RE = re.compile(r"^\s*Running tests/([^ ]+\.rs) ")
 RUNNING_ANY_BINARY_RE = re.compile(r"^\s*Running ")
-LISTED_TEST_RE = re.compile(r"^([a-z][a-z0-9_]+): test$", re.MULTILINE)
+LISTED_TEST_RE = re.compile(r"^([a-z][a-z0-9_:]*): test$", re.MULTILINE)
 REPLAY_TEST_RE = re.compile(
     r"_(?:replays_deterministically|deterministic_replay)$"
 )
@@ -74,9 +74,31 @@ class ScenarioEntry:
 
 def parse_source_inventory(tests_dir: pathlib.Path) -> OrderedDict[str, list[str]]:
     inventory: OrderedDict[str, list[str]] = OrderedDict()
-    for path in sorted(tests_dir.glob("golden_*.rs")):
+    for path in _golden_source_paths(tests_dir):
         inventory[path.name] = _extract_test_functions(path)
     return inventory
+
+
+def _golden_source_paths(tests_dir: pathlib.Path) -> list[pathlib.Path]:
+    # Transitional dual-layout support for S154TESBINCON-001; S154TESBINCON-003
+    # retires the top-level golden_*.rs fallback after the file move lands.
+    candidates = list(tests_dir.glob("golden_*.rs"))
+    scenarios_dir = tests_dir / "scenarios"
+    if scenarios_dir.exists():
+        candidates.extend(scenarios_dir.glob("*.rs"))
+
+    by_stem: dict[str, pathlib.Path] = {}
+    for path in sorted(
+        candidates, key=lambda p: (p.stem.removeprefix("golden_"), p.name)
+    ):
+        if path.name == "mod.rs":
+            continue
+        normalized_stem = path.stem.removeprefix("golden_")
+        existing = by_stem.get(normalized_stem)
+        if existing is None or path.parent.name == "scenarios":
+            by_stem[normalized_stem] = path
+
+    return sorted(by_stem.values(), key=lambda p: p.stem.removeprefix("golden_"))
 
 
 def _extract_test_functions(path: pathlib.Path) -> list[str]:
@@ -100,7 +122,7 @@ def _extract_test_functions(path: pathlib.Path) -> list[str]:
 
 def parse_source_scenarios(tests_dir: pathlib.Path) -> list[ScenarioEntry]:
     scenarios: list[ScenarioEntry] = []
-    for path in sorted(tests_dir.glob("golden_*.rs")):
+    for path in _golden_source_paths(tests_dir):
         current_identifier: str | None = None
         current_title: str | None = None
         current_line_number: int | None = None
@@ -203,27 +225,64 @@ def parse_source_scenarios(tests_dir: pathlib.Path) -> list[ScenarioEntry]:
 def parse_cargo_test_list_output(output: str) -> OrderedDict[str, list[str]]:
     inventory: OrderedDict[str, list[str]] = OrderedDict()
     current_file: str | None = None
+    current_golden_ai = False
     for raw_line in output.splitlines():
         line = raw_line.rstrip()
-        running_match = RUNNING_GOLDEN_BINARY_RE.match(line)
+        running_match = RUNNING_TEST_BINARY_RE.match(line)
         if running_match:
-            current_file = running_match.group(1)
-            inventory.setdefault(current_file, [])
+            file_name = running_match.group(1)
+            current_golden_ai = file_name == "golden_ai.rs"
+            current_file = file_name if file_name.startswith("golden_") else None
+            if current_file is not None and not current_golden_ai:
+                inventory.setdefault(current_file, [])
             continue
         if RUNNING_ANY_BINARY_RE.match(line):
             current_file = None
-            continue
-        if current_file is None:
+            current_golden_ai = False
             continue
         listed_match = LISTED_TEST_RE.match(line)
-        if listed_match:
-            inventory[current_file].append(listed_match.group(1))
+        if listed_match and current_golden_ai:
+            test_path = listed_match.group(1)
+            parts = test_path.split("::")
+            test_name = parts[-1]
+            if len(parts) >= 3 and parts[0] == "scenarios":
+                inventory.setdefault(f"{parts[1]}.rs", []).append(test_name)
+            continue
+        if listed_match and current_file is not None:
+            test_path = listed_match.group(1)
+            if "::" not in test_path:
+                inventory[current_file].append(test_path)
     return inventory
 
 
 def run_cargo_test_list(root: pathlib.Path) -> OrderedDict[str, list[str]]:
+    golden_ai_entry = TESTS_DIR / "golden_ai.rs"
+    if golden_ai_entry.exists():
+        # Transitional branch for S154TESBINCON-001; S154TESBINCON-003 makes
+        # golden_ai authoritative and removes the per-file fallback.
+        cmd = [
+            "cargo",
+            "test",
+            "-p",
+            "worldwake-ai",
+            "--test",
+            "golden_ai",
+            "--",
+            "--list",
+        ]
+        result = subprocess.run(
+            cmd,
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return parse_cargo_test_list_output(result.stdout + "\n" + result.stderr)
+
     inventory: OrderedDict[str, list[str]] = OrderedDict()
-    for path in sorted(TESTS_DIR.glob("golden_*.rs")):
+    for path in _golden_source_paths(TESTS_DIR):
+        if not path.name.startswith("golden_"):
+            continue
         # Detect feature-gated test files.
         needs_soak = '#![cfg(feature = "soak")]' in path.read_text(errors="replace")
         cmd = [
@@ -243,7 +302,11 @@ def run_cargo_test_list(root: pathlib.Path) -> OrderedDict[str, list[str]]:
             check=True,
         )
         combined = result.stdout + "\n" + result.stderr
-        inventory[path.name] = LISTED_TEST_RE.findall(combined)
+        inventory[path.name] = [
+            test_name
+            for test_name in LISTED_TEST_RE.findall(combined)
+            if "::" not in test_name
+        ]
     return inventory
 
 

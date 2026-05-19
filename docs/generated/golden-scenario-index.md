@@ -11,7 +11,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 - Scenario blocks: 196
 - Contributing golden test files: 49
-- Associated tests: 241
+- Associated tests: 242
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -2224,7 +2224,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 171: Survival Preferences Keeps Proactive Diversification Alive Under Survival
 
-- Source: `golden_survival_preferences.rs:277`
+- Source: `golden_survival_preferences.rs:321`
 - Systems: AI, Needs, Travel, Production, proactive diversification
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Travel, Production, Needs

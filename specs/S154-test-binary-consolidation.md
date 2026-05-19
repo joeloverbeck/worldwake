@@ -198,7 +198,9 @@ T1 (tooling rewrite)  →  T2 (source moves)  →  T3 (regenerate docs/generated
 
 **Verification**: `python3 scripts/golden_inventory.py --write --check-docs`
 exits 0 against the current (unchanged) test layout. Generated artifacts in
-`docs/generated/` are byte-identical to the pre-T1 state. Unit tests pass.
+`docs/generated/` remain stable unless the live source tree already contains
+pre-existing generated-doc drift; in that case T1 may refresh that drift while
+leaving post-T2 regeneration to T3. Unit tests pass.
 
 This ticket lands first because it converts the tooling from a layout-coupled
 implementation to a layout-agnostic one. After T1, T2 can land without

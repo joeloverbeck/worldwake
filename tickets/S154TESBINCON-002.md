@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: None (test layout only; no `src/` changes)
-**Deps**: 001
+**Deps**: archive/tickets/S154TESBINCON-001.md
 
 ## Problem
 
@@ -101,7 +101,7 @@ Pre-move, grep each moved file for `static mut`, `std::env::set_var`, and `lazy_
 
 ## Out of Scope
 
-- `scripts/golden_inventory.py` and `scripts/test_golden_inventory.py` dual-layout updates — already landed in ticket 001
+- `scripts/golden_inventory.py` and `scripts/test_golden_inventory.py` dual-layout updates — already landed in `archive/tickets/S154TESBINCON-001.md`
 - Regeneration of `docs/generated/*` — ticket 003's scope
 - Retirement of ticket 001's dual-glob fallback — ticket 003's scope
 - Doc edits to `docs/golden-e2e-testing.md`, `docs/debugging-traces.md`, `.claude/skills/*.md`, `CLAUDE.md` — ticket 005's scope

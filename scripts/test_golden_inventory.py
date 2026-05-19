@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -12,6 +13,7 @@ SCRIPT_PATH = pathlib.Path(__file__).with_name("golden_inventory.py")
 SPEC = importlib.util.spec_from_file_location("golden_inventory", SCRIPT_PATH)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
+sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
@@ -20,7 +22,7 @@ class GoldenInventoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = pathlib.Path(tmp_dir)
             (root / "golden_alpha.rs").write_text(
-                "fn golden_one() {}\nfn helper() {}\nfn golden_two() {}\n"
+                "#[test]\nfn golden_one() {}\nfn helper() {}\n#[test]\nfn golden_two() {}\n"
             )
             (root / "golden_beta.rs").write_text("fn helper() {}\n")
 
@@ -35,6 +37,43 @@ class GoldenInventoryTests(unittest.TestCase):
                 ]
             ),
         )
+
+    def test_parse_source_inventory_reads_post_move_scenarios(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = pathlib.Path(tmp_dir)
+            scenarios = root / "scenarios"
+            scenarios.mkdir()
+            (scenarios / "alpha.rs").write_text(
+                "#[test]\nfn golden_one() {}\nfn helper() {}\n#[test]\nfn golden_two() {}\n"
+            )
+            (scenarios / "beta.rs").write_text("fn helper() {}\n")
+            (scenarios / "mod.rs").write_text("pub mod alpha;\npub mod beta;\n")
+
+            inventory = MODULE.parse_source_inventory(root)
+
+        self.assertEqual(
+            inventory,
+            OrderedDict(
+                [
+                    ("alpha.rs", ["golden_one", "golden_two"]),
+                    ("beta.rs", []),
+                ]
+            ),
+        )
+
+    def test_parse_source_inventory_prefers_scenarios_over_legacy_duplicate(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = pathlib.Path(tmp_dir)
+            scenarios = root / "scenarios"
+            scenarios.mkdir()
+            (root / "golden_alpha.rs").write_text("#[test]\nfn golden_old() {}\n")
+            (scenarios / "alpha.rs").write_text("#[test]\nfn golden_new() {}\n")
+
+            inventory = MODULE.parse_source_inventory(root)
+
+        self.assertEqual(inventory, OrderedDict([("alpha.rs", ["golden_new"])]))
 
     def test_parse_cargo_test_list_output_groups_tests_by_binary(self) -> None:
         output = textwrap.dedent(
@@ -57,8 +96,35 @@ class GoldenInventoryTests(unittest.TestCase):
             inventory,
             OrderedDict(
                 [
-                    ("golden_alpha.rs", ["golden_one", "golden_two"]),
+                    ("golden_alpha.rs", ["golden_one", "helper_test", "golden_two"]),
                     ("golden_beta.rs", ["golden_three"]),
+                ]
+            ),
+        )
+
+    def test_parse_cargo_test_list_output_groups_golden_ai_by_scenario_module(
+        self,
+    ) -> None:
+        output = textwrap.dedent(
+            """
+                Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+                 Running tests/golden_ai.rs (target/debug/deps/golden_ai-123)
+                scenarios::alpha::golden_one: test
+                scenarios::alpha::golden_two: test
+                scenarios::beta::golden_three: test
+                 Running tests/integration_ai.rs (target/debug/deps/integration_ai-456)
+                integration::ignored::test_name: test
+            """
+        ).strip()
+
+        inventory = MODULE.parse_cargo_test_list_output(output)
+
+        self.assertEqual(
+            inventory,
+            OrderedDict(
+                [
+                    ("alpha.rs", ["golden_one", "golden_two"]),
+                    ("beta.rs", ["golden_three"]),
                 ]
             ),
         )
@@ -73,11 +139,14 @@ class GoldenInventoryTests(unittest.TestCase):
                     // Scenario 33: Remote Record Travel + Consultation + Political Action
                     // ---------------------------------------------------------------------------
                     fn helper() {}
+                    #[test]
                     fn golden_remote_record_consultation_political_action() {}
+                    #[test]
                     fn golden_remote_record_consultation_political_action_replays_deterministically() {}
                     // ---------------------------------------------------------------------------
                     // Scenario 34: Knowledge Asymmetry Race
                     // ---------------------------------------------------------------------------
+                    #[test]
                     fn golden_knowledge_asymmetry_race_informed_wins_office() {}
                     """
                 ).strip()
@@ -103,7 +172,7 @@ class GoldenInventoryTests(unittest.TestCase):
                     identifier="34",
                     title="Knowledge Asymmetry Race",
                     file_name="golden_alpha.rs",
-                    line_number=8,
+                    line_number=10,
                     tests=("golden_knowledge_asymmetry_race_informed_wins_office",),
                 ),
             ],
@@ -116,10 +185,13 @@ class GoldenInventoryTests(unittest.TestCase):
                 textwrap.dedent(
                     """
                     // Scenario 11b: Deterministic Replay
+                    #[test]
                     fn golden_simple_office_claim_deterministic_replay() {}
                     // Scenario 2c-self: Self Care
+                    #[test]
                     fn golden_self_care_with_medicine() {}
                     // Scenario S03a: Multi-Corpse Loot Binding
+                    #[test]
                     fn golden_multi_corpse_loot_binding() {}
                     """
                 ).strip()
@@ -200,7 +272,7 @@ class GoldenInventoryTests(unittest.TestCase):
             errors,
             [
                 "duplicate scenario identifier '33': golden_alpha.rs:2 and golden_beta.rs:5",
-                "golden_beta.rs:10: Scenario 34 has no `golden_*` tests",
+                "golden_beta.rs:10: Scenario 34 has no test functions",
                 "golden_gamma.rs:12: Scenario 35 references missing compiled tests ['golden_missing']",
             ],
         )
@@ -222,7 +294,8 @@ class GoldenInventoryTests(unittest.TestCase):
         self.assertIn("- No `golden_*` tests", markdown)
 
     def test_render_scenario_markdown_reports_primary_and_replay_tests(self) -> None:
-        markdown = MODULE.render_scenario_markdown(
+        markdown = MODULE.render_scenario_detail_markdown(
+            "golden_alpha.rs",
             [
                 MODULE.ScenarioEntry(
                     identifier="33",
@@ -237,8 +310,8 @@ class GoldenInventoryTests(unittest.TestCase):
             ]
         )
 
-        self.assertIn("- Scenario blocks with explicit metadata: 1", markdown)
-        self.assertIn("| `33` | Remote Record | `golden_alpha.rs:2` |", markdown)
+        self.assertIn("Scenarios: 1", markdown)
+        self.assertIn("- Source: `golden_alpha.rs:2`", markdown)
         self.assertIn("`golden_remote_record_consultation_political_action`", markdown)
         self.assertIn(
             "`golden_remote_record_consultation_political_action_replays_deterministically`",
