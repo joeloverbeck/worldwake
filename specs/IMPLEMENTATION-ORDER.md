@@ -498,10 +498,10 @@ preserving the one-source-file-per-scenario authoring layout under
 `tests/scenarios/` and `tests/integration/` submodule directories.
 
 ```text
-S154 (PROPOSED; independent; no spec deps)
+S154 (COMPLETED; independent; no spec deps)
 ```
 
-- **S154**: [Test-Binary Consolidation for Build-Artifact Reduction](S154-test-binary-consolidation.md)
+- **S154**: [Test-Binary Consolidation for Build-Artifact Reduction](../archive/specs/S154-test-binary-consolidation.md)
   — collapses 63 integration-test binaries to 2 via `tests/scenarios/` +
   `tests/integration/` submodule trees. Decomposed into five tickets:
   T1 tooling rewrite (`scripts/golden_inventory.py` +

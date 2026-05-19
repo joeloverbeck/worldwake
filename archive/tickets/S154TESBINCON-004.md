@@ -43,7 +43,7 @@ Deleted `campaigns/golden-perf/` (`harness.sh`, `checks.sh`, `program.md`, and `
 ## Landed Files
 
 - `campaigns/golden-perf/` (deleted entire directory)
-- `specs/S154-test-binary-consolidation.md` (updated T4 retirement outcome)
+- `archive/specs/S154-test-binary-consolidation.md` (updated T4 retirement outcome before spec archival)
 
 ## Out of Scope
 
@@ -74,13 +74,13 @@ Deleted `campaigns/golden-perf/` (`harness.sh`, `checks.sh`, `program.md`, and `
 
 1. `test ! -e campaigns/golden-perf`
 2. `rg -n 'campaigns/golden-perf|golden-perf/harness' docs .github scripts README.md --glob '!docs/plans/**'` (expect zero matches)
-3. `git diff --check -- archive/tickets/S154TESBINCON-004.md specs/S154-test-binary-consolidation.md campaigns/golden-perf/checks.sh campaigns/golden-perf/harness.sh campaigns/golden-perf/program.md`
+3. `git diff --check -- archive/tickets/S154TESBINCON-004.md archive/specs/S154-test-binary-consolidation.md campaigns/golden-perf/checks.sh campaigns/golden-perf/harness.sh campaigns/golden-perf/program.md`
 
 ## Verification Result
 
 1. Passed: `test ! -e campaigns/golden-perf`
 2. Passed: `rg -n 'campaigns/golden-perf|golden-perf/harness' docs .github scripts README.md --glob '!docs/plans/**'` returned no matches
-3. Passed: `git diff --check -- archive/tickets/S154TESBINCON-004.md specs/S154-test-binary-consolidation.md campaigns/golden-perf/checks.sh campaigns/golden-perf/harness.sh campaigns/golden-perf/program.md`
+3. Passed: `git diff --check -- archive/tickets/S154TESBINCON-004.md archive/specs/S154-test-binary-consolidation.md campaigns/golden-perf/checks.sh campaigns/golden-perf/harness.sh campaigns/golden-perf/program.md`
 4. Waived: `scripts/verify.sh` broad gate is outside this deletion-only tooling-retirement proof; no Rust source, tests, generated docs, or executable workspace gate changed
 
 ## Outcome

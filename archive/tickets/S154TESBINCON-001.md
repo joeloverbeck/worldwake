@@ -59,7 +59,7 @@ The test file now includes cases for the post-T2 layout (`tests/scenarios/foo.rs
 - `docs/generated/golden-e2e-inventory.md` (regenerate — pre-existing Scenario 171 freshness correction)
 - `docs/generated/golden-scenario-index.md` (regenerate — pre-existing Scenario 171 line/test correction)
 - `docs/generated/golden-scenario-details/survival-preferences.md` (regenerate — pre-existing Scenario 171 line/test correction)
-- `specs/S154-test-binary-consolidation.md` (truth-sync T1 verification wording)
+- `archive/specs/S154-test-binary-consolidation.md` (truth-sync T1 verification wording before spec archival)
 - `archive/tickets/S154TESBINCON-002.md` (post-archive dependency/path repair)
 
 ## Out of Scope
@@ -106,7 +106,7 @@ Completed on 2026-05-19.
 - At T1 completion, `parse_cargo_test_list_output()` understood both `Running tests/golden_<name>.rs` and `Running tests/golden_ai.rs` output and excluded nested harness-module tests from per-source inventories.
 - At T1 completion, `scripts/test_golden_inventory.py` imported the dataclass module correctly under Python 3.10 and covered pre-T2 source parsing, post-T2 `scenarios/` parsing, duplicate-layout preference, pre-T2 cargo-list parsing, and post-T2 `golden_ai` module-path parsing.
 - The required generator proof refreshed pre-existing Scenario 171 generated-doc drift: `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-scenario-index.md`, and `docs/generated/golden-scenario-details/survival-preferences.md` now list `familiar_failed_attempt_accounting_excludes_search_only_sibling_failures` and current source line references.
-- `specs/S154-test-binary-consolidation.md` was truthed so T1 allows a pre-existing generated-doc freshness correction while T3 remains the owner for post-T2 regeneration and dual-layout fallback retirement.
+- `archive/specs/S154-test-binary-consolidation.md` was truthed before spec archival so T1 allows a pre-existing generated-doc freshness correction while T3 remains the owner for post-T2 regeneration and dual-layout fallback retirement.
 
 Outcome amended: 2026-05-19. Ticket 003 later removed the transitional dual-layout and per-file fallback paths, so the bullets above are historical T1 closeout facts rather than current script behavior.
 

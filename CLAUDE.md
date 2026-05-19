@@ -39,7 +39,7 @@ The clippy command must match CI exactly: `--all-targets` includes test/bench/ex
 
 Run the narrowest command that verifies your change first, then expand to broader workspace checks when warranted.
 
-Heavy workspace, golden, and all-target builds can make `target/debug/deps` and `target/debug/incremental` very large. See `docs/cargo-artifact-hygiene.md` for disk-use checks and cleanup discipline before running repeated broad gates on small WSL2/VM disks. `./scripts/verify.sh` is space-conscious by default (workspace `[profile.*]` `debug = "line-tables-only"` + `CARGO_INCREMENTAL=0` for the run). The full structural fix for the remaining bloat from 63 integration-test binaries is tracked in [`specs/S154-test-binary-consolidation.md`](specs/S154-test-binary-consolidation.md).
+Heavy workspace, golden, and all-target builds can make `target/debug/deps` and `target/debug/incremental` very large. See `docs/cargo-artifact-hygiene.md` for disk-use checks and cleanup discipline before running repeated broad gates on small WSL2/VM disks. `./scripts/verify.sh` is space-conscious by default (workspace `[profile.*]` `debug = "line-tables-only"` + `CARGO_INCREMENTAL=0` for the run). The full structural fix for the former 63 integration-test binary bloat is tracked in [`archive/specs/S154-test-binary-consolidation.md`](archive/specs/S154-test-binary-consolidation.md).
 
 ### Pre-PR Verification
 

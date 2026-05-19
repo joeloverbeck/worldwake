@@ -19,7 +19,7 @@ Developer Tooling (not phase-gated; independent of engine phase work).
 
 ## Status
 
-PROPOSED.
+COMPLETED.
 
 ## Crates
 
@@ -382,15 +382,44 @@ defaults in a broken state.
 
 ## Outcome
 
-To be populated as tickets land. Tracked metrics:
+Completed: 2026-05-19
 
-- `du -sh target/` after a clean `./scripts/verify.sh` run: pre-defaults
-  (~95 GiB), post-defaults / pre-consolidation (~45–55 GiB measured),
-  post-consolidation (~8–15 GiB target).
-- Number of test binaries in `target/debug/deps/`: pre (~74; 63 in
-  `worldwake-ai` + 4 systems + 4 cli + 3 core), post (~13; 2 in
-  `worldwake-ai` + 4 systems + 4 cli + 3 core, assuming T2 only and no
-  follow-on sibling-crate consolidation).
-- `cargo test -p worldwake-ai` wall-clock comparison: expected slight
-  improvement from reduced linking, possibly offset by reduced
-  cross-binary parallelism.
+What changed:
+
+- The `worldwake-ai` test fan-out was consolidated from 63 top-level
+  integration-test files into `golden_ai.rs` and `integration_ai.rs`, while
+  preserving per-scenario authoring under `tests/scenarios/` and
+  per-integration authoring under `tests/integration/`.
+- `scripts/golden_inventory.py` and `scripts/test_golden_inventory.py` now use
+  the consolidated `golden_ai` list surface and no longer keep transitional
+  pre-S154 source-layout fallbacks.
+- Generated golden docs were regenerated against the new layout.
+- The obsolete `campaigns/golden-perf/` harness was retired after live review
+  found no active consumer.
+- Hand-authored docs, `CLAUDE.md`, and active `.claude/skills/*` guidance now
+  document `crates/worldwake-ai/tests/scenarios/*.rs` and
+  `cargo test -p worldwake-ai --test golden_ai <scenario>` as the active golden
+  source and invocation forms, while preserving valid `golden_harness/` helper
+  paths and `fn golden_*` test-name conventions.
+
+Deviations from original plan:
+
+- T4 retired the dormant `campaigns/golden-perf/` campaign instead of replacing
+  it with a nightly-only per-scenario timing harness.
+- T5 expanded beyond the original five `.claude/skills/*` entries after live
+  reassessment found additional active guidance and roadmap docs still carrying
+  old golden path or command contracts.
+- Historical `docs/plans/*`, `archive/specs/*`, and `archive/tickets/*` records
+  were left unchanged unless they were direct S154 handoff surfaces.
+
+Verification:
+
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`.
+- Passed `python3 scripts/test_golden_inventory.py`.
+- Passed `cargo test -p worldwake-ai`.
+- Passed `cargo test -p worldwake-ai --test golden_ai place_dirtiness`.
+- Passed `cargo test -p worldwake-ai --features soak --test integration_ai soak_profiler`.
+- Passed `git diff --check` for each ticket closeout/archive step.
+- Passed `rg -n 'tests/golden_|golden_[a-z0-9_]+\.rs|golden_\*\.rs|--test golden_[^a]' docs .claude/skills CLAUDE.md`, with only historical `docs/plans/*`, valid `tests/golden_harness/`, and valid `fn golden_*` references remaining.
+- Passed `rg -n 'cargo test.*--test golden_[^a]' docs .claude/skills CLAUDE.md`, with only historical `docs/plans/*` matches remaining.
+- Passed `./scripts/verify.sh`.
