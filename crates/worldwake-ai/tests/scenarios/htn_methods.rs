@@ -651,7 +651,10 @@ fn observe_escort_method_failure_producer() -> MethodFailureObservation {
                 },
                 offer.key,
                 vec![failed_step.clone()],
-                PlanTerminalKind::ProgressBarrier,
+                PlanTerminalKind::SearchBudgetExhausted {
+                    budget_consumed: 0,
+                    budget_total: 0,
+                },
             )
             .with_method_id(selected_method),
         ),

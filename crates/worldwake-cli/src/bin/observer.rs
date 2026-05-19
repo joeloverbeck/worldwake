@@ -7840,8 +7840,11 @@ mod tests {
                 beam_truncation_ratio: Permille::new_unchecked(333),
                 plan_depth: PercentileBucket::from_sorted(&[1, 2, 4, 8]),
                 terminal_kind_distribution: BTreeMap::from([
-                    (worldwake_ai::PlanTerminalKind::GoalSatisfied, 4),
-                    (worldwake_ai::PlanTerminalKind::ProgressBarrier, 2),
+                    (worldwake_ai::PlanTerminalKindDiscriminant::GoalSatisfied, 4),
+                    (
+                        worldwake_ai::PlanTerminalKindDiscriminant::SearchBudgetExhausted,
+                        2,
+                    ),
                 ]),
                 heuristic_helpful_action_hit_rate: Permille::new_unchecked(750),
                 method_usage: BTreeMap::from([

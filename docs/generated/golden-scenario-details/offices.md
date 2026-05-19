@@ -55,7 +55,7 @@ Scenarios: 11
 
 **Setup**: A with enterprise_weight=pm(900) holds 5 bread. B at jurisdiction, no loyalty. C (competitor) at OrchardFarm with pre-declared self-support. Wider beam_width=16 for branchy adjacency graph.
 
-**Proves**: DeclareSupport alone would tie with C (ProgressBarrier). Coalition-aware planner finds Bribe(B, bread) + DeclareSupport(self). A bribes B (full 5 bread transfer). B's loyalty increases and B generates SupportCandidateForOffice(A). A's coalition (2) beats C (1). Conservation: bread total unchanged.
+**Proves**: DeclareSupport alone would tie with C (typed barrier). Coalition-aware planner finds Bribe(B, bread) + DeclareSupport(self). A bribes B (full 5 bread transfer). B's loyalty increases and B generates SupportCandidateForOffice(A). A's coalition (2) beats C (1). Conservation: bread total unchanged.
 
 **Cross-system chain**: AI goal -> coalition-aware planner Bribe op -> commodity transfer -> conservation -> loyalty increase -> target SupportCandidateForOffice -> DeclareSupport -> support counting -> decisive installation.
 

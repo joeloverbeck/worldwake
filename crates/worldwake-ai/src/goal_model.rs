@@ -7704,7 +7704,7 @@ mod tests {
         };
         assert!(
             goal.is_progress_barrier(&step),
-            "ClaimOffice + DeclareSupport should still be a ProgressBarrier"
+            "ClaimOffice + DeclareSupport should still be a typed barrier"
         );
     }
 
@@ -8037,7 +8037,7 @@ mod tests {
         .into_plan()
         .expect("planner should find a travel barrier plan");
 
-        assert_eq!(plan.terminal_kind, crate::PlanTerminalKind::ProgressBarrier);
+        assert!(plan.terminal_kind.is_barrier());
         assert_eq!(plan.steps.len(), 1);
         assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
         assert_eq!(
@@ -8129,7 +8129,7 @@ mod tests {
         .into_plan()
         .expect("planner should find a colocated ask_witness barrier plan");
 
-        assert_eq!(plan.terminal_kind, crate::PlanTerminalKind::ProgressBarrier);
+        assert!(plan.terminal_kind.is_barrier());
         assert_eq!(plan.steps.len(), 1);
         assert_eq!(plan.steps[0].op_kind, PlannerOpKind::AskWitness);
         assert_eq!(
@@ -8387,7 +8387,7 @@ mod tests {
     ///
     /// Setup: actor at jurisdiction with coins, bribable target, vacant office.
     /// A competitor (rival) is at a DIFFERENT place but has self-declared support,
-    /// so `DeclareSupport` alone would produce a tie (`ProgressBarrier`). The rival
+    /// so `DeclareSupport` alone would produce a tie (`typed barrier`). The rival
     /// cannot be bribed directly (not co-located). `Bribe(target)` + `DeclareSupport`
     /// gives a winning coalition (`GoalSatisfied`).
     #[test]
@@ -8751,7 +8751,7 @@ mod tests {
         };
         assert!(
             goal.is_progress_barrier(&step),
-            "SellCommodity + StaffMarket should be a ProgressBarrier"
+            "SellCommodity + StaffMarket should be a typed barrier"
         );
     }
 
@@ -8774,7 +8774,7 @@ mod tests {
         };
         assert!(
             !goal.is_progress_barrier(&step),
-            "SellCommodity + Travel should NOT be a ProgressBarrier"
+            "SellCommodity + Travel should NOT be a typed barrier"
         );
     }
 

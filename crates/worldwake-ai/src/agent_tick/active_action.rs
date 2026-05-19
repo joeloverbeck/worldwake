@@ -238,7 +238,11 @@ pub(super) fn advance_completed_step(
     }
 
     match plan.terminal_kind {
-        PlanTerminalKind::ProgressBarrier => {
+        PlanTerminalKind::InformationBarrier { .. }
+        | PlanTerminalKind::CoordinationBarrier { .. }
+        | PlanTerminalKind::ResourceBarrier { .. }
+        | PlanTerminalKind::JurisdictionBarrier { .. }
+        | PlanTerminalKind::SearchBudgetExhausted { .. } => {
             runtime.current_plan = None;
             runtime.current_step_index = 0;
             runtime.dirty.insert(DirtySet::PLAN_FINISHED);
@@ -497,7 +501,10 @@ mod tests {
                     guard: None,
                     expectations: Vec::new(),
                 }],
-                crate::PlanTerminalKind::ProgressBarrier,
+                crate::PlanTerminalKind::SearchBudgetExhausted {
+                    budget_consumed: 0,
+                    budget_total: 0,
+                },
             )),
             ..AgentDecisionRuntime::default()
         };

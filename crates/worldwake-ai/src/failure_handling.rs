@@ -2172,7 +2172,10 @@ mod tests {
                 },
                 goal,
                 vec![step],
-                PlanTerminalKind::ProgressBarrier,
+                PlanTerminalKind::SearchBudgetExhausted {
+                    budget_consumed: 0,
+                    budget_total: 0,
+                },
             )),
             dirty: crate::DirtySet::default(),
             last_priority_class: None,

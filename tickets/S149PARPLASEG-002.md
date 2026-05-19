@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new ai-crate carrier type for suspended partial plans
-**Deps**: S149PARPLASEG-001
+**Deps**: archive/tickets/S149PARPLASEG-001.md
 
 ## Problem
 

@@ -671,7 +671,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 431: S147 ProduceWithGather Method Selection
 
-- Source: `htn_methods.rs:788`
+- Source: `htn_methods.rs:791`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -684,7 +684,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 433: S147 Autonomous Produce Method Trace Propagation
 
-- Source: `htn_methods.rs:824`
+- Source: `htn_methods.rs:827`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -697,7 +697,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 434: S147 FulfillBountyInvestigation Method Selection
 
-- Source: `htn_methods.rs:898`
+- Source: `htn_methods.rs:901`
 - Systems: AI, Search, SocialArtifact
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Travel
@@ -710,7 +710,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 436: S147 FulfillBountyDirect Method Selection
 
-- Source: `htn_methods.rs:938`
+- Source: `htn_methods.rs:941`
 - Systems: AI, Search, SocialArtifact, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Combat, Travel
@@ -723,7 +723,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 437: S147 EscortToHome Method Selection
 
-- Source: `htn_methods.rs:982`
+- Source: `htn_methods.rs:985`
 - Systems: AI, Search, Care, Travel
 - GoalKinds: EscortToSafety
 - ActionDomains: Care, Travel
@@ -736,7 +736,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 438: S147 Method Failure Producer
 
-- Source: `htn_methods.rs:1029`
+- Source: `htn_methods.rs:1032`
 - Systems: AI, Search, Care, FailureHandling
 - GoalKinds: EscortToSafety
 - ActionDomains: Care
@@ -749,7 +749,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 435: S147 Autonomous FulfillBountyInvestigation Method Trace
 
-- Source: `htn_methods.rs:1072`
+- Source: `htn_methods.rs:1075`
 - Systems: AI, Search, SocialArtifact, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Combat, Travel
@@ -762,7 +762,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 432: S147 Disabled Methods Fall Back To Flat Strategic Search
 
-- Source: `htn_methods.rs:1122`
+- Source: `htn_methods.rs:1125`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -1017,7 +1017,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Setup**: A with enterprise_weight=pm(900) holds 5 bread. B at jurisdiction, no loyalty. C (competitor) at OrchardFarm with pre-declared self-support. Wider beam_width=16 for branchy adjacency graph.
 
-**Proves**: DeclareSupport alone would tie with C (ProgressBarrier). Coalition-aware planner finds Bribe(B, bread) + DeclareSupport(self). A bribes B (full 5 bread transfer). B's loyalty increases and B generates SupportCandidateForOffice(A). A's coalition (2) beats C (1). Conservation: bread total unchanged.
+**Proves**: DeclareSupport alone would tie with C (typed barrier). Coalition-aware planner finds Bribe(B, bread) + DeclareSupport(self). A bribes B (full 5 bread transfer). B's loyalty increases and B generates SupportCandidateForOffice(A). A's coalition (2) beats C (1). Conservation: bread total unchanged.
 
 **Cross-system chain**: AI goal -> coalition-aware planner Bribe op -> commodity transfer -> conservation -> loyalty increase -> target SupportCandidateForOffice -> DeclareSupport -> support counting -> decisive installation.
 
@@ -1465,7 +1465,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 411: S137 Commodity Availability Changed Clears Blocker Structurally
 
-- Source: `plan_repair.rs:390`
+- Source: `plan_repair.rs:396`
 - Systems: AI, Core
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1477,7 +1477,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 412: S137 Repair Budget Exhaustion Falls Through To Full Replan
 
-- Source: `plan_repair.rs:465`
+- Source: `plan_repair.rs:471`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1489,7 +1489,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 413: S137 Abandon Produces Empty Progress Barrier
 
-- Source: `plan_repair.rs:520`
+- Source: `plan_repair.rs:526`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1497,11 +1497,11 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Setup**: repair context has no preserved prefix and no replacement candidates, so earlier local strategies cannot preserve progress.
 
-**Proves**: Abandon is the deterministic final local outcome and returns an empty progress-barrier plan.
+**Proves**: Abandon is the deterministic final local outcome and returns an empty typed-barrier plan.
 
 ### Scenario 414: S137 Phase 11 Approved Repair Gate Witness
 
-- Source: `plan_repair.rs:563`
+- Source: `plan_repair.rs:575`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair

@@ -3025,7 +3025,10 @@ fn progress_barrier_completion_preserves_goal_and_forces_replan() {
             default_opportunity(goal),
             goal,
             vec![travel_step(1, destination)],
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         )),
         current_step_index: 0,
         step_in_flight: false,
@@ -5289,7 +5292,10 @@ fn assumption_refs_record_nonzero_source_step_from_plan() {
                 expectations: Vec::new(),
             },
         ],
-        PlanTerminalKind::ProgressBarrier,
+        PlanTerminalKind::SearchBudgetExhausted {
+            budget_consumed: 0,
+            budget_total: 0,
+        },
     );
     let assumption = FrameAssumption::RouteExists {
         from: first_place,
@@ -5690,7 +5696,10 @@ fn determine_selected_plan_source_distinguishes_search_selection_from_retention(
         default_opportunity(challenger_goal),
         challenger_goal,
         vec![barrier_step()],
-        PlanTerminalKind::ProgressBarrier,
+        PlanTerminalKind::SearchBudgetExhausted {
+            budget_consumed: 0,
+            budget_total: 0,
+        },
     );
 
     assert_eq!(
@@ -6683,7 +6692,10 @@ fn refresh_runtime_for_read_phase_uses_committed_source_for_local_failure_detect
             },
             goal,
             vec![travel_step(1, place)],
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         )
         .with_committed_source(Some(SourceKey {
             entity: place,

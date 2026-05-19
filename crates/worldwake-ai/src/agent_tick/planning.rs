@@ -171,7 +171,11 @@ impl std::ops::Deref for CandidatePlanningPass {
 fn found_plan_blocks_later_goals(plan: &PlannedPlan) -> bool {
     match plan.terminal_kind {
         crate::PlanTerminalKind::GoalSatisfied | crate::PlanTerminalKind::CombatCommitment => true,
-        crate::PlanTerminalKind::ProgressBarrier => {
+        crate::PlanTerminalKind::InformationBarrier { .. }
+        | crate::PlanTerminalKind::CoordinationBarrier { .. }
+        | crate::PlanTerminalKind::ResourceBarrier { .. }
+        | crate::PlanTerminalKind::JurisdictionBarrier { .. }
+        | crate::PlanTerminalKind::SearchBudgetExhausted { .. } => {
             !matches!(plan.goal.kind, GoalKind::InvestigateViolation { .. })
         }
     }
@@ -4219,7 +4223,10 @@ mod tests {
                     expectations: Vec::new(),
                 },
             ],
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         );
         let mut event_log = EventLog::new();
         let agent = entity(1);
@@ -4369,7 +4376,10 @@ mod tests {
                 guard: None,
                 expectations: Vec::new(),
             }],
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         );
 
         let tick = Tick(20);
@@ -5962,7 +5972,10 @@ mod tests {
             opportunity(goal),
             goal,
             Vec::new(),
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         );
 
         assert!(!found_plan_blocks_later_goals(&barrier_plan));
@@ -5977,7 +5990,10 @@ mod tests {
             opportunity(goal),
             goal,
             Vec::new(),
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         );
 
         assert!(found_plan_blocks_later_goals(&barrier_plan));

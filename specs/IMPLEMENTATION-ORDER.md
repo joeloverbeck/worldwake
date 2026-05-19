@@ -724,7 +724,7 @@ S153 (hard deps on archived S143, archived S148, archived S150, archived S151)
   - migrates S112's `Survival`/`Commitment`/`Economic` slot names into `NeedSurvival`/`ObligationDuty`/`EconomicOpportunity` without alias
 
 **Wave 4** (parallel, after Wave 3):
-- **S149**: Partial Plan Segments and Typed Plan Terminals — typed `PlanTerminalKind` (InformationBarrier/CoordinationBarrier/ResourceBarrier/JurisdictionBarrier/SafetyBarrier/SearchBudgetExhausted); first-class `PartialPlanSegment` storage on `AgendaEntry`; agenda-manager resume-from-prefix path; barrier → `Discrepancy` mapping; companion `AskWitness` synthesis on `InformationBarrier`.
+- **S149**: Partial Plan Segments and Typed Plan Terminals — typed `PlanTerminalKind` (InformationBarrier/CoordinationBarrier/ResourceBarrier/JurisdictionBarrier/SearchBudgetExhausted); first-class `PartialPlanSegment` storage on `AgendaEntry`; agenda-manager resume-from-prefix path; barrier → `Discrepancy` mapping; companion `AskWitness` synthesis on `InformationBarrier`.
   - soft depends on archived S148 (shared `ResumeCondition`/`AbandonCondition` types)
 - **S152**: Cognitive Archetypes for Seeded Diversity — `CognitiveArchetype` enum (10 variants); `ArchetypeProfileTemplate` modifying existing universal profiles; `ArchetypeAssignmentPolicy` (`DefaultUniformFive`/`Uniform`/`Weighted`/`PerRole`/`Explicit`); `PersonalityAssigned` event at spawn with seeded RNG and resolved profile snapshot.
   - soft depends on archived S146/S148/S151 (modifies profile types each introduces)

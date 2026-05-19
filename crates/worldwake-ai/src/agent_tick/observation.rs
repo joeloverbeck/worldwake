@@ -1199,7 +1199,10 @@ mod tests {
                 guard: None,
                 expectations: Vec::new(),
             }],
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         );
         let runtime = AgentDecisionRuntime {
             current_plan: Some(committed_plan),
@@ -1259,7 +1262,10 @@ mod tests {
             },
             committed_goal,
             Vec::new(),
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         );
         let runtime = AgentDecisionRuntime {
             current_plan: Some(committed_plan),
@@ -1295,7 +1301,10 @@ mod tests {
             },
             committed_goal,
             Vec::new(),
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         );
         let runtime = AgentDecisionRuntime {
             current_plan: Some(committed_plan),
@@ -1459,7 +1468,10 @@ mod tests {
             },
             goal,
             Vec::new(),
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         )
         .with_committed_source(Some(worldwake_core::SourceKey {
             entity: place,

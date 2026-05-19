@@ -18,6 +18,7 @@ D5 gives the agenda manager the ability to resume a suspended intention from its
 4. AI regression layer: this is a runtime `agent_tick`/agenda-manager change. Resume/abandon evaluation reads `RuntimeBeliefView` (belief-only planning, FND-14) — no authoritative world read on behalf of the agent.
 5. Adjacent contradiction classification: segment construction at barrier time is a required consequence of D5 (resumption needs stored segments); it is in-scope here, not a separate ticket. The barrier→condition derivation it calls is owned by ticket 004.
 6. Placeholder relationship: ticket 003 added `partial_plan_segment: None` on every construction path as a compile-safe default; this ticket is the first writer that populates it with `Some(..)`. No earlier placeholder symbol needs replacing — 003's `None` default is the intended initial state, not a stub.
+7. Budget-exhaustion handoff from ticket 001: direct no-plan search-budget exhaustion still returns `PlanSearchResult::BudgetExhausted`, not a terminal-bearing found plan. To support the S149 `SearchBudgetExhausted` resume/golden path, this ticket owns the first writer that turns an eligible budget-exhausted suspension into a `PartialPlanSegment` whose `terminal_barrier` is `PlanTerminalKind::SearchBudgetExhausted`.
 
 ## Architecture Check
 
@@ -36,6 +37,8 @@ D5 gives the agenda manager the ability to resume a suspended intention from its
 ### 1. Construct segment at barrier time
 
 When a plan reaches a typed barrier and the intention is suspended (`demote_to_pending_or_suspended`), build a `PartialPlanSegment` (prefix steps, terminal barrier, barrier fact, resume/abandon conditions via ticket 004's derivation) and store it on the suspended `AgendaEntry.partial_plan_segment`.
+
+Also handle eligible budget-exhausted suspensions: when the search result is `PlanSearchResult::BudgetExhausted` and the agenda manager parks the intention for retry rather than discarding it, construct the segment with `terminal_barrier: PlanTerminalKind::SearchBudgetExhausted { .. }` so later resume/observer/golden tickets have a typed terminal-bearing record to consume.
 
 ### 2. `try_resume_partial_plan`
 
@@ -64,7 +67,8 @@ Define `ResumedPlan` and re-enter the tactical planner with `completed_prefix` a
 2. New: a satisfied abandon condition clears the intention and segment before any resume attempt.
 3. New: `resume_attempt_count > patience_limit` abandons via `PatienceExhausted`.
 4. New (agent_tick decision trace): a resumed plan continues from the prefix-tail and reaches `GoalSatisfied`.
-5. Existing suite: `cargo test -p worldwake-ai`
+5. New: an eligible budget-exhausted suspension stores a `PartialPlanSegment` with `PlanTerminalKind::SearchBudgetExhausted`.
+6. Existing suite: `cargo test -p worldwake-ai`
 
 ### Invariants
 

@@ -13,7 +13,10 @@ use heuristic::{
     combined_relevant_places_for_tactical, compute_heuristic, compute_landmark_heuristic,
 };
 use std::collections::BTreeMap;
-use worldwake_core::{ActionDefId, CognitiveProfile, EntityKind, ExecutionBudget};
+use worldwake_core::{
+    ActionDefId, CognitiveProfile, EntityId, EntityKind, EpistemicSubject, ExecutionBudget,
+    TellTopic,
+};
 use worldwake_sim::{
     ActionDefRegistry, EffectEvaluationContext, EffectMode, RecipeRegistry, TemporalBeliefView,
     apply_effects_with_context,
@@ -335,10 +338,10 @@ pub(super) fn terminal_kind(
     if let Some(tactical_goal) = tactical_goal {
         match tactical_goal {
             TacticalGoal::Explore { .. } if tactical_goal.progress_barrier_satisfied(state) => {
-                return Some(PlanTerminalKind::ProgressBarrier);
+                return Some(information_barrier_for_tactical_goal(tactical_goal));
             }
             TacticalGoal::SocialQuery { .. } if step.op_kind == PlannerOpKind::AskWitness => {
-                return Some(PlanTerminalKind::ProgressBarrier);
+                return Some(information_barrier_for_tactical_goal(tactical_goal));
             }
             _ => {}
         }
@@ -358,10 +361,103 @@ pub(super) fn terminal_kind(
             .collect::<Vec<_>>(),
         step.payload_override.as_ref(),
     ) {
-        return Some(PlanTerminalKind::ProgressBarrier);
+        return Some(information_barrier_for_epistemic_subjects(
+            &epistemic_subjects,
+            state.snapshot().actor(),
+        ));
     }
     goal.key
         .kind
         .is_progress_barrier(step)
-        .then_some(PlanTerminalKind::ProgressBarrier)
+        .then_some(progress_barrier_terminal_for_goal(
+            goal,
+            state,
+            step,
+            tactical_goal,
+        ))
+}
+
+fn information_barrier_for_tactical_goal(tactical_goal: &TacticalGoal) -> PlanTerminalKind {
+    match tactical_goal {
+        TacticalGoal::AcquirePrerequisite { destination, .. }
+        | TacticalGoal::Explore { destination }
+        | TacticalGoal::SocialQuery { destination, .. }
+        | TacticalGoal::TravelToGoal { destination } => PlanTerminalKind::InformationBarrier {
+            topic: TellTopic::EntityBelief {
+                subject: *destination,
+            },
+        },
+    }
+}
+
+fn information_barrier_for_epistemic_subjects(
+    subjects: &[EpistemicSubject],
+    fallback_subject: EntityId,
+) -> PlanTerminalKind {
+    let subject = subjects
+        .first()
+        .map_or(fallback_subject, |subject| match *subject {
+            EpistemicSubject::EntityLocation { entity, .. } => entity,
+            EpistemicSubject::SupplyAvailability { source, .. } => source,
+        });
+    PlanTerminalKind::InformationBarrier {
+        topic: TellTopic::EntityBelief { subject },
+    }
+}
+
+fn progress_barrier_terminal_for_goal(
+    goal: &GoalOffer,
+    state: &crate::PlanningState<'_>,
+    step: &PlannedStep,
+    tactical_goal: Option<&TacticalGoal>,
+) -> PlanTerminalKind {
+    if step.op_kind == PlannerOpKind::QueueForFacilityUse {
+        return PlanTerminalKind::CoordinationBarrier {
+            contested_resource: barrier_anchor(state, step),
+        };
+    }
+    match goal.key.kind {
+        crate::GoalKind::AcquireCommodity { commodity, .. }
+        | crate::GoalKind::ConsumeOwnedCommodity { commodity }
+        | crate::GoalKind::RestockCommodity { commodity }
+        | crate::GoalKind::SellCommodity { commodity }
+        | crate::GoalKind::MoveCargo { commodity, .. }
+        | crate::GoalKind::ExploreLocation {
+            hypothesis: worldwake_core::HypothesisKind::MayContainCommodity { commodity },
+            ..
+        } => PlanTerminalKind::ResourceBarrier {
+            commodity,
+            place: barrier_anchor(state, step),
+        },
+        crate::GoalKind::AskWitness { topic, .. } | crate::GoalKind::ShareBelief { topic, .. } => {
+            PlanTerminalKind::InformationBarrier { topic }
+        }
+        crate::GoalKind::ClaimOffice { office }
+        | crate::GoalKind::SupportCandidateForOffice { office, .. } => {
+            PlanTerminalKind::JurisdictionBarrier {
+                authority: office,
+                jurisdiction: barrier_anchor(state, step),
+            }
+        }
+        _ => tactical_goal.map_or(
+            PlanTerminalKind::CoordinationBarrier {
+                contested_resource: barrier_anchor(state, step),
+            },
+            information_barrier_for_tactical_goal,
+        ),
+    }
+}
+
+fn barrier_anchor(state: &crate::PlanningState<'_>, step: &PlannedStep) -> EntityId {
+    step.target_place
+        .or_else(|| {
+            step.targets.iter().find_map(|target| match *target {
+                PlanningEntityRef::Authoritative(entity) => Some(entity),
+                PlanningEntityRef::Hypothetical(_) => None,
+            })
+        })
+        .or_else(|| {
+            state.effective_place_ref(PlanningEntityRef::Authoritative(state.snapshot().actor()))
+        })
+        .unwrap_or_else(|| state.snapshot().actor())
 }

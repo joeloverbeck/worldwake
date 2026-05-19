@@ -6,7 +6,7 @@
 
 Folds in PR-10 (Partial plans as first-class objects) and PR-5 (Information barriers as first-class plan outcomes) from `reports/ai-architecture-improvements.md`.
 
-The current planner has three `PlanTerminalKind` variants at `crates/worldwake-ai/src/planner_ops.rs:387-392`: `GoalSatisfied`, `ProgressBarrier`, `CombatCommitment`. Every non-success path terminates as `ProgressBarrier` — the planner cannot distinguish "I lack information about the target's location" from "the resource is depleted" from "another agent holds the reservation" from "I lack jurisdiction." S149 replaces the generic terminal with typed terminals: `GoalSatisfied`, `CombatCommitment`, `InformationBarrier`, `CoordinationBarrier`, `ResourceBarrier`, `JurisdictionBarrier`, `SearchBudgetExhausted` (seven variants). S139 added `GoalKind::AskWitness` as a sensing *goal*, but the planner cannot express "I made partial progress and stopped at an information barrier — when I learn fact F, I can resume."
+Before S149PARPLASEG-001, the planner had three `PlanTerminalKind` variants: `GoalSatisfied`, `ProgressBarrier`, `CombatCommitment`, and every non-success terminal path used `ProgressBarrier`. S149PARPLASEG-001 replaced that generic terminal with typed terminals: `GoalSatisfied`, `CombatCommitment`, `InformationBarrier`, `CoordinationBarrier`, `ResourceBarrier`, `JurisdictionBarrier`, `SearchBudgetExhausted` (seven variants), and re-keyed diagnostics by `PlanTerminalKindDiscriminant`. Remaining S149 work builds partial-plan storage and resumption on top of those typed terminals. S139 added `GoalKind::AskWitness` as a sensing *goal*, but the planner cannot yet express "I made partial progress and stopped at an information barrier — when I learn fact F, I can resume."
 
 S149 ships both as the same architectural layer: typed terminal barriers and first-class `PartialPlanSegment` storage. When a plan attempts goal G and reaches a typed barrier B, the planner stores a `PartialPlanSegment` carrying the prefix steps that did succeed, the barrier type, the resume conditions that would clear the barrier, and the abandon conditions that would invalidate the partial plan. The agenda manager (S115) gains the ability to resume a suspended intention from its `PartialPlanSegment` when its resume conditions hold, picking up at the prefix-tail rather than replanning from scratch.
 
@@ -21,9 +21,9 @@ Phase 12: AI Architecture Evolution — Draft
 ## Crates
 
 - `worldwake-core` — no new condition types (reuses existing `IntentionResumeCondition` / `IntentionAbandonCondition` from S148). No new component. `TellTopic` (already core, `belief.rs:1737`) is reused as the information-gap topic.
-- `worldwake-sim` — `SAVE_FORMAT_VERSION` bump; serialization coverage for the new `AgendaEntry` field follows the existing agenda-state persistence path.
+- `worldwake-sim` — `SAVE_FORMAT_VERSION` was bumped to 91 by S149PARPLASEG-001 for the typed-terminal serialized-format break; serialization coverage for the new `AgendaEntry` field follows the existing agenda-state persistence path without a second bump.
 - `worldwake-systems` — no change.
-- `worldwake-ai` — extends `PlanTerminalKind`, adds the payload-free `PlanTerminalKindDiscriminant` histogram key, adds the `PartialPlanSegment` carrier type (and `PartialPlanSegmentId`, `BarrierFact`, `PlannedSkeletonStep`) here because their fields reference ai-resident types (`PlanTerminalKind`, `PlannedStep`, `PlannerOpKind`, `GoalOffer`, `BeliefPredicate`); adds `PartialPlanSegment` storage on `AgendaEntry`; extends agenda-manager resumption; migrates all `ProgressBarrier` sites.
+- `worldwake-ai` — `PlanTerminalKind`, the payload-free `PlanTerminalKindDiscriminant` histogram key, and all `ProgressBarrier` removal sites landed in S149PARPLASEG-001; remaining tickets add the `PartialPlanSegment` carrier type (and `PartialPlanSegmentId`, `BarrierFact`, `PlannedSkeletonStep`) here because their fields reference ai-resident types (`PlanTerminalKind`, `PlannedStep`, `PlannerOpKind`, `GoalOffer`, `BeliefPredicate`); add `PartialPlanSegment` storage on `AgendaEntry`; and extend agenda-manager resumption.
 - `worldwake-cli` — observer renders barrier type per terminal in the planning-diagnostic sections; S144 diagnostics aggregate barrier-kind distribution.
 
 ## Dependencies
@@ -86,7 +86,7 @@ pub enum PlanTerminalKind {
 
 `PlanTerminalKind` currently derives `Copy` (planner_ops.rs:387); every payload type above is `Copy` (`TellTopic`, `EntityId`, `CommodityKind`, `u16`), so the derive is preserved. `TellTopic` (`crates/worldwake-core/src/belief.rs:1737`) is the existing testimony-topic enum reused for the information-gap topic; no new `InformationGapTopic` type is introduced.
 
-The legacy generic `ProgressBarrier` is removed (migration in D3). `SearchBudgetExhausted` is the new explicit "I ran out of search budget" terminal; the previous `ProgressBarrier` cases that meant "budget out" now report this explicitly. The other typed barriers replace the cases that meant "missing fact" / "contested" / "depleted" / "out of authority."
+The legacy generic `ProgressBarrier` is removed (migration in D3). `SearchBudgetExhausted` is the explicit typed terminal for terminal-bearing budget-exhaustion contexts such as repair/discrepancy terminal records. Direct no-plan search-budget exhaustion remains the existing `PlanSearchResult::BudgetExhausted` outcome after S149PARPLASEG-001 unless a terminal-bearing partial-segment path is later populated. The other typed barriers replace the cases that meant "missing fact" / "contested" / "depleted" / "out of authority."
 
 ### D2: `PlanTerminalKindDiscriminant` (histogram key)
 
@@ -114,7 +114,7 @@ impl From<&PlanTerminalKind> for PlanTerminalKindDiscriminant { /* 1:1 match */ 
 
 Removing `PlanTerminalKind::ProgressBarrier` touches ~20 files / 60+ sites. This deliverable enumerates the migration explicitly (FND-28: no aliasing the removed variant):
 
-- **Creation sites**: `crates/worldwake-ai/src/search/transition.rs` (4 sites at lines ~338, 341, 361, 366) and `crates/worldwake-ai/src/search/mod.rs` fallback (~982, 984) — each `ProgressBarrier` construction is replaced by the specific typed terminal that matches the failure cause at that site (budget-out → `SearchBudgetExhausted`, etc.).
+- **Creation sites**: `crates/worldwake-ai/src/search/transition.rs` and `crates/worldwake-ai/src/search/mod.rs` fallback — each former `ProgressBarrier` construction is replaced by the specific typed terminal that matches the failure cause at that site. Direct no-plan budget exhaustion remains `PlanSearchResult::BudgetExhausted`; terminal-bearing budget-exhaustion contexts use `SearchBudgetExhausted`.
 - **`DowngradeToProgressBarrier` repair kind** (`crates/worldwake-ai/src/plan_repair.rs`, ~8 sites): rename to `DowngradeToTypedBarrier` (or equivalent) so the repair pipeline downgrades to the specific terminal the failure produced rather than the generic one. The repair-kind enum, its match arms, and its trace rendering migrate together.
 - **Terminal handling** in `agent_tick/planning.rs`, `agent_tick/execution.rs`, `agent_tick/observation.rs`, `agent_tick/active_action.rs`, `failure_handling.rs`, `plan_selection.rs`: each `ProgressBarrier` match arm is replaced by arms over the typed terminals (or a catch-all over the barrier-bearing subset where the handling is uniform).
 - **Tests / fixtures / UI**: `search/tests.rs` assertions, `goal_model.rs` test assertions, `candidate_generation.rs` fixtures, `visualizer/tabs/plan.rs`, observer test data, golden scenario files (`htn_methods.rs`, `offices.rs`, `plan_repair.rs`), and `expected-scenario-diagnostics.json` migrate to the typed terminals.
@@ -242,7 +242,7 @@ S144's `PlanningMetrics.terminal_kind_distribution` is keyed by `PlanTerminalKin
 pub partial_plan_segment: Option<PartialPlanSegment>,
 ```
 
-`AgendaState.suspended` map (`agenda_types.rs:18`) stores the suspended `AgendaEntry`s; segments persist with their entries through the existing agenda-state persistence path. `SAVE_FORMAT_VERSION` (`crates/worldwake-sim/src/save_load.rs:7`, currently `90`) bumps to `91`. The new `Option` field gets `#[serde(default)]` so existing saves deserialize. Note that `AgendaState` is an ai-crate runtime structure; the implementation must route its serialization through the existing save path that already persists `AgendaState.suspended` (confirm the path during implementation rather than assuming a sim-crate accessor to ai state).
+`AgendaState.suspended` map (`agenda_types.rs:18`) stores the suspended `AgendaEntry`s; segments persist with their entries through the existing agenda-state persistence path. `SAVE_FORMAT_VERSION` was already bumped to `91` by S149PARPLASEG-001 because removing `ProgressBarrier` changed serialized decision payloads. The new `Option` field gets `#[serde(default)]` so existing 91-era saves deserialize without a second bump. Note that `AgendaState` is an ai-crate runtime structure; the implementation must route its serialization through the existing save path that already persists `AgendaState.suspended` (confirm the path during implementation rather than assuming a sim-crate accessor to ai state).
 
 ### D11: Golden coverage
 
@@ -251,7 +251,7 @@ A golden scenario module (under the post-S154 `golden_ai` test target — `crate
 - `CoordinationBarrier`: agent loses oven reservation → barrier raised → `BlockingFact::ReservationConflict` recorded → grant re-available → resume.
 - `ResourceBarrier`: market depleted → barrier raised → resupply observed → resume.
 - `JurisdictionBarrier`: agent attempts arrest outside jurisdiction → barrier raised → travel to jurisdiction → resume.
-- `SearchBudgetExhausted`: budget runs out → typed terminal → `search_exhaustion_backoff_ticks` TTL → resume.
+- `SearchBudgetExhausted`: budget runs out → eligible suspended segment receives a typed `SearchBudgetExhausted` terminal per the segment-construction ticket → `search_exhaustion_backoff_ticks` TTL → resume.
 - Abandon-condition flow: patience-exhausted abandons; observer surfaces the abandonment.
 
 (`SafetyBarrier` coverage is deferred with the variant — see Non-Goals.)
@@ -322,6 +322,6 @@ The typed terminals are produced in `search` and feed replan; no `validate_*`/pr
 
 - D11 golden coverage (6 scenarios above).
 - Determinism: same resume condition + same belief update → same suffix retry.
-- Save/load coverage for `PartialPlanSegment` (`SAVE_FORMAT_VERSION` 90 → 91).
+- Save/load coverage for `PartialPlanSegment` against the S149PARPLASEG-001 baseline format version 91; no second bump for the additive `Option` field.
 - `cargo test -p worldwake-ai` clean after the `ProgressBarrier` migration (D3).
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.

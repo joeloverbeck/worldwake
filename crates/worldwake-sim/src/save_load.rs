@@ -4,7 +4,7 @@ use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
 /// S147 D10 persists selected HTN method provenance on active plans.
-pub const SAVE_FORMAT_VERSION: u32 = 90;
+pub const SAVE_FORMAT_VERSION: u32 = 91;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -1348,8 +1348,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_90_after_s147_method_plan_provenance_landing() {
-        assert_eq!(SAVE_FORMAT_VERSION, 90);
+    fn save_format_version_is_91_after_s149_typed_terminal_landing() {
+        assert_eq!(SAVE_FORMAT_VERSION, 91);
     }
 
     #[test]
@@ -1360,7 +1360,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 90);
+        assert_eq!(SAVE_FORMAT_VERSION, 91);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]

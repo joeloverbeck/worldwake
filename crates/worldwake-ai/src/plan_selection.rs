@@ -966,7 +966,10 @@ mod tests {
                     expectations: Vec::new(),
                 },
             ],
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         );
         let refreshed_plan = plan(goal, 3, 2);
         let candidates = vec![ranked(

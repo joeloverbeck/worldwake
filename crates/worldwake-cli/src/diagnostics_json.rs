@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use worldwake_ai::{
-    CandidateSuppressionCategory, PlanTerminalKind, ScenarioDiagnosticsReport, SlotKind,
+    CandidateSuppressionCategory, PlanTerminalKindDiscriminant, ScenarioDiagnosticsReport,
+    SlotKind,
     scenario_diagnostics::{
         BeliefMetrics, CoordinationMetrics, GoalPressureMetrics, MethodUsageCounts,
         PerformanceMetrics, PlanningMetrics, RevalidationRepairMetrics,
@@ -52,7 +53,7 @@ struct PlanningDiagnosticsJson {
     frontier_exhaustion_rate: Permille,
     beam_truncation_ratio: Permille,
     plan_depth: PercentileBucket,
-    terminal_kind_distribution: Vec<DiagnosticsMapEntry<PlanTerminalKind>>,
+    terminal_kind_distribution: Vec<DiagnosticsMapEntry<PlanTerminalKindDiscriminant>>,
     heuristic_helpful_action_hit_rate: Permille,
     #[serde(default)]
     method_usage: Vec<MethodUsageDiagnosticsEntry>,

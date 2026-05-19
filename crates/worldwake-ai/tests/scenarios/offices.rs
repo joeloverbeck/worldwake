@@ -392,7 +392,7 @@ fn golden_competing_claims_with_loyal_supporter() {
 //   no loyalty. C (competitor) at OrchardFarm with pre-declared self-support.
 //   Wider beam_width=16 for branchy adjacency graph.
 //
-// Proves: DeclareSupport alone would tie with C (ProgressBarrier). Coalition-aware
+// Proves: DeclareSupport alone would tie with C (typed barrier). Coalition-aware
 //   planner finds Bribe(B, bread) + DeclareSupport(self). A bribes B (full 5 bread
 //   transfer). B's loyalty increases and B generates SupportCandidateForOffice(A).
 //   A's coalition (2) beats C (1). Conservation: bread total unchanged.

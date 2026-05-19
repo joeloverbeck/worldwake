@@ -57,7 +57,7 @@ struct ScenarioDiagnosticsBuilder {
     beam_truncated_count: u64,
     beam_candidate_count: u64,
     plan_depth_values: Vec<u64>,
-    terminal_kind_distribution: BTreeMap<crate::PlanTerminalKind, u64>,
+    terminal_kind_distribution: BTreeMap<crate::PlanTerminalKindDiscriminant, u64>,
     heuristic_helpful_expansions: u64,
     heuristic_expansions: u64,
     method_usage: BTreeMap<Option<MethodSchemaId>, MethodUsageCounts>,
@@ -222,7 +222,11 @@ impl ScenarioDiagnosticsBuilder {
                 terminal_kind,
             } => {
                 self.plan_depth_values.push(steps.len() as u64);
-                increment(&mut self.terminal_kind_distribution, *terminal_kind, 1);
+                increment(
+                    &mut self.terminal_kind_distribution,
+                    crate::PlanTerminalKindDiscriminant::from(terminal_kind),
+                    1,
+                );
             }
             PlanSearchOutcome::BudgetExhausted { .. } => {
                 self.budget_exhaustion_count += 1;
@@ -888,7 +892,7 @@ mod tests {
         );
         assert_eq!(
             report.planning.terminal_kind_distribution,
-            BTreeMap::from([(crate::PlanTerminalKind::GoalSatisfied, 1)])
+            BTreeMap::from([(crate::PlanTerminalKindDiscriminant::GoalSatisfied, 1)])
         );
         assert_eq!(
             report.planning.heuristic_helpful_action_hit_rate,
@@ -906,6 +910,52 @@ mod tests {
         assert_eq!(
             report.performance.search_expansions,
             PercentileBucket::from_sorted(&[7])
+        );
+    }
+
+    #[test]
+    fn planning_metrics_aggregate_terminal_discriminants_without_payload_fragmentation() {
+        let mut first = found_plan_attempt(
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                quantity: worldwake_core::AcquisitionQuantity::single(),
+            },
+            1,
+        );
+        let mut second = found_plan_attempt(
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Grain,
+                purpose: worldwake_core::CommodityPurpose::Restock,
+                quantity: worldwake_core::AcquisitionQuantity::single(),
+            },
+            2,
+        );
+
+        if let PlanSearchOutcome::Found { terminal_kind, .. } = &mut first.outcome {
+            *terminal_kind = crate::PlanTerminalKind::ResourceBarrier {
+                commodity: CommodityKind::Bread,
+                place: entity(10),
+            };
+        }
+        if let PlanSearchOutcome::Found { terminal_kind, .. } = &mut second.outcome {
+            *terminal_kind = crate::PlanTerminalKind::ResourceBarrier {
+                commodity: CommodityKind::Grain,
+                place: entity(11),
+            };
+        }
+
+        let report = build_scenario_diagnostics(
+            &[],
+            &[first, second],
+            &[],
+            &EventLog::new(),
+            (Tick(0), Tick(0)),
+        );
+
+        assert_eq!(
+            report.planning.terminal_kind_distribution,
+            BTreeMap::from([(crate::PlanTerminalKindDiscriminant::ResourceBarrier, 2)])
         );
     }
 
