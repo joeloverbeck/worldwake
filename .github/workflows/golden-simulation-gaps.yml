@@ -24,7 +24,7 @@ jobs:
       matrix:
         include:
           - scenario: simulation_gaps
-            test_target: golden_simulation_gaps
+            filter: "scenarios::simulation_gaps::"
 
     steps:
       - name: Checkout
@@ -40,5 +40,5 @@ jobs:
         with:
           key: golden-simulation-gaps-${{ matrix.scenario }}
 
-      - name: Run ${{ matrix.test_target }}
-        run: cargo test --release -p worldwake-ai --test ${{ matrix.test_target }} -- --ignored --test-threads=1
+      - name: Run golden_ai (${{ matrix.scenario }})
+        run: cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 ${{ matrix.filter }}

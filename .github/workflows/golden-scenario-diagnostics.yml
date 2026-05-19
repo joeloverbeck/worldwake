@@ -23,9 +23,9 @@ jobs:
       matrix:
         include:
           - scenario: fixture
-            test_target: golden_scenario_diagnostics_fixture
+            filter: "scenarios::scenario_diagnostics_fixture::"
           - scenario: replay
-            test_target: golden_scenario_diagnostics_replay
+            filter: "scenarios::scenario_diagnostics_replay::"
 
     steps:
       - name: Checkout
@@ -41,5 +41,5 @@ jobs:
         with:
           key: golden-scenario-diagnostics-${{ matrix.scenario }}
 
-      - name: Run ${{ matrix.test_target }}
-        run: cargo test --release -p worldwake-ai --test ${{ matrix.test_target }} -- --ignored --test-threads=1
+      - name: Run golden_ai (${{ matrix.scenario }})
+        run: cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 ${{ matrix.filter }}
