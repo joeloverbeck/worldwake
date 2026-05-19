@@ -331,7 +331,7 @@ After the final archive commit and any required final state-file persistence com
 
 1. Refresh `git status --short`. Stop if uncommitted owned changes remain.
 2. Confirm the current branch matches the recorded `current_branch` and is not the original starting branch unless the user explicitly approved using that branch for the harness work.
-3. Run the repo's pre-PR verification gate before pushing: `./scripts/verify.sh`. On WSL2, VMs, or other space-constrained disks, `./scripts/verify-space-conscious.sh` is an acceptable substitute because `AGENTS.md` defines it as the same gate with reduced artifact pressure. If neither command can be run, stop before pushing unless the user explicitly approves a skip; record the skip reason in the final report and state file.
+3. Run the repo's pre-PR verification gate before pushing: `./scripts/verify.sh` (space-conscious by default per `AGENTS.md`). If it cannot be run, stop before pushing unless the user explicitly approves a skip; record the skip reason in the final report and state file.
 4. Push the recorded current branch to the configured remote.
 5. Report the branch name, pushed remote, commits created by the harness, archived spec path, archived ticket paths, any follow-up tickets left active, and the pre-push verification command/result or explicitly approved skip.
 

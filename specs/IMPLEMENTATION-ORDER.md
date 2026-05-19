@@ -483,6 +483,35 @@ T01 ✅ archived (independent; no spec deps)
   and middle-drag pan. Observer-only boundary; reuses `worldwake-cli`'s
   scenario loader; adds no engine-side coupling.
 
+### Adjunct Wave: Test-Binary Consolidation
+
+Derived from `/brainstorm` session (2026-05-19) triaging a 95.2 GiB / 94k-file
+`target/` cleanup. Root-cause analysis identified the 63-binary integration-test
+fan-out in `crates/worldwake-ai/tests/` (54 `golden_*.rs` + 9 non-golden) as
+the dominant disk-bloat driver, alongside per-binary debug info and per-crate
+incremental caches. Defaults-only mitigations (`[profile.*] debug =
+"line-tables-only"` + `CARGO_INCREMENTAL=0` in `verify.sh`) landed alongside
+this spec's drafting and cap `target/` at ~45–55 GiB. S154 captures the
+structural fix to recover the remaining headroom by consolidating to two
+entry-point test binaries (`golden_ai.rs` + `integration_ai.rs`) while
+preserving the one-source-file-per-scenario authoring layout under
+`tests/scenarios/` and `tests/integration/` submodule directories.
+
+```text
+S154 (PROPOSED; independent; no spec deps)
+```
+
+- **S154**: [Test-Binary Consolidation for Build-Artifact Reduction](S154-test-binary-consolidation.md)
+  — collapses 63 integration-test binaries to 2 via `tests/scenarios/` +
+  `tests/integration/` submodule trees. Decomposed into five tickets:
+  T1 tooling rewrite (`scripts/golden_inventory.py` +
+  `scripts/test_golden_inventory.py`), T2 source moves + entry-binary
+  plumbing, T3 `docs/generated/*` regeneration, T4 `campaigns/golden-perf`
+  harness rework, T5 hand-authored doc + skill sweep
+  (`docs/golden-e2e-testing.md`, `docs/debugging-traces.md`, five
+  `.claude/skills/*` files, CLAUDE.md). Target: `target/` cap of ~8–15 GiB
+  after a full broad gate.
+
 ---
 
 ## Phase 10: Survival Mechanic Depth

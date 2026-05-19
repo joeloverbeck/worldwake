@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Disable incremental compilation for broad gates — full-workspace runs rebuild
+# many crate × target × profile combinations, where incremental caches grow
+# fast and amortize poorly. Interactive dev still gets incremental compilation
+# via Cargo's normal defaults.
+export CARGO_INCREMENTAL=0
+
 echo "[verify] cargo fmt --all -- --check"
 cargo fmt --all -- --check
 

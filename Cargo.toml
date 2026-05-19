@@ -9,6 +9,12 @@ members = [
     "crates/worldwake-visualizer",
 ]
 
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 

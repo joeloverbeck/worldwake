@@ -12,24 +12,38 @@ This is expected Cargo behavior, but it can exhaust small WSL2 or VM disks after
 
 ## Space-Conscious Verification
 
-Use the canonical wrapper when you need the exact local equivalent of CI:
+`./scripts/verify.sh` is the canonical local equivalent of CI and is now
+space-conscious by default. It exports `CARGO_INCREMENTAL=0` for the broad
+verification run, and the workspace `[profile.dev]` / `[profile.test]`
+defaults in `Cargo.toml` set `debug = "line-tables-only"` — so every dev and
+test binary keeps backtrace line numbers and panic locations while skipping
+full DWARF (local-variable debug info).
 
 ```bash
 ./scripts/verify.sh
 ```
 
-On WSL2, VMs, or other space-constrained disks, prefer the space-conscious wrapper for local pre-PR confidence:
+These defaults trade some rebuild speed and debugger detail for much smaller
+local artifacts. They do not change source code, test selection, clippy
+lints, or runtime assertions. Interactive iterative dev still gets
+incremental compilation via Cargo's normal defaults — only `verify.sh`
+disables it for the duration of the broad run.
 
-```bash
-./scripts/verify-space-conscious.sh
-```
+If you need full DWARF for a debugger session, locally override with
+`CARGO_PROFILE_DEV_DEBUG=full cargo build` (or `CARGO_PROFILE_TEST_DEBUG=full`
+for test debugging). This will produce much larger artifacts in `target/` for
+the duration of that session.
 
-It runs the same verification gates as `verify.sh`, but defaults to:
+### Remaining bloat after defaults
 
-- `CARGO_INCREMENTAL=0` to avoid creating large incremental caches during broad runs.
-- `CARGO_PROFILE_DEV_DEBUG=line-tables-only` and `CARGO_PROFILE_TEST_DEBUG=line-tables-only` to keep debug information useful for line-level failures without embedding full debug info into every test binary.
-
-These settings trade some rebuild speed and debugger detail for much smaller local artifacts. They do not change source code, test selection, clippy lints, or runtime assertions.
+Even with these defaults, `target/` after a clean `./scripts/verify.sh` will
+still exceed safe thresholds on small WSL2 / VM disks because the
+`crates/worldwake-ai/tests/` directory contains 63 top-level integration
+test files, each generating its own statically-linked debug binary. The
+structural fix is captured in
+[`specs/S154-test-binary-consolidation.md`](../specs/S154-test-binary-consolidation.md).
+Until that spec lands, use the "Cleanup Options" below after broad
+verification runs.
 
 ## Check Disk Use
 
@@ -85,26 +99,18 @@ Use the least disruptive cleanup that solves the space problem:
 
    Use this for one-off heavy proof runs when preserving the main `target/` cache is not important.
 
-4. Disable incremental compilation for space-sensitive broad runs:
+4. Disable incremental compilation for ad-hoc broad runs outside `verify.sh`:
 
    ```bash
    CARGO_INCREMENTAL=0 cargo test --workspace
    ```
 
-   This can reduce new incremental cache growth, usually at the cost of slower rebuilds.
-
-5. Use the space-conscious full verification wrapper:
-
-   ```bash
-   ./scripts/verify-space-conscious.sh
-   ```
-
-   This runs the same gates as `./scripts/verify.sh` with reduced local artifact growth.
+   This can reduce new incremental cache growth, usually at the cost of slower rebuilds. `./scripts/verify.sh` already does this for you.
 
 ## Routine Discipline
 
 - Prefer narrow focused commands while iterating; avoid broad workspace gates until the source diff is stable.
-- On space-constrained machines, prefer `./scripts/verify-space-conscious.sh` for final local broad verification.
+- `./scripts/verify.sh` is the canonical pre-PR gate and is space-conscious by default.
 - After heavy golden/workspace verification, check `target/` size if working in WSL2, a VM, or a small disk.
 - If `target/` grows beyond the local disk budget, clean `target/debug/incremental/` first; use `cargo clean` when duplicate debug binaries dominate.
 - Do not commit generated target artifacts. `target/` remains local build output.

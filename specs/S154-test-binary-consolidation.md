@@ -1,0 +1,335 @@
+# S154: Test-Binary Consolidation for Build-Artifact Reduction
+
+## Summary
+
+Collapse the per-file integration-test fan-out in `crates/worldwake-ai/tests/`
+from 63 top-level `.rs` files (and thus 63 separately-built debug binaries)
+down to two entry-point binaries — `golden_ai.rs` (covering 54 scenarios) and
+`integration_ai.rs` (covering 9 forensic/soak/conformance/policy tests) — while
+preserving the one-source-file-per-scenario authoring layout under
+`tests/scenarios/` and `tests/integration/` submodule directories.
+
+This is a tooling-boundary change. It introduces no simulation behavior change,
+no new components, no new actions, no new systems. It exists to recover disk
+budget on space-constrained developer environments (WSL2, VMs).
+
+## Phase
+
+Developer Tooling (not phase-gated; independent of engine phase work).
+
+## Status
+
+PROPOSED.
+
+## Crates
+
+- **Modified**: `worldwake-ai` (test layout only; no `src/` changes).
+- **No new crates.**
+- **No external dependency changes.**
+
+## Dependencies
+
+No spec-level dependencies. Builds on the immediate Option-1 defaults landed
+alongside this spec's drafting:
+
+- Workspace `Cargo.toml` `[profile.dev]` / `[profile.test]` `debug =
+  "line-tables-only"`.
+- `scripts/verify.sh` exporting `CARGO_INCREMENTAL=0`.
+
+These defaults cap `target/` at roughly half of the pre-change footprint
+(~95 GiB → ~45–55 GiB after a full broad gate). This spec exists because the
+structural cause of the remaining ~50 GiB is the 63-binary fan-out, and
+defaults alone cannot fix it.
+
+## Problem Statement
+
+`cargo clean` after every spec was reclaiming **94,065 files / 95.2 GiB**.
+Root-cause analysis identified three drivers, in descending order of
+contribution:
+
+1. **63-binary fan-out**: `crates/worldwake-ai/tests/` contains 54
+   `golden_*.rs` and 9 non-golden top-level files. Each becomes its own debug
+   integration-test binary that statically links the full
+   `worldwake-{core,sim,systems,ai}` dep tree plus dev-deps. At hundreds of MB
+   per binary, this alone produces 25–40 GiB.
+2. **Full debug info in every binary** — addressed by the immediate defaults
+   (line-tables-only).
+3. **Per-crate × per-profile incremental caches** — addressed by the immediate
+   defaults (`CARGO_INCREMENTAL=0` in `verify.sh`).
+
+The defaults eliminate (2) and (3) but leave (1). This spec eliminates (1).
+
+## Context
+
+Existing test layout (`crates/worldwake-ai/tests/`):
+
+- 54 top-level `golden_*.rs` source files, each generating its own integration
+  binary.
+- 9 top-level non-golden source files (`forensic_determinism.rs`,
+  `soak_profiler.rs`, three `conformance_*.rs`, `policy.rs` analogs, etc.).
+- 3 shared harness directories already using Rust's
+  non-test-target convention: `golden_harness/`,
+  `golden_planner_pathology_harness/`,
+  `golden_scenario_diagnostics_harness/`. These are statically duplicated into
+  every binary that does `mod golden_harness;`.
+- 1 `fixtures/` directory (RON scenarios + expected JSON), used by reference,
+  not built.
+
+`crates/worldwake-systems/tests/` (4 files) and `crates/worldwake-cli/tests/`
+(4 files) also fan out but at single-digit cost; this spec leaves them
+as-is, with a note in §Non-Goals.
+
+## Target Architecture
+
+```
+crates/worldwake-ai/tests/
+├── golden_ai.rs                      ← single binary entry for all 54 goldens
+│   contents:
+│     mod golden_harness;
+│     mod planner_pathology_harness;
+│     mod scenario_diagnostics_harness;
+│     mod scenarios;
+├── integration_ai.rs                 ← single binary entry for 9 non-goldens
+│   contents:
+│     mod integration;
+├── scenarios/
+│   ├── mod.rs                        ← `pub mod merchant_selling; pub mod epistemic_sensing; ...`
+│   ├── merchant_selling.rs           ← moved from golden_merchant_selling.rs; #[test]s unchanged
+│   ├── epistemic_sensing.rs
+│   └── ... (52 more)
+├── integration/
+│   ├── mod.rs                        ← lists forensic_determinism, soak_profiler, etc.
+│   ├── forensic_determinism.rs
+│   └── ... (8 more)
+├── golden_harness/                   ← unchanged
+├── planner_pathology_harness/        ← renamed from golden_planner_pathology_harness/
+├── scenario_diagnostics_harness/     ← renamed from golden_scenario_diagnostics_harness/
+└── fixtures/                         ← unchanged
+```
+
+Cargo discovers `#[test]` functions anywhere in the binary regardless of
+nesting depth. Per-scenario files retain their existing `#[test] fn name()`
+form. Test names remain globally unique within each binary (they are already
+de-facto unique today via descriptive naming).
+
+Why two binaries, not one: keeps the conceptual separation between "golden
+snapshot scenario tests" and "forensic/soak/conformance/policy tests" so
+failures route to the right cognitive bucket. Both binaries still statically
+link the full dep tree — two large binaries are vastly cheaper than 63
+medium-sized ones.
+
+## Non-Goals
+
+- **`worldwake-systems/tests/` consolidation** (4 files): small fan-out;
+  marginal disk win; deferred. A future ticket may revisit.
+- **`worldwake-cli/tests/` consolidation** (4 files): same reasoning;
+  deferred.
+- **`worldwake-core/tests/` consolidation** (3 files): not worth touching.
+- **`worldwake-visualizer` workspace surgery**: separate concern, distinct
+  spec when prioritized.
+- **`cargo-sweep` integration**: documented in
+  `docs/cargo-artifact-hygiene.md` as user-installable tooling; not enforced.
+
+## Blast-Radius Inventory
+
+The per-file `golden_*.rs` layout is consumed by the following tooling and
+docs. All require coordinated update; the spec is decomposed into tickets to
+land them in safe order.
+
+| Consumer | Coupling | Breakage on consolidation | Owner |
+|---|---|---|---|
+| `scripts/golden_inventory.py` | Globs `tests/golden_*.rs`; runs `cargo test --test <stem>` per file; parses `Running tests/golden_*.rs (target/debug/deps/...)`; maps filename → per-file detail page via `_file_stem_to_detail_name()` | Breaks. Rewrite glob to `tests/scenarios/*.rs`; replace 54 per-file cargo invocations with one `cargo test --test golden_ai -- --list`; reshape per-binary parsing to per-source-file grouping. | T1 |
+| `scripts/test_golden_inventory.py` | Unit tests for the above (test fixtures embed the `Running tests/golden_*.rs` cargo-output format). | Breaks. Rewrite fixtures + expected outputs. | T1 |
+| `campaigns/golden-perf/harness.sh` | `find tests/ -name 'golden_*.rs'` then `cargo test --test <suite>` per file; ranks the 5 slowest test **binaries**. | Conceptually broken after consolidation (single binary). Either repurpose to per-scenario timing via `cargo test -- --report-time`, or retire. Decision deferred to T4. | T4 |
+| `docs/generated/golden-e2e-inventory.md` | Auto-generated; per-file table; "Golden test files: N" summary line. | Regenerates fine once T1 lands; schema shifts (no per-file count — only scenarios). | T3 |
+| `docs/generated/golden-scenario-index.md` | Scenario blocks across files; `Source: golden_foo.rs:NNN`. | Regenerates fine; source paths shift to `scenarios/foo.rs:NNN`. | T3 |
+| `docs/generated/golden-scenario-details/*.md` | One markdown file per source file, named via `_file_stem_to_detail_name()`. | Regenerates fine with updated naming derivation. | T3 |
+| `docs/generated/golden-coverage-matrix.md` | Scenario-keyed; no file-name coupling. | Regenerates unchanged. | T3 |
+| `docs/golden-e2e-testing.md` | Multiple prose references to `tests/golden_*.rs` and the inventory workflow. | Doc edits — non-trivial. | T5 |
+| `docs/debugging-traces.md` | References `cargo test --test golden_*` command patterns. | Doc edits — instruction examples shift. | T5 |
+| `docs/plans/*` (3 active plan docs) | Read-only references to the convention. | No edit required; references describe past state at time of writing. | — |
+| `.claude/skills/*` (5 skills: `detect-architectural-debt`, `reassess-spec`, `simulation-remediation`, `goap-architecture-report`, `implement-ticket`) | Reference `tests/golden_*.rs` as a location pattern for AI agents. | Light edits to agent guidance — not enforcement. | T5 |
+| Workflow muscle memory: `cargo test -p worldwake-ai --test golden_foo` | Every developer + every AI-agent invocation pattern. | Becomes `cargo test -p worldwake-ai --test golden_ai golden_foo`. Accepted cost; documented in T5. | T5 |
+
+## FOUNDATIONS Alignment
+
+| Principle | Alignment |
+|-----------|-----------|
+| FND-29 (Debuggability is a product feature) | Test binaries ARE the debuggability surface. This spec keeps every test, every assertion, every backtrace, every `--report-time` measurement intact. It only changes the on-disk packaging. Failure-attribution improves (the two-binary split makes the golden/forensic distinction explicit in test output). |
+| FND-26 (System decoupling) | N/A for simulation systems. The dependency graph between `worldwake-{core,sim,systems,ai}` is unchanged. |
+| FND-28 (No backward compatibility) | The old `cargo test --test golden_<scenario>` invocation form is *not* preserved via a shim. Users adopt `cargo test --test golden_ai golden_<scenario>` after this lands. T5 sweeps every doc and skill so the new form is the only documented form. |
+| All 28 simulation principles | N/A — no simulation code is touched. |
+
+## Phased Decomposition (Tickets)
+
+Each ticket is independently landable and individually verifiable. Order is
+chosen to de-risk: tooling first (so the inventory script keeps reporting
+correctly through the move), then the move itself, then the doc sweep.
+
+```text
+T1 (tooling rewrite)  →  T2 (source moves)  →  T3 (regenerate docs/generated/)
+                                            →  T4 (campaigns/golden-perf rework)
+                                            →  T5 (hand-authored doc + skill sweep)
+```
+
+### T1: Tooling Rewrite (`scripts/golden_inventory.py` + `scripts/test_golden_inventory.py`)
+
+**Deliverable**: Updated `golden_inventory.py` that:
+
+- Discovers scenarios by globbing `crates/worldwake-ai/tests/scenarios/*.rs`
+  AND (for backward compatibility during the move) `crates/worldwake-ai/tests/golden_*.rs`. Both sources are merged into the per-source-file
+  inventory.
+- Runs a single `cargo test -p worldwake-ai --test golden_ai -- --list`
+  invocation (when the new binary exists) instead of 54 per-file invocations.
+  Falls back to the per-file invocation path while pre-T2 layout is still in
+  place.
+- Renders per-source-file detail pages identical in structure to today's
+  output (one markdown file per scenario source, derived from
+  `_file_stem_to_detail_name()` extended to accept both `golden_foo.rs` and
+  `foo.rs` (post-move) → `foo.md`).
+- `test_golden_inventory.py` test fixtures updated to cover both layouts and
+  both cargo-output forms.
+
+**Verification**: `python3 scripts/golden_inventory.py --write --check-docs`
+exits 0 against the current (unchanged) test layout. Generated artifacts in
+`docs/generated/` are byte-identical to the pre-T1 state. Unit tests pass.
+
+This ticket lands first because it converts the tooling from a layout-coupled
+implementation to a layout-agnostic one. After T1, T2 can land without
+breaking docs/generated.
+
+### T2: Source Moves + Entry-Binary Plumbing
+
+**Deliverable**:
+
+- Create `crates/worldwake-ai/tests/scenarios/` directory; add
+  `scenarios/mod.rs` listing every scenario submodule.
+- Move each of the 54 `tests/golden_*.rs` files into `tests/scenarios/<name>.rs`
+  (drop the `golden_` prefix; the module name becomes the de-prefixed stem).
+- Create `crates/worldwake-ai/tests/integration/` analogously; move the 9
+  non-golden top-level files into it.
+- Create `crates/worldwake-ai/tests/golden_ai.rs` with
+  `mod golden_harness; mod planner_pathology_harness; mod scenario_diagnostics_harness; mod scenarios;`.
+- Create `crates/worldwake-ai/tests/integration_ai.rs` with `mod integration;`.
+- Rename `golden_planner_pathology_harness/` →
+  `planner_pathology_harness/`; rename `golden_scenario_diagnostics_harness/`
+  → `scenario_diagnostics_harness/`.
+- Per moved file: drop `mod golden_harness;` (now declared at the binary
+  root); change `use golden_harness::*;` to `use crate::golden_harness::*;`.
+  Same treatment for pathology and diagnostics harness imports.
+
+**Verification**:
+
+- `cargo test -p worldwake-ai` passes (full identical test count to pre-T2).
+- `cargo test -p worldwake-ai --test golden_ai golden_<scenario>` works as a
+  per-scenario filter on each pre-existing scenario name.
+- `cargo test -p worldwake-ai --features soak` still passes for soak-gated
+  tests.
+- `target/debug/deps/` contains `golden_ai-<hash>` and
+  `integration_ai-<hash>` and **no** `golden_<scenario>-<hash>` binaries
+  after a clean build.
+- Disk-size measurement: `du -sh target/` after a full `./scripts/verify.sh`
+  recorded in the ticket's Outcome section. Expected: ~8–15 GiB.
+
+**Risk surface**:
+
+- Process-global shared state inside the consolidated binary. Audit each
+  moved file for `static mut`, `std::env::set_var` calls, or `lazy_static!`
+  with mutation; isolate or refactor as needed (expected zero such cases
+  given the codebase's deterministic-by-construction discipline).
+- Test name collisions across previously-separate binaries: a scan during
+  T2 confirms uniqueness; collisions are renamed with a `<scenario>_`
+  prefix.
+
+### T3: Generated Doc Regeneration
+
+**Deliverable**: Run `python3 scripts/golden_inventory.py --write --check-docs`
+against the new layout. Commit the refreshed:
+
+- `docs/generated/golden-e2e-inventory.md`
+- `docs/generated/golden-scenario-index.md`
+- `docs/generated/golden-scenario-details/*.md`
+- `docs/generated/golden-coverage-matrix.md`
+
+**Verification**: re-run the script with `--check-docs` exits 0 (drift-free).
+
+### T4: `campaigns/golden-perf/harness.sh` Rework
+
+**Deliverable**: One of:
+
+1. **Repurpose**: rewrite the harness to drive `cargo test -p worldwake-ai
+   --test golden_ai -- -Z unstable-options --report-time --test-threads=1`,
+   parse the per-test duration output, rank the 5 slowest scenarios. (Requires
+   nightly-only flag or alternative timing surface — investigate during ticket.)
+2. **Retire**: if the campaign infrastructure is no longer actively used,
+   delete `campaigns/golden-perf/` entirely and remove any references.
+
+Decision deferred to ticket implementation, based on current use.
+
+**Verification**: harness exits 0 with intelligible output, OR removal is
+clean (no dangling references).
+
+### T5: Hand-Authored Doc + Skill Sweep
+
+**Deliverable**: edit:
+
+- `docs/golden-e2e-testing.md`: replace `tests/golden_*.rs` with
+  `tests/scenarios/*.rs`; update workflow commands.
+- `docs/debugging-traces.md`: update `cargo test --test golden_*` example
+  patterns to the new filter form.
+- `.claude/skills/detect-architectural-debt/SKILL.md`: update location
+  references.
+- `.claude/skills/reassess-spec/SKILL.md`: same.
+- `.claude/skills/simulation-remediation/SKILL.md`: same.
+- `.claude/skills/goap-architecture-report/SKILL.md`: same.
+- `.claude/skills/implement-ticket/SKILL.md`: same.
+- `CLAUDE.md`: ensure no stale references remain.
+
+**Verification**: grep across repo for `tests/golden_\*\.rs` and
+`--test golden_[^a]` invocations returns only intentional historical
+references (commits, archived specs, prior plan docs).
+
+## Explicit Opt-Outs from `docs/spec-drafting-rules.md`
+
+This is a tooling-boundary spec: it introduces no new simulation state, laws,
+or agent behavior. The following spec-drafting rules are documented as N/A
+with explicit reasoning:
+
+| Rule | Status | Reason |
+|------|--------|--------|
+| FND-01 Section H causal-hooks analysis | N/A | Introduces zero new simulation entities, relations, actions, information paths, conserved quantities, scarce capacities, feedback loops, lifecycle states, or boundary conditions. Section H analyzes a proposed *world-system*; there is no world-system here. |
+| `Permille` for [0,1] or [0,1000] range values | N/A | No numeric range values introduced. All changes are file-layout, build-config, and tooling. |
+| Profile-driven parameters | N/A | No per-agent behavior tunables introduced. |
+| SystemFn integration | N/A | Not a simulation system. Test binaries register no `SystemFn`. |
+| Component registration | N/A | No ECS components defined or modified. |
+| Cross-system interactions (via FND-26) | N/A | No cross-system interactions. Test binaries depend on the same `worldwake-*` crate graph as today. |
+
+## Rollout
+
+Single tooling wave; no phase gate.
+
+1. **T1** (tooling rewrite): land first. After this, `docs/generated/*` is
+   regenerable from either layout — de-risks T2.
+2. **T2** (source moves): land second. The big diff. After this, on-disk test
+   layout matches the target.
+3. **T3** (regenerate generated docs): land alongside or immediately after T2.
+4. **T4** (campaigns harness): independent; can land anytime after T2.
+5. **T5** (hand-authored doc + skill sweep): land last. The new commands and
+   paths are stable by this point.
+
+Each ticket is reviewable and revertable on its own. If T2 reveals an
+unexpected blocker (e.g., a test that depends on process-global state across
+formerly-isolated binaries), it can be paused without leaving T1 or the
+defaults in a broken state.
+
+## Outcome
+
+To be populated as tickets land. Tracked metrics:
+
+- `du -sh target/` after a clean `./scripts/verify.sh` run: pre-defaults
+  (~95 GiB), post-defaults / pre-consolidation (~45–55 GiB measured),
+  post-consolidation (~8–15 GiB target).
+- Number of test binaries in `target/debug/deps/`: pre (~70), post (~16).
+- `cargo test -p worldwake-ai` wall-clock comparison: expected slight
+  improvement from reduced linking, possibly offset by reduced
+  cross-binary parallelism.
