@@ -101,12 +101,14 @@ The test file now includes cases for the post-T2 layout (`tests/scenarios/foo.rs
 
 Completed on 2026-05-19.
 
-- `scripts/golden_inventory.py` now discovers both pre-T2 top-level `tests/golden_*.rs` files and post-T2 `tests/scenarios/*.rs` files through one source-path helper, deduplicating by de-prefixed scenario stem and preferring the scenario subdirectory when both layouts exist.
-- `run_cargo_test_list()` now uses `golden_ai` when the consolidated entry binary exists and buckets `scenarios::<name>::*` list output back to `<name>.rs`; otherwise it keeps the pre-T2 per-file fallback. Both transitional branches name `S154TESBINCON-003` as the cleanup owner.
-- `parse_cargo_test_list_output()` now understands both `Running tests/golden_<name>.rs` and `Running tests/golden_ai.rs` output and excludes nested harness-module tests from per-source inventories.
-- `scripts/test_golden_inventory.py` now imports the dataclass module correctly under Python 3.10 and covers pre-T2 source parsing, post-T2 `scenarios/` parsing, duplicate-layout preference, pre-T2 cargo-list parsing, and post-T2 `golden_ai` module-path parsing.
+- At T1 completion, `scripts/golden_inventory.py` discovered both pre-T2 top-level `tests/golden_*.rs` files and post-T2 `tests/scenarios/*.rs` files through one source-path helper, deduplicating by de-prefixed scenario stem and preferring the scenario subdirectory when both layouts existed.
+- At T1 completion, `run_cargo_test_list()` used `golden_ai` when the consolidated entry binary existed and bucketed `scenarios::<name>::*` list output back to `<name>.rs`; otherwise it kept the pre-T2 per-file fallback. Both transitional branches named the now-archived `archive/tickets/S154TESBINCON-003.md` as the cleanup owner.
+- At T1 completion, `parse_cargo_test_list_output()` understood both `Running tests/golden_<name>.rs` and `Running tests/golden_ai.rs` output and excluded nested harness-module tests from per-source inventories.
+- At T1 completion, `scripts/test_golden_inventory.py` imported the dataclass module correctly under Python 3.10 and covered pre-T2 source parsing, post-T2 `scenarios/` parsing, duplicate-layout preference, pre-T2 cargo-list parsing, and post-T2 `golden_ai` module-path parsing.
 - The required generator proof refreshed pre-existing Scenario 171 generated-doc drift: `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-scenario-index.md`, and `docs/generated/golden-scenario-details/survival-preferences.md` now list `familiar_failed_attempt_accounting_excludes_search_only_sibling_failures` and current source line references.
 - `specs/S154-test-binary-consolidation.md` was truthed so T1 allows a pre-existing generated-doc freshness correction while T3 remains the owner for post-T2 regeneration and dual-layout fallback retirement.
+
+Outcome amended: 2026-05-19. Ticket 003 later removed the transitional dual-layout and per-file fallback paths, so the bullets above are historical T1 closeout facts rather than current script behavior.
 
 ## Deviations
 

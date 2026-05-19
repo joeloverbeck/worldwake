@@ -5,70 +5,70 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 54
+- Golden scenario source files: 54
 - Files contributing `golden_*` tests: 54
 - Total `golden_*` tests: 260
 
-## Per-File Inventory
+## Per-Scenario-File Inventory
 
 | File | `golden_*` tests |
 |------|------------------|
-| `golden_activation_decay.rs` | 6 |
-| `golden_ai_decisions.rs` | 15 |
-| `golden_artifact_lifecycle.rs` | 5 |
-| `golden_belief_wall_trap.rs` | 3 |
-| `golden_contention_inspectability.rs` | 5 |
-| `golden_cross_goal_blocker_scoping.rs` | 8 |
-| `golden_decision_history_events.rs` | 1 |
-| `golden_decision_payload.rs` | 4 |
-| `golden_epistemic_sensing.rs` | 6 |
-| `golden_experience_preferences.rs` | 3 |
-| `golden_exploration.rs` | 16 |
-| `golden_final_integration.rs` | 2 |
-| `golden_htn_methods.rs` | 17 |
-| `golden_item_decay.rs` | 1 |
-| `golden_merchant_selling.rs` | 13 |
-| `golden_motive_sources.rs` | 5 |
-| `golden_need_projection.rs` | 1 |
-| `golden_offices.rs` | 12 |
-| `golden_opportunity_compiler.rs` | 5 |
-| `golden_perception_exposure.rs` | 7 |
-| `golden_perception_omission.rs` | 3 |
-| `golden_place_dirtiness.rs` | 9 |
-| `golden_plan_repair.rs` | 7 |
-| `golden_planner_pathology.rs` | 2 |
-| `golden_planner_pathology_degenerate.rs` | 1 |
-| `golden_portfolio_five_slots.rs` | 5 |
-| `golden_portfolio_planning.rs` | 1 |
-| `golden_quantity_aware_acquisition.rs` | 5 |
-| `golden_route_preferences.rs` | 4 |
-| `golden_scenario_diagnostics_fixture.rs` | 1 |
-| `golden_scenario_diagnostics_replay.rs` | 1 |
-| `golden_simulation_gaps.rs` | 5 |
-| `golden_sleep_episode.rs` | 6 |
-| `golden_source_composite.rs` | 6 |
-| `golden_source_reliability.rs` | 2 |
-| `golden_strategic_budget_scaling.rs` | 2 |
-| `golden_survival_ask_consult.rs` | 1 |
-| `golden_survival_baseline.rs` | 7 |
-| `golden_survival_combat.rs` | 2 |
-| `golden_survival_contested.rs` | 7 |
-| `golden_survival_drive_escalation.rs` | 3 |
-| `golden_survival_escort.rs` | 2 |
-| `golden_survival_items_decay.rs` | 2 |
-| `golden_survival_justice.rs` | 5 |
-| `golden_survival_offices.rs` | 2 |
-| `golden_survival_patrol.rs` | 2 |
-| `golden_survival_preferences.rs` | 3 |
-| `golden_survival_production.rs` | 2 |
-| `golden_survival_scattered.rs` | 6 |
-| `golden_survival_tell.rs` | 2 |
-| `golden_survival_theft.rs` | 2 |
-| `golden_survival_trade.rs` | 2 |
-| `golden_testimony_reliability.rs` | 3 |
-| `golden_travel_physiology.rs` | 12 |
+| `activation_decay.rs` | 6 |
+| `ai_decisions.rs` | 15 |
+| `artifact_lifecycle.rs` | 5 |
+| `belief_wall_trap.rs` | 3 |
+| `contention_inspectability.rs` | 5 |
+| `cross_goal_blocker_scoping.rs` | 8 |
+| `decision_history_events.rs` | 1 |
+| `decision_payload.rs` | 4 |
+| `epistemic_sensing.rs` | 6 |
+| `experience_preferences.rs` | 3 |
+| `exploration.rs` | 16 |
+| `final_integration.rs` | 2 |
+| `htn_methods.rs` | 17 |
+| `item_decay.rs` | 1 |
+| `merchant_selling.rs` | 13 |
+| `motive_sources.rs` | 5 |
+| `need_projection.rs` | 1 |
+| `offices.rs` | 12 |
+| `opportunity_compiler.rs` | 5 |
+| `perception_exposure.rs` | 7 |
+| `perception_omission.rs` | 3 |
+| `place_dirtiness.rs` | 9 |
+| `plan_repair.rs` | 7 |
+| `planner_pathology.rs` | 2 |
+| `planner_pathology_degenerate.rs` | 1 |
+| `portfolio_five_slots.rs` | 5 |
+| `portfolio_planning.rs` | 1 |
+| `quantity_aware_acquisition.rs` | 5 |
+| `route_preferences.rs` | 4 |
+| `scenario_diagnostics_fixture.rs` | 1 |
+| `scenario_diagnostics_replay.rs` | 1 |
+| `simulation_gaps.rs` | 5 |
+| `sleep_episode.rs` | 6 |
+| `source_composite.rs` | 6 |
+| `source_reliability.rs` | 2 |
+| `strategic_budget_scaling.rs` | 2 |
+| `survival_ask_consult.rs` | 1 |
+| `survival_baseline.rs` | 7 |
+| `survival_combat.rs` | 2 |
+| `survival_contested.rs` | 7 |
+| `survival_drive_escalation.rs` | 3 |
+| `survival_escort.rs` | 2 |
+| `survival_items_decay.rs` | 2 |
+| `survival_justice.rs` | 5 |
+| `survival_offices.rs` | 2 |
+| `survival_patrol.rs` | 2 |
+| `survival_preferences.rs` | 3 |
+| `survival_production.rs` | 2 |
+| `survival_scattered.rs` | 6 |
+| `survival_tell.rs` | 2 |
+| `survival_theft.rs` | 2 |
+| `survival_trade.rs` | 2 |
+| `testimony_reliability.rs` | 3 |
+| `travel_physiology.rs` | 12 |
 
-### `golden_activation_decay.rs`
+### `activation_decay.rs`
 
 - `golden_activation_decay_prunes_stale_entities`
 - `golden_activation_decay_prunes_stale_entities_replays_deterministically`
@@ -77,7 +77,7 @@ Do not hand-edit it.
 - `golden_claim_confidence_threshold_prunes_stale_reports`
 - `golden_claim_confidence_threshold_prunes_stale_reports_replays_deterministically`
 
-### `golden_ai_decisions.rs`
+### `ai_decisions.rs`
 
 - `golden_goal_invalidation_by_another_agent`
 - `golden_unrelated_commodity_change_preserves_frontier_exhaustion`
@@ -95,7 +95,7 @@ Do not hand-edit it.
 - `golden_loot_refuses_substitute_corpse_after_remote_travel_commitment`
 - `golden_consume_pipeline_rebinds_pick_up_after_remote_lot_change`
 
-### `golden_artifact_lifecycle.rs`
+### `artifact_lifecycle.rs`
 
 - `bounty_fulfilled_emits_legal_effect_and_actionability_cascade`
 - `warrant_revoked_blocks_subsequent_planner_emission`
@@ -103,13 +103,13 @@ Do not hand-edit it.
 - `suspended_legal_effect_restores_on_resolution_event`
 - `refuted_false_rumor_cascades_to_closed_actionability_via_credibility_handler`
 
-### `golden_belief_wall_trap.rs`
+### `belief_wall_trap.rs`
 
 - `golden_belief_wall_trap_suppresses_theft_without_authority_belief`
 - `golden_belief_wall_trap_replays_deterministically`
 - `explicit_owner_belief_is_the_theft_candidate_gate`
 
-### `golden_contention_inspectability.rs`
+### `contention_inspectability.rs`
 
 - `golden_three_agents_single_slot_orchard_emit_per_grant`
 - `golden_survival_contested_multi_substrate_emission`
@@ -117,7 +117,7 @@ Do not hand-edit it.
 - `golden_blocker_memory_attribution_payload_resolves`
 - `golden_survival_contested_replay_parity`
 
-### `golden_cross_goal_blocker_scoping.rs`
+### `cross_goal_blocker_scoping.rs`
 
 - `route_segment_blocker_suppresses_multiple_goals_on_same_segment`
 - `counterparty_blocker_suppresses_trade_and_ask_witness_goals`
@@ -128,18 +128,18 @@ Do not hand-edit it.
 - `blocker_source_event_points_to_recorded_event`
 - `same_seed_blocker_memory_serializes_identically`
 
-### `golden_decision_history_events.rs`
+### `decision_history_events.rs`
 
 - `survival_baseline_emits_goal_commit_and_plan_adoption_in_order`
 
-### `golden_decision_payload.rs`
+### `decision_payload.rs`
 
 - `golden_decision_payload_goal_committed_records_rejected_drink_and_assumptions`
 - `golden_decision_payload_replan_triggered_records_stale_belief_and_assumptions`
 - `golden_decision_payload_expectation_mismatch_records_assumption_and_observation`
 - `golden_decision_payload_source_expectation_failure_records_source_observation_only`
 
-### `golden_epistemic_sensing.rs`
+### `epistemic_sensing.rs`
 
 - `golden_ask_witness_refreshes_stale_report`
 - `golden_ask_witness_refreshes_stale_report_replay_is_deterministic`
@@ -148,13 +148,13 @@ Do not hand-edit it.
 - `golden_ask_witness_cooldown_gate_resumes_after_retention`
 - `golden_ask_witness_revalidates_when_witness_relocates_before_commit`
 
-### `golden_experience_preferences.rs`
+### `experience_preferences.rs`
 
 - `golden_hostile_completed_travel_flips_next_route_choice`
 - `golden_combat_aborted_travel_flips_next_route_choice`
 - `golden_preference_profile_diversifies_route_selection`
 
-### `golden_exploration.rs`
+### `exploration.rs`
 
 - `golden_exploration_triggers_on_need_and_ignorance`
 - `survey_damping_records_candidate_trace_entry`
@@ -173,12 +173,12 @@ Do not hand-edit it.
 - `golden_s107_need_slack_veto_suppresses_proactive_exploration`
 - `golden_s107_cooldown_spaces_proactive_exploration_attempts`
 
-### `golden_final_integration.rs`
+### `final_integration.rs`
 
 - `final_integration_proves_full_stack_coexistence`
 - `final_integration_replay_is_deterministic`
 
-### `golden_htn_methods.rs`
+### `htn_methods.rs`
 
 - `produce_with_gather_selector_uses_belief_view_evidence`
 - `produce_with_gather_selector_replays_deterministically`
@@ -198,11 +198,11 @@ Do not hand-edit it.
 - `disabled_produce_methods_fall_back_to_flat_strategic_search`
 - `disabled_method_fallback_replays_deterministically`
 
-### `golden_item_decay.rs`
+### `item_decay.rs`
 
 - `golden_waste_decay_reaches_steady_state`
 
-### `golden_merchant_selling.rs`
+### `merchant_selling.rs`
 
 - `staff_market_retains_displayed_listing_through_presence_cycle`
 - `buyer_trades_against_listed_lot`
@@ -218,7 +218,7 @@ Do not hand-edit it.
 - `demand_memory_raises_sell_ranking`
 - `hungry_merchant_eats_listed_stock`
 
-### `golden_motive_sources.rs`
+### `motive_sources.rs`
 
 - `golden_motive_sources_hunger_and_greed_offer_sums_source_contributions`
 - `golden_motive_sources_commit_payload_preserves_hunger_and_greed_sources`
@@ -226,11 +226,11 @@ Do not hand-edit it.
 - `golden_motive_sources_greed_weight_variation_is_profile_state`
 - `golden_motive_sources_empty_offer_assertion_panics_in_test_build`
 
-### `golden_need_projection.rs`
+### `need_projection.rs`
 
 - `golden_need_projection_chain`
 
-### `golden_offices.rs`
+### `offices.rs`
 
 - `golden_simple_office_claim_via_declare_support`
 - `golden_competing_claims_with_loyal_supporter`
@@ -245,7 +245,7 @@ Do not hand-edit it.
 - `golden_force_control_locality_requires_tell`
 - `golden_vacancy_notice_unlocks_political_action_without_record_consult`
 
-### `golden_opportunity_compiler.rs`
+### `opportunity_compiler.rs`
 
 - `profile_weighting_preserves_owned_bread_opportunity_with_lower_salience`
 - `agent_tick_trace_carries_compiled_opportunities_and_load`
@@ -253,7 +253,7 @@ Do not hand-edit it.
 - `learned_opportunity_memory_damps_repeated_bread_opportunity`
 - `survival_baseline_replay_is_deterministic_and_compiler_load_is_bounded`
 
-### `golden_perception_exposure.rs`
+### `perception_exposure.rs`
 
 - `golden_concealment_reduces_witnessed_event_fidelity`
 - `golden_fatigue_reduces_witnessed_event_fidelity`
@@ -263,13 +263,13 @@ Do not hand-edit it.
 - `golden_perception_forms_resource_source_beliefs_replays_deterministically`
 - `golden_observation_budget_prioritizes_agents_and_facilities_over_waste`
 
-### `golden_perception_omission.rs`
+### `perception_omission.rs`
 
 - `golden_perception_omission_overbudget_writes`
 - `golden_perception_omission_need_weighted_priority`
 - `golden_perception_omission_revalidation_typed_reason`
 
-### `golden_place_dirtiness.rs`
+### `place_dirtiness.rs`
 
 - `place_dirtiness_accumulates_from_repeated_wilderness_relief`
 - `sleep_ranking_prefers_clean_place_over_dirty_place`
@@ -281,7 +281,7 @@ Do not hand-edit it.
 - `place_dirtiness_saturates_with_zero_decay`
 - `wash_basin_plateaus_at_zero_with_zero_refill`
 
-### `golden_plan_repair.rs`
+### `plan_repair.rs`
 
 - `merchant_moved_breach_rebinds_to_sibling`
 - `stale_belief_breach_attempts_insert_verification_without_s139`
@@ -291,16 +291,16 @@ Do not hand-edit it.
 - `abandon_returns_empty_progress_barrier_after_prior_strategies_fail`
 - `phase_11_approved_repair_gate_witness_reduces_full_replans`
 
-### `golden_planner_pathology.rs`
+### `planner_pathology.rs`
 
 - `cross_location_water_acquisition_succeeds_without_budget_exhaustion`
 - `obligation_satiation_allows_survival_needs_to_override_posting`
 
-### `golden_planner_pathology_degenerate.rs`
+### `planner_pathology_degenerate.rs`
 
 - `degenerate_zero_step_loop_blocks_actionable_goals`
 
-### `golden_portfolio_five_slots.rs`
+### `portfolio_five_slots.rs`
 
 - `all_motive_discriminants_map_onto_the_five_s148_slots`
 - `portfolio_weights_profile_exposes_s148_slot_weights_and_mode_caps`
@@ -308,11 +308,11 @@ Do not hand-edit it.
 - `resume_condition_variants_remain_distinct_and_serializable`
 - `abandon_condition_variants_have_typed_discrepancy_discriminants`
 
-### `golden_portfolio_planning.rs`
+### `portfolio_planning.rs`
 
 - `portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal`
 
-### `golden_quantity_aware_acquisition.rs`
+### `quantity_aware_acquisition.rs`
 
 - `golden_single_slot_queue_forms_with_concrete_wait`
 - `golden_multi_slot_parallel_grants_all_three`
@@ -320,22 +320,22 @@ Do not hand-edit it.
 - `golden_s126_long_horizon_scales_desired_target`
 - `golden_scenario_e_queue_abandonment_promotes_next_actor`
 
-### `golden_route_preferences.rs`
+### `route_preferences.rs`
 
 - `golden_route_preference_safe_traversals_raise_preference`
 - `golden_route_preference_dangerous_traversal_lowers_preference`
 - `golden_route_preference_decays_to_neutral_after_profile_window`
 - `golden_route_preference_and_route_segment_blocker_compose_independently`
 
-### `golden_scenario_diagnostics_fixture.rs`
+### `scenario_diagnostics_fixture.rs`
 
 - `golden_scenario_diagnostics_survival_baseline_fixture_is_stable`
 
-### `golden_scenario_diagnostics_replay.rs`
+### `scenario_diagnostics_replay.rs`
 
 - `golden_scenario_diagnostics_survival_baseline_replays_deterministically`
 
-### `golden_simulation_gaps.rs`
+### `simulation_gaps.rs`
 
 - `golden_remote_travel_when_local_supply_exhausted`
 - `golden_max_idle_under_remote_resource_scarcity`
@@ -343,7 +343,7 @@ Do not hand-edit it.
 - `golden_death_traceability`
 - `golden_harvest_to_consume`
 
-### `golden_sleep_episode.rs`
+### `sleep_episode.rs`
 
 - `sleep_episode_at_default_place_runs_to_intended_max`
 - `projected_hunger_breach_wakes_sleep_early`
@@ -352,7 +352,7 @@ Do not hand-edit it.
 - `site_preference_adopts_higher_quality_sleep_place`
 - `sleep_episode_events_render_in_decision_trace`
 
-### `golden_source_composite.rs`
+### `source_composite.rs`
 
 - `same_commodity_wait_reranking_picks_far_orchard_when_close_orchard_has_observed_waits`
 - `cross_category_neutrality_keeps_wash_above_acquire_apple_when_motive_higher`
@@ -361,21 +361,21 @@ Do not hand-edit it.
 - `empty_but_fresh_observation_demotes_depleted_source`
 - `no_record_neutrality_falls_through_to_lower_tiebreakers`
 
-### `golden_source_reliability.rs`
+### `source_reliability.rs`
 
 - `resource_extraction_wait_observation_records_when_promoted`
 - `capacity_observation_records_from_perception`
 
-### `golden_strategic_budget_scaling.rs`
+### `strategic_budget_scaling.rs`
 
 - `five_stage_production_chain_records_stage_aware_budget`
 - `five_stage_production_chain_replays_deterministically`
 
-### `golden_survival_ask_consult.rs`
+### `survival_ask_consult.rs`
 
 - `survival_ask_consult_lands_row_six`
 
-### `golden_survival_baseline.rs`
+### `survival_baseline.rs`
 
 - `all_agents_survive_1440_ticks`
 - `all_agents_perform_survival_actions`
@@ -385,12 +385,12 @@ Do not hand-edit it.
 - `survival_contract_guard_rejects_missing_authored_contract`
 - `survival_need_run_tracker_uses_authored_drive_thresholds`
 
-### `golden_survival_combat.rs`
+### `survival_combat.rs`
 
 - `survival_combat_proves_combat_and_bandit_camp_abandonment`
 - `survival_combat_replay_is_deterministic`
 
-### `golden_survival_contested.rs`
+### `survival_contested.rs`
 
 - `all_agents_survive_1440_ticks`
 - `all_agents_perform_survival_actions`
@@ -400,23 +400,23 @@ Do not hand-edit it.
 - `no_stuck_idle_windows_with_elevated_needs`
 - `per_need_critical_run_limit_override_beats_default_for_dirtiness_only`
 
-### `golden_survival_drive_escalation.rs`
+### `survival_drive_escalation.rs`
 
 - `survival_drive_escalation_lands_row_four`
 - `escalation_respects_belief_only_planning`
 - `escalation_fades_after_relief`
 
-### `golden_survival_escort.rs`
+### `survival_escort.rs`
 
 - `survival_escort_proves_coordinated_care_travel`
 - `survival_escort_replay_is_deterministic`
 
-### `golden_survival_items_decay.rs`
+### `survival_items_decay.rs`
 
 - `survival_items_decay_lands_row_ten`
 - `survival_items_decay_replays_deterministically`
 
-### `golden_survival_justice.rs`
+### `survival_justice.rs`
 
 - `survival_justice_proves_accusation_substrate`
 - `survival_justice_proves_fine_punishment_for_same_theft_case`
@@ -424,28 +424,28 @@ Do not hand-edit it.
 - `survival_justice_proves_institutional_bounty_posted`
 - `survival_justice_replays_deterministically`
 
-### `golden_survival_offices.rs`
+### `survival_offices.rs`
 
 - `survival_offices_proves_force_law_uptake`
 - `survival_offices_replays_deterministically`
 
-### `golden_survival_patrol.rs`
+### `survival_patrol.rs`
 
 - `survival_patrol_proves_patrol_and_remote_pursuit_execution`
 - `survival_patrol_replay_is_deterministic`
 
-### `golden_survival_preferences.rs`
+### `survival_preferences.rs`
 
 - `survival_preferences_keeps_proactive_diversification_alive_under_survival`
 - `familiar_failed_attempt_accounting_excludes_search_only_sibling_failures`
 - `survival_preferences_replays_deterministically`
 
-### `golden_survival_production.rs`
+### `survival_production.rs`
 
 - `survival_production_lands_row_eight`
 - `survival_production_replays_deterministically`
 
-### `golden_survival_scattered.rs`
+### `survival_scattered.rs`
 
 - `all_agents_survive_1440_ticks`
 - `all_agents_perform_survival_actions`
@@ -454,28 +454,28 @@ Do not hand-edit it.
 - `no_stuck_idle_windows_with_elevated_needs`
 - `seeded_target_location_belief_decays_to_stale_without_refresh`
 
-### `golden_survival_tell.rs`
+### `survival_tell.rs`
 
 - `survival_tell_lands_row_five`
 - `listener_with_critical_dirtiness_breaks_off_tell_to_wash`
 
-### `golden_survival_theft.rs`
+### `survival_theft.rs`
 
 - `survival_theft_proves_concealed_staged_lot_branch`
 - `survival_theft_replays_deterministically`
 
-### `golden_survival_trade.rs`
+### `survival_trade.rs`
 
 - `survival_trade_proves_substitute_market_branch`
 - `survival_trade_replays_deterministically`
 
-### `golden_testimony_reliability.rs`
+### `testimony_reliability.rs`
 
 - `golden_testimony_reliability_route_hazard_refutation_records_context`
 - `golden_testimony_reliability_confirmation_raises_trust_above_neutral`
 - `golden_testimony_reliability_repeated_false_accusation_suppresses_source`
 
-### `golden_travel_physiology.rs`
+### `travel_physiology.rs`
 
 - `golden_travel_escalation`
 - `golden_critical_bladder_local_relief`
