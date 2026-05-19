@@ -4,7 +4,7 @@ description: "Analyze engine code exercised by a test suite to find missing abst
 user-invocable: true
 arguments:
   - name: test_path
-    description: "Path to a test file or test directory (e.g., crates/worldwake-ai/tests/golden_trade_acquisition.rs or crates/worldwake-systems/tests/)"
+    description: "Path to a test file or test directory (e.g., crates/worldwake-ai/tests/scenarios/trade_acquisition.rs or crates/worldwake-systems/tests/)"
     required: true
 ---
 

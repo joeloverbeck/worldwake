@@ -321,17 +321,28 @@ replacement surface.
   `tests/scenarios/*.rs`; update workflow commands.
 - `docs/debugging-traces.md`: update `cargo test --test golden_*` example
   patterns to the new filter form.
+- `docs/scenario-roadmap.md`: update active backing-golden links and auxiliary
+  golden references to `tests/scenarios/*.rs`.
+- `docs/cargo-artifact-hygiene.md`: remove now-stale pre-S154 bloat wording
+  and update one-off golden command examples to `golden_ai` filters.
 - `.claude/skills/detect-architectural-debt/SKILL.md`: update location
   references.
 - `.claude/skills/reassess-spec/SKILL.md`: same.
 - `.claude/skills/simulation-remediation/SKILL.md`: same.
 - `.claude/skills/goap-architecture-report/SKILL.md`: same.
 - `.claude/skills/implement-ticket/SKILL.md`: same.
+- `.claude/skills/fix-ci-failures/SKILL.md`: update golden CI repro and
+  fixture-regeneration commands to `golden_ai` filters.
+- Other active `.claude/skills/` guidance that still treats
+  `golden_*.rs` as the source-file layout: update to
+  `tests/scenarios/*.rs` while preserving valid `golden_harness/` helper
+  paths and `fn golden_*` test-name conventions.
 - `CLAUDE.md`: ensure no stale references remain.
 
 **Verification**: grep across repo for `tests/golden_\*\.rs` and
 `--test golden_[^a]` invocations returns only intentional historical
-references (commits, archived specs, prior plan docs).
+references (commits, archived specs, prior plan docs) plus valid
+`tests/golden_harness/` helper paths and `fn golden_*` test names.
 
 ## Explicit Opt-Outs from `docs/spec-drafting-rules.md`
 

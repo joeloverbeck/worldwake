@@ -1,6 +1,6 @@
 # Golden E2E Testing Conventions
 
-Use this document when adding or revising tests under `crates/worldwake-ai/tests/golden_*.rs`.
+Use this document when adding or revising tests under `crates/worldwake-ai/tests/scenarios/*.rs`.
 
 It exists to keep golden assertions aligned with the architecture instead of drifting into brittle scheduler-coupled checks.
 For the live mechanical inventory and docs-sync validation workflow, use `python3 scripts/golden_inventory.py --write --check-docs` and the generated artifacts at `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-scenario-index.md`, and `docs/generated/golden-scenario-details/`.
@@ -192,7 +192,7 @@ When a decision trace proves the selected outcome but still does not expose the 
 
 - `strict_request_records_resolution_rejection_without_start_attempt` in `crates/worldwake-sim/src/tick_step.rs` is the focused proof that a request can be rejected before start.
 - `best_effort_stale_request_records_start_failure_when_affordance_no_longer_matches` in `crates/worldwake-sim/src/tick_step.rs` is the focused proof that a request can bind first and then still hit authoritative `StartFailed`.
-- Existing `golden_*` tests under `crates/worldwake-ai/tests/` that assert `ActionTraceKind::StartFailed` are examples of the later start-failure and reconciliation boundary, not proof of pre-start rejection.
+- Existing scenario goldens under `crates/worldwake-ai/tests/scenarios/` that assert `ActionTraceKind::StartFailed` are examples of the later start-failure and reconciliation boundary, not proof of pre-start rejection.
 
 ### Recoverable Authoritative Start Failure
 
@@ -202,7 +202,7 @@ When the contract is "a lawful start rejection is recoverable," prove it in two 
 - use the next AI tick's decision trace to prove `planning.action_start_failures` was consumed and the stale branch was cleared, blocked, or replaced
 
 Do not treat "no later commit happened" as sufficient evidence of reconciliation. That symptom is too weak because it can also come from request-resolution rejection before start, candidate omission, ranking loss, plan-search failure, or unrelated execution failure.
-Current golden examples of this proof shape include the care, production, trade, and political start-failure suites in `crates/worldwake-ai/tests/`.
+Current golden examples of this proof shape include the care, production, trade, and political start-failure suites in `crates/worldwake-ai/tests/scenarios/`.
 
 ### Use both when:
 
@@ -299,7 +299,7 @@ completion). In practice, a single trade takes 20-50 ticks depending on agent
 count and planning budget. Golden tests that require a merchant's stock to
 deplete through consumer purchases should either:
 
-- Start the merchant with ≤ 3 items (proven in `golden_supply_chain.rs`), or
+- Start the merchant with a small enough stock count for the authored tick budget, or
 - Start the merchant at 0 stock (stockout as initial condition) and give the
   consumer items directly, if the test goal is to verify restock/replan chains
   rather than the trade cycle itself.
@@ -451,7 +451,7 @@ If a stricter lint or broader suite is required, state that explicitly in the ti
 
 ## Scenario Metadata Authoring
 
-Every `// Scenario` block in `golden_*.rs` should include structured metadata
+Every `// Scenario` block in `crates/worldwake-ai/tests/scenarios/*.rs` should include structured metadata
 that the generator (`scripts/golden_inventory.py`) extracts into documentation.
 
 ### Required Format

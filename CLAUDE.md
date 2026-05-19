@@ -47,7 +47,7 @@ Before committing work for a PR push, run `./scripts/verify.sh`. It runs — in 
 
 **Prevent fmt drift by running `cargo fmt --all` during development**, not just at PR time. `verify.sh` runs `cargo fmt --all -- --check`, which *reports* drift but doesn't fix it — by the time you hit it, the drift may span multiple files and cross multiple commits. Run `cargo fmt --all` after any significant edit and before committing, so drift never accumulates.
 
-Still run the narrowest check first (e.g., `cargo test -p worldwake-ai --test golden_foo`) while iterating. Only run `./scripts/verify.sh` when preparing to push or open a PR.
+Still run the narrowest check first (e.g., `cargo test -p worldwake-ai --test golden_ai foo`) while iterating. The post-S154 golden form uses `golden_ai` plus a substring filter against the scenario module path. Only run `./scripts/verify.sh` when preparing to push or open a PR.
 
 `./scripts/verify.sh` is space-conscious by default: it exports `CARGO_INCREMENTAL=0` for the broad run, and the workspace `[profile.dev]` / `[profile.test]` defaults set `debug = "line-tables-only"`. These keep backtraces and panic line numbers intact while skipping full DWARF, sharply reducing `target/` growth on WSL2 / VM disks. See `docs/cargo-artifact-hygiene.md` for details and cleanup options.
 

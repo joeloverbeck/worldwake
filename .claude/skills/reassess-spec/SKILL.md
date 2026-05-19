@@ -191,7 +191,7 @@ Example:
 
 | Finding | Check | Result |
 |---------|-------|--------|
-| I1 | `grep -n "pm(750)" crates/worldwake-ai/tests/golden_survival_*.rs` | 0 matches — confirms stale constant eliminated |
+| I1 | `grep -n "pm(750)" crates/worldwake-ai/tests/scenarios/survival_*.rs` | 0 matches — confirms stale constant eliminated |
 | I2 | `grep -rn "AnomalyKind::" crates/worldwake-cli/src/` | 17 matches, all in `bin/observer.rs` — no external consumers to migrate |
 | Q1=(a) approved | Final variant set per Q1 resolution | confirmed: `RebindTarget, ReplaceProvider, InsertVerification, DowngradeToProgressBarrier, Abandon` (5 variants, `AlternateRoute` folds into `ReplaceProvider`) |
 | M3 | `test -f specs/S118-stuck-agent-detector-active-frame-exclusion.md` | file exists — dependency path valid |
@@ -207,7 +207,7 @@ Example rows for each tier:
 
 | Finding | Check | Result |
 |---------|-------|--------|
-| I5 (evidence-refining) | `grep -rn "NEEDS_LOW_CEILING"` | exists at `observer.rs:1931`, not at spec-claimed `golden_survival_contested.rs` — recommendation (cite scenario-authored contract field instead) unchanged |
+| I5 (evidence-refining) | `grep -rn "NEEDS_LOW_CEILING"` | exists at `observer.rs:1931`, not at spec-claimed `survival_contested.rs` — recommendation (cite scenario-authored contract field instead) unchanged |
 | I3 (recommendation-changing) | `grep -n "#[cfg(test)]"` at claimed line | boundary has moved; the targeted function is now runtime, not test-only — re-present to user before applying |
 | D4 (scope-extending) | `grep -rn "ExpectationBasis::"` | 15+ match sites across sim/systems/ai; `ranking.rs:1133` is an exhaustive match — scope-extending: requires cascade arm in `ranking.rs` for the new `PlanStepCompletion` variant — recommendation unchanged |
 | I2 (scope-extending, FND-28 invariant) | `grep -n "source_reliability" crates/worldwake-ai/src/scenario_diagnostics/mod.rs` | only flat `source_reliability_changes: u64` exists at line 60; fabrication of `source_reliability_changes_by_topic` confirmed AND FND-28 mandates retiring the flat field rather than letting it coexist with the new `_by_topic` map — scope-extending: net-new consumer-migration scope added; recommendation (add `_by_topic` map per the originally-rejected S144 plan) unchanged, flat-field removal absorbed under FND-28 invariant |

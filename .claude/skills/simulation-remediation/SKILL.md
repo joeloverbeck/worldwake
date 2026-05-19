@@ -40,7 +40,7 @@ Read `reports/scenario-analysis-report.md`.
 1. Read `docs/FOUNDATIONS.md` -- needed to evaluate whether findings violate foundational principles. If the file exceeds read limits, prioritize sections III (Knowledge, Belief, and Evidence) and IV (Agents, Institutions, and Social Order) as these are most commonly implicated by behavioral smells.
 2. List the `specs/` directory to know which specs exist.
 3. List the `tickets/` directory to check for existing related tickets.
-4. Glob `crates/worldwake-ai/tests/golden_*.rs` to identify existing test files. Then, after reading the observer report findings, grep these files for keywords related to each finding (e.g., test function names, assertion patterns, key terms like `idle`, `travel`, `belief`, `resource`) to avoid proposing duplicate tests and to reference the `GoldenHarness` setup pattern. Batch all keyword searches into a single operation (e.g., delegate to an Explore agent with all finding-related keywords) rather than grepping per-finding sequentially. The agent prompt should list all finding-related keywords grouped by observer report finding number, request test function names and key assertions for each match, and ask for a structured report grouped by keyword category. After reviewing the agent's report, run targeted `grep` calls to confirm or deny specific duplicate-coverage questions that the batch report left ambiguous. Focus greps on exact test function names, assertion patterns, or action names relevant to each proposed golden test.
+4. Glob `crates/worldwake-ai/tests/scenarios/*.rs` to identify existing scenario golden files. Then, after reading the observer report findings, grep these files for keywords related to each finding (e.g., test function names, assertion patterns, key terms like `idle`, `travel`, `belief`, `resource`) to avoid proposing duplicate tests and to reference the `GoldenHarness` setup pattern. Batch all keyword searches into a single operation (e.g., delegate to an Explore agent with all finding-related keywords) rather than grepping per-finding sequentially. The agent prompt should list all finding-related keywords grouped by observer report finding number, request test function names and key assertions for each match, and ask for a structured report grouped by keyword category. After reviewing the agent's report, run targeted `grep` calls to confirm or deny specific duplicate-coverage questions that the batch report left ambiguous. Focus greps on exact test function names, assertion patterns, or action names relevant to each proposed golden test.
 5. If `reports/simulation-remediation.md` already exists (from a prior run), read it and note which prior proposals recurred in the current observer report. Flag recurring issues by appending `RECURRING` to the severity field in the output template (e.g., `**Severity**: CRITICAL RECURRING`).
 6. Note the Trace Quality Assessment section of the observer report for processing in Step 3b.
 
@@ -49,7 +49,7 @@ Read `reports/scenario-analysis-report.md`.
 For each finding in the observer report (each smell with severity above NONE), determine the appropriate remediation type. Also review the Cross-Cutting Patterns section of the observer report -- use these patterns to identify root-cause relationships between findings and to inform the "Symptom of another finding" classification below.
 
 **Golden Test** -- Use when the finding describes a specific behavioral invariant that should never recur. Propose:
-- Test name (following existing `golden_*.rs` naming patterns)
+- Test name (following existing `fn golden_*` naming patterns)
 - Which existing test file it belongs in, or whether a new file is needed
 - Setup: which agents, scenario conditions, and profiles are needed
 - The specific assertion (what to check and at what tick range)
@@ -117,7 +117,7 @@ Generated: [date]
 ### GT-1: [Test Name]
 **Source finding**: [reference to observer report finding]
 **Severity**: [from observer report]
-**File**: `crates/worldwake-ai/tests/golden_[file].rs`
+**File**: `crates/worldwake-ai/tests/scenarios/[file].rs`
 **Setup**: [agents, scenario, profiles needed]
 **Assertion**: [what to check]
 **Rationale**: [why this test is needed -- what invariant does it protect?]

@@ -46,7 +46,7 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Consult-record | Non-zero `social_weight` plus `perception_profile` and record-bearing world state | [`consult_record_actions.rs`](../crates/worldwake-systems/src/consult_record_actions.rs) | Landed in [§5.6](#56-landed-6-survival-ask-consult) |
 | Obligation satiation | `obligation_satiation_profile` present | [`obligation.rs`](../crates/worldwake-core/src/obligation.rs) | Landed in [§4.7](#47-landed-row-11) |
 | Diversification / curiosity | `diversification_profile` present | [`diversification.rs`](../crates/worldwake-core/src/diversification.rs) | Landed in [§4.3](#43-landed-row-7) |
-| Experience preferences | `preference_profile` present | [`experience.rs`](../crates/worldwake-core/src/experience.rs), [`experience_recording.rs`](../crates/worldwake-systems/src/experience_recording.rs) | Auxiliary behavior coverage in [`golden_experience_preferences.rs`](../crates/worldwake-ai/tests/golden_experience_preferences.rs), [`golden_source_reliability.rs`](../crates/worldwake-ai/tests/golden_source_reliability.rs), and [`golden_source_composite.rs`](../crates/worldwake-ai/tests/golden_source_composite.rs); no survival-roadmap row currently claims durable Familiar Orchard failure memory |
+| Experience preferences | `preference_profile` present | [`experience.rs`](../crates/worldwake-core/src/experience.rs), [`experience_recording.rs`](../crates/worldwake-systems/src/experience_recording.rs) | Auxiliary behavior coverage in [`experience_preferences.rs`](../crates/worldwake-ai/tests/scenarios/experience_preferences.rs), [`source_reliability.rs`](../crates/worldwake-ai/tests/scenarios/source_reliability.rs), and [`source_composite.rs`](../crates/worldwake-ai/tests/scenarios/source_composite.rs); no survival-roadmap row currently claims durable Familiar Orchard failure memory |
 | Production (facility-backed craft) | Authored recipe set with at least one non-harvest production recipe | [`production_actions.rs`](../crates/worldwake-systems/src/production_actions.rs) | Landed in [§5.8](#58-landed-8-survival-production) |
 | Merchant selling | `merchandise_profile` present | [`trade_actions.rs`](../crates/worldwake-systems/src/trade_actions.rs) | Landed in [§5.9](#59-landed-9-survival-trade) |
 | Trade negotiation | `trade_disposition` present | [`trade_actions.rs`](../crates/worldwake-systems/src/trade_actions.rs) | Landed in [§5.9](#59-landed-9-survival-trade) |
@@ -121,7 +121,7 @@ Every planned or landed roadmap entry uses this shape:
 
 **Status**: Planned | Drafting | In Progress | Landed
 **Source scenario**: `scenarios/<name>.ron` (or `--` until authored)
-**Backing goldens**: `crates/worldwake-ai/tests/golden_<name>.rs` (or `--`)
+**Backing goldens**: `crates/worldwake-ai/tests/scenarios/<name>.rs` (or `--`)
 **Depends on**: prior roadmap rows and any landed specs the row relies on
 
 **Architectural risk rationale**
@@ -180,12 +180,12 @@ Use this template for both planned entries and retrospective landed entries. A r
 
 **Status**: Landed
 **Source scenario**: [`scenarios/survival-preferences.ron`](../scenarios/survival-preferences.ron)  
-**Backing goldens**: [`golden_survival_preferences.rs`](../crates/worldwake-ai/tests/golden_survival_preferences.rs)  
+**Backing goldens**: [`survival_preferences.rs`](../crates/worldwake-ai/tests/scenarios/survival_preferences.rs)
 **Depends on**: landed rows 1-6
 
 `survival-preferences.ron` keeps the survival loop alive while `Scout Ilen` proactively discovers `Novel Grove` and later successfully recovers apples there. The golden lands diversification / curiosity inside a real 1440-tick survival scenario.
 
-`archive/tickets/S148PORMOTBAC-FOLLOWUP-004.md` corrected the stale Familiar Orchard failure-memory assertion: the live branch has no violated Familiar Orchard source expectation, so the golden asserts that no false failed-source memory is created. Experience-preference behavior remains auxiliary evidence outside the survival-roadmap row in `golden_experience_preferences.rs`, `golden_source_reliability.rs`, and `golden_source_composite.rs`; row 7 does not claim a durable Familiar Orchard failure-memory branch.
+`archive/tickets/S148PORMOTBAC-FOLLOWUP-004.md` corrected the stale Familiar Orchard failure-memory assertion: the live branch has no violated Familiar Orchard source expectation, so the golden asserts that no false failed-source memory is created. Experience-preference behavior remains auxiliary evidence outside the survival-roadmap row in `experience_preferences.rs`, `source_reliability.rs`, and `source_composite.rs`; row 7 does not claim a durable Familiar Orchard failure-memory branch.
 
 ### 4.4 Landed Row 8
 
@@ -193,7 +193,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 
 **Status**: Landed
 **Source scenario**: [`scenarios/survival-production.ron`](../scenarios/survival-production.ron)  
-**Backing goldens**: [`golden_survival_production.rs`](../crates/worldwake-ai/tests/golden_survival_production.rs)  
+**Backing goldens**: [`survival_production.rs`](../crates/worldwake-ai/tests/scenarios/survival_production.rs)
 **Depends on**: landed row 1
 
 `survival-production.ron` keeps the baseline self-care loop alive while removing every direct-food fallback and making the baker's only authored food path a mill-backed `Bake Bread` craft branch. That lands row 8 at the truthful live seam: non-harvest production that depends on a workstation and real stocked inputs, not merely another harvest source.
@@ -206,7 +206,7 @@ The golden proves the branch at the earliest honest surfaces that matter: a plan
 
 **Status**: Landed
 **Source scenario**: [`scenarios/survival-trade.ron`](../scenarios/survival-trade.ron)  
-**Backing goldens**: [`golden_survival_trade.rs`](../crates/worldwake-ai/tests/golden_survival_trade.rs)  
+**Backing goldens**: [`survival_trade.rs`](../crates/worldwake-ai/tests/scenarios/survival_trade.rs)
 **Depends on**: landed rows 1-8
 
 `survival-trade.ron` now owns a truthful roadmap landing for the trade row. It keeps a full 1440-tick survival-health contract alive while authoring a merchant facility, staged apple stock, buyer purchasing power, `trade_disposition`, `commodity_valuation`, `substitute_preferences`, agent `contention_disposition`, and a queue-managed Market Square well in one live scenario instead of relying on the old auxiliary merchant-only goldens.
@@ -226,7 +226,7 @@ This is now a truthful substitute-isolation scenario rather than merely a bread-
 
 **Status**: Landed
 **Source scenario**: [`scenarios/survival-items-decay.ron`](../scenarios/survival-items-decay.ron)  
-**Backing goldens**: [`golden_survival_items_decay.rs`](../crates/worldwake-ai/tests/golden_survival_items_decay.rs)  
+**Backing goldens**: [`survival_items_decay.rs`](../crates/worldwake-ai/tests/scenarios/survival_items_decay.rs)
 **Depends on**: landed rows 1-9
 
 `survival-items-decay.ron` keeps the landed survival-trade substrate alive while adding explicit maintenance pressure through authored `commodity_decay` and a local `disposal_profile`. `Merchant Sera` and `Buyer Nila` keep the substitute-trade branch active at `Market Square`, while `Caretaker Oren` starts above his disposal threshold with one carried Waste lot that must be dropped and later decay away.
@@ -239,7 +239,7 @@ The golden proves the row at the earliest honest surfaces that matter: `Caretake
 
 **Status**: Landed
 **Source scenario**: [`scenarios/survival-offices.ron`](../scenarios/survival-offices.ron)  
-**Backing goldens**: [`golden_survival_offices.rs`](../crates/worldwake-ai/tests/golden_survival_offices.rs)  
+**Backing goldens**: [`offices.rs`](../crates/worldwake-ai/tests/scenarios/offices.rs)
 **Depends on**: landed rows 1-10
 
 `survival-offices.ron` now lands row 11 at the truthful live seam. The authored survival scenario keeps `Claimant Rhea` alive for 1440 ticks while force-claiming `Marsh Warden`; autonomously selecting and committing threat-warning `PostNotice` from authored remembered local conflict memory plus explicit posting profile substrate; and carrying an overdue Marsh Warden duty assignment for `Rival Rowan` under an explicit `obligation_satiation_profile`.
@@ -264,7 +264,7 @@ All ordered rows are landed or have a planned extension routed against them (see
 
 **Status**: Landed  
 **Source scenario**: [`scenarios/survival-baseline.ron`](../scenarios/survival-baseline.ron)  
-**Backing goldens**: [`golden_survival_baseline.rs`](../crates/worldwake-ai/tests/golden_survival_baseline.rs)
+**Backing goldens**: [`survival_baseline.rs`](../crates/worldwake-ai/tests/scenarios/survival_baseline.rs)
 
 **Authored envelope**
 - Seed: `104004`
@@ -279,7 +279,7 @@ All ordered rows are landed or have a planned extension routed against them (see
 
 **Why this golden is valid**
 
-The golden does more than check survival. It proves that the authored survival substrate leads Agent B to reach `Fertile Fields`, perceive the orchard food source there, and do so through the intended exploration/perception chain rather than by a scripted shortcut. The proof surfaces are authoritative place state, belief contents, action traces, and survival-contract assertions in [`golden_survival_baseline.rs`](../crates/worldwake-ai/tests/golden_survival_baseline.rs).
+The golden does more than check survival. It proves that the authored survival substrate leads Agent B to reach `Fertile Fields`, perceive the orchard food source there, and do so through the intended exploration/perception chain rather than by a scripted shortcut. The proof surfaces are authoritative place state, belief contents, action traces, and survival-contract assertions in [`survival_baseline.rs`](../crates/worldwake-ai/tests/scenarios/survival_baseline.rs).
 
 **Deliberately inactive**
 - Travel physiology
@@ -290,7 +290,7 @@ The golden does more than check survival. It proves that the authored survival s
 
 **Status**: Landed  
 **Source scenario**: [`scenarios/survival-scattered.ron`](../scenarios/survival-scattered.ron)  
-**Backing goldens**: [`golden_survival_scattered.rs`](../crates/worldwake-ai/tests/golden_survival_scattered.rs)
+**Backing goldens**: [`survival_scattered.rs`](../crates/worldwake-ai/tests/scenarios/survival_scattered.rs)
 
 **Authored envelope**
 - Seed: `205005`
@@ -313,7 +313,7 @@ The golden proves that the isolated agent starting at `Ravine Shelter` reaches a
 
 **Status**: Landed  
 **Source scenario**: [`scenarios/survival-contested.ron`](../scenarios/survival-contested.ron)  
-**Backing goldens**: [`golden_survival_contested.rs`](../crates/worldwake-ai/tests/golden_survival_contested.rs)
+**Backing goldens**: [`survival_contested.rs`](../crates/worldwake-ai/tests/scenarios/survival_contested.rs)
 
 **Authored envelope**
 - Seed: `306006`
@@ -337,7 +337,7 @@ The golden proves a specific contention-era causal branch: both north-side and s
 
 **Status**: Landed  
 **Source scenario**: [`scenarios/survival-drive-escalation.ron`](../scenarios/survival-drive-escalation.ron)  
-**Backing goldens**: [`golden_survival_drive_escalation.rs`](../crates/worldwake-ai/tests/golden_survival_drive_escalation.rs)
+**Backing goldens**: [`survival_drive_escalation.rs`](../crates/worldwake-ai/tests/scenarios/survival_drive_escalation.rs)
 
 **Authored envelope**
 - Seed: `116006`
@@ -359,7 +359,7 @@ The golden now proves the drive-escalation branch inside a real 1440-tick surviv
 
 **Status**: Landed  
 **Source scenario**: [`scenarios/survival-tell.ron`](../scenarios/survival-tell.ron)  
-**Backing goldens**: [`golden_survival_tell.rs`](../crates/worldwake-ai/tests/golden_survival_tell.rs)
+**Backing goldens**: [`survival_tell.rs`](../crates/worldwake-ai/tests/scenarios/survival_tell.rs)
 
 **Authored envelope**
 - Seed: `417005`
@@ -385,7 +385,7 @@ The golden proves the tell row at the earliest honest causal surface that still 
 
 **Status**: Landed  
 **Source scenario**: [`scenarios/survival-ask-consult.ron`](../scenarios/survival-ask-consult.ron)  
-**Backing goldens**: [`golden_survival_ask_consult.rs`](../crates/worldwake-ai/tests/golden_survival_ask_consult.rs)
+**Backing goldens**: [`survival_ask_consult.rs`](../crates/worldwake-ai/tests/scenarios/survival_ask_consult.rs)
 
 **Authored envelope**
 - Seed: `518006`
@@ -414,7 +414,7 @@ The same scenario authors a vacant support-law office with a local `OfficeRegist
 
 **Status**: Landed
 **Source scenario**: [`scenarios/survival-preferences.ron`](../scenarios/survival-preferences.ron)  
-**Backing goldens**: [`golden_survival_preferences.rs`](../crates/worldwake-ai/tests/golden_survival_preferences.rs)
+**Backing goldens**: [`survival_preferences.rs`](../crates/worldwake-ai/tests/scenarios/survival_preferences.rs)
 
 **Authored envelope**
 - Seed: `619007`
@@ -429,7 +429,7 @@ The same scenario authors a vacant support-law office with a local `OfficeRegist
 
 The golden proves the proactive diversification branch at the actual branch that matters: `Scout Ilen` reaches `Novel Grove` through a proactive exploration choice and later succeeds there as a real apple source. The row does not claim durable Familiar Orchard failure memory: `archive/tickets/S148PORMOTBAC-FOLLOWUP-004.md` showed there is no violated Familiar Orchard source expectation in this run, so the golden's no-false-failure assertion is the truthful source-reliability contract for this scenario.
 
-Experience-preference behavior remains covered outside the survival-roadmap row by auxiliary goldens: `golden_experience_preferences.rs` proves learned route preference effects, `golden_source_reliability.rs` proves concrete source-reliability memory writes, and `golden_source_composite.rs` proves source-composite same-commodity reranking from those memories.
+Experience-preference behavior remains covered outside the survival-roadmap row by auxiliary goldens: `experience_preferences.rs` proves learned route preference effects, `source_reliability.rs` proves concrete source-reliability memory writes, and `source_composite.rs` proves source-composite same-commodity reranking from those memories.
 
 **Deliberately inactive**
 - Place concealment
@@ -440,7 +440,7 @@ Experience-preference behavior remains covered outside the survival-roadmap row 
 
 **Status**: Landed  
 **Source scenario**: [`scenarios/survival-production.ron`](../scenarios/survival-production.ron)  
-**Backing goldens**: [`golden_survival_production.rs`](../crates/worldwake-ai/tests/golden_survival_production.rs)
+**Backing goldens**: [`survival_production.rs`](../crates/worldwake-ai/tests/scenarios/survival_production.rs)
 
 **Authored envelope**
 - Seed: `608008`
@@ -464,7 +464,7 @@ The golden proves a real non-harvest production branch inside the survival loop 
 
 **Status**: Landed  
 **Source scenario**: [`scenarios/survival-trade.ron`](../scenarios/survival-trade.ron)  
-**Backing goldens**: [`golden_survival_trade.rs`](../crates/worldwake-ai/tests/golden_survival_trade.rs)
+**Backing goldens**: [`survival_trade.rs`](../crates/worldwake-ai/tests/scenarios/survival_trade.rs)
 
 **Authored envelope**
 - Seed: `609009`
@@ -497,7 +497,7 @@ That proof now closes the row honestly. The focused AI tests still own the lower
 
 **Status**: Landed  
 **Source scenario**: [`scenarios/survival-items-decay.ron`](../scenarios/survival-items-decay.ron)  
-**Backing goldens**: [`golden_survival_items_decay.rs`](../crates/worldwake-ai/tests/golden_survival_items_decay.rs)
+**Backing goldens**: [`survival_items_decay.rs`](../crates/worldwake-ai/tests/scenarios/survival_items_decay.rs)
 
 **Authored envelope**
 - Seed: `610010`
@@ -524,7 +524,7 @@ The same scenario still keeps the earlier trade substrate alive instead of becom
 
 **Status**: Landed  
 **Source scenario**: [`scenarios/survival-theft.ron`](../scenarios/survival-theft.ron)  
-**Backing goldens**: [`golden_survival_theft.rs`](../crates/worldwake-ai/tests/golden_survival_theft.rs)
+**Backing goldens**: [`survival_theft.rs`](../crates/worldwake-ai/tests/scenarios/survival_theft.rs)
 
 **Authored envelope**
 - Seed: `612012`
@@ -554,7 +554,7 @@ The row also lands place concealment honestly rather than by decorative authored
 
 **Status**: Landed
 **Source scenario**: [`scenarios/survival-justice.ron`](../scenarios/survival-justice.ron)
-**Backing goldens**: [`golden_survival_justice.rs`](../crates/worldwake-ai/tests/golden_survival_justice.rs)
+**Backing goldens**: [`survival_justice.rs`](../crates/worldwake-ai/tests/scenarios/survival_justice.rs)
 
 **Scenario-owned proof**
 - Lawful office-holder substrate for the justice row now authors directly in the scenario through an initial office holder plus a colocated crime register
@@ -574,7 +574,7 @@ The scenario is now a full row landing because it owns the lawful authority subs
 
 **Status**: Landed
 **Source scenario**: [`scenarios/survival-patrol.ron`](../scenarios/survival-patrol.ron)  
-**Backing goldens**: [`golden_survival_patrol.rs`](../crates/worldwake-ai/tests/golden_survival_patrol.rs)
+**Backing goldens**: [`survival_patrol.rs`](../crates/worldwake-ai/tests/scenarios/survival_patrol.rs)
 
 **Scenario-owned progress**
 - `Guard Mira` owns the 1440-tick survival-health envelope while `Fugitive Vale` is a supporting hostile target.
@@ -590,7 +590,7 @@ The row is landed because the AI selects and executes the remote pursuit branch 
 
 **Status**: Landed
 **Source scenario**: [`scenarios/survival-combat.ron`](../scenarios/survival-combat.ron)  
-**Backing goldens**: [`golden_survival_combat.rs`](../crates/worldwake-ai/tests/golden_survival_combat.rs)
+**Backing goldens**: [`survival_combat.rs`](../crates/worldwake-ai/tests/scenarios/survival_combat.rs)
 
 **Scenario-owned proof**
 - `Sentinel Rowan` owns the 1440-tick survival-health envelope while `Raider Voss` is the supporting hostile camp member.
@@ -604,7 +604,7 @@ The row is landed because the same scenario-backed golden proves survival self-c
 
 **Status**: Landed
 **Source scenario**: [`scenarios/survival-escort.ron`](../scenarios/survival-escort.ron)
-**Backing goldens**: [`golden_survival_escort.rs`](../crates/worldwake-ai/tests/golden_survival_escort.rs)
+**Backing goldens**: [`survival_escort.rs`](../crates/worldwake-ai/tests/scenarios/survival_escort.rs)
 
 **Scenario-owned proof**
 - `Caretaker Ilen` owns the 1440-tick survival-health envelope while `Ward Mira` and `Raider Voss` are supporting causal actors.
@@ -620,7 +620,7 @@ The row is landed because the scenario-backed golden proves survival self-care a
 
 **Status**: Landed
 **Source scenario**: [`scenarios/final-integration.ron`](../scenarios/final-integration.ron)
-**Backing goldens**: [`golden_final_integration.rs`](../crates/worldwake-ai/tests/golden_final_integration.rs)
+**Backing goldens**: [`final_integration.rs`](../crates/worldwake-ai/tests/scenarios/final_integration.rs)
 
 **Scenario-owned proof**
 - `final-integration.ron` authors every gameplay feature row as active under the live `scenario_coverage` structural rules: no feature is absent or present-only in the generated companion.
@@ -651,7 +651,7 @@ Why it is not a roadmap landing:
 #### `survival-need-projection.ron`
 
 - Source scenario: [`scenarios/survival-need-projection.ron`](../scenarios/survival-need-projection.ron)
-- Backing golden: [`golden_need_projection.rs`](../crates/worldwake-ai/tests/golden_need_projection.rs)
+- Backing golden: [`need_projection.rs`](../crates/worldwake-ai/tests/scenarios/need_projection.rs)
 - Status in this roadmap: spec-S126 chain-isolation coverage only
 
 Why it is not a roadmap landing:
@@ -660,12 +660,12 @@ Why it is not a roadmap landing:
 - It deliberately disables curiosity-driven exploration (`curiosity_weight=0`, suppressed via `scenario_lint_overrides`) so the planner's ranking after suppression is deterministic. A real survival-loop landing must keep exploration live.
 - Its single agent, two places, and shortened `cognitive_profile.structural_block_ticks=30` are scoped so the chain `populate_assumptions → evaluate_assumptions → record_assumption_failure → suppression → alternative-goal adoption → TTL expiry` runs end-to-end inside a focused integration test.
 
-It is the canonical proof surface for spec [`S126-need-projection-time-budget.md`](../specs/S126-need-projection-time-budget.md) D8 and is owned by ticket `S126NEEPROTIM-004`. The broader survival-coexistence proof for horizon-aware planning under real workloads remains the responsibility of survival-row goldens (`golden_survival_*.rs`) — the discrepancy-recording substep is already exercised inside the prototype-world `golden_goal_switching_during_multi_leg_travel` regression in [`golden_ai_decisions.rs`](../crates/worldwake-ai/tests/golden_ai_decisions.rs).
+It is the canonical proof surface for spec [`S126-need-projection-time-budget.md`](../specs/S126-need-projection-time-budget.md) D8 and is owned by ticket `S126NEEPROTIM-004`. The broader survival-coexistence proof for horizon-aware planning under real workloads remains the responsibility of survival-row goldens (`tests/scenarios/survival_*.rs`) — the discrepancy-recording substep is already exercised inside the prototype-world `golden_goal_switching_during_multi_leg_travel` regression in [`ai_decisions.rs`](../crates/worldwake-ai/tests/scenarios/ai_decisions.rs).
 
-#### `golden_simulation_gaps.rs`
+#### `simulation_gaps.rs`
 
 - Source scenario: none; these are harness-authored golden scenarios
-- Backing golden: [`golden_simulation_gaps.rs`](../crates/worldwake-ai/tests/golden_simulation_gaps.rs)
+- Backing golden: [`simulation_gaps.rs`](../crates/worldwake-ai/tests/scenarios/simulation_gaps.rs)
 - Status in this roadmap: auxiliary simulation-gap coverage only
 - CI workflow: [`golden-simulation-gaps.yml`](../.github/workflows/golden-simulation-gaps.yml)
 

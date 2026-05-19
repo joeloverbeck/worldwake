@@ -2,11 +2,11 @@
 
 Worldwake's Rust test surface produces large debug artifacts. Golden and integration test binaries can be hundreds of megabytes each because debug builds statically link workspace crates and carry debug information. Cargo also keeps hash-suffixed older binaries and incremental compilation state across repeated source changes.
 
-This is expected Cargo behavior, but it can exhaust small WSL2 or VM disks after repeated `cargo test --workspace`, all-target clippy, golden inventory, or visualizer builds. A single broad verification can create tens of gigabytes because this workspace has many integration/golden test binaries, and Cargo builds each integration test file as its own debug executable.
+This is expected Cargo behavior, but it can exhaust small WSL2 or VM disks after repeated `cargo test --workspace`, all-target clippy, golden inventory, or visualizer builds. Broad verification can still create large artifacts because integration test binaries statically link substantial workspace code, even after the AI golden suites were consolidated into entry binaries.
 
 ## What Grows
 
-- `target/debug/deps/` stores compiled library, binary, and test artifacts. In this repo, the largest files are usually executable test binaries such as `golden_*`, `observer`, `worldwake_cli`, or visualizer targets.
+- `target/debug/deps/` stores compiled library, binary, and test artifacts. In this repo, the largest files are usually executable test binaries such as `golden_ai`, `integration_ai`, `observer`, `worldwake_cli`, or visualizer targets.
 - `target/debug/incremental/` stores rustc incremental compilation caches. These speed up local rebuilds but can grow very large across many crate/target variants.
 - `target/release/` is usually much smaller here, but release/profiling runs can still accumulate artifacts.
 
@@ -36,14 +36,13 @@ the duration of that session.
 
 ### Remaining bloat after defaults
 
-Even with these defaults, `target/` after a clean `./scripts/verify.sh` will
-still exceed safe thresholds on small WSL2 / VM disks because the
-`crates/worldwake-ai/tests/` directory contains 63 top-level integration
-test files, each generating its own statically-linked debug binary. The
-structural fix is captured in
-[`specs/S154-test-binary-consolidation.md`](../specs/S154-test-binary-consolidation.md).
-Until that spec lands, use the "Cleanup Options" below after broad
-verification runs.
+Even with these defaults, `target/` after a clean `./scripts/verify.sh` can
+still exceed safe thresholds on small WSL2 / VM disks. S154 consolidated the
+AI golden and integration suites into `golden_ai` and `integration_ai`, which
+removes the old per-scenario binary fan-out, but the remaining broad gate
+still builds large statically linked test binaries across the workspace. Use
+the "Cleanup Options" below after broad verification runs when disk space is
+tight.
 
 ## Check Disk Use
 
@@ -93,7 +92,7 @@ Use the least disruptive cleanup that solves the space problem:
 3. Put especially heavy temporary verification in a disposable target directory:
 
    ```bash
-   CARGO_TARGET_DIR=/tmp/worldwake-target cargo test -p worldwake-ai --test golden_scenario_diagnostics_fixture -- --ignored --test-threads=1
+   CARGO_TARGET_DIR=/tmp/worldwake-target cargo test -p worldwake-ai --test golden_ai scenario_diagnostics_fixture -- --ignored --test-threads=1
    rm -rf /tmp/worldwake-target
    ```
 
