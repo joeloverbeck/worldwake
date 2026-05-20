@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implement-S156-htn-authority-honesty",
   "base_head": "d886312abc050257391ccf5fed3555f1ea515e0d",
-  "last_ticket": "archive/tickets/S156HTNAUTHON-003.md",
+  "last_ticket": "archive/tickets/S156HTNAUTHON-004.md",
   "last_result": "completed_archived",
-  "last_work_commit": "75a5cd22841d6971abe30551a265b24720cc6004",
+  "last_work_commit": "64385431c08b165a9d3e7a2cab55142ceb1789bc",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S156HTNAUTHON-004.md",
+  "next_target": "tickets/S156HTNAUTHON-005.md",
   "queue": [
-    "tickets/S156HTNAUTHON-004.md",
     "tickets/S156HTNAUTHON-005.md",
     "tickets/S156HTNAUTHON-006.md"
   ],
