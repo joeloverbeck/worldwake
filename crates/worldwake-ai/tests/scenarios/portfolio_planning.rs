@@ -91,6 +91,7 @@ fn committed_goal_entry(goal_key: GoalKey, opportunity: OpportunityKey, tick: Ti
         competition_discount: None,
         source_composite: None,
         feasibility: FeasibilityHint::Uncertain,
+        partial_plan_segment: None,
     }
 }
 

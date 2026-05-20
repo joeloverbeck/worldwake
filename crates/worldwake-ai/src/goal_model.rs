@@ -2765,6 +2765,7 @@ mod tests {
             competition_discount: Some(discount.clone()),
             source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            partial_plan_segment: None,
             key: worldwake_core::OpportunityKey {
                 goal_key: GoalKey::from(GoalKind::Sleep),
                 anchor: worldwake_core::OpportunityAnchor::None,
@@ -2816,6 +2817,7 @@ mod tests {
             competition_discount: None,
             source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            partial_plan_segment: None,
             key: worldwake_core::OpportunityKey {
                 goal_key: GoalKey::from(GoalKind::Sleep),
                 anchor: worldwake_core::OpportunityAnchor::None,
@@ -2901,6 +2903,7 @@ mod tests {
             competition_discount: None,
             source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            partial_plan_segment: None,
 
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,

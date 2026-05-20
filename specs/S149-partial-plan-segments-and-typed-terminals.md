@@ -21,7 +21,7 @@ Phase 12: AI Architecture Evolution — Draft
 ## Crates
 
 - `worldwake-core` — no new condition types (reuses existing `IntentionResumeCondition` / `IntentionAbandonCondition` from S148). No new component. `TellTopic` (already core, `belief.rs:1737`) is reused as the information-gap topic.
-- `worldwake-sim` — `SAVE_FORMAT_VERSION` was bumped to 91 by S149PARPLASEG-001 for the typed-terminal serialized-format break; serialization coverage for the new `AgendaEntry` field follows the existing agenda-state persistence path without a second bump.
+- `worldwake-sim` — `SAVE_FORMAT_VERSION` was bumped to 91 by S149PARPLASEG-001 for the typed-terminal serialized-format break, then to 92 by S149PARPLASEG-003 because adding `AgendaEntry.partial_plan_segment` changes the bincode shape of the ai runtime payload. Version 91 saves are rejected at the existing save-header boundary; no compatibility decoder is introduced.
 - `worldwake-systems` — no change.
 - `worldwake-ai` — `PlanTerminalKind`, the payload-free `PlanTerminalKindDiscriminant` histogram key, and all `ProgressBarrier` removal sites landed in S149PARPLASEG-001; S149PARPLASEG-002 added the `PartialPlanSegment` carrier type (and `PartialPlanSegmentId`, `BarrierFact`, `PlannedSkeletonStep`) here because their fields reference ai-resident types (`PlanTerminalKind`, `PlannedStep`, `PlannerOpKind`, `GoalOffer`, `BeliefPredicate`); remaining tickets add `PartialPlanSegment` storage on `AgendaEntry` and extend agenda-manager resumption.
 - `worldwake-cli` — observer renders barrier type per terminal in the planning-diagnostic sections; S144 diagnostics aggregate barrier-kind distribution.
@@ -242,7 +242,7 @@ S144's `PlanningMetrics.terminal_kind_distribution` is keyed by `PlanTerminalKin
 pub partial_plan_segment: Option<PartialPlanSegment>,
 ```
 
-`AgendaState.suspended` map (`agenda_types.rs:18`) stores the suspended `AgendaEntry`s; segments persist with their entries through the existing agenda-state persistence path. `SAVE_FORMAT_VERSION` was already bumped to `91` by S149PARPLASEG-001 because removing `ProgressBarrier` changed serialized decision payloads. The new `Option` field gets `#[serde(default)]` so existing 91-era saves deserialize without a second bump. Note that `AgendaState` is an ai-crate runtime structure; the implementation must route its serialization through the existing save path that already persists `AgendaState.suspended` (confirm the path during implementation rather than assuming a sim-crate accessor to ai state).
+`AgendaState.suspended` map (`agenda_types.rs:18`) stores the suspended `AgendaEntry`s; segments persist with their entries through the existing `AgentDecisionRuntime` runtime payload. `SAVE_FORMAT_VERSION` was already bumped to `91` by S149PARPLASEG-001 because removing `ProgressBarrier` changed serialized decision payloads; S149PARPLASEG-003 bumps it again to `92` because live reassessment proved bincode cannot decode the pre-field version-91 runtime shape with `#[serde(default)]` alone. Version 91 saves are rejected at the save header rather than supported by a compatibility shim.
 
 ### D11: Golden coverage
 
@@ -322,6 +322,6 @@ The typed terminals are produced in `search` and feed replan; no `validate_*`/pr
 
 - D11 golden coverage (6 scenarios above).
 - Determinism: same resume condition + same belief update → same suffix retry.
-- Save/load coverage for `PartialPlanSegment` against the S149PARPLASEG-001 baseline format version 91; no second bump for the additive `Option` field.
+- Save/load coverage for `PartialPlanSegment` against current format version 92, with explicit rejection of S149PARPLASEG-001 baseline version 91 at the save-header boundary.
 - `cargo test -p worldwake-ai` clean after the `ProgressBarrier` migration (D3).
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.

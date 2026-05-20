@@ -4055,6 +4055,7 @@ mod tests {
             competition_discount: None,
             source_composite: Some(composite_rank(source_entity, commodity, composite_permille)),
             feasibility: crate::FeasibilityHint::Uncertain,
+            partial_plan_segment: None,
         }
     }
 
@@ -7142,6 +7143,7 @@ mod tests {
             competition_discount: None,
             source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            partial_plan_segment: None,
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,
             introduced_tick: Tick(0),
@@ -7177,6 +7179,7 @@ mod tests {
             competition_discount: None,
             source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            partial_plan_segment: None,
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,
             introduced_tick: Tick(0),
@@ -7230,6 +7233,7 @@ mod tests {
             competition_discount: None,
             source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Likely,
+            partial_plan_segment: None,
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,
             introduced_tick: Tick(0),
@@ -7265,6 +7269,7 @@ mod tests {
             competition_discount: None,
             source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Likely,
+            partial_plan_segment: None,
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,
             introduced_tick: Tick(0),
@@ -9765,6 +9770,7 @@ mod tests {
             competition_discount: None,
             source_composite: None,
             feasibility,
+            partial_plan_segment: None,
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,
             introduced_tick: Tick(0),

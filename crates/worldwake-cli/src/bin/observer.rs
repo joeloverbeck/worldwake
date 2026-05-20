@@ -6826,6 +6826,7 @@ mod tests {
             competition_discount: None,
             source_composite: None,
             feasibility: worldwake_ai::FeasibilityHint::Uncertain,
+            partial_plan_segment: None,
         }
     }
 

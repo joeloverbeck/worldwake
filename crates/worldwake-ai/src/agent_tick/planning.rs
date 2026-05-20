@@ -4037,6 +4037,7 @@ mod tests {
             competition_discount: None,
             source_composite: None,
             feasibility: FeasibilityHint::Likely,
+            partial_plan_segment: None,
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,
             introduced_tick: Tick(0),
@@ -4081,6 +4082,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: selected_goal,
                     anchor: OpportunityAnchor::None,
@@ -4114,6 +4116,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: runner_up,
                     anchor: OpportunityAnchor::None,
@@ -4147,6 +4150,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: third,
                     anchor: OpportunityAnchor::None,
@@ -4180,6 +4184,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: fourth,
                     anchor: OpportunityAnchor::None,
@@ -4557,6 +4562,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: GoalKey::from(kind),
                     anchor,
@@ -4710,6 +4716,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: survival_goal,
                     anchor: OpportunityAnchor::None,
@@ -4744,6 +4751,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: commitment_goal,
                     anchor: OpportunityAnchor::Place(posting_place),
@@ -4778,6 +4786,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: selected_goal,
                     anchor: OpportunityAnchor::Place(entity(45)),
@@ -5038,6 +5047,7 @@ mod tests {
             competition_discount: None,
             source_composite: None,
             feasibility: FeasibilityHint::Likely,
+            partial_plan_segment: None,
             key: worldwake_core::OpportunityKey {
                 goal_key: opportunity.goal_key,
                 anchor: opportunity.anchor,
@@ -5248,6 +5258,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: goal,
                     anchor: OpportunityAnchor::None,
@@ -5284,6 +5295,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: goal,
                     anchor: OpportunityAnchor::Place(market),

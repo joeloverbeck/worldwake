@@ -126,6 +126,7 @@ fn committed_goal_entry(goal_key: GoalKey, tick: Tick) -> AgendaEntry {
         competition_discount: None,
         source_composite: None,
         feasibility: crate::FeasibilityHint::Uncertain,
+        partial_plan_segment: None,
     }
 }
 
@@ -1588,6 +1589,7 @@ fn ranked_goal(
         competition_discount: None,
         source_composite: None,
         feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+        partial_plan_segment: None,
         phase: crate::AgendaPhase::Pending,
         origin: crate::AgendaOrigin::NeedDrive,
         introduced_tick: Tick(0),

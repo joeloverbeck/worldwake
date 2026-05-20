@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — agenda-manager resumption path; tactical-planner re-entry; barrier-time segment construction
-**Deps**: archive/tickets/S149PARPLASEG-002.md, S149PARPLASEG-003, S149PARPLASEG-004
+**Deps**: archive/tickets/S149PARPLASEG-002.md, archive/tickets/S149PARPLASEG-003.md, S149PARPLASEG-004
 
 ## Problem
 
@@ -17,7 +17,7 @@ D5 gives the agenda manager the ability to resume a suspended intention from its
 3. Shared boundary under audit: the agenda-manager tick pass (suspend/resume/abandon) and the tactical-planner re-entry surface (`completed_prefix` applied to planning state, `remaining_skeleton` completed against new world state). Phase distinction: this ticket performs candidate-side resumption decision + plan-search re-entry; barrier→failure attribution is ticket 004; companion-subgoal/coordination triggers are 006/007.
 4. AI regression layer: this is a runtime `agent_tick`/agenda-manager change. Resume/abandon evaluation reads `RuntimeBeliefView` (belief-only planning, FND-14) — no authoritative world read on behalf of the agent.
 5. Adjacent contradiction classification: segment construction at barrier time is a required consequence of D5 (resumption needs stored segments); it is in-scope here, not a separate ticket. The barrier→condition derivation it calls is owned by ticket 004.
-6. Placeholder relationship: ticket 003 added `partial_plan_segment: None` on every construction path as a compile-safe default; this ticket is the first writer that populates it with `Some(..)`. No earlier placeholder symbol needs replacing — 003's `None` default is the intended initial state, not a stub.
+6. Placeholder relationship: `archive/tickets/S149PARPLASEG-003.md` added `partial_plan_segment: None` on every construction path as a compile-safe default; this ticket is the first writer that populates it with `Some(..)`. No earlier placeholder symbol needs replacing — 003's `None` default is the intended initial state, not a stub.
 7. Budget-exhaustion handoff from ticket 001: direct no-plan search-budget exhaustion still returns `PlanSearchResult::BudgetExhausted`, not a terminal-bearing found plan. To support the S149 `SearchBudgetExhausted` resume/golden path, this ticket owns the first writer that turns an eligible budget-exhausted suspension into a `PartialPlanSegment` whose `terminal_barrier` is `PlanTerminalKind::SearchBudgetExhausted`.
 
 ## Architecture Check

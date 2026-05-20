@@ -532,6 +532,7 @@ mod tests {
             competition_discount: None,
             source_composite: None,
             feasibility: FeasibilityHint::Uncertain,
+            partial_plan_segment: None,
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,
             introduced_tick: Tick(0),
@@ -1379,6 +1380,7 @@ mod tests {
             competition_discount: None,
             source_composite: None,
             feasibility: FeasibilityHint::Uncertain,
+            partial_plan_segment: None,
 
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,
