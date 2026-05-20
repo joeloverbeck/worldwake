@@ -10,7 +10,7 @@
 
 `archive/tickets/S153GOLDGAPSCALE-002.md` was rejected because the requested office-vacancy → patrol-gap golden assumed production substrate that does not exist. Live patrol behavior is driven by `PatrolRoute` / `PatrolProfile`; `ExpectationStore` overdue state drives missing-person search/report motives, not patrol-duty validity. FOUNDATIONS Canonical Scenario F still requires the architecture to produce office vacancy → duty degradation → patrol gap → opportunistic route predation from generic institutional state, not from a hidden scenario flag.
 
-This ticket adds the missing office-backed patrol duty assignment substrate as first-class world state. Live reassessment split the full S153 D3 golden into `tickets/S153GOLDGAPSCALE-005.md` so this ticket closes on the production substrate and focused AI/system proof rather than overclaiming an end-to-end golden that is not part of this landed diff.
+This ticket added the missing office-backed patrol duty assignment substrate as first-class world state. Live reassessment split the full S153 D3 golden into `archive/tickets/S153GOLDGAPSCALE-005.md`; that successor later landed the end-to-end golden while this ticket remained closed on the production substrate and focused AI/system proof.
 
 ## Assumption Reassessment (2026-05-20)
 
@@ -51,15 +51,15 @@ Added `office_patrol_duty_lifecycle_system` under the patrol system slot. It deg
 
 ### 3. Wire AI patrol obligation consumption
 
-Updated patrol candidate generation and patrol motive ranking so a lapsed office-backed duty suppresses `GoalKind::Patrol` emission and zeroes patrol motive. Existing non-office patrol routes remain lawful when no office duty component exists; `tickets/S153GOLDGAPSCALE-005.md` owns the end-to-end golden that exercises the new duty path as the office-vacancy contract.
+Updated patrol candidate generation and patrol motive ranking so a lapsed office-backed duty suppresses `GoalKind::Patrol` emission and zeroes patrol motive. Existing non-office patrol routes remain lawful when no office duty component exists; `archive/tickets/S153GOLDGAPSCALE-005.md` later landed the end-to-end golden that exercises the new duty path as the office-vacancy contract.
 
 ### 4. Land the S153 D3 golden
 
-Deferred to `tickets/S153GOLDGAPSCALE-005.md`.
+Landed later in `archive/tickets/S153GOLDGAPSCALE-005.md`.
 
 ### 5. Truth-sync generated golden docs
 
-Deferred to `tickets/S153GOLDGAPSCALE-005.md` because this ticket landed no source golden metadata.
+Landed later in `archive/tickets/S153GOLDGAPSCALE-005.md`; this ticket landed no source golden metadata.
 
 ## Landed Files
 
@@ -79,7 +79,7 @@ Deferred to `tickets/S153GOLDGAPSCALE-005.md` because this ticket landed no sour
 - `crates/worldwake-ai/src/planning_state.rs`
 - `crates/worldwake-ai/src/ranking.rs`
 - `specs/S153-golden-gaps-ai-architecture-scaling.md`
-- `tickets/S153GOLDGAPSCALE-005.md`
+- `archive/tickets/S153GOLDGAPSCALE-005.md`
 
 ## Out of Scope
 
@@ -99,8 +99,8 @@ Deferred to `tickets/S153GOLDGAPSCALE-005.md` because this ticket landed no sour
 
 ### Deferred Proof
 
-1. `cargo test -p worldwake-ai --test golden_ai office_vacancy` is owned by `tickets/S153GOLDGAPSCALE-005.md`.
-2. `python3 scripts/golden_inventory.py --write --check-docs` is owned by `tickets/S153GOLDGAPSCALE-005.md` because no golden metadata changed here.
+1. `cargo test -p worldwake-ai --test golden_ai office_vacancy` landed later in `archive/tickets/S153GOLDGAPSCALE-005.md`.
+2. `python3 scripts/golden_inventory.py --write --check-docs` landed later in `archive/tickets/S153GOLDGAPSCALE-005.md` because no golden metadata changed here.
 3. Broader `cargo test -p worldwake-ai` / clippy gates remain pre-PR proof; this ticket's final source diff is covered by the focused commands in `## Verification Result`.
 
 ### Invariants Result
@@ -126,8 +126,8 @@ Deferred to `tickets/S153GOLDGAPSCALE-005.md` because this ticket landed no sour
 2. Run here: `cargo test -p worldwake-systems office_patrol_duty`
 3. Run here: `cargo test -p worldwake-ai lapsed_office_patrol_duty`
 4. Run here after save-version rename: `cargo test -p worldwake-sim save_format_version`
-5. Deferred to `tickets/S153GOLDGAPSCALE-005.md`: `cargo test -p worldwake-ai --test golden_ai office_vacancy`
-6. Deferred to `tickets/S153GOLDGAPSCALE-005.md`: `python3 scripts/golden_inventory.py --write --check-docs`
+5. Landed later in `archive/tickets/S153GOLDGAPSCALE-005.md`: `cargo test -p worldwake-ai --test golden_ai office_vacancy`
+6. Landed later in `archive/tickets/S153GOLDGAPSCALE-005.md`: `python3 scripts/golden_inventory.py --write --check-docs`
 7. Pre-PR broad gate, not run for this focused substrate closeout: `cargo clippy --workspace --all-targets -- -D warnings`
 
 ## Outcome
@@ -139,7 +139,7 @@ Completed on 2026-05-20.
 - Exposed office patrol duties through the runtime/planning belief surfaces and snapshot state.
 - Updated patrol candidate generation and patrol ranking so lapsed office duties no longer produce a valid patrol obligation.
 - Bumped `SAVE_FORMAT_VERSION` to 96 for the persisted component shape.
-- Created `tickets/S153GOLDGAPSCALE-005.md` for the remaining S153 D3 office-vacancy golden and generated-doc refresh.
+- Created the successor ticket now archived at `archive/tickets/S153GOLDGAPSCALE-005.md` for the remaining S153 D3 office-vacancy golden and generated-doc refresh.
 
 ## Deviations
 

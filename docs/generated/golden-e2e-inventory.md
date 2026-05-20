@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden scenario source files: 56
-- Files contributing `golden_*` tests: 56
-- Total `golden_*` tests: 273
+- Golden scenario source files: 57
+- Files contributing `golden_*` tests: 57
+- Total `golden_*` tests: 275
 
 ## Per-Scenario-File Inventory
 
@@ -31,6 +31,7 @@ Do not hand-edit it.
 | `merchant_selling.rs` | 13 |
 | `motive_sources.rs` | 5 |
 | `need_projection.rs` | 1 |
+| `office_vacancy.rs` | 2 |
 | `offices.rs` | 12 |
 | `opportunity_compiler.rs` | 5 |
 | `partial_plan_terminals.rs` | 4 |
@@ -241,6 +242,11 @@ Do not hand-edit it.
 ### `need_projection.rs`
 
 - `golden_need_projection_chain`
+
+### `office_vacancy.rs`
+
+- `golden_office_vacancy_patrol_gap_lapses_duties_and_records_route_danger`
+- `golden_office_vacancy_patrol_gap_replays_deterministically`
 
 ### `offices.rs`
 

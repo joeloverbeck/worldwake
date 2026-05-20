@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 208
-- Contributing golden scenario source files: 51
-- Associated tests: 255
+- Scenario blocks: 209
+- Contributing golden scenario source files: 52
+- Associated tests: 257
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1059,6 +1059,18 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Setup**: synthetic fixture constructs an explicitly empty GoalOffer. This is the remaining test-only path called out by S141; production emitters are covered by conformance_motive_sources.
 
 **Proves**: the debug assertion rejects empty motive_sources at explicit validation points in test builds.
+
+### Scenario 444: S153 Office Vacancy Patrol Gap
+
+- Source: `office_vacancy.rs:392`
+- Systems: Offices, Patrol, AI, Travel, Combat
+- GoalKinds: Patrol, Travel
+- ActionDomains: Travel
+- Principles: P7, P14, P20, P21, P31
+
+**Setup**: two guards hold office-backed patrol duties for the village-square to south-gate route, the issuing office is vacant before renewal, and a merchant later traverses the route as a hostile event is observed.
+
+**Proves**: vacancy-driven duty lifecycle lapses both duties, patrol candidates disappear through the live duty path, no guard patrol commits, the merchant completes ordinary travel through the gap, and local route-danger experience records the hostile traversal.
 
 ### Scenario 11: Simple Office Claim via DeclareSupport
 

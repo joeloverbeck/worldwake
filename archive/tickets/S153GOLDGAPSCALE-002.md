@@ -28,7 +28,7 @@ The live branch disproves this ticket's test-only premise. `GoalKind::Patrol` is
 
 Per `docs/FOUNDATIONS.md`, forcing this golden would violate the architecture target: FND-23 requires offices and duties to be world state, FND-25 / FND-25A require social artifacts to have lifecycle, visibility, legality, and actionability, FND-21 requires commitments to revise when their real backing assumptions break, and FND-29 / FND-29A require the causal and knowledge path to remain inspectable. The office-vacancy golden must wait for a real institutional-duty substrate rather than synthesizing the patrol gap inside a test fixture.
 
-Successor owner: `archive/tickets/S153GOLDGAPSCALE-004.md` landed the substrate; `tickets/S153GOLDGAPSCALE-005.md` owns the remaining golden.
+Successor owner: `archive/tickets/S153GOLDGAPSCALE-004.md` landed the substrate; `archive/tickets/S153GOLDGAPSCALE-005.md` later landed the remaining golden.
 
 ## Architecture Check
 
@@ -112,7 +112,7 @@ Rejected on 2026-05-20.
 
 - No golden or production code was added under this ticket.
 - Live reassessment proved the requested test-only golden is not implementable against current architecture: patrol duties are not expectation-backed, and office vacancy does not invalidate an `ObligationDuty` patrol candidate through a concrete duty lifecycle.
-- The required FOUNDATIONS-aligned substrate ticket for office-backed patrol duty assignments as first-class world state landed in `archive/tickets/S153GOLDGAPSCALE-004.md`; the remaining golden is tracked by `tickets/S153GOLDGAPSCALE-005.md`.
+- The required FOUNDATIONS-aligned substrate ticket for office-backed patrol duty assignments as first-class world state landed in `archive/tickets/S153GOLDGAPSCALE-004.md`; the remaining golden later landed in `archive/tickets/S153GOLDGAPSCALE-005.md`.
 
 ## Verification Result
 

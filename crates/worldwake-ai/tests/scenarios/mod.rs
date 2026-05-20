@@ -16,6 +16,7 @@ pub mod item_decay;
 pub mod merchant_selling;
 pub mod motive_sources;
 pub mod need_projection;
+pub mod office_vacancy;
 pub mod offices;
 pub mod opportunity_compiler;
 pub mod partial_plan_terminals;
