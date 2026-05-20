@@ -53,7 +53,8 @@ Added a last-seen-only stale-location regression test that failed against the pr
 
 - `can_control` belief gate — now archived at `archive/tickets/S155BELVIEBOU-002.md`.
 - Golden E2E stale-location pursuit + control-source-swap symmetry, and the `planner-contracts.md` doc line — S155BELVIEBOU-003.
-- Snapshot admission-source provenance tagging — deferred to S157.
+- Snapshot admission-source provenance tagging — completed later by
+  `archive/specs/S157-planner-snapshot-admission-provenance.md`.
 - Any change to authoritative `World::effective_place` itself.
 
 ## Acceptance Result

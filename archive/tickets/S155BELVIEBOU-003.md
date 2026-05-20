@@ -67,7 +67,8 @@ Updated `docs/planner-contracts.md` under `### Entity admission and the belief b
 ## Out of Scope
 
 - The accessor fixes themselves (`effective_place` → 001, `can_control` → 002).
-- Snapshot admission-source provenance tagging — deferred to S157.
+- Snapshot admission-source provenance tagging — completed later by
+  `archive/specs/S157-planner-snapshot-admission-provenance.md`.
 - Broad CLI/player-POV affordance audit beyond the single control-source-swap symmetry golden (S155 Non-Goal).
 
 ## Acceptance Result

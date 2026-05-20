@@ -22,7 +22,7 @@ leak, and the FND-28/FND-20/FND-29 HTN honesty cleanup.
 ```
 S155 (belief-view boundary correctness)   ── COMPLETED
 S156 (HTN authority honesty)              ── COMPLETED
-S157 (snapshot admission provenance)      ── DEFERRED, depends on S155, NOT scheduled
+S157 (snapshot admission provenance)      ── COMPLETED
 ```
 
 ### Completed
@@ -41,15 +41,12 @@ S157 (snapshot admission provenance)      ── DEFERRED, depends on S155, NOT 
   `docs/spec-drafting-rules.md`; and documented the method-trace fallback/rejection contract in
   `docs/planner-contracts.md`.
 
-### Deferred (written, NOT in active order)
-
 - **S157 — Planner Snapshot Admission Provenance** —
-  `specs/S157-planner-snapshot-admission-provenance.md` — *Status: DRAFT — DEFERRED.*
-  Defense-in-depth + provenance/debuggability (FND-15, FND-29): admission-source tagging for
-  snapshot entities and source-restricted strategic scans. Depends on S155 (which removes the
-  underlying leak at the source). Schedule deliberately only after S155 lands and the team
-  chooses to invest in snapshot-level provenance. A bounded alternative to the audit's heavier
-  `PlannerVisible<T>` + four-trait-split + "never pass `&World`" proposal, which is not adopted.
+  `archive/specs/S157-planner-snapshot-admission-provenance.md` — *Status: COMPLETED.*
+  Landed bounded snapshot admission provenance: per-entity admission-source tagging,
+  source-restricted strategic scans, and opportunity-scoped snapshot-admission decision traces.
+  This remains a defense-in-depth/provenance slice, not the audit's heavier `PlannerVisible<T>` +
+  four-trait-split + "never pass `&World`" proposal.
 
 ## Excluded from the active order (by directive)
 

@@ -22,7 +22,9 @@ was treated as a set of hypotheses, not facts.
 ## Accepted but deferred (spec written, NOT in active order)
 
 - **S157 — Planner Snapshot Admission Provenance**
-  (`specs/S157-planner-snapshot-admission-provenance.md`). Findings #2, #13 (CONFIRMED).
+  (`archive/specs/S157-planner-snapshot-admission-provenance.md`). Findings #2, #13 (CONFIRMED);
+  completed as the bounded admission-source, strategic-scan restriction, and decision-trace
+  provenance slice.
   Snapshot entities carry no admission source; strategic search scans the entity map directly.
   Defense-in-depth/provenance (FND-15, FND-29), not a correctness fix — S155 closes the leak at
   the source. Bounded alternative to the audit's `PlannerVisible<T>` + four-trait + "never pass

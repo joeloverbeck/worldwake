@@ -16,7 +16,7 @@ not a correctness fix. The remote-truth leak was already closed at the source by
 (belief-view boundary correctness, now COMPLETED — `archive/specs/S155-belief-view-boundary-correctness.md`);
 the snapshot is now built from a belief-correct view, so source tagging *hardens and explains*
 the boundary rather than repairing it. S155's landing satisfies this spec's only hard
-prerequisite, so it is now active.
+prerequisite.
 
 ## Phase
 
@@ -24,7 +24,7 @@ AI Architecture Consolidation (Adjunct Wave — derived from `reports/ai-archite
 
 ## Status
 
-DRAFT (active — S155 prerequisite landed; ready for ticket decomposition)
+COMPLETED
 
 ## Crates
 
@@ -126,7 +126,7 @@ source-restricted accessors so it cannot consume a field illegitimately.
 ### Agent Profile Scenario Contract
 N/A — no ECS component, no `Permille`, no profile parameter.
 
-## Deliverables (for when scheduled)
+## Deliverables
 
 ### D1 — Admission-source enum on snapshot entities (landed by `S157SNAADMPRO-001`)
 Add an admission-source enum (self-authoritative, local same-tick physical, belief-store claim,
@@ -171,3 +171,20 @@ hypothetical-admission case exists because no live hypothetical-effect id path f
 2. Crate-level: `cargo test -p worldwake-ai` — includes the golden integration target's
    non-ignored tests and proves no AI trace/test-helper fallout.
 3. `./scripts/verify.sh` before PR.
+
+## Outcome
+
+Completed on 2026-05-20.
+
+- `S157SNAADMPRO-001` added the per-entity `AdmissionSource` substrate to
+  `PlanningSnapshot`.
+- `S157SNAADMPRO-002` routed strategic workstation, seller, resource-source, and acquisition
+  scans through the source-restricted physical-field accessor.
+- `S157SNAADMPRO-003` surfaced opportunity-scoped snapshot-admission traces in
+  `AgentDecisionTrace` and `DecisionTraceSink`.
+- The landed enum intentionally excludes a hypothetical-planner-effect variant because no live
+  hypothetical-effect id path feeds `build_planning_snapshot`.
+
+Verification included focused admission-source and decision-trace tests plus
+`cargo test -p worldwake-ai` during the ticket-family implementation. The final pre-push gate is
+owned by the harness after spec archival.
