@@ -1,12 +1,12 @@
 # S149: Partial Plan Segments and Typed Plan Terminals
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
 Folds in PR-10 (Partial plans as first-class objects) and PR-5 (Information barriers as first-class plan outcomes) from `reports/ai-architecture-improvements.md`.
 
-Before S149PARPLASEG-001, the planner had three `PlanTerminalKind` variants: `GoalSatisfied`, `ProgressBarrier`, `CombatCommitment`, and every non-success terminal path used `ProgressBarrier`. S149PARPLASEG-001 replaced that generic terminal with typed terminals: `GoalSatisfied`, `CombatCommitment`, `InformationBarrier`, `CoordinationBarrier`, `ResourceBarrier`, `JurisdictionBarrier`, `SearchBudgetExhausted` (seven variants), and re-keyed diagnostics by `PlanTerminalKindDiscriminant`. Remaining S149 work builds partial-plan storage and resumption on top of those typed terminals. S139 added `GoalKind::AskWitness` as a sensing *goal*, but the planner cannot yet express "I made partial progress and stopped at an information barrier — when I learn fact F, I can resume."
+Before S149PARPLASEG-001, the planner had three `PlanTerminalKind` variants: `GoalSatisfied`, `ProgressBarrier`, `CombatCommitment`, and every non-success terminal path used `ProgressBarrier`. S149PARPLASEG-001 replaced that generic terminal with typed terminals: `GoalSatisfied`, `CombatCommitment`, `InformationBarrier`, `CoordinationBarrier`, `ResourceBarrier`, `JurisdictionBarrier`, `SearchBudgetExhausted` (seven variants), and re-keyed diagnostics by `PlanTerminalKindDiscriminant`. Later S149 tickets built partial-plan storage and resumption on top of those typed terminals. S139 added `GoalKind::AskWitness` as a sensing *goal*; S149 then gave the planner a way to express "I made partial progress and stopped at an information barrier — when I learn fact F, I can resume."
 
 S149 ships both as the same architectural layer: typed terminal barriers and first-class `PartialPlanSegment` storage. When a plan attempts goal G and reaches a typed barrier B, the planner stores a `PartialPlanSegment` carrying the prefix steps that did succeed, the barrier type, the resume conditions that would clear the barrier, and the abandon conditions that would invalidate the partial plan. S149PARPLASEG-005 lands the agenda-manager lifecycle slice for stored segments: evaluating resume/abandon conditions, incrementing bounded retry state, and returning a typed resumed segment. S149PARPLASEG-010 lands executable re-entry by re-admitting the segment's stored `GoalOffer` to the existing belief-backed tactical search once resume conditions hold; it does not replay `remaining_skeleton` directly because the skeleton carrier is not sufficient to reconstruct lawful `PlannedStep`s.
 
@@ -16,7 +16,7 @@ The typed barriers map onto the *existing* failure-attribution surfaces so the f
 
 ## Phase and Status
 
-Phase 12: AI Architecture Evolution — Draft
+Phase 12: AI Architecture Evolution — Completed
 
 ## Crates
 
@@ -326,3 +326,20 @@ The typed terminals are produced in `search` and feed replan; no `validate_*`/pr
 - Save/load coverage for `PartialPlanSegment` and companion agenda origins against current format version 93, with explicit rejection of the pre-companion version 92 at the save-header boundary.
 - `cargo test -p worldwake-ai` clean after the `ProgressBarrier` migration (D3).
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
+
+## Outcome
+
+Completed on 2026-05-20.
+
+S149 landed typed plan terminals and first-class partial-plan segment storage/resumption across the AI planner, agenda runtime, observer/golden diagnostics, and save-shape surfaces. The final ticket family archived `S149PARPLASEG-001` through `S149PARPLASEG-010`; `S149PARPLASEG-009` completed the generated golden contract coverage through `crates/worldwake-ai/tests/scenarios/partial_plan_terminals.rs`.
+
+Deviations from the original draft:
+- `SafetyBarrier` remains deferred with the danger-projection substrate.
+- D11 landed focused generated golden contract scenarios for the shared typed-terminal/partial-plan carrier, persistence, resume/abandon, and coordination-blocker contracts rather than brittle autonomous authored-world scenarios for every barrier producer.
+- Executable re-entry lawfully re-admits the stored `GoalOffer` to the existing belief-backed tactical search; it does not replay `remaining_skeleton` directly because that carrier lacks resolved action definitions, targets, payloads, and planner context.
+
+Verification highlights:
+- Passed: `cargo test -p worldwake-ai --test golden_ai scenarios::partial_plan_terminals`.
+- Passed: `python3 scripts/golden_inventory.py --write --check-docs`.
+- Passed: `cargo test -p worldwake-ai`.
+- Full pre-push verification remains the implementation harness final gate.

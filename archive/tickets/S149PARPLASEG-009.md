@@ -51,7 +51,7 @@ Regenerated golden inventory docs with `python3 scripts/golden_inventory.py --wr
 - `crates/worldwake-ai/tests/scenarios/partial_plan_terminals.rs` (new)
 - `crates/worldwake-ai/tests/scenarios/mod.rs` (modified) — routed the new scenario module
 - `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-scenario-index.md`, `docs/generated/golden-coverage-matrix.md`, `docs/generated/golden-scenario-details/` (modified, regenerated)
-- `specs/S149-partial-plan-segments-and-typed-terminals.md` (modified) — truthed D11 to the landed contract seam
+- `archive/specs/S149-partial-plan-segments-and-typed-terminals.md` (modified) — truthed D11 to the landed contract seam
 
 ## Out of Scope
 

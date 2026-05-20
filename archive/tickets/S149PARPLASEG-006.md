@@ -47,7 +47,7 @@ The companion's cancellation is wired to primary abandonment and primary kill ha
 - `crates/worldwake-ai/src/agenda_types.rs` (modify) — companion agenda origin
 - `crates/worldwake-ai/src/lib.rs` (modify) — export the companion synthesis helper
 - `crates/worldwake-sim/src/save_load.rs` (modify) — current save-format version bump/rejection proof
-- `specs/S149-partial-plan-segments-and-typed-terminals.md` (modify) — save-version and companion-origin truth-sync
+- `archive/specs/S149-partial-plan-segments-and-typed-terminals.md` (modify) — save-version and companion-origin truth-sync
 
 ## Out of Scope
 

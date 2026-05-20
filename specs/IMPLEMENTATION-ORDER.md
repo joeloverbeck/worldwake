@@ -692,7 +692,7 @@ S143 (archived)       S144 (archived)       S145 (archived)       S150 (archived
    │                  ├── S147 (archived; hard dep on archived S146)
    │                  └── S148 (archived; soft dep on archived S146; hard deps on archived S112/S115/S141)
    │                          │
-   │                          └── S149 (soft dep on archived S148 for shared resume/abandon types)
+   │                          └── S149 (archived; soft dep on archived S148 for shared resume/abandon types)
    │
    └─── S151 (archived; soft dep on archived S150 for RouteSegment)
             │
@@ -724,7 +724,7 @@ S153 (hard deps on archived S143, archived S148, archived S150, archived S151)
   - migrates S112's `Survival`/`Commitment`/`Economic` slot names into `NeedSurvival`/`ObligationDuty`/`EconomicOpportunity` without alias
 
 **Wave 4** (parallel, after Wave 3):
-- **S149**: Partial Plan Segments and Typed Plan Terminals — typed `PlanTerminalKind` (InformationBarrier/CoordinationBarrier/ResourceBarrier/JurisdictionBarrier/SearchBudgetExhausted); first-class `PartialPlanSegment` storage on `AgendaEntry`; agenda-manager resume-from-prefix path; barrier → `Discrepancy` mapping; companion `AskWitness` synthesis on `InformationBarrier`.
+- **S149**: ✅ COMPLETED — archived at [archive/specs/S149-partial-plan-segments-and-typed-terminals.md](/home/joeloverbeck/projects/worldwake/archive/specs/S149-partial-plan-segments-and-typed-terminals.md). Landed typed `PlanTerminalKind` (InformationBarrier/CoordinationBarrier/ResourceBarrier/JurisdictionBarrier/SearchBudgetExhausted), first-class `PartialPlanSegment` storage on `AgendaEntry`, agenda-manager resume/abandon lifecycle, executable re-entry through stored `GoalOffer`, barrier → `Discrepancy` / `BlockingFact` mapping, companion `AskWitness` synthesis on `InformationBarrier`, observer rendering, and generated golden contract coverage.
   - soft depends on archived S148 (shared `ResumeCondition`/`AbandonCondition` types)
 - **S152**: Cognitive Archetypes for Seeded Diversity — `CognitiveArchetype` enum (10 variants); `ArchetypeProfileTemplate` modifying existing universal profiles; `ArchetypeAssignmentPolicy` (`DefaultUniformFive`/`Uniform`/`Weighted`/`PerRole`/`Explicit`); `PersonalityAssigned` event at spawn with seeded RNG and resolved profile snapshot.
   - soft depends on archived S146/S148/S151 (modifies profile types each introduces)
@@ -747,7 +747,7 @@ S153 (hard deps on archived S143, archived S148, archived S150, archived S151)
 - [x] S146 goal-schema registry covers every `GoalDispatchKey` variant (workspace-level coverage test); per-goal search-trace regression proves PRODUCTION-tier `ProduceCommodity` depth/expansions vs SELF_CARE-tier self-care depth/expansions under elevated cognitive ceilings
 - [x] S147 HTN method goldens prove method selection + flat-GOAP fallback + method failure: `archive/tickets/S147HTNMETDEC-011.md` landed the selector/fallback seam; `archive/tickets/S147HTNMETDEC-013.md` landed autonomous production method-trace propagation; `archive/tickets/S147HTNMETDEC-014.md` landed report-backed bounty-investigation coverage; `archive/tickets/S147HTNMETDEC-015.md` landed direct-bounty and escort selector coverage plus typed method-failure producer substrate; `archive/tickets/S147HTNMETDEC-016.md` landed hybrid method-failure golden coverage.
 - [x] S148 archived: five-slot portfolio contract coverage proves total motive-to-slot mapping, default slot weights and per-mode caps, enriched intention fields, typed abandon discrepancies, and the full-pipeline portfolio golden still asserts five-slot trace names
-- [ ] S149 typed-terminal goldens prove each of the 7 terminal kinds with concrete observability + resume conditions
+- [x] S149 archived: typed-terminal contract goldens prove all non-safety barrier terminals (`InformationBarrier`, `CoordinationBarrier`, `ResourceBarrier`, `JurisdictionBarrier`, `SearchBudgetExhausted`) with concrete resume/abandon conditions, agenda persistence, and coordination blocker attribution; `SafetyBarrier` remains deferred with danger projection.
 - [x] S150 archived: cross-goal blocker goldens prove `RouteSegment` and `Counterparty` blockers suppress multi-goal candidates and clear on observation
 - [x] S151 archived: testimony-reliability goldens prove confirmation/refutation trust summaries and suppressed-goal payload context; route-preference goldens prove dangerous-traversal penalty, decay, and composition with route-segment blockers
 - [ ] S152 archetype golden proves deterministic seeded assignment + 10-template behavioral diversification + `PersonalityAssigned` event replay

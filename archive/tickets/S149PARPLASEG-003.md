@@ -43,7 +43,7 @@ Added current-format agenda-state and `AgentDecisionRuntime` bincode roundtrip c
 - `crates/worldwake-ai/src/decision_runtime.rs` (modify) — `AgentDecisionRuntime` runtime-payload roundtrip carries a suspended partial segment
 - `crates/worldwake-sim/src/save_load.rs` (modify) — `SAVE_FORMAT_VERSION` 91→92 and version-91 rejection proof
 - `crates/worldwake-ai/src/*`, `crates/worldwake-ai/tests/scenarios/portfolio_planning.rs`, `crates/worldwake-cli/src/bin/observer.rs` (modify) — direct `AgendaEntry` literals initialized the new field to `None`
-- `specs/S149-partial-plan-segments-and-typed-terminals.md` (modify) — parent spec truthed to the version-92 save boundary
+- `archive/specs/S149-partial-plan-segments-and-typed-terminals.md` (modify) — parent spec truthed to the version-92 save boundary
 
 ## Out of Scope
 
