@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implement-S153-golden-gaps-scaling",
   "base_head": "ea61988df8776b349c78e21eaf67e4309094a2a4",
-  "last_ticket": "archive/tickets/S153GOLDGAPSCALE-004.md",
-  "last_result": "completed_archived_followup_created",
-  "last_work_commit": "519d08032f206edc90658eaf53eae93ce1e53a53",
+  "last_ticket": "archive/tickets/S153GOLDGAPSCALE-005.md",
+  "last_result": "completed_archived",
+  "last_work_commit": "8c80620bedd904ec1691b397af8d80cfb6444461",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S153GOLDGAPSCALE-005.md",
+  "next_target": "tickets/S153GOLDGAPSCALE-003.md",
   "queue": [
-    "tickets/S153GOLDGAPSCALE-005.md",
     "tickets/S153GOLDGAPSCALE-003.md"
   ],
   "implement_ticket_audit": "pending",
