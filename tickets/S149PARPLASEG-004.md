@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — barrier-to-Discrepancy/BlockingFact routing and resume-condition derivation
-**Deps**: archive/tickets/S149PARPLASEG-001.md, S149PARPLASEG-002
+**Deps**: archive/tickets/S149PARPLASEG-001.md, archive/tickets/S149PARPLASEG-002.md
 
 ## Problem
 

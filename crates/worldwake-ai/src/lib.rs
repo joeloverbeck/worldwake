@@ -31,6 +31,7 @@ pub mod knowledge_path;
 pub mod motive_source_mapping;
 pub mod opportunity_compiler;
 pub mod opportunity_expectation_failure;
+pub mod partial_plan;
 pub mod perf_telemetry;
 pub mod plan_guard;
 pub mod plan_guard_build;
@@ -115,6 +116,9 @@ pub use goal_switching::GoalSwitchKind;
 pub use interrupts::{InterruptDecision, InterruptTrigger, evaluate_interrupt};
 pub use opportunity_expectation_failure::{
     ExpectationFailureCause, ExpectationFailurePhase, OpportunityExpectationFailureIncident,
+};
+pub use partial_plan::{
+    BarrierFact, PartialPlanSegment, PartialPlanSegmentId, PlannedSkeletonStep,
 };
 pub use plan_guard::{ExpectationKind, Invalidator, PlanExpectation, PlanGuard, RequiredFact};
 pub use plan_guard_build::{

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `AgendaEntry` runtime structure; agenda-state persistence
-**Deps**: S149PARPLASEG-002
+**Deps**: archive/tickets/S149PARPLASEG-002.md
 
 ## Problem
 
