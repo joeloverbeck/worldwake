@@ -2511,7 +2511,7 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
             runtime.operating_mode,
         );
         portfolio_trace = Some(plans.portfolio_trace());
-        snapshot_admissions = plans.snapshot_admissions.clone();
+        snapshot_admissions.clone_from(&plans.snapshot_admissions);
         snapshot_cache_counters = plans.snapshot_cache_counters;
         planning_state_cache_counters = plans.planning_state_cache_counters;
 
