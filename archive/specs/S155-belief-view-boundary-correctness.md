@@ -27,7 +27,7 @@ AI Architecture Consolidation (Adjunct Wave — derived from `reports/ai-archite
 
 ## Status
 
-DRAFT
+**Status**: COMPLETED
 
 Implementation status: D1 landed in `archive/tickets/S155BELVIEBOU-001.md` on 2026-05-20; D2
 landed in `archive/tickets/S155BELVIEBOU-002.md` on 2026-05-20; D3-D4 landed in
@@ -284,3 +284,32 @@ the full AI suite.)
 2. Golden: `cargo test -p worldwake-ai --test golden_ai <belief_boundary scenario filter>`.
 3. Full AI suite: `cargo test -p worldwake-ai` (Authoritative-to-AI Impact Rule step 7).
 4. `./scripts/verify.sh` before PR.
+
+## Outcome
+
+Completed on 2026-05-20.
+
+S155 landed as three archived tickets:
+
+- `archive/tickets/S155BELVIEBOU-001.md` removed the live authoritative location fallback from
+  non-self `SpatialBeliefView::effective_place`, preserving authoritative reads only for
+  same-tick co-location or direct possession and otherwise using belief/last-seen state.
+- `archive/tickets/S155BELVIEBOU-002.md` belief-gated
+  `ControlBeliefView::can_control` in place while leaving authoritative dispatch through
+  `World::can_exercise_control` unchanged.
+- `archive/tickets/S155BELVIEBOU-003.md` added stale-location, unknown-ownership, and
+  control-source-swap golden coverage, regenerated golden inventory docs, and updated
+  `docs/planner-contracts.md` with the belief-view boundary contract.
+
+Deviations from the original plan: no new `believed_can_control` accessor was introduced; the
+leaking `can_control` belief-view method was corrected in place per FND-28. The final D3 proof
+uses the existing `belief_wall_trap` golden module and generated inventory surfaces rather than
+a new standalone golden file.
+
+Verification:
+
+- `cargo test -p worldwake-sim per_agent_belief_view`
+- `cargo test -p worldwake-ai --test golden_ai belief_wall_trap -- --nocapture`
+- `python3 scripts/golden_inventory.py --write --check-docs`
+- `cargo test -p worldwake-ai`
+- `./scripts/verify.sh` remains the final pre-push harness gate.

@@ -7,11 +7,11 @@ was treated as a set of hypotheses, not facts.
 
 ## Accepted (specs written)
 
-- **S155 — Belief-View Boundary Correctness** (`specs/S155-belief-view-boundary-correctness.md`).
+- **S155 — Belief-View Boundary Correctness** (`archive/specs/S155-belief-view-boundary-correctness.md`).
   Findings #1 (CONFIRMED, Critical), #7 and #12 (CONFIRMED). `effective_place()` falls back to
   authoritative `world.effective_place()` for non-self entities known only via institutional
   belief or last-seen memory (FND-14A leak); `can_control()` lacks the belief gate its sibling
-  `believed_rights()` has, yet is called from planning/affordance paths. Active, priority 1.
+  `believed_rights()` has, yet is called from planning/affordance paths. Completed on 2026-05-20.
 - **S156 — HTN Authority Honesty** (`specs/S156-htn-authority-honesty.md`). Findings #3, #4, #5,
   #9, #10 (all CONFIRMED). `GoalSchema.methods` fossil (FND-28); no-op `AgentRole` precondition;
   two dead methods (`investigate_on_scene`, `escort_to_office`) via always-false

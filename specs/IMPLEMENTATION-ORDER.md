@@ -20,18 +20,21 @@ Accepted work is the genuine, FOUNDATIONS-aligned subset: the confirmed FND-14A 
 leak, and the FND-28/FND-20/FND-29 HTN honesty cleanup.
 
 ```
-S155 (belief-view boundary correctness)   ── priority 1, independent
+S155 (belief-view boundary correctness)   ── COMPLETED
 S156 (HTN authority honesty)              ── priority 2, independent of S155 (parallelizable)
 S157 (snapshot admission provenance)      ── DEFERRED, depends on S155, NOT scheduled
 ```
 
+### Completed
+
+- **S155 — Belief-View Boundary Correctness** —
+  `archive/specs/S155-belief-view-boundary-correctness.md` — *Status: COMPLETED.* Fixed the
+  confirmed FND-14A remote-truth leak in `PerAgentBeliefView::effective_place()` and the
+  un-gated belief-facing `can_control()` path, then landed belief-boundary golden coverage and
+  the planner-contract documentation.
+
 ### Active
 
-- **S155 — Belief-View Boundary Correctness** — `specs/S155-belief-view-boundary-correctness.md`
-  — *Status: DRAFT.* Fixes the confirmed FND-14A remote-truth leak in
-  `PerAgentBeliefView::effective_place()` and the un-gated `can_control()` (split into a
-  belief-facing accessor vs. authoritative dispatch check). The actual critical bug; do first.
-  No dependency on S156.
 - **S156 — HTN Authority Honesty** — `specs/S156-htn-authority-honesty.md` — *Status: DRAFT.*
   Strips the `GoalSchema.methods` fossil (FND-28), the no-op `AgentRole` gate, the two dead
   methods + unused `EntityCriterion` variants, and the three unenforced `MethodSchema` fields;

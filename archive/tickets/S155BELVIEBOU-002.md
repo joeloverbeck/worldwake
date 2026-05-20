@@ -15,7 +15,7 @@ Before this ticket, `ControlBeliefView::can_control` (`crates/worldwake-sim/src/
 <!-- Spec S155 reassessed this session (/reassess-spec); abbreviated spot-check confirmed targets. -->
 
 1. **Pre-implementation code**: `can_control` was the `ControlBeliefView` impl in `per_agent_belief_view.rs` (trait declared in `belief_view.rs`; also surfaced via the `GoalControlBeliefView` blanket forward). It had the FND-14A unowned-item co-location shortcut, then `world.can_exercise_control(actor, entity).is_ok()` with no belief gate. `believed_rights` was the gate pattern to mirror. Confirmed by the failing TDD regression added in this ticket.
-2. **Current specs/docs**: `specs/S155-belief-view-boundary-correctness.md` D2 (post-reassessment, in-place) + its Authoritative-to-AI Impact Analysis section. `docs/FOUNDATIONS.md` FND-14A (social/relational facts always need a belief entry even when co-located), FND-24 (ownership/rights/permission distinct), FND-28 (no parallel authority).
+2. **Current specs/docs**: `archive/specs/S155-belief-view-boundary-correctness.md` D2 (post-reassessment, in-place) + its Authoritative-to-AI Impact Analysis section. `docs/FOUNDATIONS.md` FND-14A (social/relational facts always need a belief entry even when co-located), FND-24 (ownership/rights/permission distinct), FND-28 (no parallel authority).
 3. **Shared boundary under audit (mixed-layer)**: belief-facing `ControlBeliefView::can_control` ("do I *believe* I may control this?") vs. authoritative `World::can_exercise_control` ("will the world allow it at commit?"). The fix tightens the belief-facing answer only; the authoritative method is unchanged.
 4. **Intended invariant (restated)**: `can_control` returns `true` for a non-self entity only when it is FND-14A co-located-unowned, or belief-accessible (in `believed_entity`, possessed, or owned) AND authoritatively controllable. No belief path → `false`.
 5. **Live planner surface**: `can_control` gates candidate emission and affordance/plan reachability, not a single `GoalKind`. The ~18 callers (item 13) consume it across affordance query, candidate generation, snapshot/state entity filtering, replan, and goal explanation.
@@ -54,7 +54,7 @@ The full `worldwake-ai` suite passed without re-baseline changes. No world-outco
 ## Landed Files
 
 - `crates/worldwake-sim/src/per_agent_belief_view.rs` (modified — `can_control` impl body; new `#[cfg(test)]` unit tests)
-- `specs/S155-belief-view-boundary-correctness.md` (modified — D2 implementation status and gate wording truth-sync)
+- `archive/specs/S155-belief-view-boundary-correctness.md` (modified — D2 implementation status and gate wording truth-sync)
 
 ## Out of Scope
 
