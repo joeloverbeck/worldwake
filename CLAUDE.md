@@ -111,7 +111,7 @@ All new spec drafts MUST:
 
 ## Implementation Plan
 
-Specs live in `specs/`. Dependency graph and phase gates are in `specs/IMPLEMENTATION-ORDER.md`. Completed specs and tickets are archived under `archive/specs/` and `archive/tickets/`.
+Specs live in `specs/`. The former dependency graph and phase-gate document is retired at `archive/specs/IMPLEMENTATION-ORDER-2026-05-20.md`; gameplay-related specs remain in place while core AI architecture is prioritized first. Completed specs and tickets are archived under `archive/specs/` and `archive/tickets/`.
 
 ## External Dependencies
 
