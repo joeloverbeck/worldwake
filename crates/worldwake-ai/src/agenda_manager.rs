@@ -50,10 +50,37 @@ pub struct ResumedPlan {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CoordinationBarrierWatch {
+    pub contested_resource: EntityId,
+    pub entries: Vec<AgendaEntryKey>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum RejectionLifecycle {
     Satisfied,
     InfeasibleUntil { trigger: RevivalTrigger },
     Dead,
+}
+
+pub fn coordination_barrier_watch_list(state: &AgendaState) -> Vec<CoordinationBarrierWatch> {
+    let mut watched: BTreeMap<EntityId, Vec<AgendaEntryKey>> = BTreeMap::new();
+    for (key, entry) in &state.suspended {
+        let Some(segment) = entry.partial_plan_segment.as_ref() else {
+            continue;
+        };
+        let PlanTerminalKind::CoordinationBarrier { contested_resource } = segment.terminal_barrier
+        else {
+            continue;
+        };
+        watched.entry(contested_resource).or_default().push(*key);
+    }
+    watched
+        .into_iter()
+        .map(|(contested_resource, entries)| CoordinationBarrierWatch {
+            contested_resource,
+            entries,
+        })
+        .collect()
 }
 
 pub fn try_resume_partial_plan(
@@ -359,12 +386,38 @@ fn partial_plan_resume_condition_holds(
             tick.0.saturating_sub(segment.created_tick.0) >= u64::from(*elapsed)
         }
         IntentionResumeCondition::ArtifactLegalEffectActive(artifact) => {
-            known_artifact_state(view, agent, *artifact).is_some_and(|artifact_state| {
-                ArtifactLegalEffectTag::from(&artifact_state.legal_effect)
-                    == ArtifactLegalEffectTag::Active
-            })
+            coordination_barrier_resource_available(segment, view, agent, *artifact)
+                || known_artifact_state(view, agent, *artifact).is_some_and(|artifact_state| {
+                    ArtifactLegalEffectTag::from(&artifact_state.legal_effect)
+                        == ArtifactLegalEffectTag::Active
+                })
         }
     }
+}
+
+fn coordination_barrier_resource_available(
+    segment: &PartialPlanSegment,
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    artifact: EntityId,
+) -> bool {
+    let PlanTerminalKind::CoordinationBarrier { contested_resource } = segment.terminal_barrier
+    else {
+        return false;
+    };
+    if contested_resource != artifact {
+        return false;
+    }
+
+    if view.has_contention_policy(contested_resource) {
+        return view
+            .facility_grant(contested_resource)
+            .is_none_or(|grant| grant.actor == agent);
+    }
+
+    view.has_extraction_queues(contested_resource)
+        && (view.actor_holds_extraction_slot_grant(contested_resource, agent)
+            || view.actor_can_claim_extraction_slot(contested_resource, agent))
 }
 
 fn opportunity_anchor_gone(anchor: OpportunityAnchor, view: &dyn RuntimeBeliefView) -> bool {
@@ -1053,6 +1106,10 @@ mod tests {
         slot: 3,
         generation: 0,
     };
+    const CONTESTED_RESOURCE: EntityId = EntityId {
+        slot: 4,
+        generation: 0,
+    };
 
     #[derive(Clone, Default)]
     struct MockGoalBeliefView {
@@ -1287,6 +1344,11 @@ mod tests {
     struct ResumeBeliefView {
         entity_places: BTreeMap<EntityId, EntityId>,
         dead: BTreeSet<EntityId>,
+        contention_policies: BTreeSet<EntityId>,
+        facility_grants: BTreeMap<EntityId, worldwake_core::ContentionGrant>,
+        extraction_sources: BTreeSet<EntityId>,
+        extraction_grants: BTreeSet<(EntityId, EntityId)>,
+        extraction_claimable: BTreeSet<(EntityId, EntityId)>,
     }
 
     impl worldwake_sim::BelievedAuthorityView for ResumeBeliefView {}
@@ -1377,6 +1439,26 @@ mod tests {
     }
 
     impl TemporalBeliefView for ResumeBeliefView {
+        fn has_contention_policy(&self, entity: EntityId) -> bool {
+            self.contention_policies.contains(&entity)
+        }
+
+        fn facility_grant(&self, facility: EntityId) -> Option<&worldwake_core::ContentionGrant> {
+            self.facility_grants.get(&facility)
+        }
+
+        fn actor_holds_extraction_slot_grant(&self, source: EntityId, actor: EntityId) -> bool {
+            self.extraction_grants.contains(&(source, actor))
+        }
+
+        fn actor_can_claim_extraction_slot(&self, source: EntityId, actor: EntityId) -> bool {
+            self.extraction_claimable.contains(&(source, actor))
+        }
+
+        fn has_extraction_queues(&self, source: EntityId) -> bool {
+            self.extraction_sources.contains(&source)
+        }
+
         fn reservation_conflicts(
             &self,
             _entity: EntityId,
@@ -1656,6 +1738,23 @@ mod tests {
         }
     }
 
+    fn coordination_barrier_segment(resource: EntityId) -> PartialPlanSegment {
+        PartialPlanSegment {
+            terminal_barrier: PlanTerminalKind::CoordinationBarrier {
+                contested_resource: resource,
+            },
+            barrier_fact: BarrierFact::ContestedReservation(resource),
+            resume_conditions: vec![IntentionResumeCondition::ArtifactLegalEffectActive(
+                resource,
+            )],
+            ..partial_plan_segment(
+                Vec::new(),
+                vec![IntentionAbandonCondition::PatienceExhausted],
+                0,
+            )
+        }
+    }
+
     fn suspended_partial_entry(segment: PartialPlanSegment) -> AgendaEntry {
         let mut entry = agenda_entry(
             GoalKind::Sleep,
@@ -1721,6 +1820,15 @@ mod tests {
 
     fn default_switch_margin() -> worldwake_core::Permille {
         worldwake_core::Permille::new(100).unwrap()
+    }
+
+    fn contention_grant(actor: EntityId) -> worldwake_core::ContentionGrant {
+        worldwake_core::ContentionGrant {
+            actor,
+            intended_action: worldwake_core::ActionDefId(99),
+            granted_at: Tick(12),
+            expires_at: Tick(16),
+        }
     }
 
     fn classify(
@@ -1796,6 +1904,104 @@ mod tests {
 
         assert_eq!(resumed, None);
         assert!(state.suspended.contains_key(&key));
+    }
+
+    #[test]
+    fn coordination_barrier_watch_list_indexes_suspended_segments_by_resource() {
+        let segment = coordination_barrier_segment(CONTESTED_RESOURCE);
+        let key = OpportunityKey {
+            goal_key: segment.goal.key,
+            anchor: segment.goal.anchor,
+        };
+        let mut state = AgendaState::default();
+        state
+            .suspended
+            .insert(key, suspended_partial_entry(segment));
+
+        assert_eq!(
+            super::coordination_barrier_watch_list(&state),
+            vec![super::CoordinationBarrierWatch {
+                contested_resource: CONTESTED_RESOURCE,
+                entries: vec![key],
+            }]
+        );
+    }
+
+    #[test]
+    fn coordination_barrier_resume_waits_while_facility_grant_belongs_to_other_actor() {
+        let other_actor = EntityId {
+            slot: 55,
+            generation: 0,
+        };
+        let segment = coordination_barrier_segment(CONTESTED_RESOURCE);
+        let key = OpportunityKey {
+            goal_key: segment.goal.key,
+            anchor: segment.goal.anchor,
+        };
+        let mut state = AgendaState::default();
+        state
+            .suspended
+            .insert(key, suspended_partial_entry(segment));
+        let view = ResumeBeliefView {
+            contention_policies: BTreeSet::from([CONTESTED_RESOURCE]),
+            facility_grants: BTreeMap::from([(CONTESTED_RESOURCE, contention_grant(other_actor))]),
+            ..ResumeBeliefView::default()
+        };
+
+        let resumed = super::try_resume_partial_plan(&mut state, AGENT, &view, Tick(14), 3);
+
+        assert_eq!(resumed, None);
+        assert!(state.suspended.contains_key(&key));
+    }
+
+    #[test]
+    fn coordination_barrier_resume_fires_when_facility_grant_is_available_again() {
+        let segment = coordination_barrier_segment(CONTESTED_RESOURCE);
+        let key = OpportunityKey {
+            goal_key: segment.goal.key,
+            anchor: segment.goal.anchor,
+        };
+        let mut state = AgendaState::default();
+        state
+            .suspended
+            .insert(key, suspended_partial_entry(segment));
+        let view = ResumeBeliefView {
+            contention_policies: BTreeSet::from([CONTESTED_RESOURCE]),
+            ..ResumeBeliefView::default()
+        };
+
+        let resumed = super::try_resume_partial_plan(&mut state, AGENT, &view, Tick(14), 3)
+            .expect("cleared facility grant should satisfy coordination resume");
+
+        assert_eq!(resumed.key, key);
+        assert_eq!(resumed.entry.phase, AgendaPhase::Pending);
+        assert_eq!(resumed.segment.resume_attempt_count, 1);
+        assert_eq!(resumed.segment.last_resume_attempt_tick, Some(Tick(14)));
+        assert!(state.suspended.is_empty());
+    }
+
+    #[test]
+    fn coordination_barrier_resume_fires_when_facility_grant_promotes_to_actor() {
+        let segment = coordination_barrier_segment(CONTESTED_RESOURCE);
+        let key = OpportunityKey {
+            goal_key: segment.goal.key,
+            anchor: segment.goal.anchor,
+        };
+        let mut state = AgendaState::default();
+        state
+            .suspended
+            .insert(key, suspended_partial_entry(segment));
+        let view = ResumeBeliefView {
+            contention_policies: BTreeSet::from([CONTESTED_RESOURCE]),
+            facility_grants: BTreeMap::from([(CONTESTED_RESOURCE, contention_grant(AGENT))]),
+            ..ResumeBeliefView::default()
+        };
+
+        let resumed = super::try_resume_partial_plan(&mut state, AGENT, &view, Tick(14), 3)
+            .expect("promoted facility grant should satisfy coordination resume");
+
+        assert_eq!(resumed.key, key);
+        assert!(state.suspended.is_empty());
     }
 
     #[test]
