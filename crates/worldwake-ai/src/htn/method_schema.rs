@@ -10,9 +10,6 @@ pub struct MethodSchema {
     pub goal_kind: GoalKindDiscriminant,
     pub preconditions: Vec<MethodPrecondition>,
     pub subgoals: Vec<SubgoalTemplate>,
-    pub expected_artifacts: Vec<ArtifactTemplate>,
-    pub required_claims: Vec<ClaimRequirement>,
-    pub failure_modes: Vec<MethodFailureMode>,
     pub explanation_template: ExplanationTemplateId,
     pub motive_bias: Vec<MotiveBias>,
     pub planning_budget_hint: Option<GoalPlanningBudget>,
@@ -276,7 +273,6 @@ mod tests {
 
     #[test]
     fn method_schema_constructs_and_clones() {
-        let target = entity(10);
         let schema = MethodSchema {
             id: MethodSchemaId(7),
             goal_kind: GoalKindDiscriminant::ProduceCommodity,
@@ -297,14 +293,6 @@ mod tests {
                     }),
                 ),
             ],
-            expected_artifacts: vec![ArtifactTemplate::BountyProof {
-                bounty: EntityTemplate::Fixed(entity(11)),
-                target: EntityTemplate::Fixed(target),
-            }],
-            required_claims: vec![ClaimRequirement::FacilityQueueSlot {
-                facility: EntityTemplate::Fixed(entity(12)),
-            }],
-            failure_modes: vec![MethodFailureMode::Timeout(50)],
             explanation_template: ExplanationTemplateId(3),
             motive_bias: vec![MotiveBias {
                 motive_variant: MotiveSourceDiscriminant::Greed,

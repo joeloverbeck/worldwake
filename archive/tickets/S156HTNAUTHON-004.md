@@ -1,6 +1,6 @@
 # S156HTNAUTHON-004: Remove unenforced `MethodSchema` fields
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` HTN method schema
@@ -56,44 +56,43 @@ re-introduction to a future method-required goal that actually enforces them.
 2. No shim: the macro signature shrinks and all call sites drop the three positional arguments. No
    default-empty field is retained "just in case."
 
-## Verification Layers
+## Verified Layers
 
 1. No method-schema field survives without a live consumer -> `cargo clippy --workspace
-   --all-targets -- -D warnings` (the removed fields must leave no unused-field/import warnings) +
-   workspace grep proving zero references to the three field names.
+   --all-targets -- -D warnings` passed and the source/test grep returned zero references to the
+   three removed field names.
 2. Method selection and stage building unaffected -> existing `htn_methods` goldens and selector
-   unit tests pass unchanged (the removed fields were never read at runtime).
+   unit tests passed unchanged.
 3. Single-layer ticket: this is a struct/macro shape change in the AI crate with no authoritative
    state, action lifecycle, or ordering effect — additional layer mapping is not applicable.
 
-## What to Change
+## Landed Changes
 
-### 1. Remove the three fields from `MethodSchema`
+### 1. Removed the three fields from `MethodSchema`
 
-Delete `expected_artifacts`, `required_claims`, and `failure_modes` from the `MethodSchema` struct
-in `method_schema.rs`.
+Deleted `expected_artifacts`, `required_claims`, and `failure_modes` from the `MethodSchema`
+struct in `method_schema.rs`.
 
-### 2. Shrink the `method_schema!` macro / `MethodParts` builder
+### 2. Shrunk the `method_schema!` macro / `MethodParts` builder
 
-Remove the three corresponding positional parameters from the `method_schema!` macro and the
-`MethodParts` construction in `htn/methods.rs`, then drop the three argument expressions
-(`vec![…artifacts]`, `vec![…claims]`, `vec![…failure_modes]`) from every remaining method
-definition (11 methods after `archive/tickets/S156HTNAUTHON-003.md`).
+Removed the three corresponding positional parameters from the `method_schema!` macro and the
+`MethodParts` construction in `htn/methods.rs`, then dropped the three argument expressions from
+every remaining method definition (11 methods after `archive/tickets/S156HTNAUTHON-003.md`).
 
-### 3. Update constructors and test helpers
+### 3. Updated constructors and test helpers
 
 - `method_schema_constructs_and_clones` (`method_schema.rs:293`): remove the three field
   assignments from the fixture.
 - Test helpers at `htn/selector.rs:513-515` and `search/strategic.rs:1992-1994`: remove the
   `Vec::new()` assignments for the three fields.
 
-### 4. Delete the failure-mode validation test
+### 4. Deleted the failure-mode validation test
 
-Delete `every_method_declares_at_least_one_failure_mode` from
+Deleted `every_method_declares_at_least_one_failure_mode` from
 `crates/worldwake-ai/tests/integration/htn_registry_validation.rs`; it asserts a property of a
 field that no longer exists.
 
-## Files to Touch
+## Landed Files
 
 - `crates/worldwake-ai/src/htn/method_schema.rs` (modify)
 - `crates/worldwake-ai/src/htn/methods.rs` (modify)
@@ -109,14 +108,14 @@ field that no longer exists.
 - Reintroducing the fields with enforcement (future method-required goal; documented in
   S156HTNAUTHON-006).
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests Passed
 
 1. Workspace grep returns zero references to `expected_artifacts`, `required_claims`, and
-   `failure_modes` (as `MethodSchema` fields).
-2. `method_schema_constructs_and_clones` compiles and passes without the three fields.
-3. Existing suite: `cargo test -p worldwake-ai`.
+   `failure_modes` in `crates/worldwake-ai/src` and `crates/worldwake-ai/tests`.
+2. `method_schema_constructs_and_clones` compiled and passed without the three fields.
+3. Existing suite `cargo test -p worldwake-ai` passed.
 
 ### Invariants
 
@@ -125,17 +124,43 @@ field that no longer exists.
 2. `MethodFailureMode` remains available for the trace layer; only the schema `failure_modes`
    field is removed.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Modified Tests
 
 1. `crates/worldwake-ai/src/htn/method_schema.rs` (test module) — update construct-and-clone
    fixture.
 2. `crates/worldwake-ai/tests/integration/htn_registry_validation.rs` — delete the failure-mode
    validation test.
 
-### Commands
+## Outcome
 
-1. `cargo test -p worldwake-ai`
-2. `cargo clippy --workspace --all-targets -- -D warnings`
-3. `./scripts/verify.sh` (before PR)
+Completed on 2026-05-20.
+
+- Removed the unenforced `expected_artifacts`, `required_claims`, and `failure_modes` fields from
+  `MethodSchema`.
+- Shrunk the HTN method construction path so surviving method declarations no longer carry dead
+  artifact, claim, or failure-mode declarations.
+- Updated struct-literal test helpers and removed the validation test that only asserted the
+  removed schema `failure_modes` field was non-empty.
+- Preserved the `MethodFailureMode` type and `MethodPlanAttemptTrace.failure_mode` for the trace
+  work owned by `tickets/S156HTNAUTHON-005.md`.
+
+## Deviations
+
+- No behavioral fallback, selector, or trace semantics changed in this ticket; those remain owned
+  by `tickets/S156HTNAUTHON-005.md`.
+- The pre-PR `./scripts/verify.sh` wrapper was not run for this per-ticket closeout; the relevant
+  ticket gates were covered by focused checks, `cargo test -p worldwake-ai`, and the CI-matching
+  all-target clippy command. The harness still owns `./scripts/verify.sh` before final branch push.
+
+## Verification Result
+
+- Passed `cargo fmt --all`
+- Passed source/test zero-match check for `expected_artifacts|required_claims|failure_modes` under
+  `crates/worldwake-ai/src` and `crates/worldwake-ai/tests`
+- Passed `cargo test -p worldwake-ai --lib htn::method_schema::tests::method_schema_constructs_and_clones -- --exact`
+- Passed `cargo test -p worldwake-ai --test integration_ai htn_registry_validation`
+- Passed `cargo test -p worldwake-ai --test golden_ai htn_methods`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

@@ -109,7 +109,7 @@ and, for D7 coverage, assert that the registry contains no method with id 9 or i
 ## Out of Scope
 
 - `MethodPrecondition::AgentRole` / `RoleTag` (S156HTNAUTHON-002).
-- `MethodSchema` field removal (S156HTNAUTHON-004).
+- `MethodSchema` field removal (`archive/tickets/S156HTNAUTHON-004.md`).
 - `fulfill_bounty_investigation` and `investigate_by_ledger` — explicitly preserved.
 - Trace/fallback restructuring (S156HTNAUTHON-005). The `goal.evidence_places` field on `GoalOffer`
   is not removed.
