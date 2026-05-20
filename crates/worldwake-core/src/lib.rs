@@ -163,8 +163,8 @@ pub use causal_link::{CausalLink, CausalProvider, PlanningFact, RecordTopic};
 pub use cause::CauseRef;
 pub use cognitive_archetype::{
     ArchetypeAssignmentPolicy, ArchetypeAssignmentSource, ArchetypeProfileTemplate,
-    CognitiveArchetype, DEFAULT_UNIFORM_FIVE_ARCHETYPES, PersonalityAssignedPayload,
-    default_uniform_five_archetypes, template_for,
+    CognitiveArchetype, CognitiveArchetypeComponent, DEFAULT_UNIFORM_FIVE_ARCHETYPES,
+    PersonalityAssignedPayload, default_uniform_five_archetypes, template_for,
 };
 pub use cognitive_profile::CognitiveProfile;
 pub use combat::{CombatProfile, CombatStance, DeadAt, DeathCause};

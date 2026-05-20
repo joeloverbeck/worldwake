@@ -1,4 +1,4 @@
-use crate::{BackoffScalePermille, EntityId, MethodSchemaId, StateHash};
+use crate::{BackoffScalePermille, Component, EntityId, MethodSchemaId, StateHash};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -15,6 +15,21 @@ pub enum CognitiveArchetype {
     Greedy,
     Fearful,
 }
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CognitiveArchetypeComponent {
+    pub archetype: CognitiveArchetype,
+}
+
+impl Default for CognitiveArchetypeComponent {
+    fn default() -> Self {
+        Self {
+            archetype: CognitiveArchetype::Methodical,
+        }
+    }
+}
+
+impl Component for CognitiveArchetypeComponent {}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ArchetypeProfileTemplate {
@@ -357,10 +372,43 @@ mod tests {
     #[test]
     fn cognitive_archetype_satisfies_required_traits() {
         assert_copy_bounds::<CognitiveArchetype>();
+        assert_value_bounds::<CognitiveArchetypeComponent>();
         assert_value_bounds::<ArchetypeProfileTemplate>();
         assert_value_bounds::<ArchetypeAssignmentPolicy>();
         assert_value_bounds::<ArchetypeAssignmentSource>();
         assert_value_bounds::<PersonalityAssignedPayload>();
+    }
+
+    #[test]
+    fn cognitive_archetype_component_defaults_to_methodical() {
+        assert_eq!(
+            CognitiveArchetypeComponent::default(),
+            CognitiveArchetypeComponent {
+                archetype: CognitiveArchetype::Methodical
+            }
+        );
+    }
+
+    #[test]
+    fn cognitive_archetype_component_inserts_and_reads_on_agent() {
+        let mut world = crate::World::new(crate::build_prototype_world()).unwrap();
+        let agent = world.create_entity(crate::EntityKind::Agent, crate::Tick(0));
+
+        world
+            .insert_component_cognitive_archetype_component(
+                agent,
+                CognitiveArchetypeComponent {
+                    archetype: CognitiveArchetype::Bold,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            world.get_component_cognitive_archetype_component(agent),
+            Some(&CognitiveArchetypeComponent {
+                archetype: CognitiveArchetype::Bold
+            })
+        );
     }
 
     #[test]

@@ -4,11 +4,11 @@ use crate::LatrineFullness;
 use crate::{
     AcquisitionExhaustionTracker, AgendaProfile, AgentBeliefStore, AgentData,
     AgentSchemaContextProfile, ArtifactHeader, ArtifactPostingProfile, BanditCamp,
-    BanditFactionPolicy, BlockerMemory, BountyTerms, CarryCapacity, CognitiveProfile,
-    CombatProfile, CombatStance, CommodityDecayMap, CommodityKind, CommodityValuationProfile,
-    CommunicationProfile, ComponentTables, ComponentValue, Container, ContentionDispositionProfile,
-    ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt, DemandMemory,
-    DeprivationExposure, DiscrepancyMemory, DisposalProfile, DiversificationProfile,
+    BanditFactionPolicy, BlockerMemory, BountyTerms, CarryCapacity, CognitiveArchetypeComponent,
+    CognitiveProfile, CombatProfile, CombatStance, CommodityDecayMap, CommodityKind,
+    CommodityValuationProfile, CommunicationProfile, ComponentTables, ComponentValue, Container,
+    ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt,
+    DemandMemory, DeprivationExposure, DiscrepancyMemory, DisposalProfile, DiversificationProfile,
     DriveEscalationProfile, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
     EpistemicDispositionProfile, EventId, ExecutionBudget, ExpectationStore, ExplorationProfile,
     FactionData, GroundSince, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile,
@@ -202,6 +202,10 @@ impl World {
             world.insert_component_perception_profile(entity, PerceptionProfile::default())?;
             world.insert_component_tell_profile(entity, TellProfile::default())?;
             world.insert_component_cognitive_profile(entity, CognitiveProfile::default())?;
+            world.insert_component_cognitive_archetype_component(
+                entity,
+                CognitiveArchetypeComponent::default(),
+            )?;
             world.insert_component_portfolio_weights_profile(
                 entity,
                 PortfolioWeightsProfile::default(),

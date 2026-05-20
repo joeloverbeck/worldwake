@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — new `EventTag` variant, new `EventPayload` field, save format bump
-**Deps**: archive/tickets/S152COGARCSEE-001.md, S152COGARCSEE-002
+**Deps**: archive/tickets/S152COGARCSEE-001.md, archive/tickets/S152COGARCSEE-002.md
 
 ## Problem
 

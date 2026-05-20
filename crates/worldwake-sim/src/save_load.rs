@@ -3,8 +3,8 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-/// S149PARPLASEG-003 persists partial-plan segments on agenda entries.
-pub const SAVE_FORMAT_VERSION: u32 = 93;
+/// S152COGARCSEE-002 persists cognitive archetype components on agents.
+pub const SAVE_FORMAT_VERSION: u32 = 94;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -203,29 +203,30 @@ mod tests {
         BeliefStatusTag, BelievedActivity, BelievedEntityState, Blocker, BlockerClearingCondition,
         BlockerKey, BlockerMemory, BlockerRecordedPayload, BlockerScope, BlockingFact,
         BodyCostPerTick, CandidateExtractorId, CauseRef, ClaimId, ClaimValue, ClaimantOutcome,
-        CloseCause, CommodityKind, CommodityPurpose, ContentionClaimant, ContentionEventPayload,
-        ContentionResolutionRule, ControlSource, DecisionEventPayload, Discrepancy,
-        DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EmitterTag, EntityBeliefAspect,
-        EntityBeliefClaim, EntityId, EpistemicDispositionProfile, EventLog, EventPayload, EventTag,
-        EventView, EvidenceKindTag, EvidenceSummary, ExpectationBasis, ExpectationId,
-        ExpectationMismatchPayload, ExpectationRecord, ExpectationState, ExpectationStore,
-        GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalDispatchKey, GoalKey,
-        GoalKind, GoalOfferedPayload, GoalPlanningBudget, GoalRejectionReason,
-        GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason, GroundComfortTag,
-        HomeostaticNeedId, LastSeenMemory, LastSeenProvenance, LastSeenRecord, LatrineFullness,
-        LawAbidingProfile, MaterializationTag, MetabolismProfile, MotiveSource, MotiveSourceRef,
-        ObservationOmission, ObservationRef, OmissionReason, PendingEvent, PerceptionSource,
-        PlaceDirtiness, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
-        PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
-        RankedGoalComparisonDimensionTag, RecordRef, RejectedAlternativeSummary,
-        RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
-        RewardEncumbrance, RiskWeightProfile, RoutePreferenceProfile, RoutePreferenceSummary,
-        RouteSegment, Seed, ShelterTag, SleepEpisode, SleepEpisodeEndedPayload,
-        SleepEpisodeStartedPayload, SleepQualityProfile, SleepRecoveryModifier, StateHash,
-        SuspensionReason, TestimonyTrustProfile, TestimonyTrustSummary, Tick, TickRange,
-        TopicScope, UniqueItemKind, UtilityProfile, VisibilitySpec, WakeCondition, WakeReason,
-        WashBasinState, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
+        CloseCause, CognitiveArchetype, CognitiveArchetypeComponent, CommodityKind,
+        CommodityPurpose, ContentionClaimant, ContentionEventPayload, ContentionResolutionRule,
+        ControlSource, DecisionEventPayload, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
+        DiscrepancyMemory, EmitterTag, EntityBeliefAspect, EntityBeliefClaim, EntityId,
+        EpistemicDispositionProfile, EventLog, EventPayload, EventTag, EventView, EvidenceKindTag,
+        EvidenceSummary, ExpectationBasis, ExpectationId, ExpectationMismatchPayload,
+        ExpectationRecord, ExpectationState, ExpectationStore, GoalAbandonReason,
+        GoalAbandonedPayload, GoalCommittedPayload, GoalDispatchKey, GoalKey, GoalKind,
+        GoalOfferedPayload, GoalPlanningBudget, GoalRejectionReason, GoalSuppressedPayload,
+        GoalSuspendedPayload, GoalSwitchReason, GroundComfortTag, HomeostaticNeedId,
+        LastSeenMemory, LastSeenProvenance, LastSeenRecord, LatrineFullness, LawAbidingProfile,
+        MaterializationTag, MetabolismProfile, MotiveSource, MotiveSourceRef, ObservationOmission,
+        ObservationRef, OmissionReason, PendingEvent, PerceptionSource, PlaceDirtiness,
+        PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
+        PursuitInvalidationReasonTag, Quantity, RankedGoalComparisonDimensionTag, RecordRef,
+        RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
+        ReplanTriggeredPayload, ReservationId, RewardEncumbrance, RiskWeightProfile,
+        RoutePreferenceProfile, RoutePreferenceSummary, RouteSegment, Seed, ShelterTag,
+        SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepQualityProfile,
+        SleepRecoveryModifier, StateHash, SuspensionReason, TestimonyTrustProfile,
+        TestimonyTrustSummary, Tick, TickRange, TopicScope, UniqueItemKind, UtilityProfile,
+        VisibilitySpec, WakeCondition, WakeReason, WashBasinState, WashFacilityUsedPayload,
+        WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker, WorkstationTag, World,
+        WorldTxn, build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -382,6 +383,14 @@ mod tests {
         );
         profile_txn
             .set_component_agent_schema_context_profile(actor, schema_context)
+            .unwrap();
+        profile_txn
+            .set_component_cognitive_archetype_component(
+                actor,
+                CognitiveArchetypeComponent {
+                    archetype: CognitiveArchetype::Skeptical,
+                },
+            )
             .unwrap();
         profile_txn
             .set_component_utility_profile(
@@ -1348,8 +1357,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_93_after_s149_companion_origin_landing() {
-        assert_eq!(SAVE_FORMAT_VERSION, 93);
+    fn save_format_version_is_94_after_s152_cognitive_archetype_component_landing() {
+        assert_eq!(SAVE_FORMAT_VERSION, 94);
     }
 
     #[test]
@@ -1360,7 +1369,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 93);
+        assert_eq!(SAVE_FORMAT_VERSION, 94);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1379,6 +1388,14 @@ mod tests {
             restored_schema_context
                 .disabled_extractors
                 .contains(&CandidateExtractorId::Political)
+        );
+        assert_eq!(
+            restored
+                .world()
+                .get_component_cognitive_archetype_component(actor),
+            Some(&CognitiveArchetypeComponent {
+                archetype: CognitiveArchetype::Skeptical
+            })
         );
         assert_eq!(
             restored_schema_context
@@ -1951,11 +1968,11 @@ mod tests {
     }
 
     #[test]
-    fn load_rejects_pre_s149_companion_origin_version_92_without_migration_shim() {
+    fn load_rejects_pre_s152_cognitive_archetype_component_version_93_without_migration_shim() {
         let (state, _, _, _) = populated_state();
         let mut bytes = save_to_bytes(&state, None).unwrap();
         bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
-            .copy_from_slice(&92_u32.to_le_bytes());
+            .copy_from_slice(&93_u32.to_le_bytes());
 
         let error = load_from_bytes(&bytes).unwrap_err();
 
@@ -1964,7 +1981,7 @@ mod tests {
             SaveError::UnsupportedVersion {
                 found,
                 expected: SAVE_FORMAT_VERSION
-            } if found == 92
+            } if found == 93
         ));
     }
 
