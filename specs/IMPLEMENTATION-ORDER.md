@@ -726,7 +726,7 @@ S153 (hard deps on archived S143, archived S148, archived S150, archived S151)
 **Wave 4** (parallel, after Wave 3):
 - **S149**: ✅ COMPLETED — archived at [archive/specs/S149-partial-plan-segments-and-typed-terminals.md](/home/joeloverbeck/projects/worldwake/archive/specs/S149-partial-plan-segments-and-typed-terminals.md). Landed typed `PlanTerminalKind` (InformationBarrier/CoordinationBarrier/ResourceBarrier/JurisdictionBarrier/SearchBudgetExhausted), first-class `PartialPlanSegment` storage on `AgendaEntry`, agenda-manager resume/abandon lifecycle, executable re-entry through stored `GoalOffer`, barrier → `Discrepancy` / `BlockingFact` mapping, companion `AskWitness` synthesis on `InformationBarrier`, observer rendering, and generated golden contract coverage.
   - soft depends on archived S148 (shared `ResumeCondition`/`AbandonCondition` types)
-- **S152**: Cognitive Archetypes for Seeded Diversity — `CognitiveArchetype` enum (10 variants); `ArchetypeProfileTemplate` modifying existing universal profiles; `ArchetypeAssignmentPolicy` (`DefaultUniformFive`/`Uniform`/`Weighted`/`PerRole`/`Explicit`); `PersonalityAssigned` event at spawn with seeded RNG and resolved profile snapshot.
+- **S152**: Cognitive Archetypes for Seeded Diversity — `CognitiveArchetype` enum (10 variants); `ArchetypeProfileTemplate` modifying existing universal profiles; `ArchetypeAssignmentPolicy` (`DefaultUniformFive`/`Uniform`/`Weighted`) plus per-agent explicit override; `PersonalityAssigned` event at spawn with seeded RNG and resolved profile snapshot.
   - soft depends on archived S146/S148/S151 (modifies profile types each introduces)
 
 **Wave 5** (final, after Wave 4):

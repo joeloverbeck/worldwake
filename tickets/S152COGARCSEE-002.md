@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new universal ECS component, save format bump
-**Deps**: S152COGARCSEE-001
+**Deps**: archive/tickets/S152COGARCSEE-001.md
 
 ## Problem
 

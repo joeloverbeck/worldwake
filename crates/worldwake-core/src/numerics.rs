@@ -70,6 +70,46 @@ impl fmt::Display for Permille {
     }
 }
 
+/// Multiplier scale for backoff windows where `1000 == 1x`.
+///
+/// Unlike `Permille`, this can represent values above identity, and unlike
+/// `MultiplierPermille`, it can represent values below identity.
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
+pub struct BackoffScalePermille(u16);
+
+impl BackoffScalePermille {
+    pub const IDENTITY: Self = Self(1000);
+
+    /// Create a new backoff scale. `1000` means unchanged.
+    pub const fn new(value: u16) -> Result<Self, &'static str> {
+        if value == 0 {
+            Err("BackoffScalePermille value must be > 0")
+        } else {
+            Ok(Self(value))
+        }
+    }
+
+    /// Create a backoff scale without validation.
+    ///
+    /// # Safety (logical)
+    /// Caller must ensure `value > 0`.
+    pub const fn new_unchecked(value: u16) -> Self {
+        assert!(value > 0, "BackoffScalePermille value must be > 0");
+        Self(value)
+    }
+
+    /// Returns the inner permille-scale value.
+    pub const fn value(self) -> u16 {
+        self.0
+    }
+}
+
+impl fmt::Display for BackoffScalePermille {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}x1000", self.0)
+    }
+}
+
 /// Conserved lot count with semantic wrapper.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub struct Quantity(pub u32);
@@ -161,6 +201,26 @@ mod tests {
         assert_eq!(Quantity(3).checked_sub(Quantity(5)), None);
     }
 
+    // --- BackoffScalePermille ---
+
+    #[test]
+    fn backoff_scale_accepts_below_identity_identity_and_above_identity() {
+        assert_eq!(BackoffScalePermille::new(500).unwrap().value(), 500);
+        assert_eq!(
+            BackoffScalePermille::new(1000).unwrap(),
+            BackoffScalePermille::IDENTITY
+        );
+        assert_eq!(BackoffScalePermille::new(1500).unwrap().value(), 1500);
+    }
+
+    #[test]
+    fn backoff_scale_rejects_zero() {
+        assert_eq!(
+            BackoffScalePermille::new(0),
+            Err("BackoffScalePermille value must be > 0")
+        );
+    }
+
     // --- Bincode round-trips ---
 
     #[test]
@@ -187,6 +247,14 @@ mod tests {
         assert_eq!(val, back);
     }
 
+    #[test]
+    fn backoff_scale_bincode_roundtrip() {
+        let val = BackoffScalePermille::new(1500).unwrap();
+        let bytes = bincode::serialize(&val).unwrap();
+        let back: BackoffScalePermille = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(val, back);
+    }
+
     // --- Trait bound assertions ---
 
     fn assert_numeric_bounds<
@@ -204,6 +272,7 @@ mod tests {
 
     #[test]
     fn numeric_types_satisfy_required_traits() {
+        assert_numeric_bounds::<BackoffScalePermille>();
         assert_numeric_bounds::<LoadUnits>();
         assert_numeric_bounds::<Permille>();
         assert_numeric_bounds::<Quantity>();

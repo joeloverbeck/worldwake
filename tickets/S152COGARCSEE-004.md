@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — scenario definition fields (`worldwake-cli`)
-**Deps**: S152COGARCSEE-001
+**Deps**: archive/tickets/S152COGARCSEE-001.md
 
 ## Problem
 

@@ -6,7 +6,7 @@
 
 PR-13 (Default seeded personality/profile generation) from `reports/ai-architecture-improvements.md` flags that FND-22 (Agent Diversity Through Concrete Variation) is under-served by the current engine: scenarios may diversify agents through explicit per-agent profile overrides, but absent explicit authoring, every agent receives identical defaults. S111 (Scenario Homogeneity Lints, archived) added load-time detection of cloned profiles, but lints flag the problem rather than supplying a solution. The assessment proposes seeded `CognitiveArchetype` assignment at agent spawn that varies multiple profile fields together along narrative-coherent axes (Cautious, Bold, Stubborn, Methodical, Opportunistic, Sociable, Skeptical, Dutiful, Greedy, Fearful).
 
-S152 lands a `CognitiveArchetype` enum with 10 variants and an `ArchetypeAssignmentPolicy` per-scenario that specifies how to seed agents with archetypes at spawn. Each archetype carries a template of `Permille`/integer **deltas applied to existing universal profile fields** — `CognitiveProfile`, `PerceptionProfile`, `RiskWeightProfile`, `TestimonyTrustProfile` (S151), `RoutePreferenceProfile` (S151), `EpistemicDispositionProfile`, `PortfolioWeightsProfile` (S148), and `AgentSchemaContextProfile.disabled_methods` (S147). **No new behavioral profile fields are introduced**: archetypes vary the concrete parameters that already drive reasoning, so no consuming system needs new wiring (FND-3 / FND-28). Assignment emits a `PersonalityAssigned` event with the archetype, seed, a resolved-profile verification hash, and source, making the assignment replayable and inspectable per FND-22A / FND-29.
+S152 lands a `CognitiveArchetype` enum with 10 variants and an `ArchetypeAssignmentPolicy` per-scenario that specifies how to seed agents with archetypes at spawn. Each archetype carries a template of `Permille`/integer **deltas applied to existing universal profile fields** plus a `BackoffScalePermille` backoff scale — `CognitiveProfile`, `PerceptionProfile`, `RiskWeightProfile`, `TestimonyTrustProfile` (S151), `RoutePreferenceProfile` (S151), `EpistemicDispositionProfile`, `PortfolioWeightsProfile` (S148), and `AgentSchemaContextProfile.disabled_methods` (S147). **No new behavioral profile fields are introduced**: archetypes vary the concrete parameters that already drive reasoning, so no consuming system needs new wiring (FND-3 / FND-28). Assignment emits a `PersonalityAssigned` event with the archetype, seed, a resolved-profile verification hash, and source, making the assignment replayable and inspectable per FND-22A / FND-29.
 
 The archetypes are *not* personalities in the literary sense; they are *concrete state templates* that produce behavioral diversity. An agent of archetype `Cautious` plans more carefully (higher `repair_budget_fraction`), waits longer before retrying after failure (longer `*_backoff_ticks` via a backoff scale), and prefers safer routes (boosted `RoutePreferenceProfile.dangerous_traversal_penalty`). An agent of archetype `Bold` does the opposite. No archetype changes goal kinds or unlocks new actions — they only modulate how the agent reasons over the same affordance set as every other agent (per FND-19 agent symmetry). Method disabling (`AgentSchemaContextProfile.disabled_methods`) narrows HTN decomposition strategies while flat GOAP fallback remains lawful, so it too leaves the action set unchanged.
 
@@ -32,7 +32,7 @@ Phase 12: AI Architecture Evolution — Draft
 
 ## Design Goals
 
-1. **Archetypes are concrete state templates over existing fields.** Each archetype is a deterministic template of `Permille`/integer deltas applied to existing universal profile fields plus a uniform backoff scale and an optional method-disable set. No new behavioral profile field is introduced.
+1. **Archetypes are concrete state templates over existing fields.** Each archetype is a deterministic template of `Permille`/integer deltas applied to existing universal profile fields plus a uniform `BackoffScalePermille` backoff scale and an optional method-disable set. No new behavioral profile field is introduced.
 2. **Deterministic seeded assignment.** Same scenario + same seed → identical archetype assignment per agent → identical resolved profile values.
 3. **No new affordances per archetype.** Per FND-19 — every agent has the same action set; archetypes only modulate how the agent reasons (including which HTN methods it considers, with flat GOAP fallback intact per FND-20).
 4. **Authoring control.** Scenarios specify how to assign archetypes: uniform random over a curated default five, uniform over an authored set, or frequency-weighted. A per-agent `AgentDef.archetype` override pins a specific agent's archetype, mirroring the existing per-agent profile-override idiom. Default policy when nothing is specified: uniform random over a curated set of 5 archetypes (Cautious, Bold, Methodical, Opportunistic, Sociable) so the diversity is broad but not overwhelming.
@@ -102,7 +102,7 @@ pub struct ArchetypeProfileTemplate {
     pub switch_margin_delta: i32,                 // -> switch_margin (Permille), permille delta
     pub planning_switch_margin_delta: i32,        // -> planning_switch_margin (Permille), permille delta
     pub guard_min_confidence_ceiling_delta: i32,  // -> guard_min_confidence_ceiling (Permille), permille delta
-    pub backoff_ticks_scale: Permille,            // 1000 = unchanged; scales ALL existing *_backoff_ticks / *_block_ticks fields uniformly at resolution
+    pub backoff_ticks_scale: BackoffScalePermille, // 1000 = unchanged; scales ALL existing *_backoff_ticks / *_block_ticks fields uniformly at resolution
 
     // PerceptionProfile (crates/worldwake-core/src/belief.rs)
     pub observation_budget_delta: i8,             // -> observation_budget (u8)
@@ -146,7 +146,7 @@ pub fn cautious_template() -> ArchetypeProfileTemplate {
         switch_margin_delta: 100,                             // stickier goal commitment
         planning_switch_margin_delta: 100,                    // stickier plan commitment
         guard_min_confidence_ceiling_delta: -100,             // less confident in guards
-        backoff_ticks_scale: Permille::new_unchecked(1500),   // waits 50% longer after failure
+        backoff_ticks_scale: BackoffScalePermille::new_unchecked(1500), // waits 50% longer after failure
         observation_budget_delta: 1,                          // slightly more observation
         testimony_confirmation_weight_delta: -50,             // less easily convinced
         testimony_refutation_penalty_delta: 100,              // strong refutation penalty
@@ -326,7 +326,7 @@ State-mediated per FND-26.
 
 ## Profile-Driven Parameters
 
-All archetype template fields are `Permille` deltas, `i8`/`i32` integer deltas, a `Permille` backoff scale, or a `Vec<MethodSchemaId>`. No floats.
+All archetype template fields are `Permille` deltas, `i8`/`i32` integer deltas, a `BackoffScalePermille` backoff scale, or a `Vec<MethodSchemaId>`. No floats. `BackoffScalePermille` is a typed integer scale where `1000 == 1x`; it supports both below-identity and above-identity retry/backoff variation without overloading bounded `Permille`.
 
 `ArchetypeAssignmentPolicy::Weighted` uses `u32` integer weights. Assignment iterates `BTreeSet`/`BTreeMap` in deterministic order (CLAUDE.md determinism invariant).
 

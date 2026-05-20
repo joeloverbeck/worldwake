@@ -36,6 +36,7 @@ pub mod blocker_scope;
 pub mod canonical;
 pub mod causal_link;
 pub mod cause;
+pub mod cognitive_archetype;
 pub mod cognitive_profile;
 pub mod combat;
 pub mod communication;
@@ -160,6 +161,11 @@ pub use canonical::{
 };
 pub use causal_link::{CausalLink, CausalProvider, PlanningFact, RecordTopic};
 pub use cause::CauseRef;
+pub use cognitive_archetype::{
+    ArchetypeAssignmentPolicy, ArchetypeAssignmentSource, ArchetypeProfileTemplate,
+    CognitiveArchetype, DEFAULT_UNIFORM_FIVE_ARCHETYPES, PersonalityAssignedPayload,
+    default_uniform_five_archetypes, template_for,
+};
 pub use cognitive_profile::CognitiveProfile;
 pub use combat::{CombatProfile, CombatStance, DeadAt, DeathCause};
 pub use communication::{CommunicationClass, CommunicationProfile, classify_communication};
@@ -272,7 +278,7 @@ pub use motive_source_slot_map::slot_for as motive_source_slot_for;
 pub use needs::{
     BodyCostPerTick, DeprivationExposure, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile,
 };
-pub use numerics::{LoadUnits, Permille, Quantity};
+pub use numerics::{BackoffScalePermille, LoadUnits, Permille, Quantity};
 pub use obligation::{ObligationExecutionTracker, ObligationSatiationProfile};
 pub use observation_context::{ObservationContext, PlaceVisibilityProfile};
 pub use offices::{
