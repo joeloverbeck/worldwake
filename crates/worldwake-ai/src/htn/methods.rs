@@ -379,35 +379,6 @@ pub fn restock_from_market() -> MethodSchema {
     )
 }
 
-pub fn investigate_on_scene() -> MethodSchema {
-    method_schema!(
-        9,
-        GoalKindDiscriminant::InvestigateViolation,
-        vec![MethodPrecondition::LocationKnown(
-            EntityCriterion::ViolationEvidence {
-                violation: EntityTemplate::Violation,
-            },
-        )],
-        vec![
-            SubgoalTemplate::InspectArtifact(ArtifactTemplate::ViolationEvidence {
-                violation: EntityTemplate::Violation,
-            }),
-            SubgoalTemplate::PerformAction(
-                PlannerOpKind::Investigate,
-                PayloadTemplate::FromContext,
-            ),
-        ],
-        vec![ArtifactTemplate::ViolationEvidence {
-            violation: EntityTemplate::Violation,
-        }],
-        vec![],
-        vec![timeout(100), MethodFailureMode::SubgoalUnachievable(0)],
-        9,
-        vec![bias(MotiveSourceDiscriminant::OfficeDuty, 750)],
-        Some(GoalPlanningBudget::INVESTIGATION),
-    )
-}
-
 pub fn investigate_by_witness() -> MethodSchema {
     method_schema!(
         10,
@@ -495,38 +466,6 @@ pub fn escort_to_home() -> MethodSchema {
         vec![timeout(120), MethodFailureMode::SubgoalUnachievable(0)],
         12,
         vec![bias(MotiveSourceDiscriminant::Loyalty, 550)],
-        Some(GoalPlanningBudget::BOUNTY_ESCORT),
-    )
-}
-
-pub fn escort_to_office() -> MethodSchema {
-    method_schema!(
-        13,
-        GoalKindDiscriminant::EscortToSafety,
-        vec![MethodPrecondition::LocationKnown(EntityCriterion::Ledger {
-            institution: EntityTemplate::Institution,
-        })],
-        vec![SubgoalTemplate::PerformAction(
-            PlannerOpKind::EscortToSafety,
-            PayloadTemplate::Explicit(PayloadValueTemplate::EscortToSafety {
-                escortee: EntityTemplate::Escortee,
-                destination: LocationTemplate::OfficePlace {
-                    institution: EntityTemplate::Institution,
-                },
-            }),
-        )],
-        vec![],
-        vec![ClaimRequirement::OfficeAuthority {
-            office: EntityTemplate::Institution,
-        }],
-        vec![
-            timeout(120),
-            MethodFailureMode::ClaimDenied(ClaimRequirement::OfficeAuthority {
-                office: EntityTemplate::Institution,
-            }),
-        ],
-        13,
-        vec![bias(MotiveSourceDiscriminant::OfficeDuty, 550)],
         Some(GoalPlanningBudget::BOUNTY_ESCORT),
     )
 }

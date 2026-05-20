@@ -59,11 +59,9 @@ pub fn build_method_registry() -> MethodRegistry {
     registry.insert(methods::produce_with_purchase());
     registry.insert(methods::restock_from_harvest());
     registry.insert(methods::restock_from_market());
-    registry.insert(methods::investigate_on_scene());
     registry.insert(methods::investigate_by_witness());
     registry.insert(methods::investigate_by_ledger());
     registry.insert(methods::escort_to_home());
-    registry.insert(methods::escort_to_office());
     registry
 }
 
@@ -72,11 +70,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registry_builds_with_13_methods() {
+    fn registry_builds_with_11_methods_without_dead_method_ids() {
         let registry = build_method_registry();
 
-        assert_eq!(registry.len(), 13);
+        assert_eq!(registry.len(), 11);
         assert!(!registry.is_empty());
+        assert!(registry.get(MethodSchemaId(9)).is_none());
+        assert!(registry.get(MethodSchemaId(13)).is_none());
     }
 
     #[test]

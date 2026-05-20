@@ -758,9 +758,6 @@ fn resolve_entity_criterion_places(
                 .map(|commodity| seller_places(state, commodity))
                 .unwrap_or_default()
         }
-        EntityCriterion::Witness { .. }
-        | EntityCriterion::ViolationEvidence { .. }
-        | EntityCriterion::Ledger { .. } => goal.evidence_places.iter().copied().collect(),
     }
 }
 

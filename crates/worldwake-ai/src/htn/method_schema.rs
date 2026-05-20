@@ -112,9 +112,6 @@ pub enum EntityCriterion {
     Workstation(WorkstationTag),
     ResourceSource(CommodityTemplate),
     Seller(CommodityTemplate),
-    Witness { topic: TopicTemplate },
-    ViolationEvidence { violation: EntityTemplate },
-    Ledger { institution: EntityTemplate },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]

@@ -93,9 +93,6 @@ fn evaluate_precondition(
             crate::htn::EntityCriterion::Target(template) => {
                 resolve_entity(actor, goal, *template, belief_view).is_some()
             }
-            crate::htn::EntityCriterion::Witness { .. }
-            | crate::htn::EntityCriterion::ViolationEvidence { .. }
-            | crate::htn::EntityCriterion::Ledger { .. } => false,
         },
     }
 }

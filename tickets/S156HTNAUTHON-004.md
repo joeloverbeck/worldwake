@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` HTN method schema
-**Deps**: S156HTNAUTHON-003
+**Deps**: archive/tickets/S156HTNAUTHON-003.md
 
 ## Problem
 
@@ -30,8 +30,9 @@ re-introduction to a future method-required goal that actually enforces them.
    (`crates/worldwake-ai/tests/integration/htn_registry_validation.rs:49-59`), which asserts the
    field is non-empty. No runtime code reads any of the three. `search/strategic.rs` never reads them.
 3. Shared boundary under audit: the `MethodSchema` struct and the `method_schema!` macro
-   signature — the single construction surface for all methods. After S156HTNAUTHON-003 deletes
-   the two dead methods, 11 method definitions remain to update.
+   signature — the single construction surface for all methods. After
+   `archive/tickets/S156HTNAUTHON-003.md` deleted the two dead methods, 11 method definitions
+   remain to update.
 4. The trace field `MethodPlanAttemptTrace.failure_mode: Option<MethodFailureMode>`
    (`decision_trace.rs:1222-1227`) and the `MethodFailureMode` *type* are NOT removed — only the
    `failure_modes: Vec<MethodFailureMode>` field on `MethodSchema`. `MethodFailureMode` survives as
@@ -77,7 +78,7 @@ in `method_schema.rs`.
 Remove the three corresponding positional parameters from the `method_schema!` macro and the
 `MethodParts` construction in `htn/methods.rs`, then drop the three argument expressions
 (`vec![…artifacts]`, `vec![…claims]`, `vec![…failure_modes]`) from every remaining method
-definition (11 methods after S156HTNAUTHON-003).
+definition (11 methods after `archive/tickets/S156HTNAUTHON-003.md`).
 
 ### 3. Update constructors and test helpers
 

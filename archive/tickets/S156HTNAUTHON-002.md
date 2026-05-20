@@ -100,7 +100,7 @@ selectable after the `AgentRole` removal.
 
 ## Out of Scope
 
-- `EntityCriterion` variants and the dead methods (S156HTNAUTHON-003).
+- `EntityCriterion` variants and the dead methods (`archive/tickets/S156HTNAUTHON-003.md`).
 - `MethodSchema` field removal (S156HTNAUTHON-004).
 - Trace/fallback restructuring of the selector (S156HTNAUTHON-005).
 
