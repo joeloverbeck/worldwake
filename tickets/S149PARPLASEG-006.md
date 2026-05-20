@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — companion-intention synthesis for information barriers
-**Deps**: archive/tickets/S149PARPLASEG-004.md, archive/tickets/S149PARPLASEG-005.md, tickets/S149PARPLASEG-010.md
+**Deps**: archive/tickets/S149PARPLASEG-004.md, archive/tickets/S149PARPLASEG-005.md, archive/tickets/S149PARPLASEG-010.md
 
 ## Problem
 

@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — per-actor contention "watching" list and contention-state resume trigger
-**Deps**: archive/tickets/S149PARPLASEG-004.md, archive/tickets/S149PARPLASEG-005.md, tickets/S149PARPLASEG-010.md
+**Deps**: archive/tickets/S149PARPLASEG-004.md, archive/tickets/S149PARPLASEG-005.md, archive/tickets/S149PARPLASEG-010.md
 
 ## Problem
 

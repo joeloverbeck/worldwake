@@ -42,13 +42,13 @@ Added `fn try_resume_partial_plan(state: &mut AgendaState, actor: EntityId, beli
 
 ### 2. Follow-up for executable segment writing and tactical re-entry
 
-Created `tickets/S149PARPLASEG-010.md` for segment writer inputs, budget-exhausted segment construction, and tactical suffix re-entry. The follow-up defines the remaining owner for resolving `remaining_skeleton` into executable `PlannedStep`s through belief-backed planner inputs without duplicating planner authority.
+Created the now-archived `archive/tickets/S149PARPLASEG-010.md` for segment writer inputs, budget-exhausted segment construction, and tactical suffix re-entry. The follow-up defined the remaining owner for resolving partial-plan re-entry through belief-backed planner inputs without duplicating planner authority.
 
 ## Landed Files
 
 - `crates/worldwake-ai/src/agenda_manager.rs` — `try_resume_partial_plan`, retry bounding, `ResumedPlan`, focused tests.
 - `crates/worldwake-ai/src/lib.rs` — public re-export for `ResumedPlan` and `try_resume_partial_plan`.
-- `tickets/S149PARPLASEG-010.md` — executable segment writer + tactical re-entry follow-up.
+- `archive/tickets/S149PARPLASEG-010.md` — executable segment writer + tactical re-entry follow-up.
 - `tickets/S149PARPLASEG-006.md`, `tickets/S149PARPLASEG-007.md`, `tickets/S149PARPLASEG-008.md`, `tickets/S149PARPLASEG-009.md` — dependency and handoff updates for the new executable re-entry owner.
 - `specs/S149-partial-plan-segments-and-typed-terminals.md` — active spec wording aligned to the narrowed 005 seam and new 010 owner.
 
@@ -88,4 +88,4 @@ Completed on 2026-05-20.
 
 This ticket landed the agenda-manager partial-plan lifecycle slice: `try_resume_partial_plan` evaluates represented resume and abandon conditions through `RuntimeBeliefView`, increments bounded resume attempts, records the last resume-attempt tick, returns pending `ResumedPlan` values for callers, and removes abandoned suspended entries.
 
-Deviation from the original D5 draft: executable segment writing, budget-exhausted segment construction, and tactical suffix re-entry were not implemented in this ticket. The live `PlannedSkeletonStep` carrier did not contain executable planner inputs, so those responsibilities moved to `tickets/S149PARPLASEG-010.md`. The helper also takes `patience_limit` as an argument because neither `AgendaEntry` nor `PartialPlanSegment` stores that frame/profile value.
+Deviation from the original D5 draft: executable segment writing, budget-exhausted segment construction, and tactical suffix re-entry were not implemented in this ticket. The live `PlannedSkeletonStep` carrier did not contain executable planner inputs, so those responsibilities moved to the now-archived `archive/tickets/S149PARPLASEG-010.md`. The helper also takes `patience_limit` as an argument because neither `AgendaEntry` nor `PartialPlanSegment` stores that frame/profile value.

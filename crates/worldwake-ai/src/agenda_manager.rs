@@ -529,6 +529,11 @@ fn merge_candidates(
 
         if let Some(mut existing) = state.suspended.remove(&key) {
             refresh_entry(&mut existing, &candidate, tick);
+            if existing.partial_plan_segment.is_some() {
+                existing.phase = AgendaPhase::Suspended;
+                state.suspended.insert(key, existing);
+                continue;
+            }
             existing.phase = AgendaPhase::Pending;
             merged.push(existing);
             continue;
@@ -827,11 +832,11 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         AcquisitionQuantity, AgendaProfile, BeliefConfidencePolicy, CommodityConsumableProfile,
-        CommodityKind, DemandObservation, DemandObservationReason, Discrepancy, DriveThresholds,
-        EntityId, EntityKind, ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState,
-        ExpectationStore, IntentionAbandonCondition, IntentionResumeCondition, LoadUnits,
-        MerchandiseProfile, OpportunityAnchor, OpportunityKey, Quantity, ResourceSource, Tick,
-        UniqueItemKind, WorkstationTag,
+        CommodityKind, DemandObservation, DemandObservationReason, Discrepancy, DiscrepancyMemory,
+        DriveThresholds, EntityId, EntityKind, ExpectationBasis, ExpectationId, ExpectationRecord,
+        ExpectationState, ExpectationStore, IntentionAbandonCondition, IntentionResumeCondition,
+        LoadUnits, MerchandiseProfile, OpportunityAnchor, OpportunityKey, Quantity, ResourceSource,
+        Tick, UniqueItemKind, WorkstationTag,
     };
     use worldwake_sim::{
         ActionDuration, CombatBeliefView, ControlBeliefView, DurationExpr, EconomicBeliefView,
@@ -1519,6 +1524,51 @@ mod tests {
 
         assert_eq!(resumed, None);
         assert!(state.suspended.contains_key(&key));
+    }
+
+    #[test]
+    fn tick_agenda_keeps_unsatisfied_partial_segment_suspended_despite_fresh_candidate() {
+        let segment = partial_plan_segment(
+            vec![IntentionResumeCondition::TickElapsed(4)],
+            Vec::new(),
+            1,
+        );
+        let key = OpportunityKey {
+            goal_key: segment.goal.key,
+            anchor: segment.goal.anchor,
+        };
+        let mut state = AgendaState::default();
+        state
+            .suspended
+            .insert(key, suspended_partial_entry(segment.clone()));
+        let fresh = vec![agenda_entry(
+            GoalKind::Sleep,
+            OpportunityAnchor::Place(PLACE),
+            80,
+            Tick(13),
+        )];
+
+        let profile = default_profile();
+        let transitions = tick_agenda(
+            AGENT,
+            &mut state,
+            fresh,
+            &MockGoalBeliefView::default(),
+            &DiscrepancyMemory::default(),
+            AgendaTickPolicy {
+                profile: &profile,
+                switch_margin: default_switch_margin(),
+            },
+            Tick(13),
+        );
+
+        assert_eq!(transitions.ordered_candidates, Vec::new());
+        assert!(state.committed.is_none());
+        let suspended = state
+            .suspended
+            .get(&key)
+            .expect("partial segment should remain suspended until its resume condition holds");
+        assert_eq!(suspended.partial_plan_segment, Some(segment));
     }
 
     #[test]

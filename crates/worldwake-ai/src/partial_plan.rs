@@ -62,6 +62,81 @@ pub enum BarrierFact {
     },
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PartialPlanSegmentSeed {
+    pub goal: GoalOffer,
+    pub completed_prefix: Vec<PlannedStep>,
+    pub remaining_skeleton: Option<Vec<PlannedSkeletonStep>>,
+    pub terminal_barrier: PlanTerminalKind,
+    pub barrier_fact: BarrierFact,
+    pub created_tick: Tick,
+    pub local_counter: u16,
+    pub causal_links: Vec<EventId>,
+}
+
+#[must_use]
+pub fn build_partial_plan_segment(
+    seed: PartialPlanSegmentSeed,
+    cognitive: &CognitiveProfile,
+) -> Option<PartialPlanSegment> {
+    if matches!(
+        seed.terminal_barrier,
+        PlanTerminalKind::GoalSatisfied | PlanTerminalKind::CombatCommitment
+    ) {
+        return None;
+    }
+
+    let resume_conditions = resume_conditions_for_barrier_fact(&seed.barrier_fact, cognitive);
+    if resume_conditions.is_empty() {
+        return None;
+    }
+
+    Some(PartialPlanSegment {
+        id: PartialPlanSegmentId::new(seed.created_tick, seed.local_counter),
+        goal: seed.goal,
+        completed_prefix: seed.completed_prefix,
+        remaining_skeleton: seed.remaining_skeleton,
+        terminal_barrier: seed.terminal_barrier,
+        barrier_fact: seed.barrier_fact,
+        resume_conditions,
+        abandon_conditions: vec![IntentionAbandonCondition::PatienceExhausted],
+        created_tick: seed.created_tick,
+        last_resume_attempt_tick: None,
+        resume_attempt_count: 0,
+        causal_links: seed.causal_links,
+    })
+}
+
+#[must_use]
+pub fn budget_exhausted_partial_plan_segment(
+    goal: GoalOffer,
+    expansions_used: u32,
+    budget_total: u32,
+    created_tick: Tick,
+    local_counter: u16,
+    cognitive: &CognitiveProfile,
+) -> PartialPlanSegment {
+    build_partial_plan_segment(
+        PartialPlanSegmentSeed {
+            goal,
+            completed_prefix: Vec::new(),
+            remaining_skeleton: None,
+            terminal_barrier: PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: expansions_used.min(u32::from(u16::MAX)) as u16,
+                budget_total: budget_total.min(u32::from(u16::MAX)) as u16,
+            },
+            barrier_fact: BarrierFact::BudgetExhausted {
+                remaining_stages: 1,
+            },
+            created_tick,
+            local_counter,
+            causal_links: Vec::new(),
+        },
+        cognitive,
+    )
+    .expect("budget exhaustion always has a profile-backed resume condition")
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CoordinationBarrierBlockerRecord {
     pub scope: BlockerScope,
@@ -201,7 +276,8 @@ fn missing_belief_subject(predicate: &BeliefPredicate) -> Option<EntityId> {
 mod tests {
     use super::{
         BarrierFact, CoordinationBarrierBlockerRecord, PartialPlanSegment, PartialPlanSegmentId,
-        PlannedSkeletonStep, coordination_barrier_blocking_fact,
+        PartialPlanSegmentSeed, PlannedSkeletonStep, budget_exhausted_partial_plan_segment,
+        build_partial_plan_segment, coordination_barrier_blocking_fact,
         record_coordination_barrier_blocker, resume_conditions_for_barrier_fact,
         terminal_to_discrepancy,
     };
@@ -492,5 +568,98 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn build_partial_plan_segment_writes_concrete_barrier_segment() {
+        let cognitive = CognitiveProfile {
+            search_exhaustion_backoff_ticks: 17,
+            ..CognitiveProfile::default()
+        };
+        let step = planned_step();
+        let segment = build_partial_plan_segment(
+            PartialPlanSegmentSeed {
+                goal: goal_offer(),
+                completed_prefix: vec![step.clone()],
+                remaining_skeleton: None,
+                terminal_barrier: PlanTerminalKind::ResourceBarrier {
+                    commodity: CommodityKind::Bread,
+                    place: entity(20),
+                },
+                barrier_fact: BarrierFact::DepletedResource {
+                    commodity: CommodityKind::Bread,
+                    place: entity(20),
+                },
+                created_tick: Tick(42),
+                local_counter: 3,
+                causal_links: vec![EventId(9)],
+            },
+            &cognitive,
+        )
+        .expect("resource barrier should produce a resumable segment");
+
+        assert_eq!(segment.id, PartialPlanSegmentId::new(Tick(42), 3));
+        assert_eq!(segment.completed_prefix, vec![step]);
+        assert_eq!(
+            segment.resume_conditions,
+            vec![IntentionResumeCondition::BeliefStatusChanged {
+                subject: entity(20),
+                target_status: BeliefStatusTag::Certain,
+            }]
+        );
+        assert_eq!(
+            segment.abandon_conditions,
+            vec![IntentionAbandonCondition::PatienceExhausted]
+        );
+        assert_eq!(segment.causal_links, vec![EventId(9)]);
+    }
+
+    #[test]
+    fn build_partial_plan_segment_rejects_non_barrier_terminals() {
+        let seed = PartialPlanSegmentSeed {
+            goal: goal_offer(),
+            completed_prefix: Vec::new(),
+            remaining_skeleton: None,
+            terminal_barrier: PlanTerminalKind::GoalSatisfied,
+            barrier_fact: BarrierFact::BudgetExhausted {
+                remaining_stages: 1,
+            },
+            created_tick: Tick(42),
+            local_counter: 3,
+            causal_links: Vec::new(),
+        };
+
+        assert_eq!(
+            build_partial_plan_segment(seed, &CognitiveProfile::default()),
+            None
+        );
+    }
+
+    #[test]
+    fn budget_exhausted_partial_plan_segment_uses_typed_terminal_and_backoff() {
+        let cognitive = CognitiveProfile {
+            search_exhaustion_backoff_ticks: 23,
+            ..CognitiveProfile::default()
+        };
+        let segment =
+            budget_exhausted_partial_plan_segment(goal_offer(), 77, 88, Tick(12), 4, &cognitive);
+
+        assert_eq!(
+            segment.terminal_barrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 77,
+                budget_total: 88,
+            }
+        );
+        assert_eq!(
+            segment.barrier_fact,
+            BarrierFact::BudgetExhausted {
+                remaining_stages: 1,
+            }
+        );
+        assert_eq!(
+            segment.resume_conditions,
+            vec![IntentionResumeCondition::TickElapsed(23)]
+        );
     }
 }

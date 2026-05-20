@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — observer planning-diagnostic rendering (read-only tooling)
-**Deps**: archive/tickets/S149PARPLASEG-001.md, archive/tickets/S149PARPLASEG-003.md, archive/tickets/S149PARPLASEG-005.md, tickets/S149PARPLASEG-010.md
+**Deps**: archive/tickets/S149PARPLASEG-001.md, archive/tickets/S149PARPLASEG-003.md, archive/tickets/S149PARPLASEG-005.md, archive/tickets/S149PARPLASEG-010.md
 
 ## Problem
 
