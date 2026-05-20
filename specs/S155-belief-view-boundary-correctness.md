@@ -2,19 +2,19 @@
 
 ## Summary
 
-Close two confirmed FND-14/FND-14A violations on the per-agent belief surface that let
-planning and affordance code read **current authoritative world state** for entities the
-agent has not co-located with this tick:
+Close two confirmed FND-14/FND-14A violations on the per-agent belief surface that previously
+let planning and affordance code read **current authoritative world state** for entities the
+agent had not co-located with this tick:
 
 1. `PerAgentBeliefView::effective_place(entity)` for non-self entities falls back to
    authoritative `world.effective_place(entity)` whenever `knows_entity(entity)` is true —
    and `knows_entity()` returns true for entities known **only** through institutional
    beliefs or last-seen memory (both non-co-located). An agent therefore obtains the
    *current* location of a target it merely remembers or was told about.
-2. `ControlBeliefView::can_control(actor, entity)` has **no belief gate**: after a local
-   unowned-item co-location shortcut it falls straight through to authoritative
-   `world.can_exercise_control(actor, entity)`. Its sibling `believed_rights()` already has
-   an explicit FND-14/FND-15 accessibility gate; `can_control()` does not, yet it is called
+2. Before D2, `ControlBeliefView::can_control(actor, entity)` had **no belief gate**: after a
+   local unowned-item co-location shortcut it fell straight through to authoritative
+   `world.can_exercise_control(actor, entity)`. Its sibling `believed_rights()` already had
+   an explicit FND-14/FND-15 accessibility gate; `can_control()` did not, yet it was called
    from belief-facing planning/affordance paths.
 
 This ticket family corrects both so that non-co-located reads return belief/last-seen state
@@ -29,8 +29,9 @@ AI Architecture Consolidation (Adjunct Wave — derived from `reports/ai-archite
 
 DRAFT
 
-Implementation status: D1 landed in `archive/tickets/S155BELVIEBOU-001.md` on 2026-05-20; D2-D4
-remain active in the sibling tickets.
+Implementation status: D1 landed in `archive/tickets/S155BELVIEBOU-001.md` on 2026-05-20; D2
+landed in `archive/tickets/S155BELVIEBOU-002.md` on 2026-05-20; D3-D4 remain active in
+`tickets/S155BELVIEBOU-003.md`.
 
 ## Crates
 
@@ -210,14 +211,17 @@ new observation/testimony/record, `PerAgentBeliefView(A).effective_place(T)` ret
 None if no belief/memory record), never P2.
 
 ### D2 — Belief-gate `ControlBeliefView::can_control` in place
+Status: landed in `archive/tickets/S155BELVIEBOU-002.md` on 2026-05-20.
+
 Add the belief-accessibility gate to the existing `ControlBeliefView::can_control` impl
 (`per_agent_belief_view.rs:433`), mirroring `believed_rights()`'s gate: keep the existing
 FND-14A co-location unowned-item shortcut, then require the entity be belief-accessible
-(`entity == self.agent` || `believed_entity(entity).is_some()` || possessed by the actor ||
-owned by the actor) before consulting `world.can_exercise_control()`; return `false` when the
-entity is not belief-accessible. Do **not** introduce a parallel `believed_can_control` method:
-`can_control` is the belief-facing control answer (consumed only from belief/planning paths), so
-fixing it in place corrects every consumer at once and avoids a fossil second method (FND-28).
+(`entity == self.agent` || `believed_entity(entity).is_some()` || possessed by the view agent ||
+owned by the view agent) before consulting `world.can_exercise_control()`; return `false` when
+the entity is not belief-accessible. Do **not** introduce a parallel `believed_can_control`
+method: `can_control` is the belief-facing control answer (consumed only from belief/planning
+paths), so fixing it in place corrects every consumer at once and avoids a fossil second method
+(FND-28).
 
 `can_control` has **~18 belief-facing callers** across `worldwake-sim`
 (`affordance_query.rs:286,378,933`; `per_agent_belief_view.rs:336`; the `belief_view.rs` blanket

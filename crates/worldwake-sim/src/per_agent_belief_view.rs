@@ -440,6 +440,13 @@ impl ControlBeliefView for PerAgentBeliefView<'_> {
         {
             return true;
         }
+        let accessible = entity == self.agent
+            || self.believed_entity(entity).is_some()
+            || self.world.possessor_of(entity) == Some(self.agent)
+            || self.world.owner_of(entity) == Some(self.agent);
+        if !accessible {
+            return false;
+        }
         self.world.can_exercise_control(actor, entity).is_ok()
     }
 
@@ -5407,6 +5414,103 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert!(ControlBeliefView::believed_rights(&view, other, lot).is_empty());
+    }
+
+    #[test]
+    fn can_control_returns_false_for_belief_inaccessible_authoritatively_controlled_entity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let seat = places[0];
+        let remote_place = places[1];
+        let (agent, item) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, seat).unwrap();
+            let office = txn.create_office("Storehouse Steward").unwrap();
+            txn.set_component_office_data(
+                office,
+                OfficeData {
+                    title: "Steward".to_string(),
+                    seat,
+                    jurisdiction: BTreeSet::from([seat, remote_place]),
+                    succession_law: SuccessionLaw::Support,
+                    eligibility_rules: Vec::new(),
+                    succession_period_ticks: 8,
+                    vacancy_since: None,
+                },
+            )
+            .unwrap();
+            create_record(&mut txn, seat, agent, RecordKind::OfficeRegister);
+            txn.assign_office(office, agent).unwrap();
+            let item = txn
+                .create_item_lot_with_owner(
+                    CommodityKind::Bread,
+                    Quantity(1),
+                    remote_place,
+                    Some(office),
+                )
+                .unwrap();
+            commit_txn(txn);
+            (agent, item)
+        };
+
+        assert!(world.can_exercise_control(agent, item).is_ok());
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert!(!ControlBeliefView::can_control(&view, agent, item));
+    }
+
+    #[test]
+    fn can_control_returns_true_for_belief_accessible_controlled_entity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let seat = places[0];
+        let remote_place = places[1];
+        let (agent, item) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, seat).unwrap();
+            let item = txn
+                .create_item_lot_with_owner(
+                    CommodityKind::Bread,
+                    Quantity(1),
+                    remote_place,
+                    Some(agent),
+                )
+                .unwrap();
+            commit_txn(txn);
+            (agent, item)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(item, entity_belief(remote_place, true, 1, 10));
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert!(ControlBeliefView::can_control(&view, agent, item));
+    }
+
+    #[test]
+    fn can_control_returns_true_for_colocated_unowned_item_without_belief() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(CommodityKind::Bread, Quantity(1), place, None)
+                .unwrap();
+            commit_txn(txn);
+            (agent, lot)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert!(ControlBeliefView::can_control(&view, agent, lot));
     }
 
     #[test]

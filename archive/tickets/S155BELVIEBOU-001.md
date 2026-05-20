@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-sim` belief view (`SpatialBeliefView::effective_place` impl)
-**Deps**: None (parallel with S155BELVIEBOU-002; shares `per_agent_belief_view.rs`, different method)
+**Deps**: None (parallel with the now-archived `archive/tickets/S155BELVIEBOU-002.md`; shares `per_agent_belief_view.rs`, different method)
 
 ## Problem
 
@@ -20,7 +20,7 @@ Before this ticket, `PerAgentBeliefView`'s `SpatialBeliefView::effective_place` 
 4. **Intended invariant (restated before trusting any scenario)**: an agent that last saw entity T at P1 and received no new observation/testimony/record must read T's place as P1 (or `None`), never T's current P2.
 5. **Existing focused coverage** (`per_agent_belief_view.rs` `#[cfg(test)]`): `self_expectation_and_last_seen_queries_are_authoritative_only_for_self:2457`, `directly_possessed_item_lot_quantity_uses_authoritative_quantity_over_stale_belief:2587`, `current_place_entities_use_authoritative_local_set_over_stale_beliefs:2621`, `stale_beliefs_do_not_auto_refresh_from_world:2846`. These cover adjacent accessors (expectation/last-seen self-queries, possessed-quantity, co-located set) but **not** `effective_place`'s non-self fallback specifically — confirm during implementation that none asserts the leaking behavior; if one does, it encodes a bug and must be corrected, not preserved (never adapt tests to bugs).
 6. **AI regression layer**: this is a belief-view accessor fix; intended verification is a focused unit test on `PerAgentBeliefView` plus the full AI golden suite (place narrowing may shift existing golden traces — re-baseline expected trace shifts, not world-outcome regressions).
-13. **Adjacent contradictions**: the `can_control` gate gap is a *separate* root cause handled by S155BELVIEBOU-002 — out of scope here.
+13. **Adjacent contradictions**: the `can_control` gate gap is a *separate* root cause handled by the now-archived `archive/tickets/S155BELVIEBOU-002.md` — out of scope here.
 
 ## Architecture Check
 
@@ -51,7 +51,7 @@ Added a last-seen-only stale-location regression test that failed against the pr
 
 ## Out of Scope
 
-- `can_control` belief gate — S155BELVIEBOU-002.
+- `can_control` belief gate — now archived at `archive/tickets/S155BELVIEBOU-002.md`.
 - Golden E2E stale-location pursuit + control-source-swap symmetry, and the `planner-contracts.md` doc line — S155BELVIEBOU-003.
 - Snapshot admission-source provenance tagging — deferred to S157.
 - Any change to authoritative `World::effective_place` itself.
