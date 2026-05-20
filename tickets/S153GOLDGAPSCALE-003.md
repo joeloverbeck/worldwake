@@ -89,7 +89,7 @@ Run `python3 scripts/golden_inventory.py --write --check-docs` and commit the re
 
 1. Contention outcomes emerge from queue/grant/blocker world artifacts and per-agent `RoutePreference`, never from a per-agent script (FND-25, FND-1).
 2. Selecting a plan reserves nothing — access is resolved by explicit grant/queue state (FND-21).
-3. Determinism: byte-stable replay under `ChaCha8Rng` + `BTreeMap`-ordered authoritative state (CLAUDE.md Critical Invariants).
+3. Determinism: byte-stable replay under `ChaCha8Rng` + `BTreeMap`-ordered authoritative state (AGENTS.md Critical Invariants).
 
 ## Test Plan
 

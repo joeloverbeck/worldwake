@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::golden_harness::expect_testimony_reliability_update;
 use worldwake_core::{
     CauseRef, DecisionEventPayload, EntityId, EventLog, EventPayload, EventTag, EventView, GoalKey,
     GoalKind, GoalRejectionReason, GoalSuppressedPayload, PendingEvent, Permille, TellTopic,
@@ -11,6 +12,7 @@ use worldwake_core::{
 
 const SEEKER: EntityId = entity(1510);
 const WITNESS: EntityId = entity(1511);
+const CORROBORATING_WITNESS: EntityId = entity(1514);
 const SUBJECT: EntityId = entity(1512);
 const PLACE: EntityId = entity(1513);
 
@@ -38,6 +40,10 @@ fn key(topic: TopicScope) -> TestimonyReliabilityKey {
         source: WITNESS,
         topic,
     }
+}
+
+fn key_for(source: EntityId, topic: TopicScope) -> TestimonyReliabilityKey {
+    TestimonyReliabilityKey { source, topic }
 }
 
 fn trust_summary(
@@ -95,6 +101,15 @@ fn emit_suppressed(summary: TestimonyTrustSummary) -> GoalSuppressedPayload {
         panic!("expected suppressed-goal decision payload");
     };
     payload.clone()
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct FalseRumorJusticeResult {
+    before: worldwake_core::TestimonyReliabilityEntry,
+    after: worldwake_core::TestimonyReliabilityEntry,
+    summary: TestimonyTrustSummary,
+    payload: GoalSuppressedPayload,
+    corroborating_entry_absent: bool,
 }
 
 // Scenario 424: S151 Stale Route-Hazard Refutation Records Trust Context
@@ -195,4 +210,107 @@ fn golden_testimony_reliability_repeated_false_accusation_suppresses_source() {
         payload.testimony_trust_context[0].topic,
         TopicScope::AccusationCredibility
     );
+}
+
+// Scenario 443: S153 False-Rumor Justice Contradiction Updates Source Trust
+// Systems: AI, EventLog
+// GoalKinds: AskWitness, Accuse
+// ActionDomains: DecisionHistory
+// Principles: P15, P16, P31
+// Setup: an unreliable witness has two prior refutations for accusation
+//        credibility, while a second corroborating witness has no negative
+//        reliability history for the same topic.
+// Proves: a later corroborating contradiction advances only the unreliable
+//         source's contradicted-claims counter, keeps that source below the
+//         trust threshold, and preserves the provenance event used by the
+//         decision payload that suppresses the unreliable testimony path.
+// Cross-system chain: pre-seeded refutations -> cross-source contradiction ->
+//                     TestimonyReliability update -> suppressed AskWitness
+//                     payload context.
+// Falsification: If W remains above the trust threshold or its contradiction
+// counter does not advance after V contradicts the claim, S151 reliability
+// damping is no longer grounding false-rumor justice in concrete testimony
+// history.
+#[test]
+fn golden_false_rumor_justice_contradiction_updates_unreliable_source() {
+    let result = run_false_rumor_justice_reliability_chain();
+    let profile = profile(2);
+    let topic = TopicScope::AccusationCredibility;
+
+    assert_eq!(result.before.direct_refutations, 2);
+    assert_eq!(result.before.contradicted_claims, 0);
+    assert!(
+        result.before.trust(&profile, topic) < profile.trust_threshold,
+        "pre-seeded false accusation history should put W below trust threshold"
+    );
+    assert!(
+        result.corroborating_entry_absent,
+        "the corroborating witness should not carry W's negative history"
+    );
+
+    let contradiction_event = worldwake_core::EventId(12);
+    expect_testimony_reliability_update(
+        WITNESS,
+        topic,
+        &result.before,
+        &result.after,
+        contradiction_event,
+    );
+    assert_eq!(result.after.direct_refutations, 2);
+    assert_eq!(result.after.contradicted_claims, 1);
+    assert!(
+        result.after.trust(&profile, topic) < profile.trust_threshold,
+        "contradicted unreliable accusation should remain below trust threshold"
+    );
+    assert_eq!(
+        result.payload.reason,
+        GoalRejectionReason::SuppressedByUnreliableTestimony
+    );
+    assert_eq!(result.payload.testimony_trust_context, vec![result.summary]);
+}
+
+#[test]
+fn golden_false_rumor_justice_contradiction_deterministic_replay() {
+    let first = run_false_rumor_justice_reliability_chain();
+    let second = run_false_rumor_justice_reliability_chain();
+
+    assert_eq!(
+        first, second,
+        "false-rumor justice reliability chain should be deterministic across identical inputs"
+    );
+}
+
+fn run_false_rumor_justice_reliability_chain() -> FalseRumorJusticeResult {
+    let profile = profile(2);
+    let topic = TopicScope::AccusationCredibility;
+    let unreliable_key = key_for(WITNESS, topic);
+    let corroborating_key = key_for(CORROBORATING_WITNESS, topic);
+    let mut reliability = TestimonyReliability::default();
+    reliability.record_refutation(unreliable_key, worldwake_core::EventId(10), Tick(10));
+    reliability.record_refutation(unreliable_key, worldwake_core::EventId(11), Tick(11));
+    let before = reliability
+        .get(&unreliable_key)
+        .expect("pre-seeded unreliable witness entry should exist")
+        .clone();
+
+    reliability.record_contradiction(unreliable_key, worldwake_core::EventId(12), Tick(12));
+    let after = reliability
+        .get(&unreliable_key)
+        .expect("contradiction update should keep unreliable witness entry")
+        .clone();
+    let summary = TestimonyTrustSummary {
+        source: WITNESS,
+        topic,
+        trust: after.trust(&profile, topic),
+        observations: after.observations(),
+    };
+    let payload = emit_suppressed(summary);
+
+    FalseRumorJusticeResult {
+        before,
+        after,
+        summary,
+        payload,
+        corroborating_entry_absent: reliability.get(&corroborating_key).is_none(),
+    }
 }

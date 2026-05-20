@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden scenario source files: 56
 - Files contributing `golden_*` tests: 56
-- Total `golden_*` tests: 271
+- Total `golden_*` tests: 273
 
 ## Per-Scenario-File Inventory
 
@@ -67,7 +67,7 @@ Do not hand-edit it.
 | `survival_tell.rs` | 2 |
 | `survival_theft.rs` | 2 |
 | `survival_trade.rs` | 2 |
-| `testimony_reliability.rs` | 3 |
+| `testimony_reliability.rs` | 5 |
 | `travel_physiology.rs` | 12 |
 
 ### `activation_decay.rs`
@@ -493,6 +493,8 @@ Do not hand-edit it.
 - `golden_testimony_reliability_route_hazard_refutation_records_context`
 - `golden_testimony_reliability_confirmation_raises_trust_above_neutral`
 - `golden_testimony_reliability_repeated_false_accusation_suppresses_source`
+- `golden_false_rumor_justice_contradiction_updates_unreliable_source`
+- `golden_false_rumor_justice_contradiction_deterministic_replay`
 
 ### `travel_physiology.rs`
 

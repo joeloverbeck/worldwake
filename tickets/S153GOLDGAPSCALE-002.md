@@ -83,7 +83,7 @@ Run `python3 scripts/golden_inventory.py --write --check-docs` and commit the re
 
 1. The patrol gap emerges from authoritative office + expectation + slot state — never from a hidden scenario flag (FND-1, FND-23).
 2. Guards revise office-dependent commitments when the backing expectation's assumptions are invalidated (FND-21).
-3. Determinism: byte-stable replay under `ChaCha8Rng` + `BTreeMap`-ordered authoritative state (CLAUDE.md Critical Invariants).
+3. Determinism: byte-stable replay under `ChaCha8Rng` + `BTreeMap`-ordered authoritative state (AGENTS.md Critical Invariants).
 
 ## Test Plan
 

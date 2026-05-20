@@ -10,7 +10,7 @@ Status update (2026-05-13): `archive/tickets/S143STABELVIE-006.md` landed the be
 
 Four scenarios deferred until substrate ships: 100-goal dense market (needs S144 diagnostics to verify behavior at scale); 20-agent route bottleneck (needs S147 HTN methods for caravan/escort decomposition); long production chain (4+ prereqs) (covered after S146 GoalSchema per-goal budgets land); boundary shock (covered by Phase 7's planned S62 + S64).
 
-Each remaining S153 scenario block follows the project's golden-gaps convention: per-scenario Setup, Assertion, GoalKinds/ActionDomains exercised, emergence justification, and "Why it is not a duplicate." Each remaining scenario lands as a golden test module under `crates/worldwake-ai/tests/scenarios/` (registered in `tests/scenarios/mod.rs`, run via `cargo test -p worldwake-ai --test golden_ai <name>` per the post-S154 harness consolidation). Whether each scenario's world is built inline (the precedent set by the landed `belief_wall_trap.rs`) or backed by a committed `scenarios/*.ron` file is a per-scenario implementation choice — there is no `scenarios/golden-*.ron` naming convention in the repo today, and the landed belief-wall regression used an inline fixture rather than RON. The substance matches archived `S81-golden-gaps-simulation-remediation.md` and `S76-golden-gaps-simulation-observer.md`.
+Each remaining S153 scenario block follows the project's golden-gaps convention: per-scenario Setup, Assertion, GoalKinds/ActionDomains exercised, emergence justification, and "Why it is not a duplicate." New scenario families land as golden test modules under `crates/worldwake-ai/tests/scenarios/` (registered in `tests/scenarios/mod.rs`, run via `cargo test -p worldwake-ai --test golden_ai <name>` per the post-S154 harness consolidation); when a live golden owner already exists, the S153 slice extends that owner instead of creating a duplicate module. Whether each scenario's world is built inline (the precedent set by the landed `belief_wall_trap.rs`) or backed by a committed `scenarios/*.ron` file is a per-scenario implementation choice — there is no `scenarios/golden-*.ron` naming convention in the repo today, and the landed belief-wall regression used an inline fixture rather than RON. The substance matches archived `S81-golden-gaps-simulation-remediation.md` and `S76-golden-gaps-simulation-observer.md`.
 
 This spec is the final wave of Phase 12: it validates the other accepted specs by exercising them under adversarial conditions. After S143STABELVIE-006, the remaining S153 goldens diagnose regressions in archived S148, archived S150, and archived S151 directly; the S143 belief-wall regression is covered by the landed S143 golden.
 
@@ -20,7 +20,7 @@ Phase 12: AI Architecture Evolution — Draft
 
 ## Crates
 
-- `worldwake-ai` — owns the remaining new golden test modules under `crates/worldwake-ai/tests/scenarios/` (`false_rumor_justice.rs`, `office_vacancy.rs`, `scaled_contention.rs`), each registered in `tests/scenarios/mod.rs` and exercised through the `golden_ai` harness, plus the new `golden_harness/` assertion helpers (D5). `tests/scenarios/belief_wall_trap.rs` already landed under S143STABELVIE-006.
+- `worldwake-ai` — owns the remaining golden coverage under `crates/worldwake-ai/tests/scenarios/`: false-rumor justice extends the existing `testimony_reliability.rs` owner; office vacancy and scaled contention are planned as new `office_vacancy.rs` / `scaled_contention.rs` modules, each exercised through the `golden_ai` harness, plus the new `golden_harness/` assertion helpers (D5). `tests/scenarios/belief_wall_trap.rs` already landed under S143STABELVIE-006.
 - `worldwake-cli` — owns any committed `scenarios/*.ron` files a scenario chooses to use (RON is optional per the inline-fixture precedent) and the scenario loader path those files exercise.
 - Other crates: no source change.
 
@@ -69,22 +69,23 @@ The earlier RON-backed sketch and suppression-reason wording are superseded by t
 
 **Why not a duplicate**: Prior goldens test legality predicates with belief entries present; the landed S143 golden tests the *absent-belief* path against the trait-fence enforcement.
 
-### D2: `crates/worldwake-ai/tests/scenarios/false_rumor_justice.rs` (+ optional `scenarios/*.ron`)
+### D2: `crates/worldwake-ai/tests/scenarios/testimony_reliability.rs` Scenario 443
 
-**Setup**: Three agents — Witness W (unreliable, has been wrong before in TestimonyReliability), Witness V (reliable), Magistrate M. W tells M that Agent A stole from a stash. V was actually present and saw nothing happen. A is innocent.
+Status update (2026-05-20): `archive/tickets/S153GOLDGAPSCALE-001.md` landed the false-rumor justice slice as Scenario 443 in the existing `crates/worldwake-ai/tests/scenarios/testimony_reliability.rs` owner rather than creating a duplicate `false_rumor_justice.rs` module. The live proof seam is helper-level testimony reliability and decision-payload coverage: W has prior accusation refutations, V remains a distinct corroborating source, V's contradiction advances W's `contradicted_claims`, W remains below trust threshold, and the suppressed-goal payload carries W's low-trust summary.
+
+**Setup**: Witness W is unreliable for `TopicScope::AccusationCredibility`; Witness V is a distinct corroborating source with no negative reliability entry for that topic. W has two prior refutations, then V contradicts W's accusation claim.
 
 **Assertions**:
 1. M's `TestimonyReliability` entry for the `(source: W, topic)` key has `direct_refutations >= 2` from prior unreliable testimony (pre-seeded). (`TestimonyReliability` is keyed by `TestimonyReliabilityKey { source, topic }`; the per-key `TestimonyReliabilityEntry` carries `direct_refutations` and `contradicted_claims` among its counters — `crates/worldwake-core/src/testimony_reliability.rs`.)
-2. M receives W's claim — the belief enters M's store with low confidence (because computed trust falls below M's `TestimonyTrustProfile.minimum_observations` / threshold parameter; the threshold is a profile field, not an entry counter).
-3. M ranks `Accuse(A)` candidate against W's testimony; the candidate is damped per S151 ranking integration.
-4. M asks V for corroborating testimony (`AskWitness` candidate emitted from the `SocialMotive` slot per archived S148).
-5. V's testimony contradicts W's; M's belief contradiction surfaces via S109 `Discrepancy::BeliefContradicted`.
-6. M does *not* commit `Accuse` — the contradiction holds enough weight that the decision payload (S136) records the comparison.
-7. W's `TestimonyReliability` `contradicted_claims` increments — M learns W's prior pattern.
+2. V's corroborating role does not inherit W's negative history because reliability is keyed by source and topic.
+3. V's contradiction advances W's `TestimonyReliability` `contradicted_claims`.
+4. W remains below the trust threshold after the contradiction.
+5. The decision payload records the suppressed unreliable testimony context (`DecisionEventPayload::GoalSuppressed` with `SuppressedByUnreliableTestimony`).
+6. The helper-level deterministic replay repeats the same reliability entries, trust summary, payload, and corroborating-entry absence result.
 
 **GoalKinds/ActionDomains exercised**: `AskWitness`, `Accuse`, decision-history payload, testimony reliability updates.
 
-**Emergence justification**: M does not have an authored "ignore W" rule. M's prior experience with W (concrete `TestimonyReliability` state) shapes ranking, and contradiction with V's testimony resolves through belief-contradiction discrepancy.
+**Emergence justification**: There is no authored "ignore W" rule. W's prior experience is concrete `TestimonyReliability` state, and contradiction with V changes W's source/topic reliability state rather than global truth.
 
 **Why not a duplicate**: Existing goldens test single-source testimony updates. This golden tests *cross-source contradiction with prior reliability state*, which is uniquely enabled by S151.
 
@@ -135,13 +136,15 @@ Two new helpers in the existing `golden_harness/` directory:
 
 ### D6: Determinism regression
 
-Each of the three remaining S153 scenarios runs with a fixed seed and the golden harness asserts:
+Each remaining S153 scenario has deterministic coverage. For full runtime scenarios, the golden harness asserts:
 1. Event log byte-stable across reruns.
 2. Final `ScenarioDiagnosticsReport` (S144) byte-stable across reruns.
 
+For helper-level testimony reliability coverage, Scenario 443 asserts equality of the repeated before/after reliability entries, trust summary, suppressed payload, and corroborating-entry absence result.
+
 ### D7: Falsification documentation
 
-Each of the three remaining `tests/scenarios/*.rs` golden modules carries a `// Falsification:` comment block: what would need to change in the world for the assertion to be wrong. E.g., for false-rumor justice: "If M commits `Accuse(A)` despite W's low reliability and V's contradicting testimony, the S151 reliability damping failed." (The already-landed `belief_wall_trap.rs` predates this convention and does not carry the comment; retrofitting it is out of scope for this spec.)
+Each remaining S153 scenario block carries a `// Falsification:` comment block: what would need to change in the world for the assertion to be wrong. For false-rumor justice, the landed block says W remaining above threshold or failing to advance `contradicted_claims` after V contradicts the claim would falsify the S151 reliability grounding. (The already-landed `belief_wall_trap.rs` predates this convention and does not carry the comment; retrofitting it is out of scope for this spec.)
 
 ## FND-01 Section H Analysis
 
@@ -185,7 +188,7 @@ Not applicable. Goldens use authored scenario data; no new profile fields.
 
 ## Test Plan
 
-- Three remaining S153 golden test files with the per-block assertions above; the belief-wall trap golden is already covered by S143STABELVIE-006.
+- Remaining S153 golden coverage with the per-block assertions above; false-rumor justice extends `testimony_reliability.rs`, office vacancy and scaled contention remain planned as new scenario modules, and the belief-wall trap golden is already covered by S143STABELVIE-006.
 - D6 determinism regression.
 - All goldens passing — `cargo test --workspace`.
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.

@@ -751,9 +751,9 @@ S153 (hard deps on archived S143, archived S148, archived S150, archived S151)
 - [x] S150 archived: cross-goal blocker goldens prove `RouteSegment` and `Counterparty` blockers suppress multi-goal candidates and clear on observation
 - [x] S151 archived: testimony-reliability goldens prove confirmation/refutation trust summaries and suppressed-goal payload context; route-preference goldens prove dangerous-traversal penalty, decay, and composition with route-segment blockers
 - [x] S152 archived: archetype goldens prove deterministic seeded assignment, comparative resolved-profile diversification, `PersonalityAssigned` event replay/inspectability, explicit override precedence, and save/load preservation
-- [ ] S153 remaining three golden scenarios all pass with byte-stable event log on fixed seeds; belief-wall trap is covered by S143STABELVIE-006
+- [ ] S153 remaining golden coverage passes: false-rumor justice helper-level reliability coverage is landed by `archive/tickets/S153GOLDGAPSCALE-001.md`, office-vacancy and scaled-contention runtime goldens remain active, and belief-wall trap is covered by S143STABELVIE-006
 - [ ] PR-9 (incremental snapshots / multi-queue search) reassessed against S144 diagnostics: actual planning-cost bottlenecks identified or proposal stays deferred
-- [ ] Canonical regression G (false rumor → wrongful accusation → correction) producible through S151 + S149 + S153/golden_false_rumor_justice end-to-end
+- [ ] Canonical regression G coverage reconciled with live S153 scope: S153 currently proves the false-rumor reliability substrate through Scenario 443, while any later end-to-end wrongful-accusation correction workflow needs an explicit owner before it can be a phase gate
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [ ] `cargo test --workspace` passing
 - [ ] Golden E2E coverage for each new spec's core behavior

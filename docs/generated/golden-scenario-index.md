@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 207
+- Scenario blocks: 208
 - Contributing golden scenario source files: 51
-- Associated tests: 253
+- Associated tests: 255
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -2521,7 +2521,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 424: S151 Stale Route-Hazard Refutation Records Trust Context
 
-- Source: `testimony_reliability.rs:100`
+- Source: `testimony_reliability.rs:115`
 - Systems: AI, EventLog
 - GoalKinds: AskWitness
 - ActionDomains: DecisionHistory
@@ -2533,7 +2533,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 425: S151 Accurate Threat Confirmation Raises Source Trust
 
-- Source: `testimony_reliability.rs:133`
+- Source: `testimony_reliability.rs:148`
 - Systems: AI, EventLog
 - GoalKinds: AskWitness
 - ActionDomains: DecisionHistory
@@ -2545,7 +2545,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 426: S151 Repeated False Accusation Crosses Suppression Threshold
 
-- Source: `testimony_reliability.rs:162`
+- Source: `testimony_reliability.rs:177`
 - Systems: AI, EventLog
 - GoalKinds: AskWitness
 - ActionDomains: DecisionHistory
@@ -2554,6 +2554,18 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Setup**: the same witness is refuted twice for accusation credibility, meeting the minimum-observation gate; unrelated topics are absent so the threshold crossing belongs to this source/topic pair.
 
 **Proves**: repeated refutations produce a below-threshold trust summary and the suppression payload carries the accusation topic context.
+
+### Scenario 443: S153 False-Rumor Justice Contradiction Updates Source Trust
+
+- Source: `testimony_reliability.rs:215`
+- Systems: AI, EventLog
+- GoalKinds: AskWitness, Accuse
+- ActionDomains: DecisionHistory
+- Principles: P15, P16, P31
+
+**Setup**: an unreliable witness has two prior refutations for accusation credibility, while a second corroborating witness has no negative reliability history for the same topic.
+
+**Proves**: a later corroborating contradiction advances only the unreliable source's contradicted-claims counter, keeps that source below the trust threshold, and preserves the provenance event used by the decision payload that suppresses the unreliable testimony path.
 
 ### Scenario 58: Travel Need Escalation
 
