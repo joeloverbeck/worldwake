@@ -10,20 +10,20 @@ set, and strategic search scans `state.snapshot().entities.keys()` for workstati
 resource sources, and acquisition places. That scan is only sound if snapshot admission is
 airtight — which the planner currently cannot self-verify.
 
-**This spec is DEFERRED and intentionally OUT of the active implementation order.** It is
-defense-in-depth and a debuggability/provenance improvement (FND-15, FND-29), not a correctness
-fix. The actual remote-truth leak is closed at the source by **S155** (belief-view boundary
-correctness); once the snapshot is built from a belief-correct view, source tagging hardens and
-explains the boundary rather than repairing it. Implement only after S155 lands and the team
-chooses to invest in snapshot-level provenance.
+This spec is **defense-in-depth** and a debuggability/provenance improvement (FND-15, FND-29),
+not a correctness fix. The remote-truth leak was already closed at the source by **S155**
+(belief-view boundary correctness, now COMPLETED — `archive/specs/S155-belief-view-boundary-correctness.md`);
+the snapshot is now built from a belief-correct view, so source tagging *hardens and explains*
+the boundary rather than repairing it. S155's landing satisfies this spec's only hard
+prerequisite, so it is now active.
 
 ## Phase
 
-AI Architecture Consolidation (Adjunct Wave — derived from `reports/ai-architecture-consolidation-first-iteration.md`) — **Deferred**
+AI Architecture Consolidation (Adjunct Wave — derived from `reports/ai-architecture-consolidation-first-iteration.md`)
 
 ## Status
 
-DRAFT — DEFERRED (not scheduled in active order)
+DRAFT (active — S155 prerequisite landed; ready for ticket decomposition)
 
 ## Crates
 
@@ -31,8 +31,10 @@ DRAFT — DEFERRED (not scheduled in active order)
 
 ## Dependencies
 
-- **S155 (Belief-View Boundary Correctness)** — must land first; this spec assumes the belief
-  surface feeding the snapshot is already belief-correct.
+- **S155 (Belief-View Boundary Correctness)** — **COMPLETED**, archived at
+  `archive/specs/S155-belief-view-boundary-correctness.md`. It fixed the FND-14A remote-truth
+  leak in `PerAgentBeliefView::effective_place()`, so the belief surface feeding the snapshot is
+  now belief-correct. This spec's only hard prerequisite is therefore satisfied.
 
 ## Problem Statement
 
@@ -58,18 +60,20 @@ FND-15 says beliefs should carry provenance (source, claimed/acquired time, conf
 relevance matters." FND-29 requires the engine to answer "why does this agent know/consider
 this?" A planner that admits a remote entity as an evidence carrier and later reads its current
 location/inventory/occupants — without recording that those fields were never legitimately
-admitted — cannot prove it is leak-free, even when (post-S155) it happens to be. Source tagging
-turns an invariant currently held by convention into one the planner can assert and trace.
+admitted — cannot prove it is leak-free, even when (now that S155 has landed) it happens to be.
+Source tagging turns an invariant currently held by convention into one the planner can assert
+and trace.
 
-### Why deferred
+### Why this is bounded
 
-S155 removes the live-truth fallback at the belief accessors that feed snapshot construction,
-so the snapshot is built from belief-correct inputs and the amplification risk is largely
-neutralized at the source. The report's heavier proposal (a generic `PlannerVisible<T>` wrapper,
-four split view traits, and a hard "`worldwake-ai` must never receive `&World`" rule) is a large
-surface that risks Option-C-style churn; this spec captures a **bounded** version (an admission
-enum + trace + guarded iterators) to be scheduled deliberately, not bundled into the critical
-fix wave.
+S155 removed the live-truth fallback at the belief accessors that feed snapshot construction,
+so the snapshot is now built from belief-correct inputs and the amplification risk is already
+neutralized at the source. This spec is therefore not a correctness fix but defense-in-depth and
+provenance hardening. The report's heavier proposal (a generic `PlannerVisible<T>` wrapper, four
+split view traits, and a hard "`worldwake-ai` must never receive `&World`" rule) is a large
+surface that risks Option-C-style churn; this spec deliberately captures only a **bounded**
+version (an admission enum + trace + guarded iterators), leaving the heavier refactor as an
+explicit Non-Goal.
 
 ## Design Goals
 
@@ -128,6 +132,12 @@ Add an admission-source enum (self-authoritative, local same-tick physical, beli
 last-seen memory, testimony/record, grounded-evidence carrier, public topology, hypothetical
 planner effect) recorded per admitted entity in `PlanningSnapshot`. Populate it in
 `collect_entities()`/`build_planning_snapshot()` from the path that admitted each entity.
+
+The source is a fieldless enum stored on `SnapshotEntity` (co-located with the entity's other
+sub-structs at `planning_snapshot.rs:215`). It must derive `Clone, Debug, Eq, PartialEq` to
+match `SnapshotEntity`'s derives (and may add `Copy` as a fieldless enum). `PlanningSnapshot` is
+a transient derived read-model and is **not** serialized (no `Serialize`/`Deserialize`), so there
+is no serde-default or save/replay-compatibility concern for the new field.
 
 ### D2 — Source-restricted strategic scans
 Replace raw `state.snapshot().entities.keys()` scans in `search/strategic.rs` with accessors
