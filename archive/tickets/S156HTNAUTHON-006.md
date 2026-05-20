@@ -1,6 +1,6 @@
 # S156HTNAUTHON-006: HTN method drafting checklist + planner-contract docs
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
@@ -36,7 +36,7 @@ fallback is invalid. This ticket folds an HTN method drafting checklist into
    `spec-drafting-rules.md` (rather than a new doc) keeps a single source of truth.
 2. No backward-compatibility surface: documentation only.
 
-## Verification Layers
+## Verified Layers
 
 1. Checklist presence and correctness -> manual review against the spec's D6 requirements; the doc
    names the required declarations (reusable pursuit pattern, why flat GOAP is insufficient,
@@ -46,26 +46,26 @@ fallback is invalid. This ticket folds an HTN method drafting checklist into
 2. Documentation-only ticket: no runtime invariant to map to a trace/event surface — verification
    is review-based, with the runtime contract it describes proven by S156HTNAUTHON-005's tests.
 
-## What to Change
+## Landed Changes
 
-### 1. Add an HTN method drafting checklist to `docs/spec-drafting-rules.md`
+### 1. Added an HTN method drafting checklist to `docs/spec-drafting-rules.md`
 
-Add a checklist requiring each proposed HTN method to declare: the reusable pursuit pattern it
+The checklist now requires each proposed HTN method to declare: the reusable pursuit pattern it
 encodes; why flat GOAP is insufficient; whether flat-GOAP fallback is allowed / forbidden /
-allowed-after-traced-failure; every belief, record, and observation it reads; and the golden tests
-proving selection, rejection, fallback, and trace. State that any field expressing required
-artifacts/claims/failure modes must be *enforced* when declared (no re-creation of dead schema),
-and that a method-required goal is invalid unless the schema proves fallback would satisfy the
-wrong semantic condition.
+allowed-after-traced-failure; every belief, memory, record, observation, evidence, motive, and
+profile value it reads; and the focused/golden tests proving selection, rejection, fallback, and
+trace. It states that required artifacts, claims, records, roles, failure modes, locations, and
+capabilities must be enforced when declared, and that a method-required goal is invalid unless
+the schema proves fallback would satisfy the wrong semantic condition.
 
-### 2. Document the method-trace fallback/rejection contract in `docs/planner-contracts.md`
+### 2. Documented the method-trace fallback/rejection contract in `docs/planner-contracts.md`
 
-Add a section describing the post-S156 method-trace contract: the trace records the selected
-method, the rejected candidate methods with their failing precondition, and the explicit fallback
-reason when no method produces stages (matching the fields delivered by S156HTNAUTHON-005). Name
-it as a transient debug read-model, not authoritative state.
+The planner contract now documents the post-S156 method-trace contract: the trace records the
+selected method, rejected candidate methods with their failing precondition, and explicit
+fallback reasons (`NoViableMethod` or `MethodProducedNoStages`) when flat-GOAP fallback is used.
+It names the trace as a transient debug read-model, not authoritative state.
 
-## Files to Touch
+## Landed Files
 
 - `docs/spec-drafting-rules.md` (modify)
 - `docs/planner-contracts.md` (modify)
@@ -75,27 +75,55 @@ it as a transient debug read-model, not authoritative state.
 - Any code change (delivered by S156HTNAUTHON-001..005).
 - Reintroducing the removed schema fields.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Verification
 
-1. None — documentation-only ticket; verification is review-based and the runtime contract it
-   describes is proven by S156HTNAUTHON-005's tests.
+1. Passed: documentation review confirmed both docs contain the D6 checklist and planner-contract
+   content.
+2. Passed: `git diff --stat docs/spec-drafting-rules.md docs/planner-contracts.md` confirmed both
+   files changed.
+3. Passed: scoped Markdown/diff hygiene checks covered the doc-only diff.
+4. Waived: `./scripts/verify.sh` for this ticket iteration because the `implement-spec-tickets`
+   harness owns the final pre-push verification gate after the S156 family lands.
 
 ### Invariants
 
-1. `docs/spec-drafting-rules.md` carries an HTN method checklist that forbids declared-but-
+1. Passed: `docs/spec-drafting-rules.md` carries an HTN method checklist that forbids declared-but-
    unenforced method semantics and gates method-required goals on a fallback-invalidity proof.
-2. `docs/planner-contracts.md` documents the method-trace fallback/rejection contract consistent
+2. Passed: `docs/planner-contracts.md` documents the method-trace fallback/rejection contract consistent
    with the delivered `MethodPlanAttemptTrace` fields.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
 1. `None — documentation-only ticket; verification is command-based and existing runtime coverage is named in Assumption Reassessment.`
 
-### Commands
+### Commands Run
 
-1. `git diff --stat docs/spec-drafting-rules.md docs/planner-contracts.md` (confirm both files changed)
-2. `./scripts/verify.sh` (before PR — confirms the doc edits do not break any doc-consuming check)
+1. Passed `git diff --stat docs/spec-drafting-rules.md docs/planner-contracts.md`
+2. Passed `git diff --check -- docs/spec-drafting-rules.md docs/planner-contracts.md tickets/S156HTNAUTHON-006.md`
+3. Passed `python3 .codex/skills/implement-ticket/scripts/check_closeout.py tickets/S156HTNAUTHON-006.md`
+4. Waived `./scripts/verify.sh` for this ticket iteration because the harness runs it before push after final spec archival.
+
+## Outcome
+
+Completed on 2026-05-20.
+
+- Added the HTN method drafting checklist to `docs/spec-drafting-rules.md`.
+- Added the HTN method trace fallback/rejection contract to `docs/planner-contracts.md`.
+- No production code, tests, generated docs, or runtime behavior changed.
+
+## Deviations
+
+- The ticket remained documentation-only as drafted.
+- The final `./scripts/verify.sh` gate is deferred to the harness-level pre-push verification after
+  all S156 tickets and final spec archival are complete.
+
+## Verification Result
+
+- Passed `git diff --stat docs/spec-drafting-rules.md docs/planner-contracts.md`
+- Passed `git diff --check -- docs/spec-drafting-rules.md docs/planner-contracts.md tickets/S156HTNAUTHON-006.md`
+- Passed `python3 .codex/skills/implement-ticket/scripts/check_closeout.py tickets/S156HTNAUTHON-006.md`
+- Waived `./scripts/verify.sh` for this ticket iteration because the harness owns the final pre-push verification gate after the S156 family lands.

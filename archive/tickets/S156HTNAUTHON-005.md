@@ -193,8 +193,8 @@ Completed on 2026-05-20.
   carry `NoViableMethod` or `MethodProducedNoStages`.
 - The observer and scenario diagnostics constructor sites were updated for the expanded trace
   shape.
-- No follow-up ticket was required for this slice; `S156HTNAUTHON-006` remains the queued
-  documentation slice for codifying the delivered contract.
+- No follow-up ticket was required for this slice; the documentation slice later completed and
+  archived as `archive/tickets/S156HTNAUTHON-006.md`.
 
 ## Deviations
 
