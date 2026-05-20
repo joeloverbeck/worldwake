@@ -22,7 +22,6 @@ pub struct MethodSchema {
 pub enum MethodPrecondition {
     BeliefHolds(BeliefPredicate),
     MotiveSourcePresent(MotiveSourceDiscriminant),
-    AgentRole(RoleTag),
     LocationKnown(EntityCriterion),
 }
 
@@ -116,17 +115,6 @@ pub enum EntityCriterion {
     Witness { topic: TopicTemplate },
     ViolationEvidence { violation: EntityTemplate },
     Ledger { institution: EntityTemplate },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub enum RoleTag {
-    Hunter,
-    Guard,
-    Merchant,
-    Magistrate,
-    Crafter,
-    Caravaneer,
-    Civilian,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -295,12 +283,11 @@ mod tests {
         let schema = MethodSchema {
             id: MethodSchemaId(7),
             goal_kind: GoalKindDiscriminant::ProduceCommodity,
-            preconditions: vec![
-                MethodPrecondition::BeliefHolds(BeliefPredicate::ResourceSourceKnown {
+            preconditions: vec![MethodPrecondition::BeliefHolds(
+                BeliefPredicate::ResourceSourceKnown {
                     commodity: CommodityTemplate::Fixed(CommodityKind::Grain),
-                }),
-                MethodPrecondition::AgentRole(RoleTag::Crafter),
-            ],
+                },
+            )],
             subgoals: vec![
                 SubgoalTemplate::AcquireCommodity {
                     commodity: CommodityTemplate::Fixed(CommodityKind::Grain),

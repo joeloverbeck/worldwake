@@ -74,7 +74,6 @@ fn evaluate_precondition(
         MethodPrecondition::MotiveSourcePresent(discriminant) => motives
             .iter()
             .any(|source| MotiveSourceDiscriminant::from(&source.source) == *discriminant),
-        MethodPrecondition::AgentRole(_) => true,
         MethodPrecondition::LocationKnown(criterion) => match criterion {
             crate::htn::EntityCriterion::Workstation(tag) => candidate_places(goal)
                 .into_iter()
@@ -452,8 +451,11 @@ mod tests {
     use crate::htn::{BeliefPredicate, MethodPrecondition, MotiveBias, build_method_registry};
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        BeliefConfidencePolicy, BodyCostPerTick, DemandObservation, DriveThresholds, EntityKind,
-        HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, LoadUnits,
+        ArtifactActionability, ArtifactCredibility, ArtifactExistence, ArtifactKind,
+        ArtifactLegalEffect, BeliefConfidencePolicy, BelievedArtifactState, BelievedBountyTerms,
+        BelievedEntityState, BelievedInstitutionalClaim, BodyCostPerTick, BountyTarget,
+        DemandObservation, DriveThresholds, EntityKind, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDispositionProfile, LoadUnits,
         MetabolismProfile, MethodSchemaId, MotiveSource, OpportunityAnchor, Permille, Quantity,
         ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
     };
@@ -560,6 +562,8 @@ mod tests {
         sale_lots: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
         recipes: BTreeMap<RecipeId, RecipeDefinition>,
         visible_hostiles: Vec<EntityId>,
+        entity_beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
+        institutional_beliefs: BTreeMap<EntityId, Vec<BelievedInstitutionalClaim>>,
     }
 
     impl ControlBeliefView for TestBeliefView {
@@ -796,6 +800,10 @@ mod tests {
     }
 
     impl SocialBeliefView for TestBeliefView {
+        fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+            self.entity_beliefs.get(&agent).cloned().unwrap_or_default()
+        }
+
         fn belief_confidence_policy(&self, _agent: EntityId) -> BeliefConfidencePolicy {
             BeliefConfidencePolicy::default()
         }
@@ -808,7 +816,14 @@ mod tests {
         }
     }
 
-    impl worldwake_sim::PoliticalBeliefView for TestBeliefView {}
+    impl worldwake_sim::PoliticalBeliefView for TestBeliefView {
+        fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
+            self.institutional_beliefs
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
+        }
+    }
     impl BelievedAuthorityView for TestBeliefView {}
     impl LocalPhysicalObservationView for TestBeliefView {}
 
@@ -842,6 +857,45 @@ mod tests {
     }
 
     impl RuntimeBeliefView for TestBeliefView {}
+
+    fn bounty_belief(target: EntityId, claim_place: EntityId) -> BelievedEntityState {
+        let mut state = BelievedEntityState::single_observation_defaults(
+            Tick(0),
+            worldwake_core::PerceptionSource::DirectObservation,
+        );
+        state.believed_artifact = Some(BelievedArtifactState {
+            kind: ArtifactKind::Bounty,
+            issuer: entity(77),
+            expires_at: None,
+            existence: ArtifactExistence::Exists,
+            visibility: worldwake_core::ArtifactVisibility::WidelyKnown,
+            legal_effect: ArtifactLegalEffect::Active { expires_at: None },
+            credibility: ArtifactCredibility::Credible,
+            actionability: ArtifactActionability::Actionable,
+            bounty_terms: Some(BelievedBountyTerms {
+                target: BountyTarget::EliminateEntity { target },
+                reward_commodity: CommodityKind::Coin,
+                reward_quantity: Quantity(10),
+                claim_place,
+            }),
+            notice_topic: None,
+            observed_tick: Tick(0),
+        });
+        state
+    }
+
+    fn institutional_belief() -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::OfficeHolder {
+                office: entity(70),
+                holder: Some(entity(71)),
+                effective_tick: Tick(0),
+            },
+            source: InstitutionalKnowledgeSource::DirectObservation,
+            learned_tick: Tick(0),
+            learned_at: Some(entity(72)),
+        }
+    }
 
     #[test]
     fn select_method_returns_top_ranked_method_by_motive_score() {
@@ -1116,6 +1170,33 @@ mod tests {
         .expect("canonical produce_with_gather should select from recipe input source beliefs");
 
         assert_eq!(selected.id, MethodSchemaId(5));
+    }
+
+    #[test]
+    fn canonical_group_hunt_selects_from_real_belief_preconditions() {
+        let actor = entity(1);
+        let bounty = entity(30);
+        let target = entity(40);
+        let claim_place = entity(50);
+        let mut view = TestBeliefView::default();
+        view.visible_hostiles.push(target);
+        view.entity_beliefs
+            .insert(actor, vec![(bounty, bounty_belief(target, claim_place))]);
+        view.institutional_beliefs
+            .insert(actor, vec![institutional_belief()]);
+
+        let registry = build_method_registry();
+        let selected = select_method(
+            actor,
+            &goal(GoalKind::FulfillBounty { bounty }),
+            &registry,
+            &AgentSchemaContextProfile::default(),
+            &view,
+            &[],
+        )
+        .expect("canonical group hunt should select from dangerous-target and ally beliefs");
+
+        assert_eq!(selected.id, MethodSchemaId(3));
     }
 
     #[test]

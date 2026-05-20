@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `worldwake-ai` HTN selector + strategic search + decision trace; `worldwake-cli` observer rendering
-**Deps**: S156HTNAUTHON-002, S156HTNAUTHON-003
+**Deps**: archive/tickets/S156HTNAUTHON-002.md, tickets/S156HTNAUTHON-003.md
 
 ## Problem
 

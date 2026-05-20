@@ -1,7 +1,7 @@
 use crate::htn::{
     ArtifactTemplate, BeliefPredicate, ClaimRequirement, CommodityTemplate, EntityCriterion,
     EntityTemplate, ExplanationTemplateId, LocationTemplate, MethodFailureMode, MethodPrecondition,
-    MethodSchema, MotiveBias, PayloadTemplate, PayloadValueTemplate, RecipeTemplate, RoleTag,
+    MethodSchema, MotiveBias, PayloadTemplate, PayloadValueTemplate, RecipeTemplate,
     SubgoalTemplate, TopicTemplate,
 };
 use crate::planner_ops::PlannerOpKind;
@@ -179,7 +179,6 @@ pub fn fulfill_bounty_group_hunt() -> MethodSchema {
                 target: EntityTemplate::BountyTarget,
             }),
             MethodPrecondition::BeliefHolds(BeliefPredicate::AllyOrBountyOfficeAvailable),
-            MethodPrecondition::AgentRole(RoleTag::Hunter),
         ],
         vec![
             // Existing planner ops have no RecruitAlly leaf. DeclareSupport is

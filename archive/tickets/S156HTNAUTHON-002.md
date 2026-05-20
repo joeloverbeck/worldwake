@@ -1,6 +1,6 @@
 # S156HTNAUTHON-002: Remove fake `AgentRole` precondition + orphaned `RoleTag`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-ai` HTN method preconditions
@@ -52,47 +52,46 @@ the `RoleTag` enum (which becomes workspace-orphaned once `AgentRole` is gone).
    unused type "in case roles return." Per the spec triage, role state returns later *with*
    enforcement, as a fresh design.
 
-## Verification Layers
+## Verified Layers
 
 1. `group_hunt` remains selectable after `AgentRole` removal -> focused selector unit test in
    `htn/selector.rs` driving a belief state that satisfies `TargetBelievedDangerous` +
    `AllyOrBountyOfficeAvailable` and asserting `select_method` returns method id 3.
 2. No-op gate is gone (no always-true precondition arm) -> `cargo clippy --workspace --all-targets
-   -- -D warnings` (the removed variant must leave no unreachable/unused-match warnings).
+   -- -D warnings` passed after the variant removal.
 3. Single-layer ticket: precondition evaluation is AI search-control with no authoritative-state
    or action-lifecycle effect — additional layer mapping is not applicable.
 
-## What to Change
+## Landed Changes
 
-### 1. Remove the `AgentRole` variant and its selector arm
+### 1. Removed the `AgentRole` variant and its selector arm
 
-Delete `AgentRole(RoleTag)` from `MethodPrecondition` (`method_schema.rs`) and the
-`MethodPrecondition::AgentRole(_) => true` arm from `evaluate_precondition` (`htn/selector.rs:77`).
+Deleted `AgentRole(RoleTag)` from `MethodPrecondition` (`method_schema.rs`) and the
+`MethodPrecondition::AgentRole(_) => true` arm from `evaluate_precondition` (`htn/selector.rs`).
 
-### 2. Remove the `AgentRole` precondition from `fulfill_bounty_group_hunt`
+### 2. Removed the `AgentRole` precondition from `fulfill_bounty_group_hunt`
 
-In `htn/methods.rs`, delete the `MethodPrecondition::AgentRole(RoleTag::Hunter)` entry from the
-method's precondition list (line ~182). Leave the two belief preconditions and all subgoals
-unchanged.
+In `htn/methods.rs`, deleted the `MethodPrecondition::AgentRole(RoleTag::Hunter)` entry from the
+method's precondition list. The two belief preconditions and all subgoals stayed unchanged.
 
-### 3. Remove the orphaned `RoleTag` enum
+### 3. Removed the orphaned `RoleTag` enum
 
-Delete the `RoleTag` enum definition (`method_schema.rs:121-130`) and its re-export at
-`htn/mod.rs:9`. Remove any now-unused imports of `RoleTag` (e.g. `htn/methods.rs:4`).
+Deleted the `RoleTag` enum definition and its re-export from `htn/mod.rs`. Removed the now-unused
+`RoleTag` import from `htn/methods.rs`.
 
-### 4. Update the `method_schema_constructs_and_clones` unit test
+### 4. Updated the `method_schema_constructs_and_clones` unit test
 
-In `method_schema.rs`, remove the `MethodPrecondition::AgentRole(RoleTag::Crafter)` line from the
-fixture in `method_schema_constructs_and_clones` (line ~302).
+In `method_schema.rs`, removed the `MethodPrecondition::AgentRole(RoleTag::Crafter)` line from the
+fixture in `method_schema_constructs_and_clones`.
 
-### 5. Add a `group_hunt`-selectable regression test (D7 distributed)
+### 5. Added a `group_hunt`-selectable regression test (D7 distributed)
 
-Add a focused unit test in `htn/selector.rs`'s test module asserting `fulfill_bounty_group_hunt`
-(id 3) is selected (or at least passes preconditions) for an agent whose belief state satisfies
-`TargetBelievedDangerous` and `AllyOrBountyOfficeAvailable`, proving the method stayed selectable
-after the `AgentRole` removal.
+Added `canonical_group_hunt_selects_from_real_belief_preconditions` in `htn/selector.rs`, asserting
+`fulfill_bounty_group_hunt` (id 3) is selected for an agent whose belief state satisfies
+`TargetBelievedDangerous` and `AllyOrBountyOfficeAvailable`. The test proves the method stayed
+selectable after the `AgentRole` removal.
 
-## Files to Touch
+## Landed Files
 
 - `crates/worldwake-ai/src/htn/method_schema.rs` (modify)
 - `crates/worldwake-ai/src/htn/methods.rs` (modify)
@@ -105,31 +104,54 @@ after the `AgentRole` removal.
 - `MethodSchema` field removal (S156HTNAUTHON-004).
 - Trace/fallback restructuring of the selector (S156HTNAUTHON-005).
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests That Passed
 
-1. New focused selector test proves `fulfill_bounty_group_hunt` is selectable for a qualifying
+1. New focused selector test proved `fulfill_bounty_group_hunt` is selectable for a qualifying
    agent after `AgentRole` removal.
 2. `method_schema_constructs_and_clones` compiles and passes without the `AgentRole` precondition.
-3. Existing suite: `cargo test -p worldwake-ai`.
+3. Existing suite passed: `cargo test -p worldwake-ai`.
 
 ### Invariants
 
-1. Every surviving `MethodPrecondition` variant evaluates to a real, state-dependent result (no
-   always-`true` arm remains).
-2. `RoleTag` does not exist anywhere in the workspace after this ticket (FND-28: no orphaned type).
+1. Every surviving `MethodPrecondition` variant evaluates to a real, state-dependent result; no
+   always-`true` arm remains.
+2. `RoleTag` does not exist in live source after this ticket (FND-28: no orphaned type).
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Focused Tests
 
-1. `crates/worldwake-ai/src/htn/selector.rs` (test module) — new `group_hunt`-selectable test.
-2. `crates/worldwake-ai/src/htn/method_schema.rs` (test module) — drop `AgentRole` from the
+1. `crates/worldwake-ai/src/htn/selector.rs` (test module) — added `group_hunt`-selectable test.
+2. `crates/worldwake-ai/src/htn/method_schema.rs` (test module) — dropped `AgentRole` from the
    construct-and-clone fixture.
 
-### Commands
+### Commands Run
 
-1. `cargo test -p worldwake-ai htn::selector`
-2. `cargo clippy --workspace --all-targets -- -D warnings`
-3. `./scripts/verify.sh` (before PR)
+1. Passed `cargo test -p worldwake-ai htn::selector`
+2. Passed `cargo test -p worldwake-ai htn::method_schema`
+3. Passed `cargo test -p worldwake-ai`
+4. Passed `cargo clippy --workspace --all-targets -- -D warnings`
+5. Waived `./scripts/verify.sh` for this iteration because the harness runs it once the full S156
+   ticket family is complete and ready to push.
+
+## Outcome
+
+Completed on 2026-05-20.
+
+- Removed the fake `MethodPrecondition::AgentRole` gate and its always-true selector branch.
+- Removed the orphaned `RoleTag` enum and re-export rather than retaining a fossil role surface.
+- Kept `fulfill_bounty_group_hunt`'s real belief preconditions and subgoals unchanged.
+- Added focused selector coverage proving canonical group hunt selection from the actual
+  `TargetBelievedDangerous` and `AllyOrBountyOfficeAvailable` belief preconditions.
+
+## Verification Result
+
+- Passed `rg -n "AgentRole|RoleTag" crates/worldwake-ai crates/worldwake-cli crates/worldwake-core crates/worldwake-sim crates/worldwake-systems archive/tickets/S156HTNAUTHON-002.md specs/S156-htn-authority-honesty.md` showed only ticket/spec prose references after source edits.
+- Passed `cargo test -p worldwake-ai htn::selector`
+- Passed `cargo test -p worldwake-ai htn::method_schema`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Waived `./scripts/verify.sh` for this ticket iteration because the `implement-spec-tickets`
+  harness owns the full pre-push verification gate after all S156 tickets are complete.
