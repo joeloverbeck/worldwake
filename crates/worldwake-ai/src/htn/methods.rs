@@ -1,8 +1,7 @@
 use crate::htn::{
-    ArtifactTemplate, BeliefPredicate, ClaimRequirement, CommodityTemplate, EntityCriterion,
-    EntityTemplate, ExplanationTemplateId, LocationTemplate, MethodFailureMode, MethodPrecondition,
-    MethodSchema, MotiveBias, PayloadTemplate, PayloadValueTemplate, RecipeTemplate, RoleTag,
-    SubgoalTemplate, TopicTemplate,
+    ArtifactTemplate, BeliefPredicate, CommodityTemplate, EntityCriterion, EntityTemplate,
+    ExplanationTemplateId, LocationTemplate, MethodPrecondition, MethodSchema, MotiveBias,
+    PayloadTemplate, PayloadValueTemplate, RecipeTemplate, SubgoalTemplate, TopicTemplate,
 };
 use crate::planner_ops::PlannerOpKind;
 use worldwake_core::{
@@ -23,18 +22,11 @@ fn bias(motive_variant: MotiveSourceDiscriminant, weight: u16) -> MotiveBias {
     }
 }
 
-fn timeout(ticks: u32) -> MethodFailureMode {
-    MethodFailureMode::Timeout(ticks)
-}
-
 struct MethodParts {
     id: u32,
     goal_kind: GoalKindDiscriminant,
     preconditions: Vec<MethodPrecondition>,
     subgoals: Vec<SubgoalTemplate>,
-    expected_artifacts: Vec<ArtifactTemplate>,
-    required_claims: Vec<ClaimRequirement>,
-    failure_modes: Vec<MethodFailureMode>,
     explanation_template: u32,
     motive_bias: Vec<MotiveBias>,
     planning_budget_hint: Option<GoalPlanningBudget>,
@@ -46,9 +38,6 @@ fn schema(parts: MethodParts) -> MethodSchema {
         goal_kind: parts.goal_kind,
         preconditions: parts.preconditions,
         subgoals: parts.subgoals,
-        expected_artifacts: parts.expected_artifacts,
-        required_claims: parts.required_claims,
-        failure_modes: parts.failure_modes,
         explanation_template: ExplanationTemplateId(parts.explanation_template),
         motive_bias: parts.motive_bias,
         planning_budget_hint: parts.planning_budget_hint,
@@ -61,9 +50,6 @@ macro_rules! method_schema {
         $goal_kind:expr,
         $preconditions:expr,
         $subgoals:expr,
-        $expected_artifacts:expr,
-        $required_claims:expr,
-        $failure_modes:expr,
         $explanation_template:expr,
         $motive_bias:expr,
         $planning_budget_hint:expr $(,)?
@@ -73,9 +59,6 @@ macro_rules! method_schema {
             goal_kind: $goal_kind,
             preconditions: $preconditions,
             subgoals: $subgoals,
-            expected_artifacts: $expected_artifacts,
-            required_claims: $required_claims,
-            failure_modes: $failure_modes,
             explanation_template: $explanation_template,
             motive_bias: $motive_bias,
             planning_budget_hint: $planning_budget_hint,
@@ -120,19 +103,6 @@ pub fn fulfill_bounty_direct() -> MethodSchema {
                 }),
             ),
         ],
-        vec![ArtifactTemplate::BountyProof {
-            bounty: EntityTemplate::GoalPrimaryEntity,
-            target: EntityTemplate::BountyTarget,
-        }],
-        vec![ClaimRequirement::BountyIssuance {
-            bounty: EntityTemplate::GoalPrimaryEntity,
-        }],
-        vec![
-            MethodFailureMode::PreconditionLost(BeliefPredicate::BountyExpired {
-                bounty: EntityTemplate::GoalPrimaryEntity,
-            }),
-            MethodFailureMode::SubgoalUnachievable(2),
-        ],
         1,
         vec![bias(MotiveSourceDiscriminant::Greed, 450)],
         Some(GoalPlanningBudget::BOUNTY_ESCORT),
@@ -159,11 +129,6 @@ pub fn fulfill_bounty_investigation() -> MethodSchema {
                 violation: EntityTemplate::Violation,
             }),
         ],
-        vec![ArtifactTemplate::ViolationEvidence {
-            violation: EntityTemplate::Violation,
-        }],
-        vec![],
-        vec![timeout(120), MethodFailureMode::SubgoalUnachievable(0)],
         2,
         vec![bias(MotiveSourceDiscriminant::OfficeDuty, 600)],
         Some(GoalPlanningBudget::INVESTIGATION),
@@ -179,7 +144,6 @@ pub fn fulfill_bounty_group_hunt() -> MethodSchema {
                 target: EntityTemplate::BountyTarget,
             }),
             MethodPrecondition::BeliefHolds(BeliefPredicate::AllyOrBountyOfficeAvailable),
-            MethodPrecondition::AgentRole(RoleTag::Hunter),
         ],
         vec![
             // Existing planner ops have no RecruitAlly leaf. DeclareSupport is
@@ -198,14 +162,6 @@ pub fn fulfill_bounty_group_hunt() -> MethodSchema {
                 }),
             ),
         ],
-        vec![ArtifactTemplate::BountyProof {
-            bounty: EntityTemplate::GoalPrimaryEntity,
-            target: EntityTemplate::BountyTarget,
-        }],
-        vec![ClaimRequirement::BountyIssuance {
-            bounty: EntityTemplate::GoalPrimaryEntity,
-        }],
-        vec![timeout(180), MethodFailureMode::SubgoalUnachievable(1)],
         3,
         vec![
             bias(MotiveSourceDiscriminant::Loyalty, 850),
@@ -231,11 +187,6 @@ pub fn produce_from_owned_stock() -> MethodSchema {
                 recipe: GOAL_RECIPE,
             }),
         )],
-        vec![],
-        vec![ClaimRequirement::FacilityQueueSlot {
-            facility: EntityTemplate::GoalPlace,
-        }],
-        vec![timeout(80), MethodFailureMode::SubgoalUnachievable(0)],
         4,
         vec![bias(MotiveSourceDiscriminant::NeedPressure, 500)],
         Some(GoalPlanningBudget::PRODUCTION),
@@ -266,12 +217,6 @@ pub fn produce_with_gather() -> MethodSchema {
                 }),
             ),
         ],
-        vec![],
-        vec![ClaimRequirement::ResourceSourceAccess {
-            commodity: FIRST_RECIPE_INPUT,
-            place: EntityTemplate::GoalPlace,
-        }],
-        vec![timeout(140), MethodFailureMode::SubgoalUnachievable(0)],
         5,
         vec![bias(MotiveSourceDiscriminant::NeedPressure, 400)],
         Some(GoalPlanningBudget::PRODUCTION),
@@ -308,9 +253,6 @@ pub fn produce_with_purchase() -> MethodSchema {
                 }),
             ),
         ],
-        vec![],
-        vec![],
-        vec![timeout(140), MethodFailureMode::SubgoalUnachievable(1)],
         6,
         vec![bias(MotiveSourceDiscriminant::Greed, 350)],
         Some(GoalPlanningBudget::PRODUCTION),
@@ -334,12 +276,6 @@ pub fn restock_from_harvest() -> MethodSchema {
             commodity: CommodityTemplate::GoalCommodity,
             min_quantity: Quantity(3),
         }],
-        vec![],
-        vec![ClaimRequirement::ResourceSourceAccess {
-            commodity: CommodityTemplate::GoalCommodity,
-            place: EntityTemplate::GoalPlace,
-        }],
-        vec![timeout(100), MethodFailureMode::SubgoalUnachievable(0)],
         7,
         vec![bias(MotiveSourceDiscriminant::Greed, 300)],
         Some(GoalPlanningBudget::PRODUCTION),
@@ -371,41 +307,9 @@ pub fn restock_from_market() -> MethodSchema {
                 }),
             ),
         ],
-        vec![],
-        vec![],
-        vec![timeout(100), MethodFailureMode::SubgoalUnachievable(1)],
         8,
         vec![bias(MotiveSourceDiscriminant::Greed, 500)],
         Some(GoalPlanningBudget::PRODUCTION),
-    )
-}
-
-pub fn investigate_on_scene() -> MethodSchema {
-    method_schema!(
-        9,
-        GoalKindDiscriminant::InvestigateViolation,
-        vec![MethodPrecondition::LocationKnown(
-            EntityCriterion::ViolationEvidence {
-                violation: EntityTemplate::Violation,
-            },
-        )],
-        vec![
-            SubgoalTemplate::InspectArtifact(ArtifactTemplate::ViolationEvidence {
-                violation: EntityTemplate::Violation,
-            }),
-            SubgoalTemplate::PerformAction(
-                PlannerOpKind::Investigate,
-                PayloadTemplate::FromContext,
-            ),
-        ],
-        vec![ArtifactTemplate::ViolationEvidence {
-            violation: EntityTemplate::Violation,
-        }],
-        vec![],
-        vec![timeout(100), MethodFailureMode::SubgoalUnachievable(0)],
-        9,
-        vec![bias(MotiveSourceDiscriminant::OfficeDuty, 750)],
-        Some(GoalPlanningBudget::INVESTIGATION),
     )
 }
 
@@ -427,9 +331,6 @@ pub fn investigate_by_witness() -> MethodSchema {
                 PayloadTemplate::FromContext,
             ),
         ],
-        vec![],
-        vec![],
-        vec![timeout(120), MethodFailureMode::SubgoalUnachievable(0)],
         10,
         vec![bias(MotiveSourceDiscriminant::OfficeDuty, 650)],
         Some(GoalPlanningBudget::INVESTIGATION),
@@ -457,13 +358,6 @@ pub fn investigate_by_ledger() -> MethodSchema {
                 PayloadTemplate::FromContext,
             ),
         ],
-        vec![ArtifactTemplate::Ledger {
-            institution: EntityTemplate::Institution,
-        }],
-        vec![ClaimRequirement::OfficeAuthority {
-            office: EntityTemplate::Institution,
-        }],
-        vec![timeout(140), MethodFailureMode::SubgoalUnachievable(1)],
         11,
         vec![bias(MotiveSourceDiscriminant::OfficeDuty, 700)],
         Some(GoalPlanningBudget::INVESTIGATION),
@@ -491,43 +385,8 @@ pub fn escort_to_home() -> MethodSchema {
             ),
             SubgoalTemplate::ObserveTarget(EntityCriterion::Target(EntityTemplate::Escortee)),
         ],
-        vec![],
-        vec![],
-        vec![timeout(120), MethodFailureMode::SubgoalUnachievable(0)],
         12,
         vec![bias(MotiveSourceDiscriminant::Loyalty, 550)],
-        Some(GoalPlanningBudget::BOUNTY_ESCORT),
-    )
-}
-
-pub fn escort_to_office() -> MethodSchema {
-    method_schema!(
-        13,
-        GoalKindDiscriminant::EscortToSafety,
-        vec![MethodPrecondition::LocationKnown(EntityCriterion::Ledger {
-            institution: EntityTemplate::Institution,
-        })],
-        vec![SubgoalTemplate::PerformAction(
-            PlannerOpKind::EscortToSafety,
-            PayloadTemplate::Explicit(PayloadValueTemplate::EscortToSafety {
-                escortee: EntityTemplate::Escortee,
-                destination: LocationTemplate::OfficePlace {
-                    institution: EntityTemplate::Institution,
-                },
-            }),
-        )],
-        vec![],
-        vec![ClaimRequirement::OfficeAuthority {
-            office: EntityTemplate::Institution,
-        }],
-        vec![
-            timeout(120),
-            MethodFailureMode::ClaimDenied(ClaimRequirement::OfficeAuthority {
-                office: EntityTemplate::Institution,
-            }),
-        ],
-        13,
-        vec![bias(MotiveSourceDiscriminant::OfficeDuty, 550)],
         Some(GoalPlanningBudget::BOUNTY_ESCORT),
     )
 }

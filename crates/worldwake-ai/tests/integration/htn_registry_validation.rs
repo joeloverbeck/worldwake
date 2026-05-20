@@ -46,19 +46,6 @@ fn method_schema_ids_are_unique() {
 }
 
 #[test]
-fn every_method_declares_at_least_one_failure_mode() {
-    let registry = build_method_registry();
-
-    for method in registry.all_methods() {
-        assert!(
-            !method.failure_modes.is_empty(),
-            "method {:?} must declare at least one failure mode",
-            method.id
-        );
-    }
-}
-
-#[test]
 fn motive_bias_weights_are_in_permille_bounds() {
     let registry = build_method_registry();
 

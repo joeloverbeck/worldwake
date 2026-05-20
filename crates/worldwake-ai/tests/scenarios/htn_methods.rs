@@ -7,7 +7,7 @@ use worldwake_ai::htn::{build_method_registry, select_method, select_method_with
 use worldwake_ai::{
     AgentDecisionRuntime, DecisionOutcome, GoalKind, GoalOffer, PlanFailureContext,
     PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningState,
-    build_planning_snapshot, generate_candidates, handle_plan_failure,
+    StrategicFallbackReason, build_planning_snapshot, generate_candidates, handle_plan_failure,
 };
 use worldwake_core::{
     ActionDefId, AgentSchemaContextProfile, ArtifactHeader, ArtifactKind, BlockerMemory,
@@ -31,6 +31,8 @@ const PRODUCE_METHODS: [MethodSchemaId; 3] =
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct HtnMethodObservation {
     selected_method: Option<MethodSchemaId>,
+    rejected_methods: Vec<(MethodSchemaId, String)>,
+    fallback_reason: Option<StrategicFallbackReason>,
     subgoal_kinds: Vec<String>,
     motive_score: u32,
     strategic_sub_goals: Vec<String>,
@@ -349,6 +351,19 @@ fn observe_htn_production(disabled_methods: BTreeSet<MethodSchemaId>) -> HtnMeth
     let method_trace = attempt.method_trace.as_ref();
     HtnMethodObservation {
         selected_method: method_trace.and_then(|trace| trace.method_id),
+        rejected_methods: method_trace.map_or_else(Vec::new, |trace| {
+            trace
+                .rejected_methods
+                .iter()
+                .map(|rejected| {
+                    (
+                        rejected.method_id,
+                        format!("{:?}", rejected.failed_precondition),
+                    )
+                })
+                .collect()
+        }),
+        fallback_reason: method_trace.and_then(|trace| trace.fallback_reason),
         subgoal_kinds: method_trace.map_or_else(Vec::new, |trace| {
             trace
                 .subgoals_attempted
@@ -729,6 +744,19 @@ fn observe_htn_bounty() -> HtnMethodObservation {
     let method_trace = attempt.method_trace.as_ref();
     HtnMethodObservation {
         selected_method: method_trace.and_then(|trace| trace.method_id),
+        rejected_methods: method_trace.map_or_else(Vec::new, |trace| {
+            trace
+                .rejected_methods
+                .iter()
+                .map(|rejected| {
+                    (
+                        rejected.method_id,
+                        format!("{:?}", rejected.failed_precondition),
+                    )
+                })
+                .collect()
+        }),
+        fallback_reason: method_trace.and_then(|trace| trace.fallback_reason),
         subgoal_kinds: method_trace.map_or_else(Vec::new, |trace| {
             trace
                 .subgoals_attempted
@@ -783,6 +811,7 @@ fn observe_snapshot_selector_for_generated_offer() -> SelectorObservation {
             &offer.motive_sources,
             Some(&h.recipes),
         )
+        .selected
         .map(|method| method.id),
     }
 }
@@ -855,6 +884,14 @@ fn autonomous_produce_candidate_records_method_trace() {
             .any(|subgoal| subgoal.contains("AcquireCommodity")),
         "method trace should record the ProduceWithGather acquisition subgoal: {observation:?}"
     );
+    assert!(
+        observation
+            .rejected_methods
+            .iter()
+            .any(|(_, precondition)| precondition.contains("OwnsInputsForRecipe")),
+        "method trace should record a rejected production method with its failing precondition: {observation:?}"
+    );
+    assert_eq!(observation.fallback_reason, None);
     assert!(
         observation
             .strategic_sub_goals
@@ -1143,6 +1180,10 @@ fn disabled_produce_methods_fall_back_to_flat_strategic_search() {
     let observation = observe_htn_production(BTreeSet::from(PRODUCE_METHODS));
 
     assert_eq!(observation.selected_method, None);
+    assert_eq!(
+        observation.fallback_reason,
+        Some(StrategicFallbackReason::NoViableMethod)
+    );
     assert!(observation.subgoal_kinds.is_empty());
     assert_eq!(observation.motive_score, 0);
     assert_eq!(

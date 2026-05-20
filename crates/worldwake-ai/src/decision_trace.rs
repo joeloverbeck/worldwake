@@ -26,7 +26,7 @@ use crate::agent_tick::portfolio::{FeasibilityVerdict, SlotKind};
 use crate::feasibility::FeasibilityHint;
 use crate::goal_model::{GoalPriorityClass, RankedGoalProvenance};
 use crate::goal_switching::GoalSwitchKind;
-use crate::htn::{MethodFailureMode, SubgoalTemplate};
+use crate::htn::{MethodFailureMode, MethodPrecondition, SubgoalTemplate};
 use crate::interrupts::InterruptDecision;
 use crate::knowledge_path::{
     BeliefAspect, BeliefProvenance, InstitutionalBeliefProvenance, KnowledgePath,
@@ -1221,9 +1221,23 @@ pub struct PlanAttemptTrace {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MethodPlanAttemptTrace {
     pub method_id: Option<MethodSchemaId>,
+    pub rejected_methods: Vec<RejectedMethodTrace>,
+    pub fallback_reason: Option<StrategicFallbackReason>,
     pub subgoals_attempted: Vec<SubgoalAttemptResult>,
     pub failure_mode: Option<MethodFailureMode>,
     pub motive_score: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RejectedMethodTrace {
+    pub method_id: MethodSchemaId,
+    pub failed_precondition: MethodPrecondition,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum StrategicFallbackReason {
+    NoViableMethod,
+    MethodProducedNoStages,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -5322,6 +5336,8 @@ mod tests {
     fn method_plan_attempt_trace_records_selected_method_and_pending_subgoals() {
         let trace = MethodPlanAttemptTrace {
             method_id: Some(MethodSchemaId(5)),
+            rejected_methods: Vec::new(),
+            fallback_reason: None,
             subgoals_attempted: vec![SubgoalAttemptResult {
                 template_index: 0,
                 kind: SubgoalAttemptKind::AcquireCommodity,

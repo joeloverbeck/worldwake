@@ -21,7 +21,7 @@ leak, and the FND-28/FND-20/FND-29 HTN honesty cleanup.
 
 ```
 S155 (belief-view boundary correctness)   ── COMPLETED
-S156 (HTN authority honesty)              ── priority 2, independent of S155 (parallelizable)
+S156 (HTN authority honesty)              ── COMPLETED
 S157 (snapshot admission provenance)      ── DEFERRED, depends on S155, NOT scheduled
 ```
 
@@ -33,14 +33,13 @@ S157 (snapshot admission provenance)      ── DEFERRED, depends on S155, NOT 
   un-gated belief-facing `can_control()` path, then landed belief-boundary golden coverage and
   the planner-contract documentation.
 
-### Active
-
-- **S156 — HTN Authority Honesty** — `specs/S156-htn-authority-honesty.md` — *Status: DRAFT.*
-  Strips the `GoalSchema.methods` fossil (FND-28), the no-op `AgentRole` gate, the two dead
+- **S156 — HTN Authority Honesty** —
+  `archive/specs/S156-htn-authority-honesty.md` — *Status: COMPLETED.* Stripped the
+  `GoalSchema.methods` fossil (FND-28), the no-op `AgentRole` gate, the two dead
   methods + unused `EntityCriterion` variants, and the three unenforced `MethodSchema` fields;
-  makes strategic fallback explicit and traced; folds an HTN drafting checklist into
-  `docs/spec-drafting-rules.md`. Independent of S155 (different files) and may proceed in
-  parallel.
+  made strategic fallback explicit and traced; folded an HTN drafting checklist into
+  `docs/spec-drafting-rules.md`; and documented the method-trace fallback/rejection contract in
+  `docs/planner-contracts.md`.
 
 ### Deferred (written, NOT in active order)
 

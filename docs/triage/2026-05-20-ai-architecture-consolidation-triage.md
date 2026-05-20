@@ -12,12 +12,12 @@ was treated as a set of hypotheses, not facts.
   authoritative `world.effective_place()` for non-self entities known only via institutional
   belief or last-seen memory (FND-14A leak); `can_control()` lacks the belief gate its sibling
   `believed_rights()` has, yet is called from planning/affordance paths. Completed on 2026-05-20.
-- **S156 — HTN Authority Honesty** (`specs/S156-htn-authority-honesty.md`). Findings #3, #4, #5,
+- **S156 — HTN Authority Honesty** (`archive/specs/S156-htn-authority-honesty.md`). Findings #3, #4, #5,
   #9, #10 (all CONFIRMED). `GoalSchema.methods` fossil (FND-28); no-op `AgentRole` precondition;
   two dead methods (`investigate_on_scene`, `escort_to_office`) via always-false
   `EntityCriterion` variants; three unenforced `MethodSchema` fields; implicit untraced fallback;
   shallow method traces. Strip (do not build new capability); make fallback explicit + traced.
-  Active, priority 2.
+  Completed on 2026-05-20.
 
 ## Accepted but deferred (spec written, NOT in active order)
 

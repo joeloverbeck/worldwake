@@ -18,10 +18,22 @@ pub fn select_method<'r>(
     belief_view: &dyn RuntimeBeliefView,
     motives: &[MotiveSourceRef],
 ) -> Option<&'r MethodSchema> {
-    select_method_with_recipes(actor, goal, registry, profile, belief_view, motives, None)
+    select_method_with_recipes(actor, goal, registry, profile, belief_view, motives, None).selected
 }
 
 #[must_use]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MethodSelection<'r> {
+    pub selected: Option<&'r MethodSchema>,
+    pub rejected: Vec<RejectedMethodSelection>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RejectedMethodSelection {
+    pub method_id: worldwake_core::MethodSchemaId,
+    pub failed_precondition: MethodPrecondition,
+}
+
 pub fn select_method_with_recipes<'r>(
     actor: EntityId,
     goal: &GoalOffer,
@@ -30,33 +42,62 @@ pub fn select_method_with_recipes<'r>(
     belief_view: &dyn RuntimeBeliefView,
     motives: &[MotiveSourceRef],
     recipes: Option<&RecipeRegistry>,
-) -> Option<&'r MethodSchema> {
+) -> MethodSelection<'r> {
     let goal_kind = GoalKindDiscriminant::from(&goal.key.kind);
+    let mut selected: Option<&'r MethodSchema> = None;
+    let mut selected_score = None;
+    let mut rejected = Vec::new();
 
-    registry
+    for method in registry
         .methods_for(goal_kind)
         .iter()
         .filter_map(|id| registry.get(*id))
-        .filter(|method| !profile.disabled_methods.contains(&method.id))
-        .filter(|method| {
-            preconditions_satisfied(actor, method, goal, belief_view, motives, recipes)
-        })
-        .map(|method| (method, motive_score(method, motives)))
-        .max_by(|(a, score_a), (b, score_b)| score_a.cmp(score_b).then_with(|| b.id.cmp(&a.id)))
-        .map(|(method, _)| method)
+    {
+        if profile.disabled_methods.contains(&method.id) {
+            continue;
+        }
+        if let Some(failed_precondition) =
+            first_failed_precondition(actor, method, goal, belief_view, motives, recipes)
+        {
+            rejected.push(RejectedMethodSelection {
+                method_id: method.id,
+                failed_precondition,
+            });
+            continue;
+        }
+
+        let score = motive_score(method, motives);
+        let wins_selection = match (selected, selected_score) {
+            (Some(current), Some(current_score)) => score
+                .cmp(&current_score)
+                .then_with(|| current.id.cmp(&method.id))
+                .is_gt(),
+            _ => true,
+        };
+        if wins_selection {
+            selected = Some(method);
+            selected_score = Some(score);
+        }
+    }
+
+    MethodSelection { selected, rejected }
 }
 
-fn preconditions_satisfied(
+fn first_failed_precondition(
     actor: EntityId,
     method: &MethodSchema,
     goal: &GoalOffer,
     belief_view: &dyn RuntimeBeliefView,
     motives: &[MotiveSourceRef],
     recipes: Option<&RecipeRegistry>,
-) -> bool {
-    method.preconditions.iter().all(|precondition| {
-        evaluate_precondition(actor, precondition, goal, belief_view, motives, recipes)
-    })
+) -> Option<MethodPrecondition> {
+    method
+        .preconditions
+        .iter()
+        .find(|precondition| {
+            !evaluate_precondition(actor, precondition, goal, belief_view, motives, recipes)
+        })
+        .cloned()
 }
 
 fn evaluate_precondition(
@@ -74,7 +115,6 @@ fn evaluate_precondition(
         MethodPrecondition::MotiveSourcePresent(discriminant) => motives
             .iter()
             .any(|source| MotiveSourceDiscriminant::from(&source.source) == *discriminant),
-        MethodPrecondition::AgentRole(_) => true,
         MethodPrecondition::LocationKnown(criterion) => match criterion {
             crate::htn::EntityCriterion::Workstation(tag) => candidate_places(goal)
                 .into_iter()
@@ -94,9 +134,6 @@ fn evaluate_precondition(
             crate::htn::EntityCriterion::Target(template) => {
                 resolve_entity(actor, goal, *template, belief_view).is_some()
             }
-            crate::htn::EntityCriterion::Witness { .. }
-            | crate::htn::EntityCriterion::ViolationEvidence { .. }
-            | crate::htn::EntityCriterion::Ledger { .. } => false,
         },
     }
 }
@@ -452,8 +489,11 @@ mod tests {
     use crate::htn::{BeliefPredicate, MethodPrecondition, MotiveBias, build_method_registry};
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        BeliefConfidencePolicy, BodyCostPerTick, DemandObservation, DriveThresholds, EntityKind,
-        HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, LoadUnits,
+        ArtifactActionability, ArtifactCredibility, ArtifactExistence, ArtifactKind,
+        ArtifactLegalEffect, BeliefConfidencePolicy, BelievedArtifactState, BelievedBountyTerms,
+        BelievedEntityState, BelievedInstitutionalClaim, BodyCostPerTick, BountyTarget,
+        DemandObservation, DriveThresholds, EntityKind, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDispositionProfile, LoadUnits,
         MetabolismProfile, MethodSchemaId, MotiveSource, OpportunityAnchor, Permille, Quantity,
         ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
     };
@@ -510,9 +550,6 @@ mod tests {
             goal_kind,
             preconditions,
             subgoals: Vec::new(),
-            expected_artifacts: Vec::new(),
-            required_claims: Vec::new(),
-            failure_modes: Vec::new(),
             explanation_template: crate::htn::ExplanationTemplateId(id),
             motive_bias,
             planning_budget_hint: None,
@@ -560,6 +597,8 @@ mod tests {
         sale_lots: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
         recipes: BTreeMap<RecipeId, RecipeDefinition>,
         visible_hostiles: Vec<EntityId>,
+        entity_beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
+        institutional_beliefs: BTreeMap<EntityId, Vec<BelievedInstitutionalClaim>>,
     }
 
     impl ControlBeliefView for TestBeliefView {
@@ -796,6 +835,10 @@ mod tests {
     }
 
     impl SocialBeliefView for TestBeliefView {
+        fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+            self.entity_beliefs.get(&agent).cloned().unwrap_or_default()
+        }
+
         fn belief_confidence_policy(&self, _agent: EntityId) -> BeliefConfidencePolicy {
             BeliefConfidencePolicy::default()
         }
@@ -808,7 +851,14 @@ mod tests {
         }
     }
 
-    impl worldwake_sim::PoliticalBeliefView for TestBeliefView {}
+    impl worldwake_sim::PoliticalBeliefView for TestBeliefView {
+        fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
+            self.institutional_beliefs
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
+        }
+    }
     impl BelievedAuthorityView for TestBeliefView {}
     impl LocalPhysicalObservationView for TestBeliefView {}
 
@@ -842,6 +892,45 @@ mod tests {
     }
 
     impl RuntimeBeliefView for TestBeliefView {}
+
+    fn bounty_belief(target: EntityId, claim_place: EntityId) -> BelievedEntityState {
+        let mut state = BelievedEntityState::single_observation_defaults(
+            Tick(0),
+            worldwake_core::PerceptionSource::DirectObservation,
+        );
+        state.believed_artifact = Some(BelievedArtifactState {
+            kind: ArtifactKind::Bounty,
+            issuer: entity(77),
+            expires_at: None,
+            existence: ArtifactExistence::Exists,
+            visibility: worldwake_core::ArtifactVisibility::WidelyKnown,
+            legal_effect: ArtifactLegalEffect::Active { expires_at: None },
+            credibility: ArtifactCredibility::Credible,
+            actionability: ArtifactActionability::Actionable,
+            bounty_terms: Some(BelievedBountyTerms {
+                target: BountyTarget::EliminateEntity { target },
+                reward_commodity: CommodityKind::Coin,
+                reward_quantity: Quantity(10),
+                claim_place,
+            }),
+            notice_topic: None,
+            observed_tick: Tick(0),
+        });
+        state
+    }
+
+    fn institutional_belief() -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::OfficeHolder {
+                office: entity(70),
+                holder: Some(entity(71)),
+                effective_tick: Tick(0),
+            },
+            source: InstitutionalKnowledgeSource::DirectObservation,
+            learned_tick: Tick(0),
+            learned_at: Some(entity(72)),
+        }
+    }
 
     #[test]
     fn select_method_returns_top_ranked_method_by_motive_score() {
@@ -945,17 +1034,28 @@ mod tests {
             ),
         ]);
 
-        let selected = select_method(
+        let selection = select_method_with_recipes(
             entity(1),
             &goal(GoalKind::EngageHostile { target }),
             &registry,
             &AgentSchemaContextProfile::default(),
             &TestBeliefView::default(),
             &[],
-        )
-        .expect("fallback method should be selected");
+            None,
+        );
+        let selected = selection
+            .selected
+            .expect("fallback method should be selected");
 
         assert_eq!(selected.id, MethodSchemaId(2));
+        assert_eq!(selection.rejected.len(), 1);
+        assert_eq!(selection.rejected[0].method_id, MethodSchemaId(1));
+        assert_eq!(
+            selection.rejected[0].failed_precondition,
+            MethodPrecondition::BeliefHolds(BeliefPredicate::TargetLastSeenKnown {
+                target: EntityTemplate::Fixed(target),
+            })
+        );
     }
 
     #[test]
@@ -1116,6 +1216,33 @@ mod tests {
         .expect("canonical produce_with_gather should select from recipe input source beliefs");
 
         assert_eq!(selected.id, MethodSchemaId(5));
+    }
+
+    #[test]
+    fn canonical_group_hunt_selects_from_real_belief_preconditions() {
+        let actor = entity(1);
+        let bounty = entity(30);
+        let target = entity(40);
+        let claim_place = entity(50);
+        let mut view = TestBeliefView::default();
+        view.visible_hostiles.push(target);
+        view.entity_beliefs
+            .insert(actor, vec![(bounty, bounty_belief(target, claim_place))]);
+        view.institutional_beliefs
+            .insert(actor, vec![institutional_belief()]);
+
+        let registry = build_method_registry();
+        let selected = select_method(
+            actor,
+            &goal(GoalKind::FulfillBounty { bounty }),
+            &registry,
+            &AgentSchemaContextProfile::default(),
+            &view,
+            &[],
+        )
+        .expect("canonical group hunt should select from dangerous-target and ally beliefs");
+
+        assert_eq!(selected.id, MethodSchemaId(3));
     }
 
     #[test]

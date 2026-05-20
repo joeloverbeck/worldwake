@@ -14,7 +14,7 @@ S147 D2 ships 13 methods covering the first-ship scope: `FulfillBounty` × 3 (Di
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. `MethodSchema` and supporting types exist after `archive/tickets/S147HTNMETDEC-004.md` landed at `crates/worldwake-ai/src/htn/method_schema.rs`. `GoalSchema.methods` field exists after `archive/tickets/S147HTNMETDEC-005.md` landed at `crates/worldwake-ai/src/goal_schema.rs`. `GoalKindDiscriminant::ALL` constant exists after `archive/tickets/S147HTNMETDEC-001.md` lands at `crates/worldwake-core/src/goal.rs`.
+1. `MethodSchema` and supporting types exist after `archive/tickets/S147HTNMETDEC-004.md` landed at `crates/worldwake-ai/src/htn/method_schema.rs`. At S147 implementation time, `GoalSchema.methods` existed after `archive/tickets/S147HTNMETDEC-005.md` landed at `crates/worldwake-ai/src/goal_schema.rs`; later `archive/tickets/S156HTNAUTHON-001.md` removed that fossilized anchor and kept `MethodRegistry` as the sole method-assignment authority. `GoalKindDiscriminant::ALL` constant exists after `archive/tickets/S147HTNMETDEC-001.md` lands at `crates/worldwake-core/src/goal.rs`.
 2. `PlannerOpKind` lives at `crates/worldwake-ai/src/planner_ops.rs:13` with 32+ variants. The methods reference real variants (verified during S147 reassessment): `Attack` (not `Subdue/Kill`), `Trade` (not `BuyCommodity`), `Craft` (not `Bake` or `ProduceCommodity`-action), `DeclareSupport` (substitute for `RecruitAlly` semantics), `ClaimBounty`, `EscortToSafety`, `Investigate`. None of the spec's fictional action names (Subdue, Kill, RecruitAlly, BuyCommodity, HandOffToOffice, Bake) exist — verified during reassessment.
 3. `RecruitAlly` does not exist as a `PlannerOpKind` variant. `FulfillBountyGroupHunt`'s subgoal must use a different mechanism — either `PerformAction(DeclareSupport, …)` to signal recruitment (most semantically aligned with existing variants), or defer the `GroupHunt` method's recruitment subgoal as a future-scope variant addition. Pick the `DeclareSupport` substitution to keep first-ship scope intact; document the semantic stretch in the method definition's comment.
 4. Shared boundary: the `MethodRegistry` is the data contract between the method definitions (this ticket) and the `MethodSelector` (ticket 007). The registry's lookup API (`methods_for(goal_kind) -> &[MethodSchemaId]` plus `get(id) -> Option<&MethodSchema>`) is the selector-facing surface.
@@ -150,7 +150,7 @@ New file `crates/worldwake-ai/tests/htn_registry_validation.rs`:
 - `MethodSelector` consumption of the registry (ticket 007).
 - Planner integration of method selection in `build_stages` (ticket 008).
 - `RecruitAlly` as a new `PlannerOpKind` variant — `FulfillBountyGroupHunt` uses `DeclareSupport` as a recruitment-signal substitute. A true `RecruitAlly` variant is future scope.
-- Pre-populating `GoalSchema.methods` static slices with method IDs — left empty by ticket 005; the runtime registry is the authoritative lookup.
+- Pre-populating `GoalSchema.methods` static slices with method IDs — left empty by ticket 005 and later removed by `archive/tickets/S156HTNAUTHON-001.md`; the runtime registry is the authoritative lookup.
 
 ## Acceptance Result
 

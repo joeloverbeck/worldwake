@@ -10,6 +10,38 @@ Every future system spec (E09+) MUST include the following analysis sections:
 
 See `specs/FND-01-phase1-foundations-alignment.md` Section H and `docs/FOUNDATIONS.md` Principles 3, 7, 8, and 20 for rationale.
 
+## HTN Method Drafting Checklist
+
+Any spec that adds or materially changes an HTN method must include a checklist
+covering:
+
+1. **Reusable pursuit pattern**: name the repeated domain pursuit pattern the
+   method encodes, and why it belongs in method decomposition rather than in a
+   one-off scenario, goal special case, or tactical operator.
+2. **Why flat GOAP is insufficient**: explain the concrete search-control need
+   that plain GOAP/affordance search does not satisfy by itself, such as
+   multi-stage lawful decomposition, information gathering before action,
+   role- or motive-specific strategy, repeated planner budget exhaustion,
+   utility thrash between equivalent branches, or method-specific failure
+   attribution.
+3. **Fallback policy**: state whether flat-GOAP fallback remains allowed,
+   forbidden, or allowed only after a traced method failure. A method-required
+   goal is invalid unless the schema contract proves that flat fallback would
+   satisfy the wrong semantic condition.
+4. **Information reads**: list every belief, memory, record, observation, goal
+   evidence field, motive source, and profile value the method selector or stage
+   builder reads. Each read must be belief-backed or a lawful same-tick local
+   observation under `docs/FOUNDATIONS.md`.
+5. **Enforced declarations only**: any field or precondition expressing required
+   artifacts, claims, records, roles, failure modes, locations, or capabilities
+   must have a live selector, planner, validation, trace, or runtime consumer
+   when it is declared. Do not add schema fields that merely document intended
+   semantics.
+6. **Proof surface**: name the focused and golden tests that prove method
+   selection, method rejection with failing precondition, fallback behavior, and
+   method trace contents. If rejection or fallback is impossible for the method,
+   explain which enforced schema contract makes it impossible.
+
 ## Agent Profile Scenario Contract
 
 Every spec that adds a new ECS component registered on `EntityKind::Agent` that

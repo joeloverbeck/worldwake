@@ -3,12 +3,13 @@
 use crate::{
     GoalKindPlannerExt, GoalOffer, PlanningSnapshot, PlanningState,
     decision_trace::{
-        MethodPlanAttemptTrace, StrategicBudgetTrace, SubgoalAttemptOutcome, SubgoalAttemptResult,
+        MethodPlanAttemptTrace, RejectedMethodTrace, StrategicBudgetTrace, StrategicFallbackReason,
+        SubgoalAttemptOutcome, SubgoalAttemptResult,
     },
     htn::{
         ArtifactTemplate, ClaimRequirement, CommodityTemplate, EntityCriterion, EntityTemplate,
-        LocationTemplate, MethodSchema, PayloadTemplate, PayloadValueTemplate, RecipeTemplate,
-        SubgoalTemplate, build_method_registry, select_method_with_recipes,
+        LocationTemplate, MethodSchema, MethodSelection, PayloadTemplate, PayloadValueTemplate,
+        RecipeTemplate, SubgoalTemplate, build_method_registry, select_method_with_recipes,
     },
 };
 use std::cmp::Ordering;
@@ -133,7 +134,7 @@ pub(crate) fn plan_with_budget_trace(
     let profile = state
         .agent_schema_context_profile(actor)
         .unwrap_or(default_profile);
-    let selected_method = select_method_with_recipes(
+    let method_selection = select_method_with_recipes(
         actor,
         goal,
         &method_registry,
@@ -147,7 +148,7 @@ pub(crate) fn plan_with_budget_trace(
         snapshot,
         goal,
         recipes,
-        selected_method,
+        &method_selection,
         actor,
         actor_place,
         &goal_places,
@@ -162,7 +163,7 @@ pub(crate) fn plan_with_budget_trace(
                 plan: Some(StrategicPlan { steps: Vec::new() }),
                 budget_trace: None,
                 stages_count: 0,
-                method_trace: None,
+                method_trace: stage_build.method_trace,
             };
         }
         let plan = exploration_plan(snapshot, actor_place, &goal.key.kind)
@@ -171,7 +172,7 @@ pub(crate) fn plan_with_budget_trace(
             plan,
             budget_trace: None,
             stages_count: 0,
-            method_trace: None,
+            method_trace: stage_build.method_trace,
         };
     }
 
@@ -368,14 +369,15 @@ fn build_stages(
     snapshot: &PlanningSnapshot,
     goal: &GoalOffer,
     recipes: &RecipeRegistry,
-    selected_method: Option<&MethodSchema>,
+    method_selection: &MethodSelection<'_>,
     actor: EntityId,
     actor_place: EntityId,
     goal_places: &[EntityId],
     missing_commodities: &[CommodityKind],
     per_stage_limit: u8,
 ) -> StageBuildResult {
-    if let Some(method) = selected_method {
+    let rejected_methods = rejected_method_traces(method_selection);
+    if let Some(method) = method_selection.selected {
         let stages = method
             .subgoals
             .iter()
@@ -407,7 +409,7 @@ fn build_stages(
         if !stages.is_empty() {
             return StageBuildResult {
                 stages,
-                method_trace: Some(method_trace(method, &goal.motive_sources)),
+                method_trace: Some(method_trace(method, &goal.motive_sources, rejected_methods)),
             };
         }
     }
@@ -439,13 +441,34 @@ fn build_stages(
 
     StageBuildResult {
         stages,
-        method_trace: None,
+        method_trace: Some(fallback_method_trace(
+            method_selection.selected,
+            &goal.motive_sources,
+            rejected_methods,
+        )),
     }
 }
 
-fn method_trace(method: &MethodSchema, motives: &[MotiveSourceRef]) -> MethodPlanAttemptTrace {
+fn rejected_method_traces(method_selection: &MethodSelection<'_>) -> Vec<RejectedMethodTrace> {
+    method_selection
+        .rejected
+        .iter()
+        .map(|rejected| RejectedMethodTrace {
+            method_id: rejected.method_id,
+            failed_precondition: rejected.failed_precondition.clone(),
+        })
+        .collect()
+}
+
+fn method_trace(
+    method: &MethodSchema,
+    motives: &[MotiveSourceRef],
+    rejected_methods: Vec<RejectedMethodTrace>,
+) -> MethodPlanAttemptTrace {
     MethodPlanAttemptTrace {
         method_id: Some(method.id),
+        rejected_methods,
+        fallback_reason: None,
         subgoals_attempted: method
             .subgoals
             .iter()
@@ -458,6 +481,36 @@ fn method_trace(method: &MethodSchema, motives: &[MotiveSourceRef]) -> MethodPla
             .collect(),
         failure_mode: None,
         motive_score: method_motive_score(method, motives),
+    }
+}
+
+fn fallback_method_trace(
+    selected_method: Option<&MethodSchema>,
+    motives: &[MotiveSourceRef],
+    rejected_methods: Vec<RejectedMethodTrace>,
+) -> MethodPlanAttemptTrace {
+    MethodPlanAttemptTrace {
+        method_id: selected_method.map(|method| method.id),
+        rejected_methods,
+        fallback_reason: Some(if selected_method.is_some() {
+            StrategicFallbackReason::MethodProducedNoStages
+        } else {
+            StrategicFallbackReason::NoViableMethod
+        }),
+        subgoals_attempted: selected_method.map_or_else(Vec::new, |method| {
+            method
+                .subgoals
+                .iter()
+                .enumerate()
+                .map(|(template_index, template)| SubgoalAttemptResult {
+                    template_index,
+                    kind: template.into(),
+                    outcome: SubgoalAttemptOutcome::Pending,
+                })
+                .collect()
+        }),
+        failure_mode: None,
+        motive_score: selected_method.map_or(0, |method| method_motive_score(method, motives)),
     }
 }
 
@@ -758,9 +811,6 @@ fn resolve_entity_criterion_places(
                 .map(|commodity| seller_places(state, commodity))
                 .unwrap_or_default()
         }
-        EntityCriterion::Witness { .. }
-        | EntityCriterion::ViolationEvidence { .. }
-        | EntityCriterion::Ledger { .. } => goal.evidence_places.iter().copied().collect(),
     }
 }
 
@@ -1989,9 +2039,6 @@ mod tests {
                     },
                 ),
             ],
-            expected_artifacts: Vec::new(),
-            required_claims: Vec::new(),
-            failure_modes: Vec::new(),
             explanation_template: crate::htn::ExplanationTemplateId(99),
             motive_bias: Vec::new(),
             planning_budget_hint: None,
@@ -2002,7 +2049,10 @@ mod tests {
             &snapshot,
             &goal,
             &recipes,
-            registry.get(worldwake_core::MethodSchemaId(99)),
+            &crate::htn::MethodSelection {
+                selected: registry.get(worldwake_core::MethodSchemaId(99)),
+                rejected: Vec::new(),
+            },
             actor,
             place_a,
             &[],

@@ -14,7 +14,8 @@ Concretely it removes: (1) `GoalSchema.methods`, a deliberately-empty field shad
 `MethodRegistry`'s real authority; (2) `MethodPrecondition::AgentRole`, which always evaluates
 `true`; (3) `EntityCriterion::Witness/ViolationEvidence/Ledger`, which always evaluate `false`,
 and the two methods dead because of them; (4) `MethodSchema` fields `expected_artifacts`,
-`required_claims`, `failure_modes`, which have zero consumers. It then makes the implicit
+`required_claims`, `failure_modes` — the first two have zero consumers, the third has only a
+validation-test consumer (removed alongside it). It then makes the implicit
 "fallback always allowed" behavior explicit and trace-visible, and folds an HTN method
 drafting checklist into `docs/spec-drafting-rules.md`.
 
@@ -24,7 +25,7 @@ AI Architecture Consolidation (Adjunct Wave — derived from `reports/ai-archite
 
 ## Status
 
-DRAFT
+COMPLETED
 
 ## Crates
 
@@ -45,10 +46,11 @@ DRAFT
 rated *High* or *Medium/High*) argued the HTN layer is "overnamed" and carries fossil seams.
 Direct code verification confirmed every load-bearing claim:
 
-- **`GoalSchema.methods` fossil (FND-28).** `goal_schema.rs` declares
-  `methods: &'static [MethodSchemaId]`, and `tests/integration/goal_schema_methods.rs` asserts
-  every live `GoalDispatchKey` declaration leaves it **empty** because "method assignment
-  belongs to the method registry." `MethodRegistry` (`htn/registry.rs`,
+- **`GoalSchema.methods` fossil (FND-28).** Before D1, `goal_schema.rs` declared
+  `methods: &'static [MethodSchemaId]`, and `tests/integration/goal_schema_methods.rs` asserted
+  every live `GoalDispatchKey` declaration left it **empty** because "method assignment belonged
+  to the method registry." D1 removes that field and rewrites the test around
+  `MethodRegistry` (`htn/registry.rs`,
   `by_goal_kind: BTreeMap<GoalKindDiscriminant, Vec<MethodSchemaId>>`, `insert`/`methods_for`)
   is the real, sole authority. Two live-looking authorities for one concept.
 - **Fake `AgentRole` precondition.** `selector.rs:77`: `MethodPrecondition::AgentRole(_) => true`.
@@ -58,9 +60,12 @@ Direct code verification confirmed every load-bearing claim:
   `EntityCriterion::Witness | ViolationEvidence | Ledger => false`. The only methods using these
   **as preconditions** are `investigate_on_scene` (`methods.rs:388`, `ViolationEvidence`) and
   `escort_to_office` (`methods.rs:507`, `Ledger`) — both permanently unselectable.
-- **Declared-but-unenforced schema fields.** `method_schema.rs`: `expected_artifacts`,
-  `required_claims`, `failure_modes` have **zero consumers** anywhere (verified by workspace
-  grep); `search/strategic.rs` never reads them.
+- **Declared-but-unenforced schema fields.** `method_schema.rs`: `expected_artifacts` and
+  `required_claims` have **zero consumers** anywhere (verified by workspace grep);
+  `search/strategic.rs` never reads any of the three. `failure_modes` has **one** consumer — the
+  validation test `every_method_declares_at_least_one_failure_mode`
+  (`tests/integration/htn_registry_validation.rs:48-59`), which asserts the field is non-empty but
+  is never read by runtime failure attribution. That test is removed in D4 together with the field.
 - **Implicit fallback.** `search/strategic.rs` falls back to missing-commodities/goal-places
   with `method_trace: None` when no method produces stages; no method-required/fallback policy
   exists at the goal-schema boundary.
@@ -175,12 +180,19 @@ Delete the `methods` field from `GoalSchema` and from all `GoalDispatchKey` decl
 Rewrite `tests/integration/goal_schema_methods.rs` from "all dispatch declarations expose empty
 method anchors" to assertions that `MethodRegistry` is the sole method-assignment authority
 (e.g. every goal kind's methods come from `MethodRegistry::methods_for`, and no second surface
-declares method assignment).
+declares method assignment). The file currently holds two tests:
+`all_dispatch_declarations_expose_empty_method_anchors` (rewritten as above) and
+`iteration_order_preserved` (lines 8-29), which constructs a `GoalSchema` fixture with a
+non-empty `methods` slice purely to exercise the field — delete it, since the field it tests is
+gone.
 
 ### D2 — Remove fake `AgentRole` precondition
 Delete `MethodPrecondition::AgentRole` and its always-`true` selector arm; remove the
 `AgentRole(RoleTag::Hunter)` precondition from `fulfill_bounty_group_hunt` (the method
-otherwise unchanged and still selectable). Remove `RoleTag` if it becomes unused workspace-wide.
+otherwise unchanged and still selectable). Remove `RoleTag` if it becomes unused workspace-wide
+(it is used only via `AgentRole`, so removal here orphans it) — including its re-export at
+`htn/mod.rs`. Update the unit test `method_schema_constructs_and_clones` (`htn/method_schema.rs`,
+~line 292), which constructs `AgentRole(RoleTag::Crafter)`.
 
 ### D3 — Remove dead criteria + dead methods
 Delete `EntityCriterion::Witness`, `EntityCriterion::ViolationEvidence`, `EntityCriterion::Ledger`
@@ -191,16 +203,33 @@ Verify `fulfill_bounty_investigation` and `investigate_by_ledger` are untouched 
 
 ### D4 — Remove unenforced `MethodSchema` fields
 Delete `expected_artifacts`, `required_claims`, and `failure_modes` from `MethodSchema` and all
-constructors/tests, since they have no consumers. (They may be reintroduced *with* enforcement
-when a method-required goal is actually built — see D6.)
+constructors/tests. `expected_artifacts` and `required_claims` have no consumers; `failure_modes`
+has only the validation test `every_method_declares_at_least_one_failure_mode`
+(`tests/integration/htn_registry_validation.rs:48-59`), which is removed with the field. Also
+update `method_schema_constructs_and_clones` (`htn/method_schema.rs`, ~line 292), which constructs
+all three fields. (They may be reintroduced *with* enforcement when a method-required goal is
+actually built — see D6.)
 
 ### D5 — Explicit, traced strategic fallback + deeper method traces
 Make the strategic fallback path explicit: when no selected method produces stages,
 `search/strategic.rs` records in the method trace that fallback occurred and why (e.g.
 `no_viable_method` / `method_produced_no_stages`) rather than emitting `method_trace: None`.
 Extend `MethodPlanAttemptTrace` (and `method_trace()`) to record **rejected** candidate methods
-for the goal kind with the precondition that failed, alongside the selected method. Per the
-Authoritative-to-AI Impact Rule, run the full decision-cycle trace and the golden suite.
+for the goal kind with the precondition that failed, alongside the selected method.
+
+Recording rejected methods requires restructuring the selector, not just the trace struct: today
+`select_method_with_recipes` (`htn/selector.rs:25-47`) returns only `Option<&MethodSchema>` via a
+`.filter(...).max_by(...)` chain that discards rejected candidates, `preconditions_satisfied`
+(`htn/selector.rs:49-60`) returns a bare `bool` via `.all()` that discards *which* precondition
+failed, and `method_trace()` (`search/strategic.rs:446`) only ever sees the winning method. The
+deliverable must therefore: (a) have the selector collect rejected `(MethodSchemaId, failing
+MethodPrecondition)` pairs; (b) have precondition evaluation surface the first failing
+precondition rather than a bare bool; and (c) thread that data through `build_stages` →
+`StrategicSearchResult` → the trace. (`MethodPlanAttemptTrace` is a transient debug type with no
+`Serialize`/`Deserialize` derive — the new fields are not authoritative state, so there is no
+save/replay surface to migrate.)
+
+Per the Authoritative-to-AI Impact Rule, run the full decision-cycle trace and the golden suite.
 
 ### D6 — Doc updates (folded in)
 - `docs/spec-drafting-rules.md`: add an HTN method drafting checklist — each method must declare
@@ -220,11 +249,41 @@ precondition and records the fallback reason when no method applies.
 
 ## Test Plan
 
-1. Focused: `cargo test -p worldwake-ai --test goal_schema_methods` and HTN selector/strategic
-   unit tests.
+1. Focused: `cargo test -p worldwake-ai --test integration_ai goal_schema_methods` and HTN
+   selector/strategic unit tests.
 2. Golden: `cargo test -p worldwake-ai --test golden_ai` (HTN/strategic scenarios) — verify no
    world-outcome regressions (trace changes expected, behavior changes not).
 3. Full AI suite: `cargo test -p worldwake-ai`.
 4. `cargo clippy --workspace --all-targets -- -D warnings` (variant/field removals must leave no
    dead code or unused-import warnings).
 5. `./scripts/verify.sh` before PR.
+
+## Outcome
+
+Completed on 2026-05-20.
+
+- Removed the `GoalSchema.methods` fossil and kept `MethodRegistry` as the sole method-assignment
+  authority.
+- Removed the no-op `AgentRole` precondition, orphaned `RoleTag`, dead `EntityCriterion` variants,
+  and dead methods that depended on those criteria.
+- Removed unenforced `MethodSchema` fields (`expected_artifacts`, `required_claims`,
+  `failure_modes`) and the validation-only failure-mode assertion.
+- Extended HTN method traces to record rejected candidate methods with failing preconditions and
+  explicit fallback reasons (`NoViableMethod`, `MethodProducedNoStages`).
+- Added the HTN method drafting checklist to `docs/spec-drafting-rules.md` and documented the
+  method-trace fallback/rejection contract in `docs/planner-contracts.md`.
+
+Deviations from the draft:
+
+- No new HTN capability was built; role state, witness/evidence/ledger location resolution, and
+  method-required goals remain out of scope as planned.
+- `./scripts/verify.sh` is the final pre-push gate owned by the harness after this archival
+  commit; per-ticket iterations recorded narrower completed proof and waived the wrapper until the
+  full S156 family landed.
+
+Verification:
+
+- Passed the focused, AI, CLI, golden, and CI-matching clippy commands recorded in
+  `archive/tickets/S156HTNAUTHON-001.md` through `archive/tickets/S156HTNAUTHON-006.md`.
+- Passed scoped Markdown/diff hygiene and closeout checks for the final documentation slice.
+- Pending final harness gate before push: `./scripts/verify.sh`.

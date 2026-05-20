@@ -87,15 +87,16 @@ pub use decision_trace::{
     PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
     PrerequisiteExclusionReason, PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace,
     PursuitDiagnostic, PursuitInvalidationReason, PursuitOmissionReason, RankedGoalSummary,
-    RepairAttemptTrace, RootCandidateFilterReason, RootCandidateOutcome,
+    RejectedMethodTrace, RepairAttemptTrace, RootCandidateFilterReason, RootCandidateOutcome,
     RootCandidatePayloadStatus, RootCandidateSkipReason, RootCandidateTrace,
     RootOperatorOmissionDetail, RootOperatorOmissionReason, RootOperatorOmissionTrace,
     SameGoalPlanningStopReason, SameGoalPlanningTrace, SelectedPlanReplacementKind,
     SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
     SelectedPlanTrace, SelectionTrace, SnapshotCacheCounters, SnapshotContinuationOutcome,
     SnapshotContinuationTrace, SocialCandidateOmission, StrategicBudgetTrace,
-    TestimonyCandidateOmission, TestimonyOmissionReason, TravelPruningTrace, TravelSuccessorTrace,
-    ViolationDetectionOmission, ViolationDetectionOmissionReason,
+    StrategicFallbackReason, TestimonyCandidateOmission, TestimonyOmissionReason,
+    TravelPruningTrace, TravelSuccessorTrace, ViolationDetectionOmission,
+    ViolationDetectionOmissionReason,
 };
 pub use dirty_set::DirtySet;
 pub use effect_schema_index::EffectSchemaIndex;

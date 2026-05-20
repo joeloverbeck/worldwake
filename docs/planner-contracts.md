@@ -1,11 +1,12 @@
 # Planner Contracts
 
-This document is the authoritative planner-facing contract for four boundaries that repeatedly show up in AI tickets and regressions:
+This document is the authoritative planner-facing contract for planner boundaries that repeatedly show up in AI tickets and regressions:
 
 1. exact-goal terminal operator surfacing
 2. planning-snapshot completeness for planner-visible runtime data
 3. belief-backed travel cost and route preference
 4. decision-trace diagnostics for omitted operators and missing prerequisites
+5. HTN method trace fallback and rejection diagnostics
 
 Use this doc when a ticket touches planner root candidates, snapshot-backed planning state, or AI traceability. Keep `docs/FOUNDATIONS.md` as the design authority and `docs/precision-rules.md` as the claim-writing authority. This file exists to make the live planner architecture explicit, not to duplicate either of those documents.
 
@@ -251,7 +252,39 @@ The contract is:
 
 Do not overload `selected_plan_source` to answer branch-identity questions it does not own by itself. Read both fields together.
 
-## 4. How To Use This In Tickets
+## 4. HTN Method Trace Fallback And Rejection
+
+The HTN method trace contract lives in:
+
+- [`crates/worldwake-ai/src/htn/selector.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/htn/selector.rs)
+- [`crates/worldwake-ai/src/search/strategic.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/search/strategic.rs)
+- [`crates/worldwake-ai/src/decision_trace.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/decision_trace.rs)
+
+`MethodPlanAttemptTrace` is a transient debug read-model, not authoritative
+state. It is not serialized save or replay state and must not become a second
+source of truth for planner legality.
+
+The contract is:
+
+- `MethodRegistry` is the method-assignment authority for goal kinds.
+- `select_method_with_recipes()` returns both the selected method and rejected
+  candidate methods for the goal kind.
+- Each `RejectedMethodTrace` records the rejected `method_id` and the first
+  failed `MethodPrecondition`.
+- `MethodPlanAttemptTrace.method_id` records the selected method when method
+  decomposition produced strategic stages.
+- `MethodPlanAttemptTrace.rejected_methods` records contrastive "why not?"
+  data for considered methods that failed preconditions.
+- `MethodPlanAttemptTrace.fallback_reason` records explicit flat-GOAP fallback:
+  `NoViableMethod` when no method survived selection, or
+  `MethodProducedNoStages` when a selected method produced no strategic stages.
+- Fallback remains legal unless a future method-required schema contract proves
+  that flat fallback would satisfy the wrong semantic condition.
+
+Do not infer fallback from `method_trace: None`. For HTN-capable goal kinds, use
+the trace's selected method, rejected methods, and fallback reason together.
+
+## 5. How To Use This In Tickets
 
 For planner-driven tickets:
 
@@ -262,10 +295,13 @@ For planner-driven tickets:
 - name whether travel reasoning depends on authoritative duration, perceived travel cost, or neither
 - state whether the terminal binding comes from `GoalKind` identity, grounded evidence, or neither
 - state whether the proof boundary is root omission tracing, surfaced-candidate skip tracing, same-goal sibling stop tracing, selection branch attribution, snapshot/state parity, or another lower-layer planner test
+- for HTN method work, state whether the proof boundary is selector rejection,
+  selected-method trace, fallback-reason trace, or a full autonomous/golden
+  planning attempt
 
 If traces prove the immediate result but not enough provenance to explain the architecture, follow `docs/precision-rules.md`: prove the behavior at the strongest lower layer and open a follow-up traceability ticket if the missing explanation surface matters.
 
-## 5. Architectural Guardrails
+## 6. Architectural Guardrails
 
 These planner contracts exist to preserve Worldwake's core design rules:
 
