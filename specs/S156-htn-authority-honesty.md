@@ -46,10 +46,11 @@ DRAFT
 rated *High* or *Medium/High*) argued the HTN layer is "overnamed" and carries fossil seams.
 Direct code verification confirmed every load-bearing claim:
 
-- **`GoalSchema.methods` fossil (FND-28).** `goal_schema.rs` declares
-  `methods: &'static [MethodSchemaId]`, and `tests/integration/goal_schema_methods.rs` asserts
-  every live `GoalDispatchKey` declaration leaves it **empty** because "method assignment
-  belongs to the method registry." `MethodRegistry` (`htn/registry.rs`,
+- **`GoalSchema.methods` fossil (FND-28).** Before D1, `goal_schema.rs` declared
+  `methods: &'static [MethodSchemaId]`, and `tests/integration/goal_schema_methods.rs` asserted
+  every live `GoalDispatchKey` declaration left it **empty** because "method assignment belonged
+  to the method registry." D1 removes that field and rewrites the test around
+  `MethodRegistry` (`htn/registry.rs`,
   `by_goal_kind: BTreeMap<GoalKindDiscriminant, Vec<MethodSchemaId>>`, `insert`/`methods_for`)
   is the real, sole authority. Two live-looking authorities for one concept.
 - **Fake `AgentRole` precondition.** `selector.rs:77`: `MethodPrecondition::AgentRole(_) => true`.
@@ -248,8 +249,8 @@ precondition and records the fallback reason when no method applies.
 
 ## Test Plan
 
-1. Focused: `cargo test -p worldwake-ai --test goal_schema_methods` and HTN selector/strategic
-   unit tests.
+1. Focused: `cargo test -p worldwake-ai --test integration_ai goal_schema_methods` and HTN
+   selector/strategic unit tests.
 2. Golden: `cargo test -p worldwake-ai --test golden_ai` (HTN/strategic scenarios) — verify no
    world-outcome regressions (trace changes expected, behavior changes not).
 3. Full AI suite: `cargo test -p worldwake-ai`.

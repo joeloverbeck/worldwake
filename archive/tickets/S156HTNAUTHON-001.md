@@ -1,6 +1,6 @@
 # S156HTNAUTHON-001: Remove `GoalSchema.methods` fossil; single registry authority
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` goal-schema declarations
@@ -47,7 +47,7 @@ is unambiguously the only method-assignment surface.
 2. No backward-compatibility shim is introduced. The field is removed outright; no deprecated
    accessor or fallback remains.
 
-## Verification Layers
+## Verified Layers
 
 1. Single method-assignment authority (no second declared surface) -> focused integration test in
    `goal_schema_methods.rs` asserting every goal kind's methods come from `MethodRegistry::methods_for`.
@@ -57,28 +57,27 @@ is unambiguously the only method-assignment surface.
    ordering, action lifecycle, or authoritative-state effect — additional layer mapping is not
    applicable.
 
-## What to Change
+## Landed Changes
 
-### 1. Remove the `methods` field from `GoalSchema`
+### 1. Removed the `methods` field from `GoalSchema`
 
-Delete `pub methods: &'static [MethodSchemaId]` from the `GoalSchema` struct in `goal_schema.rs`,
-and remove the `methods: &[],` line from all 41 `GoalDispatchKey` declarations in the same file.
-Remove the now-unused `MethodSchemaId` import if it is no longer referenced in `goal_schema.rs`.
+Deleted `pub methods: &'static [MethodSchemaId]` from the `GoalSchema` struct in
+`goal_schema.rs`, removed the `methods: &[],` line from all 41 `GoalDispatchKey` declarations in
+the same file, and removed the now-unused `MethodSchemaId` import.
 
-### 2. Rewrite the integration test
+### 2. Rewrote the integration test
 
 In `crates/worldwake-ai/tests/integration/goal_schema_methods.rs`:
-- Delete `iteration_order_preserved` — it exists only to exercise the removed field.
-- Rewrite `all_dispatch_declarations_expose_empty_method_anchors` into an assertion that
-  `MethodRegistry` is the sole method-assignment authority: e.g. build the registry
-  (`build_method_registry()`), and assert that for each `GoalKindDiscriminant`, the methods
-  available come from `MethodRegistry::methods_for`, and that no `GoalSchema`/`GoalDispatchKey`
-  surface declares method assignment (the `methods` field no longer exists).
+- Deleted `iteration_order_preserved` because it existed only to exercise the removed field.
+- Replaced `all_dispatch_declarations_expose_empty_method_anchors` with focused assertions that
+  dispatch declarations still expose schema metadata and that all registered method ids returned
+  by `MethodRegistry::methods_for` resolve back to a `MethodSchema` with the same
+  `GoalKindDiscriminant`.
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-ai/src/goal_schema.rs` (modify)
-- `crates/worldwake-ai/tests/integration/goal_schema_methods.rs` (modify)
+- `crates/worldwake-ai/src/goal_schema.rs`
+- `crates/worldwake-ai/tests/integration/goal_schema_methods.rs`
 
 ## Out of Scope
 
@@ -86,15 +85,15 @@ In `crates/worldwake-ai/tests/integration/goal_schema_methods.rs`:
   (covered by S156HTNAUTHON-002/003/004).
 - Trace or fallback changes (S156HTNAUTHON-005).
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests That Passed
 
-1. New/rewritten `goal_schema_methods.rs` test asserts `MethodRegistry` is the sole
+1. Rewritten `goal_schema_methods.rs` test asserts `MethodRegistry` is the sole
    method-assignment authority and compiles without referencing `GoalSchema.methods`.
 2. The deleted `iteration_order_preserved` test is gone; no test references `.methods` on a
    `GoalSchema`.
-3. Existing suite: `cargo test -p worldwake-ai`.
+3. Existing suite passed: `cargo test -p worldwake-ai`.
 
 ### Invariants
 
@@ -102,15 +101,42 @@ In `crates/worldwake-ai/tests/integration/goal_schema_methods.rs`:
    a goal kind to its methods (FND-28: one authority per concept).
 2. No production code path reads method assignment from `GoalSchema`.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Modified Tests
 
-1. `crates/worldwake-ai/tests/integration/goal_schema_methods.rs` — rewrite to assert single
+1. `crates/worldwake-ai/tests/integration/goal_schema_methods.rs` — rewritten to assert single
    registry authority; delete the field-exercising iteration test.
 
-### Commands
+### Command Results
 
-1. `cargo test -p worldwake-ai --test goal_schema_methods`
-2. `cargo clippy --workspace --all-targets -- -D warnings`
-3. `./scripts/verify.sh` (before PR)
+1. Passed `cargo test -p worldwake-ai --test integration_ai goal_schema_methods -- --list`
+2. Passed `cargo test -p worldwake-ai --test integration_ai goal_schema_methods`
+3. Passed `cargo test -p worldwake-ai`
+4. Passed `cargo clippy --workspace --all-targets -- -D warnings`
+5. Waived `./scripts/verify.sh` for this ticket iteration because the harness runs it only before
+   the final PR push; the ticket-owned source/test surface was covered by the focused selector,
+   full `worldwake-ai` suite, and CI-matching clippy gate.
+
+## Outcome
+
+Completed on 2026-05-20.
+
+- `GoalSchema` no longer carries a method-assignment field.
+- All 41 `GoalDispatchKey` declarations now expose only schema metadata; method assignment remains
+  centralized in `MethodRegistry`.
+- The focused integration test now proves the surviving dispatch schema surface and registry-owned
+  method assignment contract.
+
+## Deviations
+
+- The drafted command `cargo test -p worldwake-ai --test goal_schema_methods` was stale because the
+  live package exposes the integration tests through `integration_ai`. The verified focused command
+  is `cargo test -p worldwake-ai --test integration_ai goal_schema_methods`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --test integration_ai goal_schema_methods -- --list`
+- Passed `cargo test -p worldwake-ai --test integration_ai goal_schema_methods`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

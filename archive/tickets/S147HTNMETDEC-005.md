@@ -104,10 +104,16 @@ Added `crates/worldwake-ai/tests/goal_schema_methods.rs`:
 
 Completed on 2026-05-17.
 
+Outcome amended: 2026-05-20.
+
 - Added `GoalSchema.methods: &'static [MethodSchemaId]` as a const-evaluable method anchor.
 - Updated all 41 static `GoalSchema` declarations with `methods: &[]`.
 - Added focused integration coverage for populated method-slice iteration and current empty declaration anchors.
 - Truth-synced S147 so the active spec names the landed const-slice field rather than the earlier `Vec` sketch.
+- Later S156 reassessment found this anchor was a fossilized second authority after
+  `MethodRegistry` became the real method-assignment surface. The now-archived
+  `archive/tickets/S156HTNAUTHON-001.md` removed `GoalSchema.methods`, removed all empty
+  declaration anchors, and rewrote the focused test around registry ownership.
 
 ## Deviations
 
