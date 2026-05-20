@@ -365,6 +365,8 @@ mod tests {
                 contention_event_payload: None,
                 decision_payload: None,
                 artifact_transition_payload: None,
+
+                personality_assigned_payload: None,
             }));
 
         assert_eq!(state.scheduler().current_tick(), Tick(5));
@@ -473,6 +475,8 @@ mod tests {
                 contention_event_payload: None,
                 decision_payload: None,
                 artifact_transition_payload: None,
+
+                personality_assigned_payload: None,
             }));
 
         let mut changed_scheduler = original.clone();

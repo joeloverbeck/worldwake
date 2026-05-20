@@ -2,6 +2,7 @@ pub mod activation_decay;
 pub mod ai_decisions;
 pub mod artifact_lifecycle;
 pub mod belief_wall_trap;
+pub mod cognitive_archetypes;
 pub mod contention_inspectability;
 pub mod cross_goal_blocker_scoping;
 pub mod decision_history_events;

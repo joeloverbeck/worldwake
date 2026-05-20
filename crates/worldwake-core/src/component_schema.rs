@@ -1080,6 +1080,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                cognitive_archetype_components,
+                CognitiveArchetypeComponent,
+                insert_cognitive_archetype_component,
+                get_cognitive_archetype_component,
+                get_cognitive_archetype_component_mut,
+                remove_cognitive_archetype_component,
+                has_cognitive_archetype_component,
+                iter_cognitive_archetype_components,
+                insert_component_cognitive_archetype_component,
+                get_component_cognitive_archetype_component,
+                get_component_cognitive_archetype_component_mut,
+                remove_component_cognitive_archetype_component,
+                has_component_cognitive_archetype_component,
+                entities_with_cognitive_archetype_component,
+                query_cognitive_archetype_component,
+                count_with_cognitive_archetype_component,
+                "CognitiveArchetypeComponent",
+                |kind| kind == EntityKind::Agent,
+                CognitiveArchetypeComponent,
+                crate::CognitiveArchetypeComponent,
+                set_component_cognitive_archetype_component,
+                clear_component_cognitive_archetype_component,
+                txn_simple_set
+            }
+            {
                 portfolio_weights_profiles,
                 PortfolioWeightsProfile,
                 insert_portfolio_weights_profile,

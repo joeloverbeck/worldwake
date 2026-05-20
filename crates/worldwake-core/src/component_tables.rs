@@ -5,6 +5,7 @@ use crate::{
     bandit_camp::{BanditCamp, BanditFactionPolicy},
     belief::{AgentBeliefStore, PerceptionProfile, TellProfile},
     blocker_memory::BlockerMemory,
+    cognitive_archetype::CognitiveArchetypeComponent,
     cognitive_profile::CognitiveProfile,
     combat::{CombatProfile, CombatStance, DeadAt},
     communication::CommunicationProfile,
@@ -154,15 +155,15 @@ with_component_schema_entries!(
 mod tests {
     use super::ComponentTables;
     use crate::{
-        ActionDefId, BanditCamp, BanditFactionPolicy, BodyPart, CarryCapacity, CombatProfile,
-        CommodityKind, CommunicationProfile, Container, ContentionIntents, ContentionPolicy,
-        ContentionQueue, ControlSource, DeadAt, DeprivationExposure, DeprivationKind,
-        DriveThresholds, EntityId, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, ItemLot,
-        KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, PatrolProfile, PatrolRoute,
-        Permille, PlaceVisitRecord, ProductionJob, ProductionOutputOwner,
-        ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, ResourceSource,
-        RewardEncumbrance, Tick, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
-        WorkstationTag, Wound, WoundCause, WoundList,
+        ActionDefId, BanditCamp, BanditFactionPolicy, BodyPart, CarryCapacity, CognitiveArchetype,
+        CognitiveArchetypeComponent, CombatProfile, CommodityKind, CommunicationProfile, Container,
+        ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
+        DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, GoalKey, GoalKind,
+        HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
+        MetabolismProfile, PatrolProfile, PatrolRoute, Permille, PlaceVisitRecord, ProductionJob,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity,
+        ResourceSource, RewardEncumbrance, Tick, TravelEdgeId, UniqueItem, UniqueItemKind,
+        WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
         belief::{
             AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, PerceptionProfile,
             PerceptionSource, TellProfile,
@@ -377,6 +378,12 @@ mod tests {
             agent_id,
             AgentData {
                 control_source: ControlSource::None,
+            },
+        );
+        tables.insert_cognitive_archetype_component(
+            agent_id,
+            CognitiveArchetypeComponent {
+                archetype: CognitiveArchetype::Fearful,
             },
         );
         tables.insert_wound_list(entity(9), sample_roundtrip_wound_list());

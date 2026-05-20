@@ -7,7 +7,7 @@ Scenarios: 7
 
 ### Scenario 408: S137 Merchant-Moved Breach Rebinds To Sibling
 
-- Source: `plan_repair.rs:215`
+- Source: `plan_repair.rs:216`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -22,7 +22,7 @@ Scenarios: 7
 
 ### Scenario 409: S137 Stale Belief Attempts Insert Verification
 
-- Source: `plan_repair.rs:287`
+- Source: `plan_repair.rs:288`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -37,7 +37,7 @@ Scenarios: 7
 
 ### Scenario 410: S137 Recently Failed Repair Kind Is Skipped
 
-- Source: `plan_repair.rs:339`
+- Source: `plan_repair.rs:340`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -52,7 +52,7 @@ Scenarios: 7
 
 ### Scenario 411: S137 Commodity Availability Changed Clears Blocker Structurally
 
-- Source: `plan_repair.rs:390`
+- Source: `plan_repair.rs:391`
 - Systems: AI, Core
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -67,7 +67,7 @@ Scenarios: 7
 
 ### Scenario 412: S137 Repair Budget Exhaustion Falls Through To Full Replan
 
-- Source: `plan_repair.rs:465`
+- Source: `plan_repair.rs:466`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -82,7 +82,7 @@ Scenarios: 7
 
 ### Scenario 413: S137 Abandon Produces Empty Progress Barrier
 
-- Source: `plan_repair.rs:520`
+- Source: `plan_repair.rs:521`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -97,7 +97,7 @@ Scenarios: 7
 
 ### Scenario 414: S137 Phase 11 Approved Repair Gate Witness
 
-- Source: `plan_repair.rs:563`
+- Source: `plan_repair.rs:564`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair

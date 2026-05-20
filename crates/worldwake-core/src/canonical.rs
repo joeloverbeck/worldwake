@@ -128,6 +128,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
         log
     }
@@ -283,6 +285,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
 
         assert_ne!(

@@ -3,8 +3,8 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-/// S149PARPLASEG-003 persists partial-plan segments on agenda entries.
-pub const SAVE_FORMAT_VERSION: u32 = 93;
+/// S152COGARCSEE-003 carries personality assignment payloads in the event log.
+pub const SAVE_FORMAT_VERSION: u32 = 95;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -198,12 +198,13 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
     use worldwake_core::{
         AcquisitionQuantity, ActionDefId, ActionDomain, AffordanceKey, AgentBeliefStore,
-        AgentSchemaContextProfile, ArtifactActionability, ArtifactAxisValue,
-        ArtifactTransitionPayload, AxisName, BeliefClaimKey, BeliefRef, BeliefSnapshot,
-        BeliefStatusTag, BelievedActivity, BelievedEntityState, Blocker, BlockerClearingCondition,
-        BlockerKey, BlockerMemory, BlockerRecordedPayload, BlockerScope, BlockingFact,
-        BodyCostPerTick, CandidateExtractorId, CauseRef, ClaimId, ClaimValue, ClaimantOutcome,
-        CloseCause, CommodityKind, CommodityPurpose, ContentionClaimant, ContentionEventPayload,
+        AgentSchemaContextProfile, ArchetypeAssignmentSource, ArtifactActionability,
+        ArtifactAxisValue, ArtifactTransitionPayload, AxisName, BeliefClaimKey, BeliefRef,
+        BeliefSnapshot, BeliefStatusTag, BelievedActivity, BelievedEntityState, Blocker,
+        BlockerClearingCondition, BlockerKey, BlockerMemory, BlockerRecordedPayload, BlockerScope,
+        BlockingFact, BodyCostPerTick, CandidateExtractorId, CauseRef, ClaimId, ClaimValue,
+        ClaimantOutcome, CloseCause, CognitiveArchetype, CognitiveArchetypeComponent,
+        CommodityKind, CommodityPurpose, ContentionClaimant, ContentionEventPayload,
         ContentionResolutionRule, ControlSource, DecisionEventPayload, Discrepancy,
         DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EmitterTag, EntityBeliefAspect,
         EntityBeliefClaim, EntityId, EpistemicDispositionProfile, EventLog, EventPayload, EventTag,
@@ -215,8 +216,8 @@ mod tests {
         HomeostaticNeedId, LastSeenMemory, LastSeenProvenance, LastSeenRecord, LatrineFullness,
         LawAbidingProfile, MaterializationTag, MetabolismProfile, MotiveSource, MotiveSourceRef,
         ObservationOmission, ObservationRef, OmissionReason, PendingEvent, PerceptionSource,
-        PlaceDirtiness, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
-        PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
+        PersonalityAssignedPayload, PlaceDirtiness, PlanAdoptedPayload, PlanAssumptionRef,
+        PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
         RankedGoalComparisonDimensionTag, RecordRef, RejectedAlternativeSummary,
         RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
         RewardEncumbrance, RiskWeightProfile, RoutePreferenceProfile, RoutePreferenceSummary,
@@ -382,6 +383,14 @@ mod tests {
         );
         profile_txn
             .set_component_agent_schema_context_profile(actor, schema_context)
+            .unwrap();
+        profile_txn
+            .set_component_cognitive_archetype_component(
+                actor,
+                CognitiveArchetypeComponent {
+                    archetype: CognitiveArchetype::Skeptical,
+                },
+            )
             .unwrap();
         profile_txn
             .set_component_utility_profile(
@@ -682,6 +691,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
 
         let mut scheduler = Scheduler::new_with_tick(Tick(3), SystemManifest::canonical());
@@ -947,6 +958,8 @@ mod tests {
                 contention_event_payload: None,
                 decision_payload: Some(payload),
                 artifact_transition_payload: None,
+
+                personality_assigned_payload: None,
             }));
     }
 
@@ -984,6 +997,8 @@ mod tests {
                     cause_event,
                     at: tick,
                 }),
+
+                personality_assigned_payload: None,
             }));
     }
 
@@ -1036,6 +1051,8 @@ mod tests {
                 }),
                 decision_payload: None,
                 artifact_transition_payload: None,
+
+                personality_assigned_payload: None,
             }));
     }
 
@@ -1348,8 +1365,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_93_after_s149_companion_origin_landing() {
-        assert_eq!(SAVE_FORMAT_VERSION, 93);
+    fn save_format_version_is_95_after_s152_personality_assigned_payload_landing() {
+        assert_eq!(SAVE_FORMAT_VERSION, 95);
     }
 
     #[test]
@@ -1360,7 +1377,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 93);
+        assert_eq!(SAVE_FORMAT_VERSION, 95);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1379,6 +1396,14 @@ mod tests {
             restored_schema_context
                 .disabled_extractors
                 .contains(&CandidateExtractorId::Political)
+        );
+        assert_eq!(
+            restored
+                .world()
+                .get_component_cognitive_archetype_component(actor),
+            Some(&CognitiveArchetypeComponent {
+                archetype: CognitiveArchetype::Skeptical
+            })
         );
         assert_eq!(
             restored_schema_context
@@ -1922,6 +1947,58 @@ mod tests {
     }
 
     #[test]
+    fn save_to_bytes_roundtrip_preserves_personality_assigned_event_payloads() {
+        let (mut state, actor, _target, _) = populated_state();
+        let place = state.world().topology().place_ids().next().unwrap();
+        let assigned = PersonalityAssignedPayload {
+            agent: actor,
+            archetype: CognitiveArchetype::Sociable,
+            seed: 152,
+            source: ArchetypeAssignmentSource::Explicit,
+            resolved_profile_hash: state_hash(0x52),
+        };
+        let event_id = state
+            .event_log_mut()
+            .emit(PendingEvent::from_payload(EventPayload {
+                tick: Tick(20),
+                cause: CauseRef::Bootstrap,
+                actor_id: Some(actor),
+                action_name: Some("assign_archetype".to_string()),
+                target_ids: vec![actor],
+                evidence: Vec::new(),
+                place_id: Some(place),
+                state_deltas: Vec::new(),
+                observed_entities: std::collections::BTreeMap::new(),
+                visibility: VisibilitySpec::Hidden,
+                witness_data: WitnessData::default(),
+                tags: std::collections::BTreeSet::from([EventTag::PersonalityAssigned]),
+                contention_event_payload: None,
+                decision_payload: None,
+                artifact_transition_payload: None,
+                personality_assigned_payload: Some(assigned.clone()),
+            }));
+
+        let bytes = save_to_bytes(&state, None).unwrap();
+        let (restored, runtime) = load_from_bytes(&bytes).unwrap();
+
+        assert_eq!(runtime, None);
+        assert_eq!(restored, state);
+        assert_eq!(
+            restored
+                .event_log()
+                .events_by_tag(EventTag::PersonalityAssigned),
+            &[event_id]
+        );
+        assert_eq!(
+            restored
+                .event_log()
+                .get(event_id)
+                .and_then(EventView::personality_assigned_payload),
+            Some(&assigned)
+        );
+    }
+
+    #[test]
     fn belief_status_tag_serialization_matches_belief_status_ordinals() {
         let pairs = [
             (BeliefStatus::Certain, BeliefStatusTag::Certain),
@@ -1951,11 +2028,11 @@ mod tests {
     }
 
     #[test]
-    fn load_rejects_pre_s149_companion_origin_version_92_without_migration_shim() {
+    fn load_rejects_pre_s152_personality_assigned_payload_version_94_without_migration_shim() {
         let (state, _, _, _) = populated_state();
         let mut bytes = save_to_bytes(&state, None).unwrap();
         bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
-            .copy_from_slice(&92_u32.to_le_bytes());
+            .copy_from_slice(&94_u32.to_le_bytes());
 
         let error = load_from_bytes(&bytes).unwrap_err();
 
@@ -1964,7 +2041,7 @@ mod tests {
             SaveError::UnsupportedVersion {
                 found,
                 expected: SAVE_FORMAT_VERSION
-            } if found == 92
+            } if found == 94
         ));
     }
 

@@ -187,6 +187,8 @@ impl<'w> WorldTxn<'w> {
             contention_event_payload: self.contention_event_payload,
             decision_payload: self.decision_payload,
             artifact_transition_payload: self.artifact_transition_payload,
+
+            personality_assigned_payload: None,
         })
     }
 
@@ -2021,16 +2023,16 @@ mod tests {
     use crate::{
         AcquisitionExhaustionTracker, AgendaProfile, AgentBeliefStore, AgentSchemaContextProfile,
         ArtifactPostingProfile, BeliefStoreDiff, BelievedEntityState, BelievedInstitutionalClaim,
-        BlockerMemory, CognitiveProfile, CommunicationProfile, DemandMemory, DisposalProfile,
-        DriveEscalationProfile, EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile,
-        FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim,
-        InstitutionalKnowledgeSource, InstitutionalRecordEntry, IntentionDispositionProfile,
-        LawAbidingProfile, MerchandiseProfile, ObligationSatiationProfile, OfficeData,
-        OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
-        PerceptionSource, PortfolioWeightsProfile, PreferenceProfile, RecordData, RecordEntryId,
-        RecordKind, RiskWeightProfile, RoutePreferenceProfile, SubstitutePreferences,
-        SuccessionLaw, SurveyMemory, TellProfile, TestimonyTrustProfile, TradeDispositionProfile,
-        UtilityProfile,
+        BlockerMemory, CognitiveArchetypeComponent, CognitiveProfile, CommunicationProfile,
+        DemandMemory, DisposalProfile, DriveEscalationProfile, EpistemicDispositionProfile,
+        ExecutionBudget, ExplorationProfile, FactionData, FactionPurpose, InstitutionalBeliefKey,
+        InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
+        IntentionDispositionProfile, LawAbidingProfile, MerchandiseProfile,
+        ObligationSatiationProfile, OfficeData, OfficeForceProfile, OfficeForceState,
+        PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource, PortfolioWeightsProfile,
+        PreferenceProfile, RecordData, RecordEntryId, RecordKind, RiskWeightProfile,
+        RoutePreferenceProfile, SubstitutePreferences, SuccessionLaw, SurveyMemory, TellProfile,
+        TestimonyTrustProfile, TradeDispositionProfile, UtilityProfile,
         component_schema::with_component_schema_entries,
         test_utils::{
             sample_blocker_memory, sample_demand_memory, sample_merchandise_profile,
@@ -2518,6 +2520,14 @@ mod tests {
                 component_kind: ComponentKind::CognitiveProfile,
                 before: None,
                 after: ComponentValue::CognitiveProfile(CognitiveProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::CognitiveArchetypeComponent,
+                before: None,
+                after: ComponentValue::CognitiveArchetypeComponent(
+                    CognitiveArchetypeComponent::default(),
+                ),
             }),
             StateDelta::Component(ComponentDelta::Set {
                 entity: agent,

@@ -668,6 +668,8 @@ pub(super) fn emit_decision_event(
         contention_event_payload: None,
         decision_payload: Some(decision_payload),
         artifact_transition_payload: None,
+
+        personality_assigned_payload: None,
     }));
 }
 

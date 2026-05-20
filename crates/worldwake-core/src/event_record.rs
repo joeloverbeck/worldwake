@@ -2,7 +2,8 @@
 
 use crate::{
     ArtifactTransitionPayload, CauseRef, ContentionEventPayload, DecisionEventPayload, EventTag,
-    MismatchKind, ObservedEntitySnapshot, StateDelta, VisibilitySpec, WitnessData, WoundId,
+    MismatchKind, ObservedEntitySnapshot, PersonalityAssignedPayload, StateDelta, VisibilitySpec,
+    WitnessData, WoundId,
 };
 use crate::{EntityId, EventId, Tick};
 use serde::{Deserialize, Serialize};
@@ -24,6 +25,7 @@ pub trait EventView {
     fn contention_event_payload(&self) -> Option<&ContentionEventPayload>;
     fn decision_payload(&self) -> Option<&DecisionEventPayload>;
     fn artifact_transition_payload(&self) -> Option<&ArtifactTransitionPayload>;
+    fn personality_assigned_payload(&self) -> Option<&PersonalityAssignedPayload>;
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -61,6 +63,8 @@ pub struct EventPayload {
     pub contention_event_payload: Option<ContentionEventPayload>,
     pub decision_payload: Option<DecisionEventPayload>,
     pub artifact_transition_payload: Option<ArtifactTransitionPayload>,
+    #[serde(default)]
+    pub personality_assigned_payload: Option<PersonalityAssignedPayload>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -129,6 +133,10 @@ impl EventView for PendingEvent {
     fn artifact_transition_payload(&self) -> Option<&ArtifactTransitionPayload> {
         self.payload.artifact_transition_payload.as_ref()
     }
+
+    fn personality_assigned_payload(&self) -> Option<&PersonalityAssignedPayload> {
+        self.payload.personality_assigned_payload.as_ref()
+    }
 }
 
 impl EventView for EventRecord {
@@ -191,6 +199,10 @@ impl EventView for EventRecord {
     fn artifact_transition_payload(&self) -> Option<&ArtifactTransitionPayload> {
         self.payload.artifact_transition_payload.as_ref()
     }
+
+    fn personality_assigned_payload(&self) -> Option<&PersonalityAssignedPayload> {
+        self.payload.personality_assigned_payload.as_ref()
+    }
 }
 
 impl PendingEvent {
@@ -233,14 +245,15 @@ mod tests {
     use super::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
     use crate::MismatchKind;
     use crate::{
-        CauseRef, ComponentDelta, ComponentKind, ComponentValue, DecisionEventPayload, EmitterTag,
-        EventTag, EvidenceKindTag, EvidenceSummary, GoalOfferedPayload, QuantityDelta,
-        RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta, VisibilitySpec,
-        WitnessData,
+        ArchetypeAssignmentSource, CognitiveArchetype, CommodityKind, EntityId, EntityKind,
+        EventId, Name, ObservedEntitySnapshot, PersonalityAssignedPayload, Quantity, ReservationId,
+        ReservationRecord, Tick, TickRange, WoundId,
     };
     use crate::{
-        CommodityKind, EntityId, EntityKind, EventId, Name, ObservedEntitySnapshot, Quantity,
-        ReservationId, ReservationRecord, Tick, TickRange, WoundId,
+        CauseRef, ComponentDelta, ComponentKind, ComponentValue, DecisionEventPayload, EmitterTag,
+        EventTag, EvidenceKindTag, EvidenceSummary, GoalOfferedPayload, QuantityDelta,
+        RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta, StateHash,
+        VisibilitySpec, WitnessData,
     };
     use serde::{Serialize, de::DeserializeOwned};
     use std::collections::{BTreeMap, BTreeSet};
@@ -311,6 +324,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         });
 
         assert_eq!(pending.payload.tick, Tick(9));
@@ -364,6 +379,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         })
         .into_record(EventId(4));
 
@@ -405,6 +422,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         })
         .into_record(EventId(0));
 
@@ -466,6 +485,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         });
 
         let bytes = bincode::serialize(&pending).unwrap();
@@ -550,6 +571,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         });
 
         assert_eq!(
@@ -623,6 +646,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         });
 
         assert_eq!(
@@ -693,6 +718,8 @@ mod tests {
                 contention_event_payload: None,
                 decision_payload: None,
                 artifact_transition_payload: None,
+
+                personality_assigned_payload: None,
             },
         );
 
@@ -754,6 +781,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         });
 
         let bytes = bincode::serialize(&pending).unwrap();
@@ -814,6 +843,8 @@ mod tests {
                 contention_event_payload: None,
                 decision_payload: None,
                 artifact_transition_payload: None,
+
+                personality_assigned_payload: None,
             },
         );
 
@@ -871,6 +902,8 @@ mod tests {
                 contention_event_payload: None,
                 decision_payload: None,
                 artifact_transition_payload: None,
+
+                personality_assigned_payload: None,
             },
         );
 
@@ -919,7 +952,48 @@ mod tests {
                 },
             })),
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         };
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: EventPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn event_payload_roundtrips_with_personality_assigned_payload_and_accessors() {
+        let assigned = PersonalityAssignedPayload {
+            agent: entity(1),
+            archetype: CognitiveArchetype::Bold,
+            seed: 42,
+            source: ArchetypeAssignmentSource::Explicit,
+            resolved_profile_hash: StateHash([9; 32]),
+        };
+        let payload = EventPayload {
+            tick: Tick(30),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(entity(1)),
+            action_name: Some("assign_archetype".to_string()),
+            target_ids: vec![entity(1)],
+            evidence: Vec::new(),
+            place_id: Some(entity(3)),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::Hidden,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::PersonalityAssigned]),
+            contention_event_payload: None,
+            decision_payload: None,
+            artifact_transition_payload: None,
+            personality_assigned_payload: Some(assigned.clone()),
+        };
+
+        let pending = PendingEvent::from_payload(payload.clone());
+        let record = EventRecord::from_payload(EventId(9), payload.clone());
+        assert_eq!(pending.personality_assigned_payload(), Some(&assigned));
+        assert_eq!(record.personality_assigned_payload(), Some(&assigned));
 
         let bytes = bincode::serialize(&payload).unwrap();
         let roundtrip: EventPayload = bincode::deserialize(&bytes).unwrap();
@@ -959,6 +1033,8 @@ mod tests {
                 cause_event: Some(EventId(7)),
                 at: Tick(30),
             }),
+
+            personality_assigned_payload: None,
         };
 
         let bytes = bincode::serialize(&payload).unwrap();
@@ -1001,6 +1077,8 @@ mod tests {
             }),
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         };
 
         let bytes = bincode::serialize(&payload).unwrap();

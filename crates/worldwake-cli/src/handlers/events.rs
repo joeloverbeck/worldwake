@@ -313,6 +313,7 @@ mod tests {
                 substitute_preferences: None,
                 testimony_trust_profile: None,
                 route_preference_profile: None,
+                archetype: None,
                 known_recipes: None,
             }],
             bandit_camps: Vec::new(),
@@ -328,6 +329,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: std::collections::BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         }
     }
 
@@ -348,6 +350,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         });
         sim.event_log_mut().emit(pending)
     }
@@ -369,6 +373,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         });
         sim.event_log_mut().emit(pending)
     }
@@ -451,6 +457,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         });
         let event_id = sim.event_log_mut().emit(pending);
 
@@ -476,6 +484,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         });
 
         assert_eq!(

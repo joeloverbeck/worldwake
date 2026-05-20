@@ -12,21 +12,26 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    AgentBeliefStore, ArtifactActionability, ArtifactCredibility, ArtifactExistence,
-    ArtifactHeader, ArtifactKind, ArtifactLegalEffect, ArtifactVisibility, BanditCamp,
-    BanditFactionPolicy, BelievedInstitutionalClaim, BountyTarget, BountyTerms, CarryCapacity,
-    CauseRef, ClaimId, ClaimValue, Container, ContentionQueue, ControlSource, DeprivationExposure,
-    EligibilityRule, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EventLog,
-    ExpectationBasis, ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore,
-    ExplorationProfile, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-    KnownRecipes, LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
+    AgentBeliefStore, AgentSchemaContextProfile, ArchetypeAssignmentPolicy,
+    ArchetypeAssignmentSource, ArchetypeProfileTemplate, ArtifactActionability,
+    ArtifactCredibility, ArtifactExistence, ArtifactHeader, ArtifactKind, ArtifactLegalEffect,
+    ArtifactVisibility, BanditCamp, BanditFactionPolicy, BelievedInstitutionalClaim, BountyTarget,
+    BountyTerms, CarryCapacity, CauseRef, ClaimId, ClaimValue, CognitiveArchetype,
+    CognitiveArchetypeComponent, CognitiveProfile, Container, ContentionQueue, ControlSource,
+    DeprivationExposure, EligibilityRule, EntityBeliefAspect, EntityBeliefClaim, EntityId,
+    EntityKind, EpistemicDispositionProfile, EventLog, EventPayload, EventTag, ExpectationBasis,
+    ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
+    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, KnownRecipes,
+    LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
     LatrineFullness, LoadUnits, MerchandiseProfile, Name, NoticeContent, NoticeTopic, OfficeData,
-    OfficeForceProfile, OfficeForceState, PatrolRoute, PerceptionSource, Permille, Place,
-    PlaceDirtiness, ProductionOutputOwner, ProductionOutputOwnershipPolicy, RecordData, RecordKind,
-    ResourceExtractionQueues, ResourceSource, RewardSource, Seed, SleepQualityProfile,
-    SocialObservation, SocialObservationDetail, SurveyMemory, Tick, Topology, TravelEdge,
-    TravelEdgeId, VisibilitySpec, WashBasinState, WitnessData, WorkstationMarker, World, WorldTxn,
-    default_commodity_decay_map, hash_world, load_per_unit,
+    OfficeForceProfile, OfficeForceState, PatrolRoute, PendingEvent, PerceptionProfile,
+    PerceptionSource, Permille, PersonalityAssignedPayload, Place, PlaceDirtiness,
+    PortfolioWeightsProfile, ProductionOutputOwner, ProductionOutputOwnershipPolicy, RecordData,
+    RecordKind, ResourceExtractionQueues, ResourceSource, RewardSource, RiskWeightProfile,
+    RoutePreferenceProfile, Seed, SleepQualityProfile, SocialObservation, SocialObservationDetail,
+    SurveyMemory, TestimonyTrustProfile, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
+    WashBasinState, WitnessData, WorkstationMarker, World, WorldTxn, default_commodity_decay_map,
+    default_uniform_five_archetypes, hash_serializable, hash_world, load_per_unit, template_for,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -310,8 +315,22 @@ fn spawn_entities(
         }
     }
 
-    for agent_def in &def.agents {
-        spawn_agent(&mut txn, recipes, agent_def, names, &mut agent_locations)?;
+    let effective_archetype_policy = def.archetype_assignment_policy.clone().unwrap_or_default();
+    let mut personality_events = Vec::new();
+    for (agent_index, agent_def) in def.agents.iter().enumerate() {
+        spawn_agent(
+            &mut txn,
+            &SpawnAgentContext {
+                recipes,
+                scenario_seed: def.seed,
+                archetype_policy: &effective_archetype_policy,
+            },
+            agent_def,
+            agent_index,
+            names,
+            &mut agent_locations,
+            &mut personality_events,
+        )?;
     }
 
     for camp_def in &def.bandit_camps {
@@ -487,6 +506,9 @@ fn spawn_entities(
     }
 
     txn.commit(event_log);
+    for payload in personality_events {
+        emit_personality_assigned_event(event_log, payload);
+    }
     Ok(())
 }
 
@@ -586,13 +608,337 @@ fn spawn_bandit_camp(
     Ok(())
 }
 
+fn resolve_archetype_assignment(
+    explicit: Option<CognitiveArchetype>,
+    policy: &ArchetypeAssignmentPolicy,
+    scenario_seed: u64,
+    agent_index: usize,
+) -> Result<(CognitiveArchetype, u64, ArchetypeAssignmentSource), ScenarioError> {
+    let assignment_seed = archetype_assignment_seed(scenario_seed, agent_index)?;
+    if let Some(archetype) = explicit {
+        return Ok((
+            archetype,
+            assignment_seed,
+            ArchetypeAssignmentSource::Explicit,
+        ));
+    }
+
+    let archetype = draw_archetype_from_policy(policy, assignment_seed)?;
+    Ok((
+        archetype,
+        assignment_seed,
+        ArchetypeAssignmentSource::Policy(policy.clone()),
+    ))
+}
+
+fn archetype_assignment_seed(scenario_seed: u64, agent_index: usize) -> Result<u64, ScenarioError> {
+    let agent_index = u64::try_from(agent_index)
+        .map_err(|_| ScenarioError::Validation("too many agents for archetype seeding".into()))?;
+    let hash = hash_serializable(&(scenario_seed, agent_index)).map_err(|e| {
+        ScenarioError::Validation(format!("failed to derive archetype assignment seed: {e}"))
+    })?;
+    let mut bytes = [0u8; 8];
+    bytes.copy_from_slice(&hash.0[..8]);
+    Ok(u64::from_le_bytes(bytes))
+}
+
+fn draw_archetype_from_policy(
+    policy: &ArchetypeAssignmentPolicy,
+    assignment_seed: u64,
+) -> Result<CognitiveArchetype, ScenarioError> {
+    match policy {
+        ArchetypeAssignmentPolicy::DefaultUniformFive => {
+            draw_uniform_archetype(&default_uniform_five_archetypes(), assignment_seed)
+        }
+        ArchetypeAssignmentPolicy::Uniform(archetypes) => {
+            draw_uniform_archetype(archetypes, assignment_seed)
+        }
+        ArchetypeAssignmentPolicy::Weighted(weights) => {
+            let total = weights
+                .values()
+                .try_fold(0u64, |acc, weight| acc.checked_add(u64::from(*weight)));
+            let Some(total) = total else {
+                return Err(ScenarioError::Validation(
+                    "archetype weighted policy total weight overflowed".into(),
+                ));
+            };
+            if total == 0 {
+                return Err(ScenarioError::Validation(
+                    "archetype weighted policy must contain at least one positive weight".into(),
+                ));
+            }
+            let mut choice = assignment_seed % total;
+            for (archetype, weight) in weights {
+                let weight = u64::from(*weight);
+                if weight == 0 {
+                    continue;
+                }
+                if choice < weight {
+                    return Ok(*archetype);
+                }
+                choice -= weight;
+            }
+            unreachable!("positive total weight must select an archetype")
+        }
+    }
+}
+
+fn draw_uniform_archetype(
+    archetypes: &BTreeSet<CognitiveArchetype>,
+    assignment_seed: u64,
+) -> Result<CognitiveArchetype, ScenarioError> {
+    if archetypes.is_empty() {
+        return Err(ScenarioError::Validation(
+            "archetype uniform policy must contain at least one archetype".into(),
+        ));
+    }
+    let index = (assignment_seed % archetypes.len() as u64) as usize;
+    Ok(*archetypes
+        .iter()
+        .nth(index)
+        .expect("validated non-empty archetype set"))
+}
+
+struct SpawnAgentContext<'a> {
+    recipes: &'a RecipeRegistry,
+    scenario_seed: u64,
+    archetype_policy: &'a ArchetypeAssignmentPolicy,
+}
+
+fn apply_cognitive_archetype_delta(
+    profile: &mut CognitiveProfile,
+    template: &ArchetypeProfileTemplate,
+) {
+    profile.max_plan_depth = apply_u8_delta(profile.max_plan_depth, template.max_plan_depth_delta);
+    profile.repair_budget_fraction = apply_permille_delta(
+        profile.repair_budget_fraction,
+        template.repair_budget_fraction_delta,
+    );
+    profile.switch_margin =
+        apply_permille_delta(profile.switch_margin, template.switch_margin_delta);
+    profile.planning_switch_margin = apply_permille_delta(
+        profile.planning_switch_margin,
+        template.planning_switch_margin_delta,
+    );
+    profile.guard_min_confidence_ceiling = apply_permille_delta(
+        profile.guard_min_confidence_ceiling,
+        template.guard_min_confidence_ceiling_delta,
+    );
+    profile.transient_block_ticks = scale_ticks(
+        profile.transient_block_ticks,
+        template.backoff_ticks_scale.value(),
+    );
+    profile.structural_block_ticks = scale_ticks(
+        profile.structural_block_ticks,
+        template.backoff_ticks_scale.value(),
+    );
+    profile.stale_belief_backoff_ticks = scale_ticks(
+        profile.stale_belief_backoff_ticks,
+        template.backoff_ticks_scale.value(),
+    );
+    profile.contradicted_belief_backoff_ticks = scale_ticks(
+        profile.contradicted_belief_backoff_ticks,
+        template.backoff_ticks_scale.value(),
+    );
+    profile.improper_state_backoff_ticks = scale_ticks(
+        profile.improper_state_backoff_ticks,
+        template.backoff_ticks_scale.value(),
+    );
+    profile.missing_observation_backoff_ticks = scale_ticks(
+        profile.missing_observation_backoff_ticks,
+        template.backoff_ticks_scale.value(),
+    );
+    profile.no_legal_binding_backoff_ticks = scale_ticks(
+        profile.no_legal_binding_backoff_ticks,
+        template.backoff_ticks_scale.value(),
+    );
+    profile.counterparty_refusal_backoff_ticks = scale_ticks(
+        profile.counterparty_refusal_backoff_ticks,
+        template.backoff_ticks_scale.value(),
+    );
+    profile.route_unknown_backoff_ticks = scale_ticks(
+        profile.route_unknown_backoff_ticks,
+        template.backoff_ticks_scale.value(),
+    );
+    profile.route_segment_blocker_ticks = scale_ticks(
+        profile.route_segment_blocker_ticks,
+        template.backoff_ticks_scale.value(),
+    );
+    profile.counterparty_blocker_ticks = scale_ticks(
+        profile.counterparty_blocker_ticks,
+        template.backoff_ticks_scale.value(),
+    );
+    profile.search_exhaustion_backoff_ticks = scale_ticks(
+        profile.search_exhaustion_backoff_ticks,
+        template.backoff_ticks_scale.value(),
+    );
+    profile.partial_drift_backoff_ticks = scale_ticks(
+        profile.partial_drift_backoff_ticks,
+        template.backoff_ticks_scale.value(),
+    );
+}
+
+fn apply_perception_archetype_delta(
+    profile: &mut PerceptionProfile,
+    template: &ArchetypeProfileTemplate,
+) {
+    profile.observation_budget = apply_u8_delta(
+        profile.observation_budget,
+        template.observation_budget_delta,
+    );
+}
+
+fn apply_testimony_archetype_delta(
+    profile: &mut TestimonyTrustProfile,
+    template: &ArchetypeProfileTemplate,
+) {
+    profile.confirmation_weight = apply_permille_delta(
+        profile.confirmation_weight,
+        template.testimony_confirmation_weight_delta,
+    );
+    profile.refutation_penalty = apply_permille_delta(
+        profile.refutation_penalty,
+        template.testimony_refutation_penalty_delta,
+    );
+}
+
+fn apply_risk_archetype_delta(
+    profile: &mut RiskWeightProfile,
+    template: &ArchetypeProfileTemplate,
+) {
+    profile.threat_aversion =
+        apply_permille_delta(profile.threat_aversion, template.threat_aversion_delta);
+}
+
+fn apply_route_preference_archetype_delta(
+    profile: &mut RoutePreferenceProfile,
+    template: &ArchetypeProfileTemplate,
+) {
+    profile.dangerous_traversal_penalty = apply_permille_delta(
+        profile.dangerous_traversal_penalty,
+        template.dangerous_traversal_penalty_delta,
+    );
+}
+
+fn apply_epistemic_archetype_delta(
+    profile: &mut EpistemicDispositionProfile,
+    template: &ArchetypeProfileTemplate,
+) {
+    profile.ask_memory_retention_ticks = apply_u32_delta(
+        profile.ask_memory_retention_ticks,
+        template.ask_memory_retention_ticks_delta,
+    );
+}
+
+fn apply_portfolio_archetype_delta(
+    profile: &mut PortfolioWeightsProfile,
+    template: &ArchetypeProfileTemplate,
+) {
+    profile.need_survival = apply_permille_delta(
+        profile.need_survival,
+        template.portfolio_need_survival_delta,
+    );
+    profile.pain_care = apply_permille_delta(profile.pain_care, template.portfolio_pain_care_delta);
+    profile.obligation_duty = apply_permille_delta(
+        profile.obligation_duty,
+        template.portfolio_obligation_duty_delta,
+    );
+    profile.economic_opportunity = apply_permille_delta(
+        profile.economic_opportunity,
+        template.portfolio_economic_opportunity_delta,
+    );
+    profile.social_motive = apply_permille_delta(
+        profile.social_motive,
+        template.portfolio_social_motive_delta,
+    );
+}
+
+fn apply_schema_context_archetype_delta(
+    profile: &mut AgentSchemaContextProfile,
+    template: &ArchetypeProfileTemplate,
+) {
+    profile
+        .disabled_methods
+        .extend(template.method_disable.iter().copied());
+}
+
+fn apply_permille_delta(value: Permille, delta: i32) -> Permille {
+    let clamped = (i32::from(value.value()) + delta).clamp(0, 1000);
+    let clamped = u16::try_from(clamped).expect("clamped permille delta must fit in u16");
+    Permille::new_unchecked(clamped)
+}
+
+fn apply_u8_delta(value: u8, delta: i8) -> u8 {
+    if delta.is_negative() {
+        value.saturating_sub(delta.unsigned_abs())
+    } else {
+        value.saturating_add(delta.cast_unsigned())
+    }
+}
+
+fn apply_u32_delta(value: u32, delta: i32) -> u32 {
+    if delta.is_negative() {
+        value.saturating_sub(delta.unsigned_abs())
+    } else {
+        value.saturating_add(delta.cast_unsigned())
+    }
+}
+
+fn scale_ticks(value: u32, scale: u16) -> u32 {
+    let scaled = u64::from(value) * u64::from(scale) / 1000;
+    scaled.min(u64::from(u32::MAX)) as u32
+}
+
+#[derive(serde::Serialize)]
+struct ResolvedArchetypeProfiles<'a> {
+    cognitive: &'a CognitiveProfile,
+    perception: &'a PerceptionProfile,
+    schema_context: &'a AgentSchemaContextProfile,
+    risk_weight: RiskWeightProfile,
+    portfolio_weights: &'a PortfolioWeightsProfile,
+    epistemic: &'a EpistemicDispositionProfile,
+    testimony_trust: &'a TestimonyTrustProfile,
+    route_preference: &'a RoutePreferenceProfile,
+}
+
+fn hash_resolved_archetype_profiles(
+    profiles: &ResolvedArchetypeProfiles<'_>,
+) -> Result<worldwake_core::StateHash, ScenarioError> {
+    hash_serializable(profiles).map_err(|e| {
+        ScenarioError::Validation(format!("failed to hash resolved archetype profiles: {e}"))
+    })
+}
+
+fn emit_personality_assigned_event(event_log: &mut EventLog, payload: PersonalityAssignedPayload) {
+    event_log.emit(PendingEvent::from_payload(EventPayload {
+        tick: Tick(0),
+        cause: CauseRef::Bootstrap,
+        actor_id: Some(payload.agent),
+        action_name: Some("assign_archetype".to_string()),
+        target_ids: vec![payload.agent],
+        evidence: Vec::new(),
+        place_id: None,
+        state_deltas: Vec::new(),
+        observed_entities: BTreeMap::new(),
+        visibility: VisibilitySpec::Hidden,
+        witness_data: WitnessData::default(),
+        tags: BTreeSet::from([EventTag::PersonalityAssigned]),
+        contention_event_payload: None,
+        decision_payload: None,
+        artifact_transition_payload: None,
+        personality_assigned_payload: Some(payload),
+    }));
+}
+
 /// Spawn a single agent with all optional component profiles.
 fn spawn_agent(
     txn: &mut WorldTxn<'_>,
-    recipes: &RecipeRegistry,
+    context: &SpawnAgentContext<'_>,
     agent_def: &types::AgentDef,
+    agent_index: usize,
     names: &mut BTreeMap<String, EntityId>,
     agent_locations: &mut BTreeMap<EntityId, EntityId>,
+    personality_events: &mut Vec<PersonalityAssignedPayload>,
 ) -> Result<(), ScenarioError> {
     let place_id = resolve_name(
         names,
@@ -635,20 +981,55 @@ fn spawn_agent(
         .unwrap_or(DEFAULT_AGENT_CARRY_CAPACITY);
     txn.set_component_carry_capacity(agent_id, carry)?;
 
-    let perception = agent_def.perception_profile.unwrap_or_default();
+    let (archetype, assignment_seed, assignment_source) = resolve_archetype_assignment(
+        agent_def.archetype,
+        context.archetype_policy,
+        context.scenario_seed,
+        agent_index,
+    )?;
+    let template = template_for(archetype);
+
+    let mut perception = agent_def.perception_profile.unwrap_or_default();
+    apply_perception_archetype_delta(&mut perception, &template);
     txn.set_component_perception_profile(agent_id, perception)?;
     let tell = agent_def.tell_profile.unwrap_or_default();
     txn.set_component_tell_profile(agent_id, tell)?;
-    let cognitive = agent_def.cognitive_profile.unwrap_or_default();
-    let portfolio_weights = agent_def.portfolio_weights_profile.unwrap_or_default();
-    let schema_context = agent_def
+    let mut cognitive = agent_def.cognitive_profile.unwrap_or_default();
+    apply_cognitive_archetype_delta(&mut cognitive, &template);
+    let mut portfolio_weights = agent_def.portfolio_weights_profile.unwrap_or_default();
+    apply_portfolio_archetype_delta(&mut portfolio_weights, &template);
+    let mut schema_context = agent_def
         .agent_schema_context_profile
         .clone()
         .unwrap_or_default();
-    let risk_weight = agent_def.risk_weight_profile.unwrap_or_default();
+    apply_schema_context_archetype_delta(&mut schema_context, &template);
+    let mut risk_weight = agent_def.risk_weight_profile.unwrap_or_default();
+    apply_risk_archetype_delta(&mut risk_weight, &template);
+    let mut epistemic = agent_def.epistemic_disposition.clone().unwrap_or_default();
+    apply_epistemic_archetype_delta(&mut epistemic, &template);
+    let mut testimony_trust = agent_def
+        .testimony_trust_profile
+        .clone()
+        .unwrap_or_default();
+    apply_testimony_archetype_delta(&mut testimony_trust, &template);
+    let mut route_preference = agent_def
+        .route_preference_profile
+        .clone()
+        .unwrap_or_default();
+    apply_route_preference_archetype_delta(&mut route_preference, &template);
     let law_abiding = agent_def.law_abiding_profile.unwrap_or_default();
     let agenda_profile = agent_def.agenda_profile.unwrap_or_default();
     let execution_budget = agent_def.execution_budget.unwrap_or_default();
+    let resolved_profile_hash = hash_resolved_archetype_profiles(&ResolvedArchetypeProfiles {
+        cognitive: &cognitive,
+        perception: &perception,
+        schema_context: &schema_context,
+        risk_weight,
+        portfolio_weights: &portfolio_weights,
+        epistemic: &epistemic,
+        testimony_trust: &testimony_trust,
+        route_preference: &route_preference,
+    })?;
     txn.set_component_cognitive_profile(agent_id, cognitive)?;
     txn.set_component_portfolio_weights_profile(agent_id, portfolio_weights)?;
     txn.set_component_agent_schema_context_profile(agent_id, schema_context)?;
@@ -656,7 +1037,6 @@ fn spawn_agent(
     txn.set_component_law_abiding_profile(agent_id, law_abiding)?;
     txn.set_component_agenda_profile(agent_id, agenda_profile)?;
     txn.set_component_execution_budget(agent_id, execution_budget)?;
-    let epistemic = agent_def.epistemic_disposition.clone().unwrap_or_default();
     txn.set_component_epistemic_disposition_profile(agent_id, epistemic)?;
     let intention = agent_def.intention_disposition.clone().unwrap_or_default();
     txn.set_component_intention_disposition_profile(agent_id, intention)?;
@@ -664,20 +1044,19 @@ fn spawn_agent(
     txn.set_component_communication_profile(agent_id, communication)?;
     let preference = agent_def.preference_profile.unwrap_or_default();
     txn.set_component_preference_profile(agent_id, preference)?;
-    txn.set_component_testimony_trust_profile(
+    txn.set_component_testimony_trust_profile(agent_id, testimony_trust)?;
+    txn.set_component_route_preference_profile(agent_id, route_preference)?;
+    txn.set_component_cognitive_archetype_component(
         agent_id,
-        agent_def
-            .testimony_trust_profile
-            .clone()
-            .unwrap_or_default(),
+        CognitiveArchetypeComponent { archetype },
     )?;
-    txn.set_component_route_preference_profile(
-        agent_id,
-        agent_def
-            .route_preference_profile
-            .clone()
-            .unwrap_or_default(),
-    )?;
+    personality_events.push(PersonalityAssignedPayload {
+        agent: agent_id,
+        archetype,
+        seed: assignment_seed,
+        source: assignment_source,
+        resolved_profile_hash,
+    });
     txn.set_component_expectation_store(agent_id, ExpectationStore::default())?;
     let last_seen_memory = last_seen_memory_from_def(agent_def.last_seen_memory.as_ref(), names)?;
     txn.set_component_last_seen_memory(agent_id, last_seen_memory)?;
@@ -765,7 +1144,7 @@ fn spawn_agent(
     if let Some(recipe_names) = &agent_def.known_recipes {
         let recipe_ids = recipe_names
             .iter()
-            .filter_map(|name| recipes.recipe_by_name(name).map(|(id, _)| id))
+            .filter_map(|name| context.recipes.recipe_by_name(name).map(|(id, _)| id))
             .collect::<Vec<_>>();
         if !recipe_ids.is_empty() {
             txn.set_component_known_recipes(agent_id, KnownRecipes::with(recipe_ids))?;
@@ -1557,6 +1936,7 @@ mod tests {
         TestimonyTrustProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
         ViolationDispositionProfile, WashBasinState, WorkstationTag, default_commodity_decay_map,
     };
+    use worldwake_core::{CognitiveArchetypeComponent, EventTag, EventView};
     use worldwake_sim::{BeliefRead, BelievedAuthorityView, PerAgentBeliefView};
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -1605,6 +1985,7 @@ mod tests {
             substitute_preferences: None,
             testimony_trust_profile: None,
             route_preference_profile: None,
+            archetype: None,
             known_recipes: None,
         }
     }
@@ -1635,6 +2016,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         }
     }
 
@@ -1642,6 +2024,24 @@ mod tests {
         ron_options()
             .from_str(ron_str)
             .expect("scenario RON should parse")
+    }
+
+    fn assigned_archetype(world: &World, agent: EntityId) -> CognitiveArchetype {
+        world
+            .get_component_cognitive_archetype_component(agent)
+            .expect("spawned agent should have an archetype component")
+            .archetype
+    }
+
+    fn agent_by_name(world: &World, name: &str) -> EntityId {
+        world
+            .entities_with_name_and_agent_data()
+            .find(|entity| {
+                world
+                    .get_component_name(*entity)
+                    .is_some_and(|n| n.0.as_str() == name)
+            })
+            .expect("spawned scenario should contain named agent")
     }
 
     fn place_by_name(world: &World, name: &str) -> EntityId {
@@ -1989,6 +2389,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2072,6 +2473,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2160,6 +2562,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2261,6 +2664,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2415,6 +2819,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2467,6 +2872,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2508,6 +2914,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2554,6 +2961,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2599,6 +3007,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2724,6 +3133,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2782,6 +3192,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2856,6 +3267,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2922,6 +3334,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2987,6 +3400,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let result = spawn_scenario(&def);
@@ -3055,6 +3469,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3124,6 +3539,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3196,6 +3612,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3271,6 +3688,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3360,6 +3778,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3439,6 +3858,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3497,6 +3917,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3544,6 +3965,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3564,10 +3986,28 @@ mod tests {
             .entities_with_name_and_agent_data()
             .next()
             .expect("spawned scenario should contain one agent");
+        let archetype = assigned_archetype(world, agent);
+        let template = template_for(archetype);
+        let mut expected_perception = PerceptionProfile::default();
+        apply_perception_archetype_delta(&mut expected_perception, &template);
+        let mut expected_cognitive = CognitiveProfile::default();
+        apply_cognitive_archetype_delta(&mut expected_cognitive, &template);
+        let mut expected_portfolio = PortfolioWeightsProfile::default();
+        apply_portfolio_archetype_delta(&mut expected_portfolio, &template);
+        let mut expected_schema_context = AgentSchemaContextProfile::default();
+        apply_schema_context_archetype_delta(&mut expected_schema_context, &template);
+        let mut expected_risk = RiskWeightProfile::default();
+        apply_risk_archetype_delta(&mut expected_risk, &template);
+        let mut expected_epistemic = EpistemicDispositionProfile::default();
+        apply_epistemic_archetype_delta(&mut expected_epistemic, &template);
+        let mut expected_testimony = TestimonyTrustProfile::default();
+        apply_testimony_archetype_delta(&mut expected_testimony, &template);
+        let mut expected_route = RoutePreferenceProfile::default();
+        apply_route_preference_archetype_delta(&mut expected_route, &template);
 
         assert_eq!(
             world.get_component_perception_profile(agent),
-            Some(&PerceptionProfile::default())
+            Some(&expected_perception)
         );
         assert_eq!(
             world.get_component_tell_profile(agent),
@@ -3575,19 +4015,19 @@ mod tests {
         );
         assert_eq!(
             world.get_component_cognitive_profile(agent),
-            Some(&CognitiveProfile::default())
+            Some(&expected_cognitive)
         );
         assert_eq!(
             world.get_component_portfolio_weights_profile(agent),
-            Some(&PortfolioWeightsProfile::default())
+            Some(&expected_portfolio)
         );
         assert_eq!(
             world.get_component_agent_schema_context_profile(agent),
-            Some(&AgentSchemaContextProfile::default())
+            Some(&expected_schema_context)
         );
         assert_eq!(
             world.get_component_risk_weight_profile(agent),
-            Some(&RiskWeightProfile::default())
+            Some(&expected_risk)
         );
         assert_eq!(
             world.get_component_law_abiding_profile(agent),
@@ -3603,7 +4043,7 @@ mod tests {
         );
         assert_eq!(
             world.get_component_epistemic_disposition_profile(agent),
-            Some(&EpistemicDispositionProfile::default())
+            Some(&expected_epistemic)
         );
         assert_eq!(
             world.get_component_intention_disposition_profile(agent),
@@ -3619,11 +4059,15 @@ mod tests {
         );
         assert_eq!(
             world.get_component_testimony_trust_profile(agent),
-            Some(&TestimonyTrustProfile::default())
+            Some(&expected_testimony)
         );
         assert_eq!(
             world.get_component_route_preference_profile(agent),
-            Some(&RoutePreferenceProfile::default())
+            Some(&expected_route)
+        );
+        assert_eq!(
+            world.get_component_cognitive_archetype_component(agent),
+            Some(&CognitiveArchetypeComponent { archetype })
         );
         assert_eq!(
             world.get_component_expectation_store(agent),
@@ -3653,6 +4097,131 @@ mod tests {
     }
 
     #[test]
+    fn test_spawn_archetype_assignment_is_deterministic_for_seed() {
+        let mut def = minimal_def();
+        def.agents
+            .push(minimal_agent("Bob", "Village", ControlSource::Ai));
+
+        let first = spawn_scenario(&def).unwrap();
+        let second = spawn_scenario(&def).unwrap();
+        let first_world = first.state.world();
+        let second_world = second.state.world();
+
+        for name in ["Alice", "Bob"] {
+            let first_agent = agent_by_name(first_world, name);
+            let second_agent = agent_by_name(second_world, name);
+            assert_eq!(
+                first_world.get_component_cognitive_archetype_component(first_agent),
+                second_world.get_component_cognitive_archetype_component(second_agent)
+            );
+            assert_eq!(
+                first_world.get_component_cognitive_profile(first_agent),
+                second_world.get_component_cognitive_profile(second_agent)
+            );
+        }
+    }
+
+    #[test]
+    fn test_spawn_applies_archetype_deltas_and_emits_assignment_events() {
+        let mut def = minimal_def();
+        def.agents = vec![
+            AgentDef {
+                archetype: Some(CognitiveArchetype::Cautious),
+                ..minimal_agent("Cautious", "Village", ControlSource::Ai)
+            },
+            AgentDef {
+                archetype: Some(CognitiveArchetype::Bold),
+                ..minimal_agent("Bold", "Village", ControlSource::Ai)
+            },
+        ];
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let cautious = agent_by_name(world, "Cautious");
+        let bold = agent_by_name(world, "Bold");
+        let cautious_profile = world.get_component_cognitive_profile(cautious).unwrap();
+        let bold_profile = world.get_component_cognitive_profile(bold).unwrap();
+
+        assert!(cautious_profile.transient_block_ticks > bold_profile.transient_block_ticks);
+        assert!(
+            world
+                .get_component_risk_weight_profile(cautious)
+                .unwrap()
+                .threat_aversion
+                > RiskWeightProfile::default().threat_aversion
+        );
+
+        let events = spawned
+            .state
+            .event_log()
+            .events_by_tag(EventTag::PersonalityAssigned);
+        assert_eq!(events.len(), 2);
+        for event_id in events {
+            let payload = spawned
+                .state
+                .event_log()
+                .get(*event_id)
+                .and_then(EventView::personality_assigned_payload)
+                .expect("personality assignment event should carry payload");
+            let profile_hash = hash_resolved_archetype_profiles(&ResolvedArchetypeProfiles {
+                cognitive: world
+                    .get_component_cognitive_profile(payload.agent)
+                    .unwrap(),
+                perception: world
+                    .get_component_perception_profile(payload.agent)
+                    .unwrap(),
+                schema_context: world
+                    .get_component_agent_schema_context_profile(payload.agent)
+                    .unwrap(),
+                risk_weight: *world
+                    .get_component_risk_weight_profile(payload.agent)
+                    .unwrap(),
+                portfolio_weights: world
+                    .get_component_portfolio_weights_profile(payload.agent)
+                    .unwrap(),
+                epistemic: world
+                    .get_component_epistemic_disposition_profile(payload.agent)
+                    .unwrap(),
+                testimony_trust: world
+                    .get_component_testimony_trust_profile(payload.agent)
+                    .unwrap(),
+                route_preference: world
+                    .get_component_route_preference_profile(payload.agent)
+                    .unwrap(),
+            })
+            .unwrap();
+            assert_eq!(payload.resolved_profile_hash, profile_hash);
+        }
+    }
+
+    #[test]
+    fn test_spawn_explicit_archetype_override_ignores_policy() {
+        let mut weights = BTreeMap::new();
+        weights.insert(CognitiveArchetype::Cautious, 100);
+        let mut def = minimal_def();
+        def.archetype_assignment_policy = Some(ArchetypeAssignmentPolicy::Weighted(weights));
+        def.agents[0].archetype = Some(CognitiveArchetype::Greedy);
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent = agent_by_name(world, "Alice");
+
+        assert_eq!(assigned_archetype(world, agent), CognitiveArchetype::Greedy);
+        let event_id = spawned
+            .state
+            .event_log()
+            .events_by_tag(EventTag::PersonalityAssigned)[0];
+        let payload = spawned
+            .state
+            .event_log()
+            .get(event_id)
+            .and_then(EventView::personality_assigned_payload)
+            .expect("personality assignment event should carry payload");
+        assert_eq!(payload.archetype, CognitiveArchetype::Greedy);
+        assert_eq!(payload.source, ArchetypeAssignmentSource::Explicit);
+    }
+
+    #[test]
     fn test_spawn_agent_applies_authored_opportunity_profiles() {
         let mut def = minimal_def();
         let risk_weight = RiskWeightProfile {
@@ -3673,10 +4242,15 @@ mod tests {
             .entities_with_name_and_agent_data()
             .next()
             .expect("spawned scenario should contain one agent");
+        let mut expected_risk_weight = risk_weight;
+        apply_risk_archetype_delta(
+            &mut expected_risk_weight,
+            &template_for(assigned_archetype(world, agent)),
+        );
 
         assert_eq!(
             world.get_component_risk_weight_profile(agent),
-            Some(&risk_weight)
+            Some(&expected_risk_weight)
         );
         assert_eq!(
             world.get_component_law_abiding_profile(agent),
@@ -3732,14 +4306,19 @@ mod tests {
             .entities_with_name_and_agent_data()
             .next()
             .expect("spawned scenario should contain one agent");
+        let template = template_for(assigned_archetype(world, agent));
+        let mut expected_testimony_profile = testimony_profile.clone();
+        apply_testimony_archetype_delta(&mut expected_testimony_profile, &template);
+        let mut expected_route_profile = route_profile.clone();
+        apply_route_preference_archetype_delta(&mut expected_route_profile, &template);
 
         assert_eq!(
             world.get_component_testimony_trust_profile(agent),
-            Some(&testimony_profile)
+            Some(&expected_testimony_profile)
         );
         assert_eq!(
             world.get_component_route_preference_profile(agent),
-            Some(&route_profile)
+            Some(&expected_route_profile)
         );
     }
 
@@ -3782,6 +4361,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3836,6 +4416,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3910,6 +4491,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3966,6 +4548,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -4091,6 +4674,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -4099,12 +4683,17 @@ mod tests {
             .entities_with_name_and_agent_data()
             .next()
             .expect("spawned scenario should contain one agent");
+        let mut expected_perception = custom_perception;
+        apply_perception_archetype_delta(
+            &mut expected_perception,
+            &template_for(assigned_archetype(world, agent)),
+        );
 
         assert_eq!(
             world.get_component_perception_profile(agent),
-            Some(&custom_perception)
+            Some(&expected_perception)
         );
-        assert_eq!(custom_perception.observation_budget, 7);
+        assert_eq!(expected_perception.observation_budget, 8);
         assert_eq!(
             world.get_component_drive_thresholds(agent),
             Some(&custom_thresholds)
@@ -4161,6 +4750,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -4220,6 +4810,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -4325,6 +4916,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -4442,6 +5034,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let Err(error) = spawn_scenario(&def) else {
@@ -4487,6 +5080,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).expect("office scenario should spawn");
@@ -4577,6 +5171,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
 
         let spawned = spawn_scenario(&def).expect("office treasury scenario should spawn");

@@ -731,6 +731,8 @@ fn hidden_event_at_empty_location_remains_isolated_from_remote_agents() {
         contention_event_payload: None,
         decision_payload: None,
         artifact_transition_payload: None,
+
+        personality_assigned_payload: None,
     }));
 
     let recipes = RecipeRegistry::new();

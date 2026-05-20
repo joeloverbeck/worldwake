@@ -1,9 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use worldwake_core::{
-    BeliefStatusTag, BlockerScope, ClaimantOutcome, DecisionEventPayload, Discrepancy, EventLog,
-    EventTag, EventView, GoalKind, GoalRejectionReason, MethodSchemaId, OmissionReason,
-    PercentileBucket, Permille, PlanInvalidationReason, ReplanReason, Tick, TopicScope,
+    BeliefStatusTag, BlockerScope, ClaimantOutcome, CognitiveArchetype, DecisionEventPayload,
+    Discrepancy, EntityKind, EventLog, EventTag, EventView, GoalKind, GoalRejectionReason,
+    MethodSchemaId, OmissionReason, PercentileBucket, Permille, PlanInvalidationReason,
+    ReplanReason, Tick, TopicScope, World,
 };
 
 use crate::{
@@ -19,6 +20,7 @@ use super::{
 
 #[must_use]
 pub fn build_scenario_diagnostics(
+    world: &World,
     decision_traces: &[AgentDecisionTrace],
     plan_traces: &[PlanAttemptTrace],
     repair_traces: &[RepairAttemptTrace],
@@ -27,6 +29,7 @@ pub fn build_scenario_diagnostics(
 ) -> ScenarioDiagnosticsReport {
     let mut builder = ScenarioDiagnosticsBuilder::default();
 
+    builder.record_agent_archetypes(world);
     for trace in decision_traces {
         builder.record_decision_trace(trace);
     }
@@ -43,6 +46,8 @@ pub fn build_scenario_diagnostics(
 
 #[derive(Default)]
 struct ScenarioDiagnosticsBuilder {
+    agent_archetypes: BTreeMap<CognitiveArchetype, u64>,
+
     candidates_emitted_by_kind: BTreeMap<GoalKind, u64>,
     candidates_emitted_by_slot: BTreeMap<crate::SlotKind, u64>,
     candidates_suppressed_by_category: BTreeMap<CandidateSuppressionCategory, u64>,
@@ -96,6 +101,15 @@ struct ScenarioDiagnosticsBuilder {
 }
 
 impl ScenarioDiagnosticsBuilder {
+    fn record_agent_archetypes(&mut self, world: &World) {
+        for agent in world.entities_of_kind(EntityKind::Agent) {
+            let Some(component) = world.get_component_cognitive_archetype_component(agent) else {
+                continue;
+            };
+            increment(&mut self.agent_archetypes, component.archetype, 1);
+        }
+    }
+
     fn record_decision_trace(&mut self, trace: &AgentDecisionTrace) {
         let DecisionOutcome::Planning(planning) = &trace.outcome else {
             return;
@@ -440,6 +454,7 @@ impl ScenarioDiagnosticsBuilder {
     fn finish(mut self, tick_range: (Tick, Tick)) -> ScenarioDiagnosticsReport {
         ScenarioDiagnosticsReport {
             tick_range,
+            agent_archetypes: self.agent_archetypes,
             goal_pressure: GoalPressureMetrics {
                 candidates_emitted_by_kind: self.candidates_emitted_by_kind,
                 candidates_emitted_by_slot: self.candidates_emitted_by_slot,
@@ -667,17 +682,19 @@ mod tests {
         MethodSchemaId, OmissionReason, OpportunityAnchor, OpportunityKey, PendingEvent,
         PercentileBucket, Permille, PlanInvalidatedPayload, PlanInvalidationReason, RepairKind,
         ReplanReason, ReplanTriggeredPayload, RoutePreferenceSummary, RouteSegment,
-        TestimonyTrustSummary, Tick, TopicScope, VisibilitySpec, WitnessData,
+        TestimonyTrustSummary, Tick, TopicScope, Topology, VisibilitySpec, WitnessData, World,
     };
 
     #[test]
     fn build_scenario_diagnostics_is_deterministic_for_identical_inputs() {
+        let world = empty_world();
         let decision_traces = vec![planning_decision_trace()];
         let plan_traces = vec![found_plan_attempt(GoalKind::Sleep, 2)];
         let repair_traces = vec![repair_trace(Some(RepairKind::InsertVerification), 3, 5)];
         let event_log = EventLog::new();
 
         let first = build_scenario_diagnostics(
+            &world,
             &decision_traces,
             &plan_traces,
             &repair_traces,
@@ -685,6 +702,7 @@ mod tests {
             (Tick(0), Tick(3)),
         );
         let second = build_scenario_diagnostics(
+            &world,
             &decision_traces,
             &plan_traces,
             &repair_traces,
@@ -701,6 +719,7 @@ mod tests {
 
     #[test]
     fn goal_pressure_metrics_roll_up_candidate_and_suppression_sources() {
+        let world = empty_world();
         let mut event_log = EventLog::new();
         emit_decision_payload(
             &mut event_log,
@@ -715,6 +734,7 @@ mod tests {
         );
 
         let report = build_scenario_diagnostics(
+            &world,
             &[planning_decision_trace()],
             &[],
             &[],
@@ -795,7 +815,9 @@ mod tests {
             }),
         );
 
-        let report = build_scenario_diagnostics(&[], &[], &[], &event_log, (Tick(0), Tick(3)));
+        let world = empty_world();
+        let report =
+            build_scenario_diagnostics(&world, &[], &[], &[], &event_log, (Tick(0), Tick(3)));
 
         assert_eq!(
             report.belief.source_reliability_changes_by_topic,
@@ -863,7 +885,9 @@ mod tests {
             },
         ];
 
+        let world = empty_world();
         let report = build_scenario_diagnostics(
+            &world,
             &[],
             &plan_traces,
             &[],
@@ -945,7 +969,9 @@ mod tests {
             };
         }
 
+        let world = empty_world();
         let report = build_scenario_diagnostics(
+            &world,
             &[],
             &[first, second],
             &[],
@@ -977,7 +1003,9 @@ mod tests {
         });
         let fallback = found_plan_attempt(GoalKind::Wash, 1);
 
+        let world = empty_world();
         let report = build_scenario_diagnostics(
+            &world,
             &[],
             &[selected, failed, fallback],
             &[],
@@ -1057,8 +1085,15 @@ mod tests {
             repair_trace(None, 5, 5),
         ];
 
-        let report =
-            build_scenario_diagnostics(&[], &[], &repair_traces, &event_log, (Tick(0), Tick(10)));
+        let world = empty_world();
+        let report = build_scenario_diagnostics(
+            &world,
+            &[],
+            &[],
+            &repair_traces,
+            &event_log,
+            (Tick(0), Tick(10)),
+        );
 
         let normalized_need_horizon = Discrepancy::NeedHorizonExceeded {
             need: HomeostaticNeedId::Hunger,
@@ -1114,7 +1149,9 @@ mod tests {
             BlockerScope::Counterparty(entity(20)),
         );
 
-        let report = build_scenario_diagnostics(&[], &[], &[], &event_log, (Tick(0), Tick(10)));
+        let world = empty_world();
+        let report =
+            build_scenario_diagnostics(&world, &[], &[], &[], &event_log, (Tick(0), Tick(10)));
 
         assert_eq!(
             report.belief.blocker_counts_by_scope,
@@ -1132,7 +1169,9 @@ mod tests {
 
     #[test]
     fn performance_metrics_roll_up_opportunity_load_and_cache_counters() {
+        let world = empty_world();
         let report = build_scenario_diagnostics(
+            &world,
             &[planning_decision_trace()],
             &[],
             &[],
@@ -1472,6 +1511,7 @@ mod tests {
             contention_event_payload,
             decision_payload,
             artifact_transition_payload: None,
+            personality_assigned_payload: None,
         }
     }
 
@@ -1480,6 +1520,10 @@ mod tests {
             slot,
             generation: 0,
         }
+    }
+
+    fn empty_world() -> World {
+        World::new(Topology::new()).expect("empty topology should build")
     }
 
     #[test]
@@ -1523,7 +1567,9 @@ mod tests {
             }),
         );
 
-        let report = build_scenario_diagnostics(&[], &[], &[], &event_log, (Tick(0), Tick(3)));
+        let world = empty_world();
+        let report =
+            build_scenario_diagnostics(&world, &[], &[], &[], &event_log, (Tick(0), Tick(3)));
 
         assert_eq!(
             report.revalidation_repair.invalidation_reasons,

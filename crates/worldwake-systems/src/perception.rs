@@ -1114,6 +1114,8 @@ fn emit_discovery_event(
         contention_event_payload: None,
         decision_payload: None,
         artifact_transition_payload: None,
+
+        personality_assigned_payload: None,
     }));
 }
 
@@ -1658,6 +1660,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
     }
 
@@ -2923,6 +2927,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([7; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -3637,6 +3643,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([3; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -3711,6 +3719,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([5; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -3782,6 +3792,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([6; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -3859,6 +3871,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([0x41; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -3939,6 +3953,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([7; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -4023,6 +4039,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([8; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -4103,6 +4121,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([9; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -4174,6 +4194,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         });
 
         assert_eq!(
@@ -4205,6 +4227,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         });
         assert_eq!(
             social_kind(&obligation_pending),
@@ -4230,6 +4254,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         });
         assert_eq!(
             social_kind(&coercion_pending),
@@ -4289,6 +4315,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([4; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -4401,6 +4429,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([8; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -5868,6 +5898,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([20; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -5965,6 +5997,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([21; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -6064,6 +6098,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([22; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -6165,6 +6201,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
         let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
             tick: Tick(3),
@@ -6182,6 +6220,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([24; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -6311,6 +6351,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([23; 32]));
         let action_defs = ActionDefRegistry::new();

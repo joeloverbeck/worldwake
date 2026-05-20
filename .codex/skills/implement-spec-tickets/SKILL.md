@@ -158,6 +158,8 @@ If implementation ends blocked:
 - if a concrete follow-up ticket was created or named as the next owner, put that follow-up at the front of the queue and continue the loop
 - if no follow-up exists, stop the harness and report the blocker, current ticket, proof gap, and next required action
 
+If a user resolves a blocker in the same session and explicitly authorizes continuing the same ticket, clear the durable blocked state before invoking the child implementation phase again or making source edits: set `blocked: false`, restore `next_target` to the ticket being resumed, keep or repair the queue, update the blocker field to `null`, and refresh `.codex/run-state/implement-spec-tickets.json`. This prevents a mid-run interruption or compaction from preserving a stale `"blocked"` state while implementation is actively proceeding.
+
 ### 2. Audit And Apply Implement-Ticket Suggestions
 
 Run the audit phase as if the user had said:
@@ -235,10 +237,11 @@ Before committing:
 2. Inspect `git diff --cached --name-status` before staging owned paths. If pre-existing staged entries are unrelated to the current iteration, unstage those paths or stop for approval before committing.
 3. Verify all dirty paths are either owned by this iteration, previously approved for inclusion, or generated/ignored artifacts that should remain unstaged.
 4. Run `git diff --check` or the child skills' stronger equivalent over tracked and newly created owned files.
-5. Stage only approved owned paths plus any pre-existing dirty paths the user explicitly allowed this harness to include.
+5. If any child phase ran a formatter such as `cargo fmt --all`, refresh `git status --short` after the formatter and classify formatter spillover separately. Stage formatter-touched paths only when they are owned by the current ticket/spec iteration or the user explicitly approved including them; leave unrelated formatter spillover unstaged and record it in `dirty_state`.
+6. Stage only approved owned paths plus any pre-existing dirty paths the user explicitly allowed this harness to include.
    - If `.codex/run-state/implement-spec-tickets.json` is dirty from intake or resume refresh, do not stage it for the iteration work commit unless it already contains the final post-iteration state, including the correct `last_work_commit` shape. If it is already staged prematurely, unstage it before committing implementation, review, archive, follow-up, or skill-hardening changes.
-6. Re-run `git diff --cached --name-status` after staging and confirm every staged path is owned by this iteration, explicitly approved, or intentional same-family state needed for the queue/handoff.
-7. Commit with a concise message that names the ticket id and whether the iteration included implementation, review/archive, follow-up creation, and skill hardening.
+7. Re-run `git diff --cached --name-status` after staging and confirm every staged path is owned by this iteration, explicitly approved, or intentional same-family state needed for the queue/handoff.
+8. Commit with a concise message that names the ticket id and whether the iteration included implementation, review/archive, follow-up creation, and skill hardening.
 
 When `post-ticket-review` archived a ticket with `git mv`, do not try to stage the now-missing active ticket path by name. Stage the archive destination and other edited owned paths, then confirm the source deletion or rename is staged with `git diff --cached --name-status`. If a staging command still fails with a missing-path pathspec for the old active ticket, do not retry with that source path; inspect `git status --short` or `git diff --cached --name-status` and continue only if the rename is already staged as `R old -> archive/...`.
 

@@ -512,6 +512,7 @@ fn survival_contract_guard_rejects_missing_authored_contract() {
         compaction_interval: 0,
         scenario_lint_overrides: std::collections::BTreeMap::new(),
         harvest_trace_retention_ticks: None,
+        archetype_assignment_policy: None,
     };
 
     let result = std::panic::catch_unwind(|| {

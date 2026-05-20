@@ -1215,6 +1215,8 @@ fn run_same_place_observation(
             contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
     let active_actions = std::collections::BTreeMap::new();
     perception_system(SystemExecutionContext {

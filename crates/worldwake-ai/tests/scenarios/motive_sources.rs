@@ -56,6 +56,8 @@ fn emit_goal_committed_payload(payload: GoalCommittedPayload) -> GoalCommittedPa
         contention_event_payload: None,
         decision_payload: Some(DecisionEventPayload::GoalCommitted(payload)),
         artifact_transition_payload: None,
+
+        personality_assigned_payload: None,
     }));
 
     let Some(DecisionEventPayload::GoalCommitted(payload)) = event_log
