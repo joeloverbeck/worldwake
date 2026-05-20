@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — diagnostics report field (`worldwake-ai`)
-**Deps**: archive/tickets/S152COGARCSEE-002.md, S152COGARCSEE-005
+**Deps**: archive/tickets/S152COGARCSEE-002.md, archive/tickets/S152COGARCSEE-005.md
 
 ## Problem
 

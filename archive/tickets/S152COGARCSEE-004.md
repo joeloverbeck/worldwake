@@ -101,7 +101,7 @@ Completed on 2026-05-20.
 ## Deviations
 
 - The drafted file list named only `types.rs`, but live compile and coverage checks required explicit constructor fallout across CLI tests/helpers, one downstream `worldwake-ai` test helper, and `scenario_coverage`.
-- Runtime archetype assignment and profile resolution remain owned by `tickets/S152COGARCSEE-005.md`.
+- Runtime archetype assignment and profile resolution were later completed by `archive/tickets/S152COGARCSEE-005.md`.
 
 ## Verification Result
 

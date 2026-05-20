@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None (observer/tooling only)
-**Deps**: archive/tickets/S152COGARCSEE-002.md, S152COGARCSEE-005
+**Deps**: archive/tickets/S152COGARCSEE-002.md, archive/tickets/S152COGARCSEE-005.md
 
 ## Problem
 
