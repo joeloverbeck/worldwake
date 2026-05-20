@@ -21,7 +21,7 @@ Phase 12: AI Architecture Evolution — Draft
 ## Crates
 
 - `worldwake-core` — no new condition types (reuses existing `IntentionResumeCondition` / `IntentionAbandonCondition` from S148). No new component. `TellTopic` (already core, `belief.rs:1737`) is reused as the information-gap topic.
-- `worldwake-sim` — `SAVE_FORMAT_VERSION` was bumped to 91 by S149PARPLASEG-001 for the typed-terminal serialized-format break, then to 92 by S149PARPLASEG-003 because adding `AgendaEntry.partial_plan_segment` changes the bincode shape of the ai runtime payload. Version 91 saves are rejected at the existing save-header boundary; no compatibility decoder is introduced.
+- `worldwake-sim` — `SAVE_FORMAT_VERSION` was bumped to 91 by S149PARPLASEG-001 for the typed-terminal serialized-format break, to 92 by S149PARPLASEG-003 because adding `AgendaEntry.partial_plan_segment` changed the bincode shape of the ai runtime payload, and to 93 by S149PARPLASEG-006 because adding `AgendaOrigin::Companion { primary, slot }` changed the serialized agenda-origin shape. Version 92 saves are rejected at the existing save-header boundary; no compatibility decoder is introduced.
 - `worldwake-systems` — no change.
 - `worldwake-ai` — `PlanTerminalKind`, the payload-free `PlanTerminalKindDiscriminant` histogram key, and all `ProgressBarrier` removal sites landed in S149PARPLASEG-001; S149PARPLASEG-002 added the `PartialPlanSegment` carrier type (and `PartialPlanSegmentId`, `BarrierFact`, `PlannedSkeletonStep`) here because their fields reference ai-resident types (`PlanTerminalKind`, `PlannedStep`, `PlannerOpKind`, `GoalOffer`, `BeliefPredicate`); S149PARPLASEG-003 added `PartialPlanSegment` storage on `AgendaEntry`; S149PARPLASEG-005 added the suspended-entry lifecycle evaluator; S149PARPLASEG-010 added executable segment writing and tactical suffix re-entry.
 - `worldwake-cli` — observer renders barrier type per terminal in the planning-diagnostic sections; S144 diagnostics aggregate barrier-kind distribution.
@@ -216,7 +216,7 @@ The four `Discrepancy`-mapped barriers record through the existing `DiscrepancyM
 
 ### D7: Information-barrier subgoal synthesis
 
-When a plan terminal is `InformationBarrier { topic }`, the agenda manager spawns an auxiliary `GoalKind::AskWitness { witness, topic }` (S139 substrate, `crates/worldwake-core/src/goal.rs:145`) as a *companion intention* slot-typed `SlotKind::SocialMotive` (S148). The `topic` is the `TellTopic` carried by the barrier; the `witness` is chosen from co-located or known agents the belief view exposes as plausible sources for that topic (the synthesis must name a concrete `witness: EntityId`, since `AskWitness` requires one). The companion intention is owned by the suspended primary intention; abandoning the primary cancels the companion. Successful `AskWitness` commit updates the agent's belief store; the `BeliefStatusChanged` resume condition on the suspended primary then fires.
+When a plan terminal is `InformationBarrier { topic }`, the agenda manager spawns an auxiliary `GoalKind::AskWitness { witness, topic }` (S139 substrate, `crates/worldwake-core/src/goal.rs:145`) as a *companion intention* slot-typed `SlotKind::SocialMotive` (S148). The `topic` is the `TellTopic` carried by the barrier; the witness is chosen deterministically from co-located living agents the belief view exposes as plausible sources for the topic (the synthesis must name a concrete `witness: EntityId`, since `AskWitness` requires one). The companion intention records `AgendaOrigin::Companion { primary, slot: SlotKind::SocialMotive }`, so abandoning the primary cancels the companion. Successful `AskWitness` commit updates the agent's belief store; the `BeliefStatusChanged` resume condition on the suspended primary then fires.
 
 ### D8: Coordination-barrier resume listening
 
@@ -243,7 +243,7 @@ S144's `PlanningMetrics.terminal_kind_distribution` is keyed by `PlanTerminalKin
 pub partial_plan_segment: Option<PartialPlanSegment>,
 ```
 
-`AgendaState.suspended` map (`agenda_types.rs:18`) stores the suspended `AgendaEntry`s; segments persist with their entries through the existing `AgentDecisionRuntime` runtime payload. `SAVE_FORMAT_VERSION` was already bumped to `91` by S149PARPLASEG-001 because removing `ProgressBarrier` changed serialized decision payloads; S149PARPLASEG-003 bumps it again to `92` because live reassessment proved bincode cannot decode the pre-field version-91 runtime shape with `#[serde(default)]` alone. Version 91 saves are rejected at the save header rather than supported by a compatibility shim.
+`AgendaState.suspended` map (`agenda_types.rs:18`) stores the suspended `AgendaEntry`s; segments persist with their entries through the existing `AgentDecisionRuntime` runtime payload. `SAVE_FORMAT_VERSION` was bumped to `91` by S149PARPLASEG-001 because removing `ProgressBarrier` changed serialized decision payloads, to `92` by S149PARPLASEG-003 because live reassessment proved bincode cannot decode the pre-`partial_plan_segment` runtime shape with `#[serde(default)]` alone, and to `93` by S149PARPLASEG-006 because companion ownership is stored in the serialized `AgendaOrigin`. Version 92 saves are rejected at the save header rather than supported by a compatibility shim.
 
 ### D11: Golden coverage
 
@@ -323,6 +323,6 @@ The typed terminals are produced in `search` and feed replan; no `validate_*`/pr
 
 - D11 golden coverage (6 scenarios above).
 - Determinism: same resume condition + same belief update → same suffix retry.
-- Save/load coverage for `PartialPlanSegment` against current format version 92, with explicit rejection of S149PARPLASEG-001 baseline version 91 at the save-header boundary.
+- Save/load coverage for `PartialPlanSegment` and companion agenda origins against current format version 93, with explicit rejection of the pre-companion version 92 at the save-header boundary.
 - `cargo test -p worldwake-ai` clean after the `ProgressBarrier` migration (D3).
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.

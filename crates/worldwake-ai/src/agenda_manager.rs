@@ -1,20 +1,22 @@
 use crate::{
-    AgendaEntry, AgendaEntryKey, AgendaPhase, AgendaState, GoalKind, GoalOffer, KillCondition,
-    PartialPlanSegment, RevivalTrigger, enterprise::restock_gap_at_destination,
-    goal_switching::compare_goal_switch, ranking,
+    AgendaEntry, AgendaEntryKey, AgendaOrigin, AgendaPhase, AgendaState, GoalKind, GoalOffer,
+    KillCondition, PartialPlanSegment, PlanTerminalKind, RevivalTrigger,
+    enterprise::restock_gap_at_destination, goal_switching::compare_goal_switch, ranking,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    AgendaProfile, ArtifactLegalEffectTag, BeliefStatusTag, BlockerKey, CommodityKind, Discrepancy,
-    DiscrepancyMemory, EntityBeliefClaim, EntityId, ExpectationId, ExpectationState,
-    IntentionAbandonCondition, IntentionResumeCondition, OpportunityAnchor, Permille, Quantity,
-    Tick, effective_claim_confidence,
+    AgendaProfile, ArtifactLegalEffectTag, AskWitnessMemoryKey, BeliefStatusTag, BlockerKey,
+    CommodityKind, Discrepancy, DiscrepancyMemory, EntityBeliefClaim, EntityId, EntityKind,
+    ExpectationId, ExpectationState, GoalKey, IntentionAbandonCondition, IntentionResumeCondition,
+    OpportunityAnchor, OpportunityKey, Permille, Quantity, SlotKind, TellTopic, Tick,
+    effective_claim_confidence,
 };
 use worldwake_sim::{GoalBeliefView, RuntimeBeliefView};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgendaTransitions {
     pub killed: Vec<AgendaEntry>,
+    pub companion_spawned: Vec<AgendaEntryKey>,
     pub revived: Vec<AgendaEntryKey>,
     pub commit_transition: CommitTransition,
     pub demoted_to_suspended: Vec<AgendaEntryKey>,
@@ -82,6 +84,7 @@ pub fn try_resume_partial_plan(
             )
         }) {
             state.suspended.remove(&key);
+            remove_companions_for_primary(state, key);
             continue;
         }
 
@@ -98,6 +101,7 @@ pub fn try_resume_partial_plan(
         segment.resume_attempt_count = segment.resume_attempt_count.saturating_add(1);
         segment.last_resume_attempt_tick = Some(tick);
         if u32::from(segment.resume_attempt_count) > patience_limit {
+            remove_companions_for_primary(state, key);
             continue;
         }
 
@@ -113,6 +117,193 @@ pub fn try_resume_partial_plan(
     None
 }
 
+pub fn spawn_information_barrier_companions(
+    actor: EntityId,
+    state: &mut AgendaState,
+    beliefs: &impl GoalBeliefView,
+    tick: Tick,
+) -> Vec<AgendaEntryKey> {
+    let keys = state.suspended.keys().copied().collect::<Vec<_>>();
+    let mut spawned = Vec::new();
+    for primary in keys {
+        let Some(entry) = state.suspended.get(&primary) else {
+            continue;
+        };
+        let Some(segment) = entry.partial_plan_segment.as_ref() else {
+            continue;
+        };
+        let PlanTerminalKind::InformationBarrier { topic } = segment.terminal_barrier else {
+            continue;
+        };
+        if companion_for_primary_exists(state, primary, topic) {
+            continue;
+        }
+        let Some(witness) = select_information_barrier_witness(actor, beliefs, topic) else {
+            continue;
+        };
+
+        let companion = information_barrier_companion_entry(
+            entry, primary, witness, topic, actor, beliefs, tick,
+        );
+        let key = companion.key;
+        state.pending.insert(key, companion);
+        spawned.push(key);
+    }
+    spawned
+}
+
+fn companion_for_primary_exists(
+    state: &AgendaState,
+    primary: AgendaEntryKey,
+    topic: TellTopic,
+) -> bool {
+    let matches_companion = |entry: &AgendaEntry| {
+        matches!(
+            entry.origin,
+            AgendaOrigin::Companion {
+                primary: owner,
+                slot: SlotKind::SocialMotive,
+            } if owner == primary
+        ) && matches!(
+            entry.offer.key.kind,
+            GoalKind::AskWitness {
+                topic: existing,
+                ..
+            } if existing == topic
+        )
+    };
+
+    state.committed.as_ref().is_some_and(matches_companion)
+        || state.pending.values().any(matches_companion)
+        || state.suspended.values().any(matches_companion)
+}
+
+fn information_barrier_companion_entry(
+    primary: &AgendaEntry,
+    primary_key: AgendaEntryKey,
+    witness: EntityId,
+    topic: TellTopic,
+    actor: EntityId,
+    beliefs: &impl GoalBeliefView,
+    tick: Tick,
+) -> AgendaEntry {
+    let goal = GoalKind::AskWitness { witness, topic };
+    let anchor = OpportunityAnchor::Entity(witness);
+    let mut evidence_entities = BTreeSet::from([witness]);
+    if let TellTopic::EntityBelief { subject } = topic {
+        evidence_entities.insert(subject);
+    }
+    let evidence_places = beliefs
+        .effective_place(actor)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let offer = GoalOffer {
+        key: GoalKey::from(goal),
+        anchor,
+        evidence_entities,
+        evidence_places,
+        obligation_source: None,
+        commitment_impact_if_ignored: primary.offer.commitment_impact_if_ignored,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
+        motive_sources: primary.offer.motive_sources.clone(),
+        acquisition_quantity: None,
+    };
+
+    AgendaEntry {
+        key: OpportunityKey {
+            goal_key: offer.key,
+            anchor: offer.anchor,
+        },
+        offer,
+        phase: AgendaPhase::Pending,
+        origin: AgendaOrigin::Companion {
+            primary: primary_key,
+            slot: SlotKind::SocialMotive,
+        },
+        introduced_tick: tick,
+        last_reconsidered_tick: tick,
+        revival_trigger: None,
+        kill_condition: KillCondition::External,
+        priority_class: primary.priority_class,
+        motive_score: primary.motive_score.max(1),
+        motive_source_contributions: primary.motive_source_contributions.clone(),
+        provenance: primary.provenance.clone(),
+        source_reliability_discount: primary.source_reliability_discount.clone(),
+        competition_discount: primary.competition_discount.clone(),
+        source_composite: primary.source_composite,
+        feasibility: primary.feasibility,
+        partial_plan_segment: None,
+    }
+}
+
+fn select_information_barrier_witness(
+    actor: EntityId,
+    beliefs: &impl GoalBeliefView,
+    topic: TellTopic,
+) -> Option<EntityId> {
+    let TellTopic::EntityBelief { subject } = topic else {
+        return None;
+    };
+    let place = beliefs.effective_place(actor)?;
+    beliefs
+        .entities_at(place)
+        .into_iter()
+        .filter(|candidate| *candidate != actor)
+        .filter(|candidate| beliefs.entity_kind(*candidate) == Some(EntityKind::Agent))
+        .filter(|candidate| beliefs.is_alive(*candidate) && !beliefs.is_incapacitated(*candidate))
+        .filter(|candidate| {
+            let key = AskWitnessMemoryKey {
+                counterparty: *candidate,
+                topic_entity: Some(subject),
+                topic_commodity: None,
+            };
+            beliefs.ask_witness_memory(actor, &key).is_none()
+        })
+        .filter(|candidate| witness_plausibly_knows_topic(actor, *candidate, subject, beliefs))
+        .min()
+}
+
+fn witness_plausibly_knows_topic(
+    actor: EntityId,
+    witness: EntityId,
+    subject: EntityId,
+    beliefs: &impl GoalBeliefView,
+) -> bool {
+    if beliefs
+        .entity_beliefs_sourced_from_witness(actor, witness)
+        .into_iter()
+        .any(|(entity, _)| entity == subject)
+    {
+        return true;
+    }
+
+    beliefs
+        .effective_place(subject)
+        .is_some_and(|place| beliefs.effective_place(witness) == Some(place))
+}
+
+fn remove_companions_for_primary(state: &mut AgendaState, primary: AgendaEntryKey) {
+    let is_owned_companion = |entry: &AgendaEntry| {
+        matches!(
+            entry.origin,
+            AgendaOrigin::Companion {
+                primary: owner,
+                slot: SlotKind::SocialMotive,
+            } if owner == primary
+        )
+    };
+
+    if state.committed.as_ref().is_some_and(is_owned_companion) {
+        state.committed = None;
+    }
+    state.pending.retain(|_, entry| !is_owned_companion(entry));
+    state
+        .suspended
+        .retain(|_, entry| !is_owned_companion(entry));
+}
+
 fn partial_plan_abandon_condition_holds(
     condition: &IntentionAbandonCondition,
     segment: &PartialPlanSegment,
@@ -121,8 +312,8 @@ fn partial_plan_abandon_condition_holds(
     patience_limit: u32,
 ) -> bool {
     match condition {
-        IntentionAbandonCondition::MotiveSourceLost(_) => false,
-        IntentionAbandonCondition::AssumptionPermanentlyBroken(_) => false,
+        IntentionAbandonCondition::MotiveSourceLost(_)
+        | IntentionAbandonCondition::AssumptionPermanentlyBroken(_) => false,
         IntentionAbandonCondition::OpportunityForeverGone(anchor) => {
             opportunity_anchor_gone(*anchor, view)
         }
@@ -370,6 +561,10 @@ pub fn tick_agenda(
         .filter(|entry| entry.phase == AgendaPhase::Committed)
         .map(|entry| entry.key);
     let killed = drain_killed(actor, state, beliefs, tick);
+    for entry in &killed {
+        remove_companions_for_primary(state, entry.key);
+    }
+    let companion_spawned = spawn_information_barrier_companions(actor, state, beliefs, tick);
     let revived_entries = promote_revived(
         actor,
         state,
@@ -394,6 +589,7 @@ pub fn tick_agenda(
 
     AgendaTransitions {
         killed,
+        companion_spawned,
         revived,
         commit_transition,
         demoted_to_suspended,
@@ -831,12 +1027,13 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AcquisitionQuantity, AgendaProfile, BeliefConfidencePolicy, CommodityConsumableProfile,
-        CommodityKind, DemandObservation, DemandObservationReason, Discrepancy, DiscrepancyMemory,
+        AcquisitionQuantity, AgendaProfile, AskWitnessMemory, AskWitnessMemoryKey,
+        BeliefConfidencePolicy, BelievedEntityState, CommodityConsumableProfile, CommodityKind,
+        DemandObservation, DemandObservationReason, Discrepancy, DiscrepancyMemory,
         DriveThresholds, EntityId, EntityKind, ExpectationBasis, ExpectationId, ExpectationRecord,
         ExpectationState, ExpectationStore, IntentionAbandonCondition, IntentionResumeCondition,
-        LoadUnits, MerchandiseProfile, OpportunityAnchor, OpportunityKey, Quantity, ResourceSource,
-        Tick, UniqueItemKind, WorkstationTag,
+        LoadUnits, MerchandiseProfile, OpportunityAnchor, OpportunityKey, PerceptionSource,
+        Quantity, ResourceSource, SlotKind, TellTopic, Tick, UniqueItemKind, WorkstationTag,
     };
     use worldwake_sim::{
         ActionDuration, CombatBeliefView, ControlBeliefView, DurationExpr, EconomicBeliefView,
@@ -861,8 +1058,12 @@ mod tests {
     struct MockGoalBeliefView {
         controlled_quantities: BTreeMap<(EntityId, EntityId, CommodityKind), Quantity>,
         entity_places: BTreeMap<EntityId, EntityId>,
+        entities_by_place: BTreeMap<EntityId, Vec<EntityId>>,
+        entity_kinds: BTreeMap<EntityId, EntityKind>,
+        known_entity_beliefs: BTreeMap<EntityId, BelievedEntityState>,
         dead: BTreeSet<EntityId>,
         incapacitated: BTreeSet<EntityId>,
+        ask_witness_memory: BTreeMap<AskWitnessMemoryKey, AskWitnessMemory>,
         adjacency: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
         expectation_store: Option<ExpectationStore>,
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
@@ -880,16 +1081,26 @@ mod tests {
             self.dead.contains(&entity)
         }
 
-        fn entity_kind(&self, _entity: EntityId) -> Option<EntityKind> {
-            None
+        fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
+            self.entity_kinds.get(&entity).copied()
         }
 
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
             self.entity_places.get(&entity).copied()
         }
 
-        fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
-            Vec::new()
+        fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
+            self.entities_by_place
+                .get(&place)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn known_entity_beliefs(&self, _agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+            self.known_entity_beliefs
+                .iter()
+                .map(|(entity, belief)| (*entity, belief.clone()))
+                .collect()
         }
 
         fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
@@ -1057,6 +1268,14 @@ mod tests {
 
         fn demand_memory(&self, agent: EntityId) -> Vec<worldwake_core::DemandObservation> {
             self.demand_memory.get(&agent).cloned().unwrap_or_default()
+        }
+
+        fn ask_witness_memory(
+            &self,
+            _actor: EntityId,
+            key: &AskWitnessMemoryKey,
+        ) -> Option<AskWitnessMemory> {
+            self.ask_witness_memory.get(key).cloned()
         }
 
         fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
@@ -1416,6 +1635,27 @@ mod tests {
         }
     }
 
+    fn information_barrier_segment(subject: EntityId) -> PartialPlanSegment {
+        PartialPlanSegment {
+            terminal_barrier: PlanTerminalKind::InformationBarrier {
+                topic: TellTopic::EntityBelief { subject },
+            },
+            barrier_fact: BarrierFact::MissingBelief(
+                crate::htn::BeliefPredicate::TargetLastSeenKnown {
+                    target: crate::htn::EntityTemplate::Fixed(subject),
+                },
+            ),
+            ..partial_plan_segment(
+                vec![IntentionResumeCondition::BeliefStatusChanged {
+                    subject,
+                    target_status: worldwake_core::BeliefStatusTag::Certain,
+                }],
+                vec![IntentionAbandonCondition::PatienceExhausted],
+                0,
+            )
+        }
+    }
+
     fn suspended_partial_entry(segment: PartialPlanSegment) -> AgendaEntry {
         let mut entry = agenda_entry(
             GoalKind::Sleep,
@@ -1426,6 +1666,38 @@ mod tests {
         entry.phase = AgendaPhase::Suspended;
         entry.partial_plan_segment = Some(segment);
         entry
+    }
+
+    fn reported_belief_from(witness: EntityId) -> BelievedEntityState {
+        BelievedEntityState {
+            source: PerceptionSource::Report {
+                from: witness,
+                chain_len: 0,
+            },
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(9),
+                PerceptionSource::Report {
+                    from: witness,
+                    chain_len: 0,
+                },
+            )
+        }
+    }
+
+    fn information_barrier_beliefs(subject: EntityId, witness: EntityId) -> MockGoalBeliefView {
+        let mut beliefs = MockGoalBeliefView::default();
+        beliefs.entity_places.insert(AGENT, PLACE);
+        beliefs.entity_places.insert(witness, PLACE);
+        beliefs.entity_places.insert(subject, PLACE);
+        beliefs
+            .entities_by_place
+            .insert(PLACE, vec![AGENT, witness]);
+        beliefs.entity_kinds.insert(AGENT, EntityKind::Agent);
+        beliefs.entity_kinds.insert(witness, EntityKind::Agent);
+        beliefs
+            .known_entity_beliefs
+            .insert(subject, reported_belief_from(witness));
+        beliefs
     }
 
     fn default_profile() -> AgendaProfile {
@@ -1627,6 +1899,134 @@ mod tests {
 
         assert_eq!(resumed, None);
         assert!(state.suspended.is_empty());
+    }
+
+    #[test]
+    fn information_barrier_spawns_social_motive_ask_witness_companion() {
+        let subject = EntityId {
+            slot: 4,
+            generation: 0,
+        };
+        let witness = EntityId {
+            slot: 5,
+            generation: 0,
+        };
+        let segment = information_barrier_segment(subject);
+        let key = OpportunityKey {
+            goal_key: segment.goal.key,
+            anchor: segment.goal.anchor,
+        };
+        let mut state = AgendaState::default();
+        state
+            .suspended
+            .insert(key, suspended_partial_entry(segment));
+        let beliefs = information_barrier_beliefs(subject, witness);
+
+        let spawned =
+            super::spawn_information_barrier_companions(AGENT, &mut state, &beliefs, Tick(12));
+
+        assert_eq!(spawned.len(), 1);
+        let companion = state
+            .pending
+            .get(&spawned[0])
+            .expect("companion should be inserted as pending");
+        assert_eq!(
+            companion.origin,
+            AgendaOrigin::Companion {
+                primary: key,
+                slot: SlotKind::SocialMotive,
+            }
+        );
+        assert_eq!(
+            companion.offer.key.kind,
+            GoalKind::AskWitness {
+                witness,
+                topic: TellTopic::EntityBelief { subject },
+            }
+        );
+        assert_eq!(companion.offer.anchor, OpportunityAnchor::Entity(witness));
+        assert_eq!(companion.partial_plan_segment, None);
+    }
+
+    #[test]
+    fn information_barrier_does_not_spawn_without_plausible_witness() {
+        let subject = EntityId {
+            slot: 4,
+            generation: 0,
+        };
+        let witness = EntityId {
+            slot: 5,
+            generation: 0,
+        };
+        let segment = information_barrier_segment(subject);
+        let key = OpportunityKey {
+            goal_key: segment.goal.key,
+            anchor: segment.goal.anchor,
+        };
+        let mut state = AgendaState::default();
+        state
+            .suspended
+            .insert(key, suspended_partial_entry(segment));
+        let mut beliefs = information_barrier_beliefs(subject, witness);
+        beliefs.known_entity_beliefs.clear();
+        beliefs.entity_places.remove(&subject);
+
+        let spawned =
+            super::spawn_information_barrier_companions(AGENT, &mut state, &beliefs, Tick(12));
+
+        assert!(spawned.is_empty());
+        assert!(state.pending.is_empty());
+        assert!(state.suspended.contains_key(&key));
+    }
+
+    #[test]
+    fn abandoning_information_barrier_primary_cancels_companion() {
+        let subject = EntityId {
+            slot: 4,
+            generation: 0,
+        };
+        let witness = EntityId {
+            slot: 5,
+            generation: 0,
+        };
+        let mut segment = information_barrier_segment(subject);
+        segment.abandon_conditions = vec![IntentionAbandonCondition::PatienceExhausted];
+        segment.resume_attempt_count = 3;
+        let key = OpportunityKey {
+            goal_key: segment.goal.key,
+            anchor: segment.goal.anchor,
+        };
+        let mut state = AgendaState::default();
+        state
+            .suspended
+            .insert(key, suspended_partial_entry(segment));
+        let companion_goal = GoalKind::AskWitness {
+            witness,
+            topic: TellTopic::EntityBelief { subject },
+        };
+        let mut companion = agenda_entry(
+            companion_goal,
+            OpportunityAnchor::Entity(witness),
+            50,
+            Tick(11),
+        );
+        companion.origin = AgendaOrigin::Companion {
+            primary: key,
+            slot: SlotKind::SocialMotive,
+        };
+        state.pending.insert(companion.key, companion);
+
+        let resumed = super::try_resume_partial_plan(
+            &mut state,
+            AGENT,
+            &ResumeBeliefView::default(),
+            Tick(14),
+            3,
+        );
+
+        assert_eq!(resumed, None);
+        assert!(state.suspended.is_empty());
+        assert!(state.pending.is_empty());
     }
 
     #[test]

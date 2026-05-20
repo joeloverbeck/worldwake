@@ -57,8 +57,8 @@ mod testimony_trust;
 mod theft;
 
 pub use agenda_manager::{
-    AgendaTickPolicy, AgendaTransitions, CommitTransition, ResumedPlan, tick_agenda,
-    try_resume_partial_plan,
+    AgendaTickPolicy, AgendaTransitions, CommitTransition, ResumedPlan,
+    spawn_information_barrier_companions, tick_agenda, try_resume_partial_plan,
 };
 pub use agenda_types::{
     AgendaEntry, AgendaEntryKey, AgendaOrigin, AgendaPhase, AgendaState, KillCondition,

@@ -6,7 +6,8 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
-    CommodityKind, EntityId, ExpectationId, MotiveSourceRef, OpportunityKey, Quantity, Tick,
+    CommodityKind, EntityId, ExpectationId, MotiveSourceRef, OpportunityKey, Quantity, SlotKind,
+    Tick,
 };
 
 pub type AgendaEntryKey = OpportunityKey;
@@ -100,11 +101,21 @@ pub enum AgendaPhase {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum AgendaOrigin {
     NeedDrive,
-    Obligation { artifact: EntityId },
-    SocialCommitment { expectation: ExpectationId },
-    Opportunity { evidence: EntityId },
+    Obligation {
+        artifact: EntityId,
+    },
+    SocialCommitment {
+        expectation: ExpectationId,
+    },
+    Opportunity {
+        evidence: EntityId,
+    },
     Exploration,
     Enterprise,
+    Companion {
+        primary: AgendaEntryKey,
+        slot: SlotKind,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -153,7 +164,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
         ActionDefId, CommodityKind, CommodityPurpose, EntityId, EventId, IntentionAbandonCondition,
-        IntentionResumeCondition, OpportunityAnchor, OpportunityKey, Quantity, Tick,
+        IntentionResumeCondition, OpportunityAnchor, OpportunityKey, Quantity, SlotKind, Tick,
     };
 
     #[test]
@@ -235,6 +246,20 @@ mod tests {
         let bytes = bincode::serialize(&kill).unwrap();
         let roundtrip: KillCondition = bincode::deserialize(&bytes).unwrap();
         assert_eq!(roundtrip, kill);
+
+        let origin = AgendaOrigin::Companion {
+            primary: OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::Sleep),
+                anchor: OpportunityAnchor::Place(EntityId {
+                    slot: 9,
+                    generation: 0,
+                }),
+            },
+            slot: SlotKind::SocialMotive,
+        };
+        let bytes = bincode::serialize(&origin).unwrap();
+        let roundtrip: AgendaOrigin = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(roundtrip, origin);
     }
 
     fn entity(slot: u32) -> EntityId {
