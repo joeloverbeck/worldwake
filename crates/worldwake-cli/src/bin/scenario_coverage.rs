@@ -95,6 +95,7 @@ enum FeatureId {
     ReportWitness,
     Search,
     StockTransport,
+    CognitiveArchetypes,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -408,6 +409,13 @@ const FEATURES: &[FeatureDef] = &[
         covered_agent_fields: &["merchandise_profile"],
         covered_place_fields: &[],
         covered_scenario_fields: &[],
+    },
+    FeatureDef {
+        id: FeatureId::CognitiveArchetypes,
+        name: "Cognitive archetypes",
+        covered_agent_fields: &["archetype"],
+        covered_place_fields: &[],
+        covered_scenario_fields: &["archetype_assignment_policy"],
     },
 ];
 
@@ -850,6 +858,17 @@ fn classify_feature(feature: FeatureId, def: &ScenarioDef) -> FeatureStatus {
             optional_profile_presence_status(def, |agent| agent.violation_disposition.as_ref())
         }
         FeatureId::StockTransport => stock_transport_status(def),
+        FeatureId::CognitiveArchetypes => cognitive_archetypes_status(def),
+    }
+}
+
+fn cognitive_archetypes_status(def: &ScenarioDef) -> FeatureStatus {
+    if def.archetype_assignment_policy.is_some()
+        || def.agents.iter().any(|agent| agent.archetype.is_some())
+    {
+        FeatureStatus::Active
+    } else {
+        FeatureStatus::Absent
     }
 }
 
@@ -1225,6 +1244,7 @@ fn authored_scenario_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str>
         compaction_interval: _,
         scenario_lint_overrides: _,
         harvest_trace_retention_ticks: _,
+        archetype_assignment_policy,
     } = def;
 
     let mut fields = BTreeSet::new();
@@ -1239,6 +1259,9 @@ fn authored_scenario_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str>
     }
     if !bandit_camps.is_empty() {
         fields.insert("bandit_camps");
+    }
+    if archetype_assignment_policy.is_some() {
+        fields.insert("archetype_assignment_policy");
     }
     fields
 }
@@ -1319,6 +1342,7 @@ fn authored_agent_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str> {
             testimony_trust_profile,
             route_preference_profile,
             known_recipes,
+            archetype,
         } = agent;
 
         for (present, field) in [
@@ -1378,6 +1402,7 @@ fn authored_agent_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str> {
                 "route_preference_profile",
             ),
             (known_recipes.is_some(), "known_recipes"),
+            (archetype.is_some(), "archetype"),
         ] {
             if present {
                 fields.insert(field);

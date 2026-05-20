@@ -8,16 +8,16 @@ use std::num::NonZeroU32;
 
 use serde::Deserialize;
 use worldwake_core::{
-    AgendaProfile, AgentSchemaContextProfile, ArtifactCredibility, ArtifactExistence,
-    ArtifactLegalEffect, ArtifactPostingProfile, BlockerReason, CarryCapacity, CloseCause,
-    CognitiveProfile, CombatProfile, CommodityDecayMap, CommodityValuationProfile,
-    CommunicationProfile, Container, ContentionDispositionProfile, ContentionPolicy, ControlSource,
-    DestructionCause, DisposalProfile, DiversificationProfile, DriveEscalationProfile,
-    DriveThresholds, EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile,
-    GroundComfortTag, HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
-    LatrineFullness, LawAbidingProfile, LoadUnits, MetabolismProfile, ObligationSatiationProfile,
-    PatrolProfile, PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness,
-    PlaceVisibilityProfile, PortfolioWeightsProfile, PreferenceProfile, ProofKind,
+    AgendaProfile, AgentSchemaContextProfile, ArchetypeAssignmentPolicy, ArtifactCredibility,
+    ArtifactExistence, ArtifactLegalEffect, ArtifactPostingProfile, BlockerReason, CarryCapacity,
+    CloseCause, CognitiveArchetype, CognitiveProfile, CombatProfile, CommodityDecayMap,
+    CommodityValuationProfile, CommunicationProfile, Container, ContentionDispositionProfile,
+    ContentionPolicy, ControlSource, DestructionCause, DisposalProfile, DiversificationProfile,
+    DriveEscalationProfile, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
+    ExplorationProfile, GroundComfortTag, HomeostaticNeeds, IntentionDispositionProfile,
+    JusticeDispositionProfile, LatrineFullness, LawAbidingProfile, LoadUnits, MetabolismProfile,
+    ObligationSatiationProfile, PatrolProfile, PerceptionProfile, PerceptionSource, Permille,
+    PlaceDirtiness, PlaceVisibilityProfile, PortfolioWeightsProfile, PreferenceProfile, ProofKind,
     ProofRequirement, PursuitProfile, Quantity, RevocationReason, RiskWeightProfile,
     RoutePreferenceProfile, ShelterTag, SleepQualityProfile, SleepRecoveryModifier,
     SubstitutePreferences, SuccessionLaw, TellProfile, TestimonyTrustProfile,
@@ -66,6 +66,8 @@ pub struct ScenarioDef {
     /// `worldwake_core::HARVEST_TRACE_RETENTION_TICKS` is used. (S127 §D5/§D10)
     #[serde(default)]
     pub harvest_trace_retention_ticks: Option<u32>,
+    #[serde(default)]
+    pub archetype_assignment_policy: Option<ArchetypeAssignmentPolicy>,
 }
 
 /// Authored directed hostility relation between two named entities.
@@ -657,6 +659,8 @@ pub struct AgentDef {
     #[serde(default)]
     pub route_preference_profile: Option<RoutePreferenceProfile>,
     #[serde(default)]
+    pub archetype: Option<CognitiveArchetype>,
+    #[serde(default)]
     pub known_recipes: Option<Vec<String>>,
 }
 
@@ -864,6 +868,8 @@ mod tests {
         assert_eq!(def.agents[0].name, "Alice");
         assert_eq!(def.agents[0].location, "Village");
         assert_eq!(def.agents[0].control, ControlSource::Human);
+        assert_eq!(def.archetype_assignment_policy, None);
+        assert_eq!(def.agents[0].archetype, None);
         assert_eq!(def.agents[0].diversification_profile, None);
         assert_eq!(def.agents[0].social_observations, None);
         assert_eq!(def.agents[0].drive_escalation_profile, None);
@@ -873,6 +879,37 @@ mod tests {
         assert!(def.artifacts.is_empty());
         assert!(def.resource_sources.is_empty());
         assert_eq!(def.commodity_decay, None);
+    }
+
+    #[test]
+    fn test_scenario_def_deserializes_archetype_policy_and_agent_override() {
+        let ron_str = r#"(
+            seed: 42,
+            archetype_assignment_policy: Weighted({Bold: 7, Skeptical: 3}),
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (
+                    name: "Alice",
+                    location: "Village",
+                    control: Ai,
+                    archetype: Bold,
+                ),
+                (name: "Bob", location: "Village", control: Human),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+
+        let Some(ArchetypeAssignmentPolicy::Weighted(weights)) = def.archetype_assignment_policy
+        else {
+            panic!("expected weighted archetype policy");
+        };
+        assert_eq!(weights.get(&CognitiveArchetype::Bold), Some(&7));
+        assert_eq!(weights.get(&CognitiveArchetype::Skeptical), Some(&3));
+        assert_eq!(def.agents[0].archetype, Some(CognitiveArchetype::Bold));
+        assert_eq!(def.agents[1].archetype, None);
     }
 
     #[test]

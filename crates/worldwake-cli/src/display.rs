@@ -748,6 +748,7 @@ mod tests {
                 substitute_preferences: None,
                 testimony_trust_profile: None,
                 route_preference_profile: None,
+                archetype: None,
                 known_recipes: None,
             }],
             bandit_camps: Vec::new(),
@@ -763,6 +764,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: std::collections::BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         }
     }
 
@@ -878,6 +880,7 @@ mod tests {
                     substitute_preferences: None,
                     testimony_trust_profile: None,
                     route_preference_profile: None,
+                    archetype: None,
                     known_recipes: None,
                 },
                 AgentDef {
@@ -925,6 +928,7 @@ mod tests {
                     substitute_preferences: None,
                     testimony_trust_profile: None,
                     route_preference_profile: None,
+                    archetype: None,
                     known_recipes: None,
                 },
             ],
@@ -941,6 +945,7 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: std::collections::BTreeMap::new(),
             harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
         };
         let spawned = spawn_scenario(&def).unwrap();
 

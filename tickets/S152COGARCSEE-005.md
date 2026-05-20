@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — scenario spawn resolution (`worldwake-cli`)
-**Deps**: archive/tickets/S152COGARCSEE-001.md, archive/tickets/S152COGARCSEE-002.md, archive/tickets/S152COGARCSEE-003.md, S152COGARCSEE-004
+**Deps**: archive/tickets/S152COGARCSEE-001.md, archive/tickets/S152COGARCSEE-002.md, archive/tickets/S152COGARCSEE-003.md, archive/tickets/S152COGARCSEE-004.md
 
 ## Problem
 
