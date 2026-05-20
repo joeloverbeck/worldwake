@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implement-S152-cognitive-archetypes",
   "base_head": "8ac7e218386e0e681f7e1ee2cb511e8314295adb",
-  "last_ticket": "archive/tickets/S152COGARCSEE-001.md",
+  "last_ticket": "archive/tickets/S152COGARCSEE-002.md",
   "last_result": "completed_archived",
-  "last_work_commit": "979cf0fc9fe7a5e6bdbb0446d2b672b6406be269",
+  "last_work_commit": "83b181130da0fdcc3a32654f903fb3c6a6f87131",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S152COGARCSEE-002.md",
+  "next_target": "tickets/S152COGARCSEE-003.md",
   "queue": [
-    "tickets/S152COGARCSEE-002.md",
     "tickets/S152COGARCSEE-003.md",
     "tickets/S152COGARCSEE-004.md",
     "tickets/S152COGARCSEE-005.md",
@@ -26,6 +25,6 @@
   "last_post_ticket_review_audit": "done",
   "blocked": false,
   "blocker": null,
-  "dirty_state": "unrelated dirty: .claude/skills/spec-to-tickets/SKILL.md",
+  "dirty_state": "clean",
   "updated_at": "2026-05-20"
 }
