@@ -111,7 +111,7 @@ place-dedup/sort behavior.
 ## Out of Scope
 
 - Recording the admission source (ticket 001 owns the enum and population).
-- Trace surfacing of the source (ticket 003).
+- Trace surfacing of the source (now completed by `archive/tickets/S157SNAADMPRO-003.md`).
 - Changing any action precondition, `validate_*`, candidate-emission, or goal-satisfaction logic
   — this ticket only narrows which entities the strategic *place scans* consider. No authoritative
   validation surface changes.

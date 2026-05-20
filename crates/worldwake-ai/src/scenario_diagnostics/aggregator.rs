@@ -1320,6 +1320,7 @@ mod tests {
                 learned_memory_damped: 2,
                 cap_truncated: 3,
             }),
+            snapshot_admissions: None,
             snapshot_cache_counters: Some(SnapshotCacheCounters {
                 cache_hit_count: 11,
                 cache_miss_count: 4,

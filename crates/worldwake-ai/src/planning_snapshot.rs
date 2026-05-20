@@ -212,7 +212,7 @@ pub(crate) struct SnapshotControl {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum AdmissionSource {
+pub enum AdmissionSource {
     SelfAuthoritative,
     LocalSameTickPhysical,
     GroundedEvidence,
@@ -2566,6 +2566,7 @@ mod tests {
         let remote_place = entity(19);
         let evidence_entity = entity(2);
         let local_entity = entity(3);
+        let believed_entity = entity(4);
 
         let mut view = StubBeliefView::default();
         view.alive.insert(actor, true);
@@ -2592,6 +2593,11 @@ mod tests {
         );
         view.adjacent
             .insert(place_c, vec![(place_b, NonZeroU32::new(5).unwrap())]);
+        let mut believed = sample_belief(true, 7);
+        believed.believed_kind = Some(EntityKind::ItemLot);
+        believed.last_known_place = Some(place_b);
+        view.known_entity_beliefs
+            .insert(actor, vec![(believed_entity, believed)]);
 
         let snapshot = build_planning_snapshot(
             &view,
@@ -2604,6 +2610,7 @@ mod tests {
         assert!(snapshot.entities.contains_key(&actor));
         assert!(snapshot.entities.contains_key(&evidence_entity));
         assert!(snapshot.entities.contains_key(&local_entity));
+        assert!(snapshot.entities.contains_key(&believed_entity));
         assert!(snapshot.places.contains_key(&place_a));
         assert!(snapshot.places.contains_key(&place_b));
         assert!(snapshot.places.contains_key(&remote_place));
@@ -2629,10 +2636,40 @@ mod tests {
         assert_eq!(
             snapshot
                 .entities
+                .get(&believed_entity)
+                .map(|entity| entity.admission),
+            Some(AdmissionSource::BeliefLastSeen)
+        );
+        assert_eq!(
+            snapshot
+                .entities
                 .get(&place_b)
                 .map(|entity| entity.admission),
             Some(AdmissionSource::PublicTopology)
         );
+
+        let opportunity = worldwake_core::OpportunityKey {
+            goal_key: worldwake_core::GoalKey::from(crate::GoalKind::Sleep),
+            anchor: worldwake_core::OpportunityAnchor::None,
+        };
+        let admissions =
+            crate::decision_trace::snapshot_admission_trace_entries(opportunity, &snapshot);
+
+        assert!(admissions.contains(&crate::SnapshotAdmissionTrace {
+            opportunity,
+            entity: actor,
+            source: AdmissionSource::SelfAuthoritative,
+        }));
+        assert!(admissions.contains(&crate::SnapshotAdmissionTrace {
+            opportunity,
+            entity: evidence_entity,
+            source: AdmissionSource::GroundedEvidence,
+        }));
+        assert!(admissions.contains(&crate::SnapshotAdmissionTrace {
+            opportunity,
+            entity: believed_entity,
+            source: AdmissionSource::BeliefLastSeen,
+        }));
     }
 
     #[test]

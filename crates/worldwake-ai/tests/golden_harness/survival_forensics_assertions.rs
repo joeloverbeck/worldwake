@@ -204,6 +204,7 @@ pub fn synthetic_planning_trace(
         tick,
         compiled_opportunities: Vec::new(),
         opportunity_compiler_load: None,
+        snapshot_admissions: None,
         snapshot_cache_counters: None,
         planning_state_cache_counters: None,
         repair_attempts: Vec::new(),

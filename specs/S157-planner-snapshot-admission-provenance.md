@@ -8,7 +8,8 @@ entity is visible and cannot read fields that were admitted for an unrelated rea
 `S157SNAADMPRO-001` landed the per-entity `SnapshotEntity.admission` source tag and changed
 `collect_entities()` to retain admission provenance. `S157SNAADMPRO-002` replaced the strategic
 workstation, seller, resource-source, and acquisition-place scans with a source-restricted
-physical-field accessor. Trace surfacing remains owned by `S157SNAADMPRO-003`.
+physical-field accessor. `S157SNAADMPRO-003` surfaced opportunity-scoped snapshot-admission
+traces in the decision trace.
 
 This spec is **defense-in-depth** and a debuggability/provenance improvement (FND-15, FND-29),
 not a correctness fix. The remote-truth leak was already closed at the source by **S155**
@@ -150,17 +151,23 @@ scans only see entities whose source legitimately exposes those fields. The land
 physical/economic facility fields, while excluding topology-only and possession-frontier
 admissions.
 
-### D3 — Snapshot-admission trace
-Surface per-entity admission source in the decision/snapshot trace for "why is this entity in
-the planner's view?" debugging.
+### D3 — Snapshot-admission trace (landed by `S157SNAADMPRO-003`)
+Surfaced per-entity admission source in the decision/snapshot trace for "why is this entity in
+the planner's view?" debugging. The landed trace is
+`SnapshotAdmissionTrace { opportunity, entity, source }` on `AgentDecisionTrace`, with
+`DecisionTraceSink` query support keyed by agent/tick. The `opportunity` field is included because
+one traced planning tick can build several opportunity-specific snapshots.
 
-### D4 — Tests
-Tests assert the recorded source for local, belief, last-seen, evidence, topology, and
-hypothetical admissions, and that a strategic scan does not pick up an entity admitted for an
-unrelated reason.
+### D4 — Tests (landed across `S157SNAADMPRO-001` through `S157SNAADMPRO-003`)
+Tests assert recorded sources for self, local, evidence, topology, possession-frontier, and
+belief-last-seen admissions, prove strategic scans do not pick up an entity admitted for an
+unrelated reason, and prove the decision trace sink exposes snapshot-admission entries. No
+hypothetical-admission case exists because no live hypothetical-effect id path feeds
+`build_planning_snapshot`.
 
-## Test Plan (for when scheduled)
+## Test Plan
 
 1. Focused: `cargo test -p worldwake-ai planning_snapshot` (admission-source unit tests).
-2. Golden: `cargo test -p worldwake-ai --test golden_ai` — no world-outcome regression.
+2. Crate-level: `cargo test -p worldwake-ai` — includes the golden integration target's
+   non-ignored tests and proves no AI trace/test-helper fallout.
 3. `./scripts/verify.sh` before PR.

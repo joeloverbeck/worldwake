@@ -92,10 +92,10 @@ pub use decision_trace::{
     RootOperatorOmissionDetail, RootOperatorOmissionReason, RootOperatorOmissionTrace,
     SameGoalPlanningStopReason, SameGoalPlanningTrace, SelectedPlanReplacementKind,
     SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
-    SelectedPlanTrace, SelectionTrace, SnapshotCacheCounters, SnapshotContinuationOutcome,
-    SnapshotContinuationTrace, SocialCandidateOmission, StrategicBudgetTrace,
-    StrategicFallbackReason, TestimonyCandidateOmission, TestimonyOmissionReason,
-    TravelPruningTrace, TravelSuccessorTrace, ViolationDetectionOmission,
+    SelectedPlanTrace, SelectionTrace, SnapshotAdmissionTrace, SnapshotCacheCounters,
+    SnapshotContinuationOutcome, SnapshotContinuationTrace, SocialCandidateOmission,
+    StrategicBudgetTrace, StrategicFallbackReason, TestimonyCandidateOmission,
+    TestimonyOmissionReason, TravelPruningTrace, TravelSuccessorTrace, ViolationDetectionOmission,
     ViolationDetectionOmissionReason,
 };
 pub use dirty_set::DirtySet;
@@ -148,7 +148,8 @@ pub use planner_ops::{
     resolve_planning_target_with, resolve_planning_targets_with,
 };
 pub use planning_snapshot::{
-    PlanningSnapshot, build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,
+    AdmissionSource, PlanningSnapshot, build_planning_snapshot,
+    build_planning_snapshot_with_blocked_facility_uses,
     build_planning_snapshot_with_blocked_facility_uses_and_route_preference,
 };
 pub use planning_state::{
