@@ -10,4 +10,6 @@ pub use method_schema::{
     SubgoalTemplate, TopicTemplate,
 };
 pub use registry::{MethodRegistry, build_method_registry};
-pub use selector::{select_method, select_method_with_recipes};
+pub use selector::{
+    MethodSelection, RejectedMethodSelection, select_method, select_method_with_recipes,
+};

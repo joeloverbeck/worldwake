@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: specs/S156-htn-authority-honesty.md (D6)
+**Deps**: specs/S156-htn-authority-honesty.md (D6), archive/tickets/S156HTNAUTHON-005.md (completed D5 trace contract)
 
 ## Problem
 
@@ -24,8 +24,8 @@ fallback is invalid. This ticket folds an HTN method drafting checklist into
    Surfacing", "2. Planning Snapshot Completeness", and further numbered contract sections. It does
    not yet document a method-trace fallback/rejection contract.
 3. This is a documentation-only ticket — no engine code changes. The trace fields it documents are
-   delivered by S156HTNAUTHON-005; this ticket should be written after or alongside 005 so the
-   documented field names match the delivered ones (soft ordering; no compile dependency).
+   delivered by completed `archive/tickets/S156HTNAUTHON-005.md`, so the documented field names should
+   match the delivered `RejectedMethodTrace` and `StrategicFallbackReason` contract.
 4. Adjacent contradiction classification: none. The docs codify decisions already made in the
    spec; no code contradiction is exposed.
 

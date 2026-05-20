@@ -144,12 +144,12 @@ Completed on 2026-05-20.
 - Updated struct-literal test helpers and removed the validation test that only asserted the
   removed schema `failure_modes` field was non-empty.
 - Preserved the `MethodFailureMode` type and `MethodPlanAttemptTrace.failure_mode` for the trace
-  work owned by `tickets/S156HTNAUTHON-005.md`.
+  work owned by the now-archived `archive/tickets/S156HTNAUTHON-005.md`.
 
 ## Deviations
 
 - No behavioral fallback, selector, or trace semantics changed in this ticket; those remain owned
-  by `tickets/S156HTNAUTHON-005.md`.
+  by the now-archived `archive/tickets/S156HTNAUTHON-005.md`.
 - The pre-PR `./scripts/verify.sh` wrapper was not run for this per-ticket closeout; the relevant
   ticket gates were covered by focused checks, `cargo test -p worldwake-ai`, and the CI-matching
   all-target clippy command. The harness still owns `./scripts/verify.sh` before final branch push.

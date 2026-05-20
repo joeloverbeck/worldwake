@@ -990,6 +990,8 @@ mod tests {
         let mut selected = found_plan_attempt(GoalKind::Sleep, 1);
         selected.method_trace = Some(MethodPlanAttemptTrace {
             method_id: Some(MethodSchemaId(5)),
+            rejected_methods: Vec::new(),
+            fallback_reason: None,
             subgoals_attempted: Vec::new(),
             failure_mode: None,
             motive_score: 400,
@@ -997,6 +999,8 @@ mod tests {
         let mut failed = found_plan_attempt(GoalKind::Sleep, 1);
         failed.method_trace = Some(MethodPlanAttemptTrace {
             method_id: Some(MethodSchemaId(5)),
+            rejected_methods: Vec::new(),
+            fallback_reason: None,
             subgoals_attempted: Vec::new(),
             failure_mode: Some(MethodFailureMode::Timeout(12)),
             motive_score: 400,

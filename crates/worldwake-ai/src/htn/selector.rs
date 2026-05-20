@@ -18,10 +18,22 @@ pub fn select_method<'r>(
     belief_view: &dyn RuntimeBeliefView,
     motives: &[MotiveSourceRef],
 ) -> Option<&'r MethodSchema> {
-    select_method_with_recipes(actor, goal, registry, profile, belief_view, motives, None)
+    select_method_with_recipes(actor, goal, registry, profile, belief_view, motives, None).selected
 }
 
 #[must_use]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MethodSelection<'r> {
+    pub selected: Option<&'r MethodSchema>,
+    pub rejected: Vec<RejectedMethodSelection>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RejectedMethodSelection {
+    pub method_id: worldwake_core::MethodSchemaId,
+    pub failed_precondition: MethodPrecondition,
+}
+
 pub fn select_method_with_recipes<'r>(
     actor: EntityId,
     goal: &GoalOffer,
@@ -30,33 +42,62 @@ pub fn select_method_with_recipes<'r>(
     belief_view: &dyn RuntimeBeliefView,
     motives: &[MotiveSourceRef],
     recipes: Option<&RecipeRegistry>,
-) -> Option<&'r MethodSchema> {
+) -> MethodSelection<'r> {
     let goal_kind = GoalKindDiscriminant::from(&goal.key.kind);
+    let mut selected: Option<&'r MethodSchema> = None;
+    let mut selected_score = None;
+    let mut rejected = Vec::new();
 
-    registry
+    for method in registry
         .methods_for(goal_kind)
         .iter()
         .filter_map(|id| registry.get(*id))
-        .filter(|method| !profile.disabled_methods.contains(&method.id))
-        .filter(|method| {
-            preconditions_satisfied(actor, method, goal, belief_view, motives, recipes)
-        })
-        .map(|method| (method, motive_score(method, motives)))
-        .max_by(|(a, score_a), (b, score_b)| score_a.cmp(score_b).then_with(|| b.id.cmp(&a.id)))
-        .map(|(method, _)| method)
+    {
+        if profile.disabled_methods.contains(&method.id) {
+            continue;
+        }
+        if let Some(failed_precondition) =
+            first_failed_precondition(actor, method, goal, belief_view, motives, recipes)
+        {
+            rejected.push(RejectedMethodSelection {
+                method_id: method.id,
+                failed_precondition,
+            });
+            continue;
+        }
+
+        let score = motive_score(method, motives);
+        let wins_selection = match (selected, selected_score) {
+            (Some(current), Some(current_score)) => score
+                .cmp(&current_score)
+                .then_with(|| current.id.cmp(&method.id))
+                .is_gt(),
+            _ => true,
+        };
+        if wins_selection {
+            selected = Some(method);
+            selected_score = Some(score);
+        }
+    }
+
+    MethodSelection { selected, rejected }
 }
 
-fn preconditions_satisfied(
+fn first_failed_precondition(
     actor: EntityId,
     method: &MethodSchema,
     goal: &GoalOffer,
     belief_view: &dyn RuntimeBeliefView,
     motives: &[MotiveSourceRef],
     recipes: Option<&RecipeRegistry>,
-) -> bool {
-    method.preconditions.iter().all(|precondition| {
-        evaluate_precondition(actor, precondition, goal, belief_view, motives, recipes)
-    })
+) -> Option<MethodPrecondition> {
+    method
+        .preconditions
+        .iter()
+        .find(|precondition| {
+            !evaluate_precondition(actor, precondition, goal, belief_view, motives, recipes)
+        })
+        .cloned()
 }
 
 fn evaluate_precondition(
@@ -993,17 +1034,28 @@ mod tests {
             ),
         ]);
 
-        let selected = select_method(
+        let selection = select_method_with_recipes(
             entity(1),
             &goal(GoalKind::EngageHostile { target }),
             &registry,
             &AgentSchemaContextProfile::default(),
             &TestBeliefView::default(),
             &[],
-        )
-        .expect("fallback method should be selected");
+            None,
+        );
+        let selected = selection
+            .selected
+            .expect("fallback method should be selected");
 
         assert_eq!(selected.id, MethodSchemaId(2));
+        assert_eq!(selection.rejected.len(), 1);
+        assert_eq!(selection.rejected[0].method_id, MethodSchemaId(1));
+        assert_eq!(
+            selection.rejected[0].failed_precondition,
+            MethodPrecondition::BeliefHolds(BeliefPredicate::TargetLastSeenKnown {
+                target: EntityTemplate::Fixed(target),
+            })
+        );
     }
 
     #[test]

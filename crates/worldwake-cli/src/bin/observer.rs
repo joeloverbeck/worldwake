@@ -3362,7 +3362,12 @@ fn method_trace_summary(attempt: &PlanAttemptTrace) -> String {
         return "none (flat GOAP fallback)".to_string();
     };
     method_trace.method_id.map_or_else(
-        || "none (flat GOAP fallback)".to_string(),
+        || {
+            method_trace.fallback_reason.map_or_else(
+                || "none (flat GOAP fallback)".to_string(),
+                |reason| format!("none (flat GOAP fallback: {reason:?})"),
+            )
+        },
         |method_id| format!("{} ({:?})", method_schema_label(method_id), method_id),
     )
 }
@@ -3410,6 +3415,17 @@ fn method_trace_details(attempt: &PlanAttemptTrace) -> Vec<String> {
             subgoal.template_index + 1,
             subgoal_kind_label(subgoal.kind),
             subgoal_outcome_label(subgoal.outcome)
+        ));
+    }
+    if let Some(reason) = method_trace.fallback_reason {
+        lines.push(format!("  Fallback: {reason:?}"));
+    }
+    for rejected in &method_trace.rejected_methods {
+        lines.push(format!(
+            "  Rejected: {} ({:?}) - failed precondition {:?}",
+            method_schema_label(rejected.method_id),
+            rejected.method_id,
+            rejected.failed_precondition
         ));
     }
     if let Some(failure_mode) = &method_trace.failure_mode {
@@ -6040,11 +6056,12 @@ mod tests {
     use worldwake_ai::decision_trace::{
         AffordanceSummary, AffordanceTrace, AgentDecisionTrace, CandidateTrace, DecisionOutcome,
         DecisionTraceSink, ExecutionTrace, MethodPlanAttemptTrace, OpportunityCompilerLoad,
-        PatrolRouteSnapshotTrace, PlanSearchTrace, PlanningPipelineTrace, RepairAttemptTrace,
-        SearchExpansionSummary, SelectionTrace, StrategicBudgetTrace, SubgoalAttemptKind,
-        SubgoalAttemptOutcome, SubgoalAttemptResult, TargetBeliefPresence,
+        PatrolRouteSnapshotTrace, PlanSearchTrace, PlanningPipelineTrace, RejectedMethodTrace,
+        RepairAttemptTrace, SearchExpansionSummary, SelectionTrace, StrategicBudgetTrace,
+        StrategicFallbackReason, SubgoalAttemptKind, SubgoalAttemptOutcome, SubgoalAttemptResult,
+        TargetBeliefPresence,
     };
-    use worldwake_ai::htn::MethodFailureMode;
+    use worldwake_ai::htn::{BeliefPredicate, MethodFailureMode, MethodPrecondition};
     use worldwake_ai::opportunity_compiler::{
         BelievedLegalStatus, ClaimTopic, EffectFactKey, Opportunity, RiskFact, SocialExposureBand,
     };
@@ -7379,6 +7396,15 @@ mod tests {
         let attempt = PlanAttemptTrace {
             method_trace: Some(MethodPlanAttemptTrace {
                 method_id: Some(MethodSchemaId(5)),
+                rejected_methods: vec![RejectedMethodTrace {
+                    method_id: MethodSchemaId(4),
+                    failed_precondition: MethodPrecondition::BeliefHolds(
+                        BeliefPredicate::ResourceSourceKnown {
+                            commodity: worldwake_ai::htn::CommodityTemplate::GoalCommodity,
+                        },
+                    ),
+                }],
+                fallback_reason: None,
                 subgoals_attempted: vec![
                     SubgoalAttemptResult {
                         template_index: 0,
@@ -7402,6 +7428,8 @@ mod tests {
         assert!(lines[0].contains("Method: ProduceWithGather"));
         assert!(lines[1].contains("Subgoal 1: AcquireCommodity - Succeeded"));
         assert!(lines[2].contains("Subgoal 2: TravelTo - Pending"));
+        assert!(lines[3].contains("Rejected: ProduceFromOwnedStock"));
+        assert!(lines[3].contains("ResourceSourceKnown"));
         assert_eq!(
             method_trace_summary(&attempt),
             "ProduceWithGather (MethodSchemaId(5))"
@@ -7410,12 +7438,29 @@ mod tests {
 
     #[test]
     fn render_method_trace_none_produces_fallback_note() {
-        let attempt = sample_attempt(Vec::new());
+        let attempt = PlanAttemptTrace {
+            method_trace: Some(MethodPlanAttemptTrace {
+                method_id: None,
+                rejected_methods: Vec::new(),
+                fallback_reason: Some(StrategicFallbackReason::NoViableMethod),
+                subgoals_attempted: Vec::new(),
+                failure_mode: None,
+                motive_score: 0,
+            }),
+            ..sample_attempt(Vec::new())
+        };
 
-        assert_eq!(method_trace_summary(&attempt), "none (flat GOAP fallback)");
+        assert_eq!(
+            method_trace_summary(&attempt),
+            "none (flat GOAP fallback: NoViableMethod)"
+        );
         assert_eq!(
             method_trace_details(&attempt),
-            vec!["Plan attempt: Sleep (Method: none - flat GOAP fallback)".to_string()]
+            vec![
+                "Plan attempt: Sleep (Method: none (flat GOAP fallback: NoViableMethod))"
+                    .to_string(),
+                "  Fallback: NoViableMethod".to_string()
+            ]
         );
     }
 
@@ -7424,6 +7469,8 @@ mod tests {
         let attempt = PlanAttemptTrace {
             method_trace: Some(MethodPlanAttemptTrace {
                 method_id: Some(MethodSchemaId(5)),
+                rejected_methods: Vec::new(),
+                fallback_reason: None,
                 subgoals_attempted: vec![SubgoalAttemptResult {
                     template_index: 0,
                     kind: SubgoalAttemptKind::AcquireCommodity,
