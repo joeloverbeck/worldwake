@@ -953,6 +953,7 @@ fn render_decision_history_section(
             .get(&agent)
             .copied()
             .map_or_else(|| agent.to_string(), str::to_owned);
+        let agent_name = agent_display_name_with_archetype(world, agent, agent_name);
         writeln!(
             out,
             "| {} | {} | {} | {} |",
@@ -989,6 +990,26 @@ fn render_decision_history_section(
         writeln!(out, "| - | - | - | No decision events recorded. |").unwrap();
     }
     writeln!(out).unwrap();
+}
+
+fn archetype_label(world: &worldwake_core::World, agent: EntityId) -> String {
+    world
+        .get_component_cognitive_archetype_component(agent)
+        .map_or_else(
+            || "Unknown".to_string(),
+            |component| format!("{:?}", component.archetype),
+        )
+}
+
+fn agent_display_name_with_archetype(
+    world: &worldwake_core::World,
+    agent: EntityId,
+    name: String,
+) -> String {
+    match world.get_component_cognitive_archetype_component(agent) {
+        Some(component) => format!("{name} ({:?})", component.archetype),
+        None => name,
+    }
 }
 
 fn goal_committed_context_lines(
@@ -4606,10 +4627,10 @@ fn format_report(
     writeln!(out).unwrap();
 
     writeln!(out, "### Agents\n").unwrap();
-    writeln!(out, "| Name | EntityId |").unwrap();
-    writeln!(out, "|------|----------|").unwrap();
+    writeln!(out, "| Name | Archetype | EntityId |").unwrap();
+    writeln!(out, "|------|-----------|----------|").unwrap();
     for (id, name) in agents {
-        writeln!(out, "| {name} | {id} |").unwrap();
+        writeln!(out, "| {name} | {} | {id} |", archetype_label(world, *id)).unwrap();
     }
     writeln!(out).unwrap();
 
@@ -6033,10 +6054,11 @@ mod tests {
         ArtifactActionability, ArtifactAxisValue, ArtifactHeader, ArtifactKind,
         ArtifactLegalEffect, ArtifactTransitionPayload, AxisName, BeliefClaimKey, BeliefRef,
         BeliefStatusTag, BelievedEntityState, BlockerKey, BlockerRecordedPayload, BlockerScope,
-        BodyCostPerTick, CauseRef, ClaimantOutcome, CloseCause, CommodityKind, CommodityPurpose,
-        ContentionClaimant, ContentionEventPayload, ContentionResolutionRule, ControlSource,
-        DeadAt, DeathCause, DecisionEventPayload, DriveThresholds, EmitterTag, EntityBeliefAspect,
-        EntityId, EntityKind, EventLog, EventPayload, EventTag, FrameAssumption, FrameState,
+        BodyCostPerTick, CauseRef, ClaimantOutcome, CloseCause, CognitiveArchetype,
+        CognitiveArchetypeComponent, CommodityKind, CommodityPurpose, ContentionClaimant,
+        ContentionEventPayload, ContentionResolutionRule, ControlSource, DeadAt, DeathCause,
+        DecisionEventPayload, DriveThresholds, EmitterTag, EntityBeliefAspect, EntityId,
+        EntityKind, EventLog, EventPayload, EventTag, FrameAssumption, FrameState,
         GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind,
         GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
         GoalSwitchReason, HomeostaticNeedId, IntentionAbandonCondition, IntentionDomain,
@@ -6157,6 +6179,22 @@ mod tests {
     fn commit_txn(txn: WorldTxn<'_>) {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
+    }
+
+    fn create_agent_with_archetype(
+        world: &mut World,
+        name: &str,
+        archetype: CognitiveArchetype,
+    ) -> EntityId {
+        let mut txn = new_txn(world, 1);
+        let agent = txn.create_agent(name, ControlSource::Ai).expect("agent");
+        txn.set_component_cognitive_archetype_component(
+            agent,
+            CognitiveArchetypeComponent { archetype },
+        )
+        .expect("archetype component");
+        commit_txn(txn);
+        agent
     }
 
     fn entity(slot: u32) -> EntityId {
@@ -7217,6 +7255,41 @@ mod tests {
         assert_eq!(breakdown.budget_exhausted, 1);
         assert_eq!(breakdown.max_depth_zero, 1);
         assert_eq!(breakdown.target_beliefs_false, 1);
+    }
+
+    #[test]
+    fn format_report_renders_archetype_in_agent_table() {
+        let mut world = World::new(build_prototype_world()).expect("world");
+        let agent =
+            create_agent_with_archetype(&mut world, "Guard Theron", CognitiveArchetype::Cautious);
+        let registry = RecipeRegistry::new();
+        let report = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Guard Theron".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &ActionDefRegistry::new(),
+            &registry,
+            &world,
+            &AgentTickDriver::new(),
+            &[],
+            false,
+            &[],
+            0,
+            5,
+            None,
+            None,
+            &DiagnosticsRenderOptions::default(),
+        );
+
+        assert!(report.contains("| Name | Archetype | EntityId |"));
+        assert!(report.contains(&format!("| Guard Theron | Cautious | {agent} |")));
     }
 
     #[test]
@@ -8374,6 +8447,40 @@ mod tests {
             .expect("entity 10 omission");
         assert!(first < second);
         assert!(report.contains("| 1 | 1 |"));
+    }
+
+    #[test]
+    fn render_decision_history_section_appends_archetype_to_agent_name() {
+        let mut world = World::new(build_prototype_world()).expect("world");
+        let agent = create_agent_with_archetype(&mut world, "Agent A", CognitiveArchetype::Bold);
+        let mut log = EventLog::new();
+        emit_decision_event(
+            &mut log,
+            412,
+            agent,
+            EventTag::GoalCommitted,
+            DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
+                agent,
+                goal_key: GoalKey::from(GoalKind::Sleep),
+                motive_score: 14200,
+                decisive_motive_sources: Vec::new(),
+                rejected_alternatives: Vec::new(),
+                assumptions: Vec::new(),
+                testimony_trust_context: Vec::new(),
+                route_preference_context: Vec::new(),
+            }),
+        );
+
+        let mut out = String::new();
+        render_decision_history_section(
+            &mut out,
+            &world,
+            &log,
+            &[(agent, "Agent A".to_string())],
+            None,
+        );
+
+        assert!(out.contains("| 412 | Agent A (Bold) | GoalCommitted |"));
     }
 
     #[test]

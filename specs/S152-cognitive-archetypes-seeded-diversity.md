@@ -248,12 +248,12 @@ Explicit scenario-author overrides on individual profile fields take precedence 
 
 ### D8: Observer rendering
 
-Observer Section 1 (`## Section 1 — Run Metadata`, `crates/worldwake-cli/src/bin/observer.rs:4601`) currently renders an agent table `| Name | EntityId |`. Add an `Archetype` column:
+Observer Section 1 (`## Section 1 — Run Metadata`, `crates/worldwake-cli/src/bin/observer.rs`) now renders an agent table with an `Archetype` column (landed by `archive/tickets/S152COGARCSEE-006.md`):
 ```
 | Name | Archetype | EntityId |
 ```
 
-Section 3b (`## Section 3b — Decision History`, `observer.rs:935`) appends archetype context to narrative renderings alongside the existing context-line producers (e.g., `goal_committed_context_lines`).
+Section 3b (`## Section 3b — Decision History`, `observer.rs`) appends archetype context to decision-history agent labels, e.g. `Agent A (Cautious)`.
 
 ### D9: S144 diagnostics extension
 

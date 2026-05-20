@@ -80,6 +80,7 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 | Report / witness | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
 | Search | ✅ | ✅ | ✅ | — | — | — | — | — | — | ✅ | — | ✅ | — | — | — | — | — | ✅ | — |
 | Stock / transport | ✅ | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ |
+| Cognitive archetypes | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 
 Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absent.
 
@@ -135,6 +136,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Item decay
 - Offices / succession / force-claim
 - Bandit camps
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: disabled
@@ -194,7 +196,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Facility-queue contention
 
 **Absent features**
-- none
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: enabled
@@ -254,6 +256,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Combat
 - Bandit camps
 - Stock / transport
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: disabled
@@ -313,6 +316,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Bandit camps
 - Search
 - Stock / transport
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: disabled
@@ -372,6 +376,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Pursuit
 - Search
 - Stock / transport
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: disabled
@@ -431,6 +436,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Bandit camps
 - Search
 - Stock / transport
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: disabled
@@ -490,6 +496,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 - Search
 - Stock / transport
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: disabled
@@ -549,6 +556,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Bandit camps
 - Search
 - Stock / transport
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: disabled
@@ -608,6 +616,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Combat
 - Bandit camps
 - Search
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: enabled
@@ -667,6 +676,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Pursuit
 - Combat
 - Bandit camps
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: disabled
@@ -726,6 +736,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Bandit camps
 - Search
 - Stock / transport
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: disabled
@@ -785,6 +796,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Combat
 - Bandit camps
 - Stock / transport
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: disabled
@@ -844,6 +856,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Bandit camps
 - Search
 - Stock / transport
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: disabled
@@ -903,6 +916,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Bandit camps
 - Search
 - Stock / transport
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: disabled
@@ -962,6 +976,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Bandit camps
 - Search
 - Stock / transport
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: disabled
@@ -1021,6 +1036,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Bandit camps
 - Search
 - Stock / transport
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: disabled
@@ -1080,6 +1096,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Bandit camps
 - Search
 - Stock / transport
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: disabled
@@ -1139,6 +1156,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Pursuit
 - Combat
 - Bandit camps
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: disabled
@@ -1198,6 +1216,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Combat
 - Bandit camps
 - Search
+- Cognitive archetypes
 
 **World features**
 - commodity_decay: disabled
