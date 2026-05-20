@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implement-S157-planner-snapshot-admission-provenance",
   "base_head": "f322d501fba2429d8e426e9d7af6a8915304ce1d",
-  "last_ticket": "archive/tickets/S157SNAADMPRO-001.md",
+  "last_ticket": "archive/tickets/S157SNAADMPRO-002.md",
   "last_result": "completed_archived",
-  "last_work_commit": "5451b5bdf537b846111a9dc96216c35d01033e92",
+  "last_work_commit": "12d77bd94b2c97ad220fb4a0d902b9799cc5adba",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S157SNAADMPRO-002.md",
+  "next_target": "tickets/S157SNAADMPRO-003.md",
   "queue": [
-    "tickets/S157SNAADMPRO-002.md",
     "tickets/S157SNAADMPRO-003.md"
   ],
   "implement_ticket_audit": "pending",
