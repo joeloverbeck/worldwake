@@ -84,6 +84,8 @@ fn emit_suppressed(summary: TestimonyTrustSummary) -> GoalSuppressedPayload {
             },
         )),
         artifact_transition_payload: None,
+
+        personality_assigned_payload: None,
     }));
 
     let Some(DecisionEventPayload::GoalSuppressed(payload)) = event_log

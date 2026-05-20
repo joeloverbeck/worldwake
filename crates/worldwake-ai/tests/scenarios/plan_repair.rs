@@ -203,6 +203,7 @@ fn emit_decision_payload(tag: EventTag, payload: DecisionEventPayload) -> Decisi
         contention_event_payload: None,
         decision_payload: Some(payload),
         artifact_transition_payload: None,
+        personality_assigned_payload: None,
     }));
 
     event_log
@@ -643,6 +644,8 @@ fn phase_11_approved_repair_gate_witness_reduces_full_replans() {
                 substitute_recipe: None,
             })),
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
     }
 

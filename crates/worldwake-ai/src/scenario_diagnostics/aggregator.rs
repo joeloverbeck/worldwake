@@ -1472,6 +1472,7 @@ mod tests {
             contention_event_payload,
             decision_payload,
             artifact_transition_payload: None,
+            personality_assigned_payload: None,
         }
     }
 

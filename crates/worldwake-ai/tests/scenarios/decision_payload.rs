@@ -50,6 +50,7 @@ fn emit_decision_payload(tag: EventTag, payload: DecisionEventPayload) -> Decisi
         contention_event_payload: None,
         decision_payload: Some(payload),
         artifact_transition_payload: None,
+        personality_assigned_payload: None,
     }));
 
     event_log

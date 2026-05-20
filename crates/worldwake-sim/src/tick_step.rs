@@ -930,6 +930,8 @@ fn emit_end_of_tick_marker(event_log: &mut EventLog, tick: Tick) {
         contention_event_payload: None,
         decision_payload: None,
         artifact_transition_payload: None,
+
+        personality_assigned_payload: None,
     }));
 }
 

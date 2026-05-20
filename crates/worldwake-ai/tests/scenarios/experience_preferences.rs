@@ -262,6 +262,8 @@ fn emit_combat_event(
         contention_event_payload: None,
         decision_payload: None,
         artifact_transition_payload: None,
+
+        personality_assigned_payload: None,
     }));
 }
 

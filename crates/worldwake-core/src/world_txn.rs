@@ -187,6 +187,8 @@ impl<'w> WorldTxn<'w> {
             contention_event_payload: self.contention_event_payload,
             decision_payload: self.decision_payload,
             artifact_transition_payload: self.artifact_transition_payload,
+
+            personality_assigned_payload: None,
         })
     }
 

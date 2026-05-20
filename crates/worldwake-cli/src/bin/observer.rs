@@ -6282,6 +6282,8 @@ mod tests {
             contention_event_payload: None,
             decision_payload: Some(payload),
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
     }
 
@@ -6316,6 +6318,8 @@ mod tests {
                 cause_event: None,
                 at: Tick(tick),
             }),
+
+            personality_assigned_payload: None,
         }));
     }
 
@@ -6404,6 +6408,8 @@ mod tests {
             }),
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }));
     }
 

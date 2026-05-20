@@ -51,6 +51,8 @@ pub enum EventTag {
     WashFacilityUsed,
     SurveyRecorded,
     ArtifactTransition,
+    // Emitted by the S152 spawn-time assignment path in S152COGARCSEE-005.
+    PersonalityAssigned,
 }
 
 #[cfg(test)]
@@ -63,7 +65,7 @@ mod tests {
     >() {
     }
 
-    const ALL_EVENT_TAGS: [EventTag; 46] = [
+    const ALL_EVENT_TAGS: [EventTag; 47] = [
         EventTag::WorldMutation,
         EventTag::Inventory,
         EventTag::Transfer,
@@ -110,6 +112,7 @@ mod tests {
         EventTag::WashFacilityUsed,
         EventTag::SurveyRecorded,
         EventTag::ArtifactTransition,
+        EventTag::PersonalityAssigned,
     ];
 
     #[test]
@@ -119,12 +122,13 @@ mod tests {
 
     #[test]
     fn event_tag_includes_all_required_variants() {
-        assert_eq!(ALL_EVENT_TAGS.len(), 46);
+        assert_eq!(ALL_EVENT_TAGS.len(), 47);
         assert!(ALL_EVENT_TAGS.contains(&EventTag::ContentionResolved));
         assert!(ALL_EVENT_TAGS.contains(&EventTag::WasteCreated));
         assert!(ALL_EVENT_TAGS.contains(&EventTag::WashFacilityUsed));
         assert!(ALL_EVENT_TAGS.contains(&EventTag::SurveyRecorded));
         assert!(ALL_EVENT_TAGS.contains(&EventTag::ArtifactTransition));
+        assert!(ALL_EVENT_TAGS.contains(&EventTag::PersonalityAssigned));
     }
 
     #[test]

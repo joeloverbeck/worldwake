@@ -1478,6 +1478,8 @@ mod tests {
             }),
             decision_payload: None,
             artifact_transition_payload: None,
+
+            personality_assigned_payload: None,
         }))
     }
 
