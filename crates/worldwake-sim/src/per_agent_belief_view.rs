@@ -953,12 +953,18 @@ impl SpatialBeliefView for PerAgentBeliefView<'_> {
             return self.world.effective_place(entity);
         }
 
+        if self.has_authoritative_local_visibility(entity)
+            || self.world.possessor_of(entity) == Some(self.agent)
+        {
+            return self.world.effective_place(entity);
+        }
+
         self.believed_entity(entity)
             .and_then(|state| state.last_known_place)
             .or_else(|| {
-                self.knows_entity(entity)
-                    .then(|| self.world.effective_place(entity))
-                    .flatten()
+                self.world
+                    .get_component_last_seen_memory(self.agent)
+                    .and_then(|memory| memory.records.get(&entity).map(|record| record.place))
             })
     }
 
@@ -2543,12 +2549,14 @@ mod tests {
         let places = world.topology().place_ids().collect::<Vec<_>>();
         let place = places[0];
         let believed_place = places[1];
+        let authoritative_other_place = places[2];
         let (agent, other) = {
             let mut txn = new_txn(&mut world, 1);
             let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
             txn.set_ground_location(agent, place).unwrap();
-            txn.set_ground_location(other, place).unwrap();
+            txn.set_ground_location(other, authoritative_other_place)
+                .unwrap();
             commit_txn(txn);
             (agent, other)
         };
@@ -2866,6 +2874,88 @@ mod tests {
         assert_eq!(
             SpatialBeliefView::effective_place(&view, other),
             Some(place_a)
+        );
+    }
+
+    #[test]
+    fn effective_place_uses_last_seen_without_refreshing_remote_truth() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let actor_place = places[0];
+        let last_seen_place = places[1];
+        let current_remote_place = places[2];
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, actor_place).unwrap();
+            txn.set_ground_location(other, last_seen_place).unwrap();
+            txn.set_component_last_seen_memory(
+                agent,
+                LastSeenMemory {
+                    records: BTreeMap::from([(
+                        other,
+                        LastSeenRecord {
+                            subject: other,
+                            place: last_seen_place,
+                            observed_tick: Tick(1),
+                            source: agent,
+                            provenance: LastSeenProvenance::DirectObservation,
+                        },
+                    )]),
+                    capacity: 8,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, other)
+        };
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_ground_location(other, current_remote_place)
+                .unwrap();
+            commit_txn(txn);
+        }
+
+        let view = PerAgentBeliefView::from_world(agent, &world);
+
+        assert_eq!(world.effective_place(other), Some(current_remote_place));
+        assert_eq!(
+            SpatialBeliefView::effective_place(&view, other),
+            Some(last_seen_place)
+        );
+    }
+
+    #[test]
+    fn effective_place_keeps_authoritative_reads_for_local_or_possessed_entities() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let actor_place = places[0];
+        let remote_place = places[1];
+        let (agent, co_located, possessed) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let co_located = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let possessed = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(agent, actor_place).unwrap();
+            txn.set_ground_location(co_located, actor_place).unwrap();
+            txn.set_ground_location(possessed, remote_place).unwrap();
+            txn.set_possessor(possessed, agent).unwrap();
+            commit_txn(txn);
+            (agent, co_located, possessed)
+        };
+
+        let view = PerAgentBeliefView::from_world(agent, &world);
+
+        assert_eq!(
+            SpatialBeliefView::effective_place(&view, co_located),
+            Some(actor_place)
+        );
+        assert_eq!(
+            SpatialBeliefView::effective_place(&view, possessed),
+            world.effective_place(possessed)
         );
     }
 

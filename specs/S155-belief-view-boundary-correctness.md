@@ -17,8 +17,9 @@ agent has not co-located with this tick:
    an explicit FND-14/FND-15 accessibility gate; `can_control()` does not, yet it is called
    from belief-facing planning/affordance paths.
 
-Both are corrected so that non-co-located reads return belief/last-seen state (or nothing),
-never live remote truth. The authoritative path is preserved for dispatch/commit only.
+This ticket family corrects both so that non-co-located reads return belief/last-seen state
+(or nothing), never live remote truth. The authoritative path is preserved for dispatch/commit
+only.
 
 ## Phase
 
@@ -27,6 +28,9 @@ AI Architecture Consolidation (Adjunct Wave — derived from `reports/ai-archite
 ## Status
 
 DRAFT
+
+Implementation status: D1 landed in `archive/tickets/S155BELVIEBOU-001.md` on 2026-05-20; D2-D4
+remain active in the sibling tickets.
 
 ## Crates
 
@@ -190,6 +194,9 @@ change. No `Permille` or profile-driven numeric parameter is introduced (pure bo
 ## Deliverables
 
 ### D1 — Belief-correct `SpatialBeliefView::effective_place()`
+
+Status: landed in `archive/tickets/S155BELVIEBOU-001.md` on 2026-05-20.
+
 Rewrite the non-self path of the `SpatialBeliefView::effective_place` impl
 (`per_agent_belief_view.rs:951`) so authoritative `world.effective_place(entity)` is reached **only**
 when `has_authoritative_local_visibility(entity)` (same-tick co-location) or
@@ -243,7 +250,7 @@ co-located or directly-possessed entities); planning/UI control visibility uses 
 ## Authoritative-to-AI Impact Analysis
 
 D2 modifies `can_control`, which feeds affordance generation and candidate emission, so the
-CLAUDE.md Authoritative-to-AI Impact Rule applies. (D1 narrows belief-visible places but is a
+AGENTS.md Authoritative-to-AI Impact Rule applies. (D1 narrows belief-visible places but is a
 belief-read change, not authoritative validation; its ripple is covered by the same goldens and
 the full AI suite.)
 

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-sim` belief view (`ControlBeliefView::can_control` impl)
-**Deps**: None (parallel with S155BELVIEBOU-001; shares `per_agent_belief_view.rs`, different method)
+**Deps**: None (parallel with archived `archive/tickets/S155BELVIEBOU-001.md`; shares `per_agent_belief_view.rs`, different method)
 
 ## Problem
 
@@ -57,7 +57,7 @@ Run the full AI suite; the gate narrows candidate emission (`candidate_generatio
 
 ## Out of Scope
 
-- `effective_place` location fix — S155BELVIEBOU-001.
+- `effective_place` location fix — archived `archive/tickets/S155BELVIEBOU-001.md`.
 - Golden E2E (unknown-ownership-beside-chest, control-source-swap symmetry) + the `planner-contracts.md` doc line — S155BELVIEBOU-003.
 - Any modification to `World::can_exercise_control`, the `ControlBeliefView` trait declaration, or any of the ~18 caller files (they inherit the gate automatically).
 - Introducing a `believed_can_control` method (explicitly rejected by S155 reassessment, FND-28).

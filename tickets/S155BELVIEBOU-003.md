@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: No (test + doc only)
-**Deps**: S155BELVIEBOU-001 (effective_place fix), S155BELVIEBOU-002 (can_control gate)
+**Deps**: `archive/tickets/S155BELVIEBOU-001.md` (effective_place fix), S155BELVIEBOU-002 (can_control gate)
 
 ## Problem
 

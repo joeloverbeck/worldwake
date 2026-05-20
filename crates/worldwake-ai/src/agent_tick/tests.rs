@@ -4988,8 +4988,12 @@ fn cargo_satisfaction_at_destination_while_carrying() {
 
     let result = harness.step_once();
 
-    assert_eq!(result.actions_started, 0);
-    assert_eq!(harness.world.possessor_of(remote_lot), Some(harness.actor));
+    assert_eq!(result.actions_started, 1);
+    assert_eq!(harness.world.possessor_of(remote_lot), None);
+    assert!(
+        harness.world.direct_container(remote_lot).is_some(),
+        "post-arrival cargo action should store the lot rather than leave it carried"
+    );
     assert_eq!(harness.world.effective_place(remote_lot), Some(destination));
     assert_eq!(
         harness.runtime().and_then(|runtime| runtime
