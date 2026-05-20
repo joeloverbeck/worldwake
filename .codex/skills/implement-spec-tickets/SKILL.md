@@ -221,7 +221,7 @@ $skill-audit .codex/skills/post-ticket-review
 
 Apply every sound, evidence-backed suggestion under the same rules as the `implement-ticket` audit. Rerun focused hygiene over changed post-review skill files.
 
-Archive-path and dependency repairs in active specs, implementation-order prose, or active sibling tickets count as material handoff updates for this trigger, even when the repairs are mechanical.
+Archive-path and dependency repairs in active specs, implementation-order prose, active sibling tickets, or archived same-family ticket handoff prose count as material handoff updates for this trigger, even when the repairs are mechanical.
 
 Track this phase in the state file as well. Set `post_ticket_review_audit: "pending"` when the trigger is met, `done` after the compact audit block and any accepted edits are complete, `not_required` when the trigger is not met, or `skipped:<reason>` only when skipping is explicit and justified. Treat a missing marker on resume as `pending` if the review materially changed handoff surfaces and no evidence shows the audit ran.
 
