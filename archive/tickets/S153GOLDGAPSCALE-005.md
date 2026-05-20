@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: `archive/tickets/S153GOLDGAPSCALE-004.md`, `specs/S153-golden-gaps-ai-architecture-scaling.md`
+**Deps**: `archive/tickets/S153GOLDGAPSCALE-004.md`, `archive/specs/S153-golden-gaps-ai-architecture-scaling.md`
 
 ## Problem
 
@@ -54,7 +54,7 @@ Regenerated the golden inventory, scenario index, coverage matrix, and new offic
 - `docs/generated/golden-e2e-inventory.md`
 - `docs/generated/golden-scenario-index.md`
 - `docs/generated/golden-scenario-details/office-vacancy.md`
-- `specs/S153-golden-gaps-ai-architecture-scaling.md`
+- `archive/specs/S153-golden-gaps-ai-architecture-scaling.md`
 
 ## Out of Scope
 

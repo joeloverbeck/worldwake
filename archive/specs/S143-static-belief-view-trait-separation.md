@@ -354,4 +354,4 @@ Verification:
 - `cargo clippy --workspace --all-targets -- -D warnings`
 - `./scripts/verify.sh`
 
-`specs/S153-golden-gaps-ai-architecture-scaling.md` now treats belief-wall trap as covered by S143 and keeps only the remaining three AI architecture scaling goldens active.
+The now-archived `archive/specs/S153-golden-gaps-ai-architecture-scaling.md` treats belief-wall trap as covered by S143; the remaining three AI architecture scaling goldens were later landed under the S153 ticket family.

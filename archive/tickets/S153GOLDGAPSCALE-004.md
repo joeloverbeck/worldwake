@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — office patrol duty component, duty lifecycle system, patrol candidate/ranking integration, save-format version bump
-**Deps**: `specs/S153-golden-gaps-ai-architecture-scaling.md`, `archive/tickets/S153GOLDGAPSCALE-002.md`
+**Deps**: `archive/specs/S153-golden-gaps-ai-architecture-scaling.md`, `archive/tickets/S153GOLDGAPSCALE-002.md`
 
 ## Problem
 
@@ -78,7 +78,7 @@ Landed later in `archive/tickets/S153GOLDGAPSCALE-005.md`; this ticket landed no
 - `crates/worldwake-ai/src/planning_snapshot.rs`
 - `crates/worldwake-ai/src/planning_state.rs`
 - `crates/worldwake-ai/src/ranking.rs`
-- `specs/S153-golden-gaps-ai-architecture-scaling.md`
+- `archive/specs/S153-golden-gaps-ai-architecture-scaling.md`
 - `archive/tickets/S153GOLDGAPSCALE-005.md`
 
 ## Out of Scope

@@ -1,6 +1,6 @@
 # S153: Golden Gaps — AI Architecture Scaling
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
@@ -16,7 +16,7 @@ This spec is the final wave of Phase 12: it validates the other accepted specs b
 
 ## Phase and Status
 
-Phase 12: AI Architecture Evolution — Draft
+Phase 12: AI Architecture Evolution — Completed
 
 ## Crates
 
@@ -196,3 +196,29 @@ Not applicable. Goldens use authored scenario data; no new profile fields.
 - D6 determinism regression.
 - All goldens passing — `cargo test --workspace`.
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
+
+## Outcome
+
+Completed: 2026-05-20.
+
+S153 landed the four highest-impact PR-15 adversarial regression patterns:
+
+- Belief-wall trap coverage landed under `archive/tickets/S143STABELVIE-006.md` as Scenario 420 in `belief_wall_trap.rs`.
+- False-rumor justice coverage landed under `archive/tickets/S153GOLDGAPSCALE-001.md` as Scenario 443 in `testimony_reliability.rs`.
+- Office vacancy -> patrol gap coverage landed through `archive/tickets/S153GOLDGAPSCALE-004.md` and `archive/tickets/S153GOLDGAPSCALE-005.md` as Scenario 444 in `office_vacancy.rs`.
+- Scaled contention coverage landed under `archive/tickets/S153GOLDGAPSCALE-003.md` as Scenario 445 in `scaled_contention.rs`, with `expect_route_blocker_lifecycle` in `golden_harness/route_blocker_assertions.rs`.
+
+Deviations from the original plan:
+
+- False-rumor justice landed at helper/event-payload level in the existing testimony reliability owner rather than as a duplicate autonomous `false_rumor_justice.rs` module.
+- Office vacancy required a production substrate split because the original test-only premise was false; office-backed patrol duty state landed before the golden.
+- Scaled contention uses an inline fixture and authoritative per-slot `ResourceExtractionQueues` assertions rather than a RON scenario or facility-level queue-promotion event assertions.
+- The four lower-readiness PR-15 patterns remain deferred as documented non-goals.
+
+Verification:
+
+- Passed `cargo test -p worldwake-ai --test golden_ai scaled_contention`.
+- Passed `cargo test -p worldwake-ai --test golden_ai`.
+- Passed `cargo clippy -p worldwake-ai --all-targets -- -D warnings`.
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`.
+- Passed `./scripts/verify.sh`.

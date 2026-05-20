@@ -6,6 +6,7 @@ Phases 1–6 (E01–E22, FND-01, FND-02, S01–S58) completed.
 See `archive/` for detailed completion records.
 
 Completed Phase 12 specs:
+- `S153: Golden Gaps — AI Architecture Scaling` — archived at [archive/specs/S153-golden-gaps-ai-architecture-scaling.md](/home/joeloverbeck/projects/worldwake/archive/specs/S153-golden-gaps-ai-architecture-scaling.md). Landed the final PR-15 adversarial regression wave: belief-wall trap coverage via S143, false-rumor justice Scenario 443, office-vacancy patrol-gap Scenario 444, scaled-contention Scenario 445, route-blocker lifecycle helper coverage, and regenerated golden inventory/docs.
 - `S144: Aggregate Scenario Diagnostics` — archived at [archive/specs/S144-aggregate-scenario-diagnostics.md](/home/joeloverbeck/projects/worldwake/archive/specs/S144-aggregate-scenario-diagnostics.md). Landed deterministic aggregate scenario diagnostics over existing traces and the event log, `PercentileBucket`, planning-snapshot cache counters, observer Section 13 text/JSON rendering, diagnostics CLI flags, and the committed `survival-baseline.ron` diagnostics fixture.
 - `S147: HTN Method Decomposition for Long Lawful Pursuits` — archived at [archive/specs/S147-htn-method-decomposition.md](/home/joeloverbeck/projects/worldwake/archive/specs/S147-htn-method-decomposition.md). Landed the `MethodSchema` registry, method ids and discriminant mirrors, `AgentSchemaContextProfile.disabled_methods`, `GoalSchema.methods`, method selector/planner integration, method traces and diagnostics, observer rendering, typed `Discrepancy::MethodFailure(MethodFailureContext)`, and staged HTN method goldens for selector/fallback, autonomous production, bounty investigation, direct bounty, escort, and method-failure coverage.
 - `S150: Cross-Goal Blocker Scoping` — archived at [archive/specs/S150-cross-goal-blocker-scoping.md](/home/joeloverbeck/projects/worldwake/archive/specs/S150-cross-goal-blocker-scoping.md). Landed typed `BlockerScope` (`Exact`, `RouteSegment`, `Counterparty`), per-scope TTL profile fields, scope-aware blocker/discrepancy memory and clearing, typed observer rendering, S144 per-scope diagnostics, and `golden_cross_goal_blocker_scoping.rs` coverage.
@@ -730,7 +731,7 @@ S153 (hard deps on archived S143, archived S148, archived S150, archived S151)
   - soft depends on archived S146/S148/S151 (modifies profile types each introduces)
 
 **Wave 5** (final, after Wave 4):
-- **S153**: Golden Gaps — AI Architecture Scaling — false rumor justice is landed by `archive/tickets/S153GOLDGAPSCALE-001.md`; office-backed patrol duty substrate is landed by `archive/tickets/S153GOLDGAPSCALE-004.md`; office vacancy → patrol gap golden is landed by `archive/tickets/S153GOLDGAPSCALE-005.md`; scaled contention is landed by `archive/tickets/S153GOLDGAPSCALE-003.md` as Scenario 445. Belief-wall trap (regression for S143) is covered by S143STABELVIE-006; 4 PR-15 scenarios deferred (100-goal dense market, 20-agent contention, long production chain, boundary shock).
+- **S153**: ✅ COMPLETED — archived at [archive/specs/S153-golden-gaps-ai-architecture-scaling.md](/home/joeloverbeck/projects/worldwake/archive/specs/S153-golden-gaps-ai-architecture-scaling.md). False rumor justice is landed by `archive/tickets/S153GOLDGAPSCALE-001.md`; office-backed patrol duty substrate is landed by `archive/tickets/S153GOLDGAPSCALE-004.md`; office vacancy → patrol gap golden is landed by `archive/tickets/S153GOLDGAPSCALE-005.md`; scaled contention is landed by `archive/tickets/S153GOLDGAPSCALE-003.md` as Scenario 445. Belief-wall trap (regression for S143) is covered by S143STABELVIE-006; 4 PR-15 scenarios deferred (100-goal dense market, 20-agent contention, long production chain, boundary shock).
   - hard depends on archived S143, archived S148, archived S150, archived S151
 
 ### Phase 12 Gate
@@ -740,7 +741,7 @@ S153 (hard deps on archived S143, archived S148, archived S150, archived S151)
 - [ ] Wave 2 specs implemented and passing golden E2E tests
 - [ ] Wave 3 specs implemented and passing golden E2E tests
 - [ ] Wave 4 specs implemented and passing golden E2E tests
-- [ ] Wave 5 implemented and passing golden E2E tests
+- [x] Wave 5 implemented and passing golden E2E tests
 - [x] S143 trait separation archived: grep-CI blocks `DebugWorldView` imports from `worldwake-ai/src/`; compile-fail doctest keeps debug-world reads outside `RuntimeBeliefView`; belief-wall trap golden passes
 - [x] S144 archived: `ScenarioDiagnosticsReport` produces byte-stable output across reruns on `survival-baseline.ron`; observer Section 13 renders text + JSON formats
 - [x] S145 archived: 5-stage production chain records complete strategic itinerary and non-exhausted stage-aware budget provenance; cache invariant regression suite (3 tests) passes
