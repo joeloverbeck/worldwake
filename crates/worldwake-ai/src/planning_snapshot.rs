@@ -211,8 +211,19 @@ pub(crate) struct SnapshotControl {
     pub(crate) has_control: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AdmissionSource {
+    SelfAuthoritative,
+    LocalSameTickPhysical,
+    GroundedEvidence,
+    BeliefLastSeen,
+    PossessionContainmentFrontier,
+    PublicTopology,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SnapshotEntity {
+    pub(crate) admission: AdmissionSource,
     pub(crate) entity: SnapshotEntityCore,
     pub(crate) spatial: SnapshotSpatial,
     pub(crate) inventory: SnapshotInventory,
@@ -229,6 +240,7 @@ pub(crate) struct SnapshotEntity {
 impl Default for SnapshotEntity {
     fn default() -> Self {
         Self {
+            admission: AdmissionSource::PublicTopology,
             entity: SnapshotEntityCore {
                 kind: None,
                 alive: false,
@@ -550,18 +562,19 @@ impl PlanningSnapshot {
             filter,
             &actor_known_entity_beliefs,
         );
+        let included_entity_ids: BTreeSet<EntityId> = included_entities.keys().copied().collect();
         let mut entities: BTreeMap<EntityId, SnapshotEntity> = included_entities
             .iter()
-            .copied()
-            .map(|entity| {
+            .map(|(entity, admission)| {
                 (
-                    entity,
+                    *entity,
                     build_snapshot_entity(
                         view,
                         actor,
-                        entity,
+                        *entity,
+                        *admission,
                         evidence_entities,
-                        &included_entities,
+                        &included_entity_ids,
                         &actor_known_entity_beliefs,
                     ),
                 )
@@ -616,7 +629,7 @@ impl PlanningSnapshot {
             actor_bandit_factions: view.bandit_factions_of(actor),
             actor_active_violation_records: view.active_violation_records(actor),
             actor_contested_offices: view.offices_contested_by(actor),
-            actor_loyalties: included_entities
+            actor_loyalties: included_entity_ids
                 .iter()
                 .copied()
                 .filter_map(|target| {
@@ -624,7 +637,7 @@ impl PlanningSnapshot {
                         .map(|strength| (target, strength))
                 })
                 .collect(),
-            actor_office_holder_beliefs: included_entities
+            actor_office_holder_beliefs: included_entity_ids
                 .iter()
                 .copied()
                 .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Office))
@@ -643,13 +656,13 @@ impl PlanningSnapshot {
                     )
                 })
                 .collect(),
-            actor_force_controller_beliefs: included_entities
+            actor_force_controller_beliefs: included_entity_ids
                 .iter()
                 .copied()
                 .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Office))
                 .map(|office| (office, view.believed_force_controller(office)))
                 .collect(),
-            office_certain_support_declarations: included_entities
+            office_certain_support_declarations: included_entity_ids
                 .iter()
                 .copied()
                 .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Office))
@@ -667,7 +680,7 @@ impl PlanningSnapshot {
                     (office, declarations)
                 })
                 .collect(),
-            office_support_declaration_beliefs: included_entities
+            office_support_declaration_beliefs: included_entity_ids
                 .iter()
                 .copied()
                 .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Office))
@@ -1027,6 +1040,7 @@ fn build_snapshot_entity(
     view: &dyn RuntimeBeliefView,
     actor: EntityId,
     entity: EntityId,
+    admission: AdmissionSource,
     evidence_entities: &BTreeSet<EntityId>,
     included_entities: &BTreeSet<EntityId>,
     known_entity_beliefs: &BTreeMap<EntityId, BelievedEntityState>,
@@ -1131,6 +1145,7 @@ fn build_snapshot_entity(
     let office_data = view.office_data(entity);
 
     SnapshotEntity {
+        admission,
         entity: SnapshotEntityCore {
             kind,
             alive,
@@ -1415,14 +1430,24 @@ fn collect_entities(
     included_places: &BTreeSet<EntityId>,
     filter: SnapshotEntityFilter,
     known_entity_beliefs: &BTreeMap<EntityId, BelievedEntityState>,
-) -> BTreeSet<EntityId> {
-    let mut included = BTreeSet::from([actor]);
-    included.extend(evidence_entities.iter().copied());
-    included.extend(included_places.iter().copied());
+) -> BTreeMap<EntityId, AdmissionSource> {
+    let mut included = BTreeMap::new();
+    record_admission(&mut included, actor, AdmissionSource::SelfAuthoritative);
+    for entity in evidence_entities {
+        record_admission(&mut included, *entity, AdmissionSource::GroundedEvidence);
+    }
+    for place in included_places {
+        record_admission(&mut included, *place, AdmissionSource::PublicTopology);
+    }
     let actor_place = view.effective_place(actor);
 
     for place in included_places {
-        let mut filtered = if Some(*place) == actor_place {
+        let source = if Some(*place) == actor_place {
+            AdmissionSource::LocalSameTickPhysical
+        } else {
+            AdmissionSource::BeliefLastSeen
+        };
+        let mut filtered = if source == AdmissionSource::LocalSameTickPhysical {
             view.entities_at(*place)
                 .into_iter()
                 .filter(|entity| {
@@ -1448,28 +1473,71 @@ fn collect_entities(
                 Reverse(*entity),
             )
         });
-        included.extend(filtered);
+        for entity in filtered {
+            record_admission(&mut included, entity, source);
+        }
     }
 
-    let mut frontier: VecDeque<_> = included.iter().copied().collect();
+    let mut frontier: VecDeque<_> = included.keys().copied().collect();
     while let Some(entity) = frontier.pop_front() {
         for related in view.direct_possessions(entity) {
-            if included.insert(related) {
+            if !included.contains_key(&related) {
+                record_admission(
+                    &mut included,
+                    related,
+                    AdmissionSource::PossessionContainmentFrontier,
+                );
                 frontier.push_back(related);
             }
         }
         if let Some(container) = view.direct_container(entity)
-            && included.insert(container)
+            && !included.contains_key(&container)
         {
+            record_admission(
+                &mut included,
+                container,
+                AdmissionSource::PossessionContainmentFrontier,
+            );
             frontier.push_back(container);
         }
         if let Some(possessor) = view.direct_possessor(entity)
-            && included.insert(possessor)
+            && !included.contains_key(&possessor)
         {
+            record_admission(
+                &mut included,
+                possessor,
+                AdmissionSource::PossessionContainmentFrontier,
+            );
             frontier.push_back(possessor);
         }
     }
     included
+}
+
+fn record_admission(
+    included: &mut BTreeMap<EntityId, AdmissionSource>,
+    entity: EntityId,
+    source: AdmissionSource,
+) {
+    included
+        .entry(entity)
+        .and_modify(|existing| {
+            if admission_precedence(source) < admission_precedence(*existing) {
+                *existing = source;
+            }
+        })
+        .or_insert(source);
+}
+
+fn admission_precedence(source: AdmissionSource) -> u8 {
+    match source {
+        AdmissionSource::SelfAuthoritative => 0,
+        AdmissionSource::LocalSameTickPhysical => 1,
+        AdmissionSource::GroundedEvidence => 2,
+        AdmissionSource::BeliefLastSeen => 3,
+        AdmissionSource::PossessionContainmentFrontier => 4,
+        AdmissionSource::PublicTopology => 5,
+    }
 }
 
 fn observed_tick_for(
@@ -1484,7 +1552,7 @@ fn observed_tick_for(
 #[cfg(test)]
 mod tests {
     use super::{
-        SnapshotEntityFilter, SnapshotFacilityQueue, build_planning_snapshot,
+        AdmissionSource, SnapshotEntityFilter, SnapshotFacilityQueue, build_planning_snapshot,
         build_planning_snapshot_with_blocked_facility_uses,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -2480,6 +2548,13 @@ mod tests {
 
         assert!(snapshot.entities.contains_key(&other_agent));
         assert!(snapshot.entities.contains_key(&carried_item));
+        assert_eq!(
+            snapshot
+                .entities
+                .get(&carried_item)
+                .map(|entity| entity.admission),
+            Some(AdmissionSource::PossessionContainmentFrontier)
+        );
     }
 
     #[test]
@@ -2490,15 +2565,20 @@ mod tests {
         let place_c = entity(12);
         let remote_place = entity(19);
         let evidence_entity = entity(2);
+        let local_entity = entity(3);
+        let believed_entity = entity(4);
 
         let mut view = StubBeliefView::default();
         view.alive.insert(actor, true);
         view.alive.insert(evidence_entity, true);
+        view.alive.insert(local_entity, true);
         view.kinds.insert(actor, EntityKind::Agent);
         view.kinds.insert(evidence_entity, EntityKind::Agent);
+        view.kinds.insert(local_entity, EntityKind::ItemLot);
         view.effective_places.insert(actor, place_a);
         view.effective_places.insert(evidence_entity, remote_place);
-        view.entities_at.insert(place_a, vec![actor]);
+        view.effective_places.insert(local_entity, place_a);
+        view.entities_at.insert(place_a, vec![actor, local_entity]);
         view.entities_at.insert(place_b, vec![]);
         view.entities_at.insert(place_c, vec![]);
         view.entities_at.insert(remote_place, vec![evidence_entity]);
@@ -2513,6 +2593,11 @@ mod tests {
         );
         view.adjacent
             .insert(place_c, vec![(place_b, NonZeroU32::new(5).unwrap())]);
+        let mut believed = sample_belief(true, 7);
+        believed.believed_kind = Some(EntityKind::ItemLot);
+        believed.last_known_place = Some(place_b);
+        view.known_entity_beliefs
+            .insert(actor, vec![(believed_entity, believed)]);
 
         let snapshot = build_planning_snapshot(
             &view,
@@ -2524,10 +2609,67 @@ mod tests {
 
         assert!(snapshot.entities.contains_key(&actor));
         assert!(snapshot.entities.contains_key(&evidence_entity));
+        assert!(snapshot.entities.contains_key(&local_entity));
+        assert!(snapshot.entities.contains_key(&believed_entity));
         assert!(snapshot.places.contains_key(&place_a));
         assert!(snapshot.places.contains_key(&place_b));
         assert!(snapshot.places.contains_key(&remote_place));
         assert!(!snapshot.places.contains_key(&place_c));
+        assert_eq!(
+            snapshot.entities.get(&actor).map(|entity| entity.admission),
+            Some(AdmissionSource::SelfAuthoritative)
+        );
+        assert_eq!(
+            snapshot
+                .entities
+                .get(&evidence_entity)
+                .map(|entity| entity.admission),
+            Some(AdmissionSource::GroundedEvidence)
+        );
+        assert_eq!(
+            snapshot
+                .entities
+                .get(&local_entity)
+                .map(|entity| entity.admission),
+            Some(AdmissionSource::LocalSameTickPhysical)
+        );
+        assert_eq!(
+            snapshot
+                .entities
+                .get(&believed_entity)
+                .map(|entity| entity.admission),
+            Some(AdmissionSource::BeliefLastSeen)
+        );
+        assert_eq!(
+            snapshot
+                .entities
+                .get(&place_b)
+                .map(|entity| entity.admission),
+            Some(AdmissionSource::PublicTopology)
+        );
+
+        let opportunity = worldwake_core::OpportunityKey {
+            goal_key: worldwake_core::GoalKey::from(crate::GoalKind::Sleep),
+            anchor: worldwake_core::OpportunityAnchor::None,
+        };
+        let admissions =
+            crate::decision_trace::snapshot_admission_trace_entries(opportunity, &snapshot);
+
+        assert!(admissions.contains(&crate::SnapshotAdmissionTrace {
+            opportunity,
+            entity: actor,
+            source: AdmissionSource::SelfAuthoritative,
+        }));
+        assert!(admissions.contains(&crate::SnapshotAdmissionTrace {
+            opportunity,
+            entity: evidence_entity,
+            source: AdmissionSource::GroundedEvidence,
+        }));
+        assert!(admissions.contains(&crate::SnapshotAdmissionTrace {
+            opportunity,
+            entity: believed_entity,
+            source: AdmissionSource::BeliefLastSeen,
+        }));
     }
 
     #[test]
@@ -2782,6 +2924,10 @@ mod tests {
                 .get(&basin)
                 .map(|entity| entity.spatial.effective_place),
             Some(Some(believed_place))
+        );
+        assert_eq!(
+            snapshot.entities.get(&basin).map(|entity| entity.admission),
+            Some(AdmissionSource::BeliefLastSeen)
         );
         assert_eq!(
             snapshot

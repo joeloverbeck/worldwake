@@ -1375,6 +1375,7 @@ fn process_agent(
                 outcome: DecisionOutcome::Dead,
                 compiled_opportunities: Vec::new(),
                 opportunity_compiler_load: None,
+                snapshot_admissions: None,
                 snapshot_cache_counters: None,
                 planning_state_cache_counters: None,
                 repair_attempts: Vec::new(),
@@ -1876,6 +1877,7 @@ fn process_agent(
     let active_action = active_action_for_agent(ctx, agent);
 
     // ── Active-action path: interrupt evaluation ──
+    let mut snapshot_admissions = None;
     let mut snapshot_cache_counters = None;
     let mut planning_state_cache_counters = None;
     let outcome_trace = if let Some(active_action) = active_action {
@@ -1968,6 +1970,7 @@ fn process_agent(
             plan_search_trace,
             selection_trace,
             portfolio_trace,
+            planning_snapshot_admissions,
             planning_snapshot_cache_counters,
             planning_state_counters,
             pending_tracker_increments,
@@ -1998,6 +2001,7 @@ fn process_agent(
             &read_result.candidate_sources,
             &read_result.opportunity_index,
         );
+        snapshot_admissions = planning_snapshot_admissions;
         snapshot_cache_counters = planning_snapshot_cache_counters;
         planning_state_cache_counters = planning_state_counters;
         current_active_goal = current_agenda_state.committed.clone();
@@ -2463,6 +2467,7 @@ fn process_agent(
         outcome,
         compiled_opportunities: read_result.opportunities,
         opportunity_compiler_load: Some(read_result.opportunity_compiler_load),
+        snapshot_admissions,
         snapshot_cache_counters,
         planning_state_cache_counters,
         repair_attempts: repair_attempt_traces,

@@ -10,9 +10,9 @@ use crate::decision_trace::{
     PlanSearchTrace, PlannedStepSummary, PortfolioSlotTrace, PortfolioTrace, RankedGoalSummary,
     SameGoalPlanningStopReason, SameGoalPlanningTrace, SelectedPlanReplacementKind,
     SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
-    SelectedPlanTrace, SelectionTrace, SideBenefitTrace, SnapshotCacheCounters,
-    SnapshotContinuationOutcome, SnapshotContinuationTrace, StrategicStepTrace,
-    TargetBeliefPresence,
+    SelectedPlanTrace, SelectionTrace, SideBenefitTrace, SnapshotAdmissionTrace,
+    SnapshotCacheCounters, SnapshotContinuationOutcome, SnapshotContinuationTrace,
+    StrategicStepTrace, TargetBeliefPresence, snapshot_admission_trace_entries,
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
 use crate::feasibility_probe;
@@ -92,6 +92,7 @@ type PlanningStepTraceResult = (
     Option<PlanSearchTrace>,
     Option<SelectionTrace>,
     Option<PortfolioTrace>,
+    Option<Vec<SnapshotAdmissionTrace>>,
     Option<SnapshotCacheCounters>,
     Option<PlanningStateCacheCounters>,
     BTreeSet<worldwake_core::HomeostaticNeedId>,
@@ -107,6 +108,7 @@ pub(super) struct CandidatePlanningPass {
     plausible_slots: Vec<SlotKind>,
     search_order: Vec<OpportunityKey>,
     plans: Vec<CandidatePlanSearch>,
+    snapshot_admissions: Option<Vec<SnapshotAdmissionTrace>>,
     snapshot_cache_counters: Option<SnapshotCacheCounters>,
     planning_state_cache_counters: Option<PlanningStateCacheCounters>,
 }
@@ -683,6 +685,7 @@ pub(super) fn build_candidate_plans_with_sources(
             plausible_slots,
             search_order,
             plans: Vec::new(),
+            snapshot_admissions: None,
             snapshot_cache_counters: None,
             planning_state_cache_counters: None,
         };
@@ -702,6 +705,7 @@ pub(super) fn build_candidate_plans_with_sources(
         })
         .collect::<BTreeMap<_, _>>();
     let mut results = Vec::with_capacity(search_order.len().min(candidate_cap));
+    let mut snapshot_admissions = Vec::new();
     let mut snapshot_cache_counters = SnapshotCacheCounters::default();
     let mut planning_state_cache_counters = PlanningStateCacheCounters::default();
     let mut snapshot_count = 0usize;
@@ -735,6 +739,7 @@ pub(super) fn build_candidate_plans_with_sources(
             goal_key: ranked.offer.key,
             anchor: ranked.offer.anchor,
         };
+        snapshot_admissions.extend(snapshot_admission_trace_entries(opportunity, &snapshot));
         let candidate_source = candidate_sources
             .get(&opportunity)
             .copied()
@@ -847,6 +852,7 @@ pub(super) fn build_candidate_plans_with_sources(
         plausible_slots,
         search_order,
         plans: results,
+        snapshot_admissions: (!snapshot_admissions.is_empty()).then_some(snapshot_admissions),
         snapshot_cache_counters: (snapshot_count > 0).then_some(snapshot_cache_counters),
         planning_state_cache_counters: (planning_state_count > 0)
             .then_some(planning_state_cache_counters),
@@ -2371,6 +2377,7 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
             None,
             None,
             None,
+            None,
             BTreeSet::new(),
         );
     }
@@ -2392,6 +2399,7 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
     };
     let mut plan_continued = false;
     let mut pending_tracker_increments = BTreeSet::new();
+    let mut snapshot_admissions = None;
     let mut snapshot_cache_counters = None;
     let mut planning_state_cache_counters = None;
 
@@ -2450,6 +2458,7 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
                         None,
                         None,
                         None,
+                        None,
                         BTreeSet::new(),
                     );
                 }
@@ -2501,9 +2510,10 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
             Some(&runtime.route_preference),
             runtime.operating_mode,
         );
+        portfolio_trace = Some(plans.portfolio_trace());
+        snapshot_admissions.clone_from(&plans.snapshot_admissions);
         snapshot_cache_counters = plans.snapshot_cache_counters;
         planning_state_cache_counters = plans.planning_state_cache_counters;
-        portfolio_trace = Some(plans.portfolio_trace());
 
         pending_tracker_increments = record_exhausted_goals(
             runtime,
@@ -2776,6 +2786,7 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
         Some(plan_search_trace),
         Some(selection_trace),
         portfolio_trace,
+        snapshot_admissions,
         snapshot_cache_counters,
         planning_state_cache_counters,
         pending_tracker_increments,
@@ -4726,6 +4737,7 @@ mod tests {
                 },
                 PlanSearchResult::FrontierExhausted { expansions_used: 1 },
             )],
+            snapshot_admissions: None,
             snapshot_cache_counters: None,
             planning_state_cache_counters: None,
         };
@@ -6158,32 +6170,33 @@ mod tests {
         let mut facility_intents = worldwake_core::ContentionIntents::default();
 
         let mut event_log = EventLog::new();
-        let (_, _, _, plan_search_trace, _, _, _, _, _) = super::plan_and_validate_next_step_traced(
-            &mut world,
-            &mut event_log,
-            &scheduler,
-            &mut runtime,
-            &mut agenda_state,
-            &mut frame,
-            &mut facility_intents,
-            agent,
-            &ordered(&ranked_candidates),
-            &mut worldwake_core::DiscrepancyMemory::default(),
-            &worldwake_core::BlockerMemory::default(),
-            worldwake_core::Permille::new(0).unwrap(),
-            worldwake_core::Permille::new(0).unwrap(),
-            worldwake_core::Permille::new(100).unwrap(),
-            Tick(1),
-            &cognitive(&budget),
-            &execution_budget(&budget),
-            &semantics,
-            &defs,
-            &handlers,
-            true,
-            None,
-            &recipes,
-            &BTreeMap::new(),
-        );
+        let (_, _, _, plan_search_trace, _, _, _, _, _, _) =
+            super::plan_and_validate_next_step_traced(
+                &mut world,
+                &mut event_log,
+                &scheduler,
+                &mut runtime,
+                &mut agenda_state,
+                &mut frame,
+                &mut facility_intents,
+                agent,
+                &ordered(&ranked_candidates),
+                &mut worldwake_core::DiscrepancyMemory::default(),
+                &worldwake_core::BlockerMemory::default(),
+                worldwake_core::Permille::new(0).unwrap(),
+                worldwake_core::Permille::new(0).unwrap(),
+                worldwake_core::Permille::new(100).unwrap(),
+                Tick(1),
+                &cognitive(&budget),
+                &execution_budget(&budget),
+                &semantics,
+                &defs,
+                &handlers,
+                true,
+                None,
+                &recipes,
+                &BTreeMap::new(),
+            );
 
         let plan_search_trace =
             plan_search_trace.expect("traced planning should record attempt order");

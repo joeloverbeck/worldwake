@@ -36,6 +36,7 @@ use crate::opportunity_compiler::Opportunity;
 use crate::plan_repair::RepairFailure;
 use crate::planner_duration_contract::PlannerDurationDependency;
 use crate::planner_ops::{PlanTerminalKind, PlannerOpKind};
+use crate::planning_snapshot::{AdmissionSource, PlanningSnapshot};
 use crate::ranking::RankedGoalComparison;
 use crate::side_benefit::SideBenefit;
 use crate::source_composite::SourceCompositeRank;
@@ -100,10 +101,35 @@ pub struct AgentDecisionTrace {
     pub outcome: DecisionOutcome,
     pub compiled_opportunities: Vec<Opportunity>,
     pub opportunity_compiler_load: Option<OpportunityCompilerLoad>,
+    pub snapshot_admissions: Option<Vec<SnapshotAdmissionTrace>>,
     pub snapshot_cache_counters: Option<SnapshotCacheCounters>,
     pub planning_state_cache_counters: Option<PlanningStateCacheCounters>,
     pub repair_attempts: Vec<RepairAttemptTrace>,
     pub causal_link_cap_hits: Vec<CausalLinkCapHit>,
+}
+
+/// Why one entity was present in an opportunity-specific planning snapshot.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SnapshotAdmissionTrace {
+    pub opportunity: OpportunityKey,
+    pub entity: EntityId,
+    pub source: AdmissionSource,
+}
+
+#[must_use]
+pub(crate) fn snapshot_admission_trace_entries(
+    opportunity: OpportunityKey,
+    snapshot: &PlanningSnapshot,
+) -> Vec<SnapshotAdmissionTrace> {
+    snapshot
+        .entities
+        .iter()
+        .map(|(&entity, snapshot_entity)| SnapshotAdmissionTrace {
+            opportunity,
+            entity,
+            source: snapshot_entity.admission,
+        })
+        .collect()
 }
 
 /// Logical read counters for `PlanningSnapshot` precomputed caches.
@@ -1565,6 +1591,7 @@ impl PlanningPipelineTrace {
 pub struct DecisionTraceSink {
     traces: Vec<AgentDecisionTrace>,
     opportunity_compiler_loads: BTreeMap<(EntityId, Tick), OpportunityCompilerLoad>,
+    snapshot_admissions: BTreeMap<(EntityId, Tick), Vec<SnapshotAdmissionTrace>>,
     snapshot_cache_counters: BTreeMap<(EntityId, Tick), SnapshotCacheCounters>,
     planning_state_cache_counters: BTreeMap<(EntityId, Tick), PlanningStateCacheCounters>,
 }
@@ -1574,6 +1601,7 @@ impl DecisionTraceSink {
         Self {
             traces: Vec::new(),
             opportunity_compiler_loads: BTreeMap::new(),
+            snapshot_admissions: BTreeMap::new(),
             snapshot_cache_counters: BTreeMap::new(),
             planning_state_cache_counters: BTreeMap::new(),
         }
@@ -1583,6 +1611,10 @@ impl DecisionTraceSink {
         if let Some(load) = trace.opportunity_compiler_load {
             self.opportunity_compiler_loads
                 .insert((trace.agent, trace.tick), load);
+        }
+        if let Some(admissions) = trace.snapshot_admissions.as_ref() {
+            self.snapshot_admissions
+                .insert((trace.agent, trace.tick), admissions.clone());
         }
         if let Some(counters) = trace.snapshot_cache_counters {
             self.snapshot_cache_counters
@@ -1602,6 +1634,25 @@ impl DecisionTraceSink {
         load: OpportunityCompilerLoad,
     ) {
         self.opportunity_compiler_loads.insert((agent, tick), load);
+    }
+
+    pub fn record_snapshot_admissions(
+        &mut self,
+        agent: EntityId,
+        tick: Tick,
+        admissions: Vec<SnapshotAdmissionTrace>,
+    ) {
+        self.snapshot_admissions.insert((agent, tick), admissions);
+    }
+
+    pub fn snapshot_admissions(
+        &self,
+        agent: EntityId,
+        tick: Tick,
+    ) -> Option<&[SnapshotAdmissionTrace]> {
+        self.snapshot_admissions
+            .get(&(agent, tick))
+            .map(Vec::as_slice)
     }
 
     pub fn opportunity_compiler_load(
@@ -1687,6 +1738,7 @@ impl DecisionTraceSink {
     pub fn clear(&mut self) {
         self.traces.clear();
         self.opportunity_compiler_loads.clear();
+        self.snapshot_admissions.clear();
         self.snapshot_cache_counters.clear();
         self.planning_state_cache_counters.clear();
     }
@@ -2922,6 +2974,7 @@ mod tests {
             tick: Tick(8),
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            snapshot_admissions: None,
             snapshot_cache_counters: None,
             planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
@@ -3015,6 +3068,7 @@ mod tests {
             tick,
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            snapshot_admissions: None,
             snapshot_cache_counters: None,
             planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
@@ -3080,6 +3134,7 @@ mod tests {
             tick,
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            snapshot_admissions: None,
             snapshot_cache_counters: None,
             planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
@@ -3143,6 +3198,7 @@ mod tests {
             tick: Tick(5),
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            snapshot_admissions: None,
             snapshot_cache_counters: None,
             planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
@@ -3271,6 +3327,38 @@ mod tests {
     }
 
     #[test]
+    fn sink_records_snapshot_admissions_by_agent_tick() {
+        let mut sink = DecisionTraceSink::new();
+        let agent = entity(0);
+        let tick = Tick(4);
+        let opportunity = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            anchor: OpportunityAnchor::None,
+        };
+        let admissions = vec![
+            SnapshotAdmissionTrace {
+                opportunity,
+                entity: agent,
+                source: crate::AdmissionSource::SelfAuthoritative,
+            },
+            SnapshotAdmissionTrace {
+                opportunity,
+                entity: entity(1),
+                source: crate::AdmissionSource::GroundedEvidence,
+            },
+        ];
+        let mut trace = dead_trace(agent, tick);
+        trace.snapshot_admissions = Some(admissions.clone());
+
+        sink.record(trace);
+
+        assert_eq!(
+            sink.snapshot_admissions(agent, tick),
+            Some(admissions.as_slice())
+        );
+    }
+
+    #[test]
     fn sink_records_planning_state_cache_counters_by_agent_tick() {
         let mut sink = DecisionTraceSink::new();
         let agent = entity(0);
@@ -3300,10 +3388,23 @@ mod tests {
 
         sink.record(dead_trace(agent, Tick(1)));
         sink.record(dead_trace(agent, Tick(2)));
+        sink.record_snapshot_admissions(
+            agent,
+            Tick(3),
+            vec![SnapshotAdmissionTrace {
+                opportunity: OpportunityKey {
+                    goal_key: GoalKey::from(GoalKind::Sleep),
+                    anchor: OpportunityAnchor::None,
+                },
+                entity: agent,
+                source: crate::AdmissionSource::SelfAuthoritative,
+            }],
+        );
         assert_eq!(sink.traces().len(), 2);
 
         sink.clear();
         assert!(sink.traces().is_empty());
+        assert_eq!(sink.snapshot_admissions(agent, Tick(3)), None);
     }
 
     #[test]
@@ -5770,6 +5871,7 @@ mod tests {
             tick: Tick(5),
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            snapshot_admissions: None,
             snapshot_cache_counters: None,
             planning_state_cache_counters: None,
             repair_attempts: Vec::new(),

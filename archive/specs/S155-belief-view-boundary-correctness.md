@@ -123,9 +123,10 @@ symmetry (FND-19) once a human controls the same body.
 ### Key interview decisions
 
 - The fix is **minimal and at the source**: correct the two accessors so the belief surface
-  is belief-correct. Heavier defense-in-depth (snapshot admission-source tagging) is deferred
-  to S157, out of the active order, because fixing the source removes the leak the snapshot
-  would otherwise amplify.
+  is belief-correct. Heavier defense-in-depth (snapshot admission-source tagging) was deferred
+  from S155 and later completed by
+  `archive/specs/S157-planner-snapshot-admission-provenance.md`; fixing the source removed the
+  leak the snapshot would otherwise amplify.
 - Doc-contract updates are folded into this spec, not split into a docs-only spec.
 
 ## Design Goals
@@ -143,7 +144,8 @@ symmetry (FND-19) once a human controls the same body.
 
 ## Non-Goals
 
-- Snapshot admission-source provenance tagging — deferred to **S157** (out of active order).
+- Snapshot admission-source provenance tagging — completed later by
+  `archive/specs/S157-planner-snapshot-admission-provenance.md`.
 - Goal-semantics consolidation, candidate-generation restructuring, ranking changes —
   dismissed or deferred by the triage.
 - Any change to authoritative dispatch validation (`can_exercise_control`,
