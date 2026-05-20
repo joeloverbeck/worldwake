@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-ai` decision/snapshot trace (`decision_trace.rs`)
-**Deps**: S157SNAADMPRO-001
+**Deps**: `archive/tickets/S157SNAADMPRO-001.md`
 
 ## Problem
 

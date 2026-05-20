@@ -1,6 +1,6 @@
 # S157SNAADMPRO-001: Admission-source enum and per-entity recording
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` planner snapshot construction (`planning_snapshot.rs`)
@@ -11,10 +11,11 @@
 `PlanningSnapshot` admits entities for several distinct lawful reasons — the actor itself,
 same-tick co-located physical observation (FND-14A), belief-store last-seen memory, grounded
 evidence carriers, included public-topology places, and the possession/containment frontier —
-but `collect_entities()` (`crates/worldwake-ai/src/planning_snapshot.rs:1411`) merges them all
-into a single `BTreeSet<EntityId>`, after which the reason each entity was admitted is lost.
-`build_planning_snapshot()` then builds a uniform `SnapshotEntity` for every admitted id with no
-provenance. The planner therefore cannot prove *why* an entity is visible, nor assert that a
+but before this ticket `collect_entities()` (`crates/worldwake-ai/src/planning_snapshot.rs`)
+merged them all into a single `BTreeSet<EntityId>`, after which the reason each entity was
+admitted was lost. `build_planning_snapshot()` then built a uniform `SnapshotEntity` for every
+admitted id with no provenance. The planner therefore could not prove *why* an entity was visible,
+nor assert that a
 later read of a field only touches entities whose admission source legitimately exposes it. This
 ticket adds an explicit admission-source enum recorded per admitted entity, turning an invariant
 currently held by convention into one the planner can assert and trace (S157 D1; FND-15, FND-29).
@@ -23,8 +24,8 @@ currently held by convention into one the planner can assert and trace (S157 D1;
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. `collect_entities()` exists at `crates/worldwake-ai/src/planning_snapshot.rs:1411` and returns
-   `BTreeSet<EntityId>`, merging `actor`, `evidence_entities`, `included_places`, and a
+1. Before implementation, `collect_entities()` existed at `crates/worldwake-ai/src/planning_snapshot.rs`
+   and returned `BTreeSet<EntityId>`, merging `actor`, `evidence_entities`, `included_places`, and a
    possession/containment frontier (verified 2026-05-20). The actor-place branch reads
    `view.entities_at(*place)` (same-tick local observation, FND-14A); non-actor places admit
    entities whose belief `last_known_place == Some(*place)` (last-seen memory). The frontier walk
@@ -39,7 +40,7 @@ currently held by convention into one the planner can assert and trace (S157 D1;
    planning pass (S157 H.4), so there is no serde-default or `SAVE_FORMAT_VERSION` concern for the
    new field.
 3. Shared boundary under audit: the entity-admission path between `collect_entities()` (which
-   currently discards provenance) and `build_planning_snapshot()`/`build_snapshot_entity()` (which
+   discarded provenance before this ticket) and `build_planning_snapshot()`/`build_snapshot_entity()` (which
    stores the per-entity read-model). The new source must be threaded from the admitting branch in
    `collect_entities()` through to the `SnapshotEntity` written for that id; the data contract is
    "every admitted id carries exactly one admission source."
@@ -64,10 +65,10 @@ currently held by convention into one the planner can assert and trace (S157 D1;
    same sources. No backward-compat shim is introduced: `collect_entities()`'s return type changes
    in place (no parallel old/new collection path), and all callers are updated in this ticket.
 
-## Verification Layers
+## Verified Layers
 
 1. Recorded source matches the admitting branch (self / local same-tick / belief last-seen /
-   evidence / topology / hypothetical) -> focused unit tests over `build_planning_snapshot()` /
+   evidence / topology / frontier) -> focused unit tests over `build_planning_snapshot()` /
    `collect_entities()` asserting `snapshot.entities[id]`'s source per construction scenario.
 2. Every admitted id carries exactly one source (no id in `entities` without a source) -> the
    type system enforces this (the field is non-`Option` on `SnapshotEntity`); a focused test
@@ -75,15 +76,15 @@ currently held by convention into one the planner can assert and trace (S157 D1;
    their expected variant.
 3. Single-layer ticket (snapshot construction only) — no action-trace or event-log surface is
    involved because the snapshot is transient planner-internal state, not an authoritative
-   mutation. Behavior-preservation of downstream planning is proven by the unchanged existing
-   golden suite (run as the full-suite command), not by a new event-log assertion.
+   mutation. Behavior-preservation of downstream planning was covered by the unchanged existing
+   golden suite through the full-suite command, not by an added event-log assertion.
 
-## What to Change
+## Landed Changes
 
-### 1. Add the admission-source enum
+### 1. Added the admission-source enum
 
-Define an `AdmissionSource` enum in `crates/worldwake-ai/src/planning_snapshot.rs` with one
-variant per lawful carrier the snapshot already uses:
+Defined an `AdmissionSource` enum in `crates/worldwake-ai/src/planning_snapshot.rs` with one
+variant per lawful carrier the snapshot uses:
 
 - `SelfAuthoritative` — the planning actor itself.
 - `LocalSameTickPhysical` — co-located entity read via `view.entities_at(actor_place)` (FND-14A).
@@ -91,42 +92,36 @@ variant per lawful carrier the snapshot already uses:
 - `GroundedEvidence` — member of `evidence_entities`.
 - `PublicTopology` — an included place (public place graph).
 - `PossessionContainmentFrontier` — reached by the container/possessor frontier walk.
-- `HypotheticalPlannerEffect` — entity materialized by a hypothetical planner effect, if such
-  ids enter the snapshot (confirm during implementation; if no such path feeds
-  `build_planning_snapshot`, omit this variant rather than declaring it dead — see Out of Scope).
+No `HypotheticalPlannerEffect` variant was added because no live hypothetical-effect id path feeds
+`build_planning_snapshot` in this ticket's owned surface.
 
-Derive `Clone, Copy, Debug, Eq, PartialEq` (matches `SnapshotEntity`'s derives; `Copy` is free for
-a fieldless enum). Add `Ord, PartialOrd` only if a test or accessor needs ordering.
+The enum derives `Clone, Copy, Debug, Eq, PartialEq`; no ordering derive was needed.
 
-### 2. Thread the source through `collect_entities()`
+### 2. Threaded the source through `collect_entities()`
 
-Change `collect_entities()` to return the admission source alongside each id (e.g.,
-`BTreeMap<EntityId, AdmissionSource>` instead of `BTreeSet<EntityId>`), assigning the variant at
+Changed `collect_entities()` to return the admission source alongside each id as
+`BTreeMap<EntityId, AdmissionSource>` instead of `BTreeSet<EntityId>`, assigning the variant at
 each admitting branch: actor → `SelfAuthoritative`; `evidence_entities` → `GroundedEvidence`;
 `included_places` → `PublicTopology`; actor-place `entities_at` reads → `LocalSameTickPhysical`;
 non-actor `last_known_place` belief matches → `BeliefLastSeen`; frontier additions →
-`PossessionContainmentFrontier`. When an id is admitted by more than one branch, define a
-deterministic precedence (recommended: `SelfAuthoritative` > `LocalSameTickPhysical` >
-`GroundedEvidence` > `BeliefLastSeen` > `PossessionContainmentFrontier` > `PublicTopology`) and
-document it inline; the strongest/most-direct carrier wins so a field-legality check is not
-weakened by a coincidental weaker admission.
+`PossessionContainmentFrontier`. When an id is admitted by more than one branch, deterministic
+precedence keeps the strongest/most-direct carrier:
+`SelfAuthoritative` > `LocalSameTickPhysical` > `GroundedEvidence` > `BeliefLastSeen` >
+`PossessionContainmentFrontier` > `PublicTopology`.
 
-### 3. Store the source on `SnapshotEntity`
+### 3. Stored the source on `SnapshotEntity`
 
-Add an `admission: AdmissionSource` field to `SnapshotEntity`. Populate it in
-`build_snapshot_entity()` / `build_planning_snapshot()` from the per-id source produced by
-`collect_entities()`. Give the `Default` impl (line 229) a defensible default
-(`PublicTopology` is the weakest/most-conservative carrier) so test-only `SnapshotEntity::default()`
-construction still compiles; real construction always sets the field explicitly.
+Added an `admission: AdmissionSource` field to `SnapshotEntity`. `build_planning_snapshot()` passes
+the per-id source from `collect_entities()` into `build_snapshot_entity()`. The `Default` impl uses
+`PublicTopology`, the weakest/most-conservative carrier, so test-only `SnapshotEntity::default()`
+construction still compiles; real construction sets the field explicitly.
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-ai/src/planning_snapshot.rs` (modify — add `AdmissionSource`, reshape
-  `collect_entities()` return, add `SnapshotEntity.admission` field + `Default`, populate in
-  `build_snapshot_entity`/`build_planning_snapshot`)
-- `crates/worldwake-ai/src/lib.rs` (modify — re-export `AdmissionSource` only if it must be
-  visible to ticket 003's trace surface or to tests outside the module; confirm during
-  implementation)
+- `crates/worldwake-ai/src/planning_snapshot.rs` — added `AdmissionSource`, reshaped
+  `collect_entities()` to return `BTreeMap<EntityId, AdmissionSource>`, added
+  `SnapshotEntity.admission`, and populated the field during snapshot construction.
+- `crates/worldwake-ai/src/lib.rs` — no change; ticket 001 did not require an external re-export.
 
 ## Out of Scope
 
@@ -137,17 +132,16 @@ construction still compiles; real construction always sets the field explicitly.
   never reach the snapshot, omit `HypotheticalPlannerEffect`.
 - Any belief-view accessor change (owned by S155, landed).
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests Passed
 
 1. A focused test builds a snapshot with the actor, a grounded-evidence entity, a co-located
-   entity at the actor's place, and a remote belief-known entity, and asserts each `entities[id]`
-   carries the expected `AdmissionSource` variant.
+   entity at the actor's place, and a remote belief-known entity, and asserts each covered
+   `entities[id]` carries the expected `AdmissionSource` variant.
 2. A focused test asserts a frontier-admitted container/possessor receives
-   `PossessionContainmentFrontier` (extends or sits beside
-   `snapshot_filter_containment_walk_includes_inventory`).
-3. Existing suite: `cargo test -p worldwake-ai`
+   `PossessionContainmentFrontier` by extending `snapshot_filter_containment_walk_includes_inventory`.
+3. Existing suite passed via `cargo test -p worldwake-ai`.
 
 ### Invariants
 
@@ -158,18 +152,19 @@ construction still compiles; real construction always sets the field explicitly.
 3. The admission source is derived metadata over belief/world state; it is never written back to
    authoritative state (FND-27).
 
-## Test Plan
+## Outcome
 
-### New/Modified Tests
+Completed on 2026-05-20.
 
-1. `crates/worldwake-ai/src/planning_snapshot.rs` (`#[cfg(test)]` after line 1484) — new focused
-   tests asserting recorded source per admission branch (self / local / evidence / belief
-   last-seen / topology / frontier).
-2. Extend `build_snapshot_includes_actor_evidence_and_places_within_horizon` (line 2486) to assert
-   the actor's and evidence entities' sources, since it already constructs that admission mix.
+- Added planner-snapshot admission provenance as a transient read-model annotation.
+- Reused existing snapshot unit-test scenarios to assert self, local same-tick physical,
+  grounded-evidence, belief-last-seen, public-topology, and possession/containment-frontier
+  admission sources.
+- Omitted the drafted hypothetical-effect variant because no live hypothetical-effect id path feeds
+  `build_planning_snapshot`.
 
-### Commands
+## Verification Result
 
-1. `cargo test -p worldwake-ai planning_snapshot`
-2. `cargo test -p worldwake-ai`
-3. `scripts/verify.sh`
+- Passed `cargo test -p worldwake-ai --lib planning_snapshot`
+- Passed `cargo test -p worldwake-ai`
+- Passed `scripts/verify.sh`

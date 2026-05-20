@@ -4,11 +4,12 @@
 
 Add an explicit **admission source** to every entity (and relevant non-self field) admitted
 into `PlanningSnapshot`, plus a snapshot-admission trace, so the planner can prove *why* an
-entity is visible and cannot read fields that were admitted for an unrelated reason. Today
-`SnapshotEntity`'s sub-structs carry no provenance tag; `collect_entities()` returns a uniform
-set, and strategic search scans `state.snapshot().entities.keys()` for workstations, sellers,
-resource sources, and acquisition places. That scan is only sound if snapshot admission is
-airtight — which the planner currently cannot self-verify.
+entity is visible and cannot read fields that were admitted for an unrelated reason. Ticket
+`S157SNAADMPRO-001` landed the per-entity `SnapshotEntity.admission` source tag and changed
+`collect_entities()` to retain admission provenance. Strategic search still scans
+`state.snapshot().entities.keys()` for workstations, sellers, resource sources, and acquisition
+places until `S157SNAADMPRO-002` lands, and trace surfacing remains owned by
+`S157SNAADMPRO-003`.
 
 This spec is **defense-in-depth** and a debuggability/provenance improvement (FND-15, FND-29),
 not a correctness fix. The remote-truth leak was already closed at the source by **S155**
@@ -42,17 +43,18 @@ DRAFT (active — S155 prerequisite landed; ready for ticket decomposition)
 
 `reports/ai-architecture-consolidation-first-iteration.md` (Findings #2 and #13, rated
 *High* and *Medium/High*) flagged that snapshot admission lacks source metadata and that
-strategic search scans the admitted entity map directly. Verified:
+strategic search scans the admitted entity map directly. Current state:
 
-- `SnapshotEntity` (`planning_snapshot.rs`) is composed of `entity/spatial/inventory/combat/
-  social/economic/political/temporal/profiles/facility/control` sub-structs — **none** carries
-  an admission source, acquisition tick, or confidence.
-- `collect_entities()` merges actor + evidence entities + included places + possession/
-  containment frontier into a single `BTreeSet<EntityId>`; after collection the reason an
-  entity was admitted is lost.
-- `build_planning_snapshot()` then builds a `SnapshotEntity` uniformly for every admitted id.
+- `SnapshotEntity` (`planning_snapshot.rs`) now carries an `admission: AdmissionSource` field
+  alongside the existing `entity/spatial/inventory/combat/social/economic/political/temporal/
+  profiles/facility/control` sub-structs.
+- `collect_entities()` now returns `BTreeMap<EntityId, AdmissionSource>` and records actor,
+  evidence, topology, local same-tick, belief-last-seen, and possession/containment-frontier
+  admission sources.
+- `build_planning_snapshot()` passes that source into `build_snapshot_entity()` for every admitted id.
 - `search/strategic.rs` scans `state.snapshot().entities.keys()` to find workstations, sellers,
-  resource sources, and acquisition places.
+  resource sources, and acquisition places; this remaining restriction work is ticket
+  `S157SNAADMPRO-002`.
 
 ### Why this matters
 
@@ -127,17 +129,20 @@ N/A — no ECS component, no `Permille`, no profile parameter.
 
 ## Deliverables (for when scheduled)
 
-### D1 — Admission-source enum on snapshot entities
+### D1 — Admission-source enum on snapshot entities (landed by `S157SNAADMPRO-001`)
 Add an admission-source enum (self-authoritative, local same-tick physical, belief-store claim,
 last-seen memory, testimony/record, grounded-evidence carrier, public topology, hypothetical
 planner effect) recorded per admitted entity in `PlanningSnapshot`. Populate it in
 `collect_entities()`/`build_planning_snapshot()` from the path that admitted each entity.
 
-The source is a fieldless enum stored on `SnapshotEntity` (co-located with the entity's other
-sub-structs at `planning_snapshot.rs:215`). It must derive `Clone, Debug, Eq, PartialEq` to
-match `SnapshotEntity`'s derives (and may add `Copy` as a fieldless enum). `PlanningSnapshot` is
-a transient derived read-model and is **not** serialized (no `Serialize`/`Deserialize`), so there
-is no serde-default or save/replay-compatibility concern for the new field.
+The landed source is a fieldless enum stored on `SnapshotEntity` and derives
+`Clone, Copy, Debug, Eq, PartialEq`. The implemented live variants are
+`SelfAuthoritative`, `LocalSameTickPhysical`, `GroundedEvidence`, `BeliefLastSeen`,
+`PossessionContainmentFrontier`, and `PublicTopology`. No `HypotheticalPlannerEffect` variant
+landed because no live hypothetical-effect id path feeds `build_planning_snapshot`.
+`PlanningSnapshot` remains a transient derived read-model and is **not** serialized
+(no `Serialize`/`Deserialize`), so there is no serde-default or save/replay-compatibility concern
+for the field.
 
 ### D2 — Source-restricted strategic scans
 Replace raw `state.snapshot().entities.keys()` scans in `search/strategic.rs` with accessors

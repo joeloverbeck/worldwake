@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` strategic plan search (`search/strategic.rs`)
-**Deps**: S157SNAADMPRO-001
+**Deps**: `archive/tickets/S157SNAADMPRO-001.md`
 
 ## Problem
 
