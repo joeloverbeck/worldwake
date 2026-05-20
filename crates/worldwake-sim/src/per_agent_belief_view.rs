@@ -1812,8 +1812,9 @@ impl InventoryBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
-        let accessible =
-            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        let accessible = self.knows_entity(entity)
+            || self.has_authoritative_local_visibility(entity)
+            || self.world.possessor_of(entity) == Some(self.agent);
         accessible
             .then(|| {
                 self.world
@@ -1829,16 +1830,18 @@ impl InventoryBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
-        let accessible =
-            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        let accessible = self.knows_entity(entity)
+            || self.has_authoritative_local_visibility(entity)
+            || self.world.possessor_of(entity) == Some(self.agent);
         accessible
             .then(|| self.world.direct_container(entity))
             .flatten()
     }
 
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
-        let accessible =
-            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        let accessible = self.has_authoritative_local_visibility(entity)
+            || self.knows_entity(entity)
+            || self.world.possessor_of(entity) == Some(self.agent);
         accessible
             .then(|| self.world.possessor_of(entity))
             .flatten()
@@ -5362,6 +5365,53 @@ mod tests {
         assert_eq!(
             InventoryBeliefView::item_lot_commodity(&view, lot),
             Some(CommodityKind::Water)
+        );
+    }
+
+    #[test]
+    fn co_located_unknown_item_lot_exposes_physical_inventory_facts() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, loose_lot, held_lot, holder) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let holder = txn.create_agent("Holder", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(holder, place).unwrap();
+            let loose_lot = txn
+                .create_item_lot_with_owner(CommodityKind::Water, Quantity(2), place, None)
+                .unwrap();
+            let held_lot = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(held_lot, place).unwrap();
+            txn.set_possessor(held_lot, holder).unwrap();
+            commit_txn(txn);
+            (agent, loose_lot, held_lot, holder)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            InventoryBeliefView::item_lot_commodity(&view, loose_lot),
+            Some(CommodityKind::Water)
+        );
+        assert_eq!(
+            InventoryBeliefView::direct_container(&view, loose_lot),
+            None
+        );
+        assert_eq!(
+            InventoryBeliefView::direct_possessor(&view, loose_lot),
+            None
+        );
+        assert_eq!(
+            InventoryBeliefView::item_lot_commodity(&view, held_lot),
+            Some(CommodityKind::Bread)
+        );
+        assert_eq!(
+            InventoryBeliefView::direct_possessor(&view, held_lot),
+            Some(holder)
         );
     }
 

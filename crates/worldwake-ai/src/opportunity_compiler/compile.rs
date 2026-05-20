@@ -43,6 +43,9 @@ pub fn compile_opportunities(
 
     let mut opportunities = Vec::new();
     for (entity, state) in belief_view.known_entity_beliefs(agent) {
+        if entity == agent {
+            continue;
+        }
         let Some(place) = state
             .last_known_place
             .or_else(|| belief_view.effective_place(entity))
@@ -348,6 +351,55 @@ mod tests {
         assert_eq!(
             opportunities[0].possible_effects,
             vec![EffectFactKey::CommodityTransfer]
+        );
+    }
+
+    #[test]
+    fn compile_opportunities_does_not_anchor_acquisition_on_self_inventory() {
+        let mut store = AgentBeliefStore::new();
+        store
+            .known_entities
+            .insert(entity(2), belief(entity(2), CommodityKind::Water, 3));
+        let (world, agent) = view_with_store(
+            store,
+            CognitiveProfile::default(),
+            PerceptionProfile::default(),
+            RiskWeightProfile::default(),
+            LawAbidingProfile::default(),
+            SurveyMemory::default(),
+            LearnedOpportunityMemory::default(),
+        );
+        let mut store = world
+            .get_component_agent_belief_store(agent)
+            .unwrap()
+            .clone();
+        store
+            .known_entities
+            .insert(agent, belief(agent, CommodityKind::Bread, 2));
+        let mut world = world;
+        {
+            let mut txn = worldwake_core::WorldTxn::new(
+                &mut world,
+                Tick(0),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::SamePlace,
+                WitnessData::default(),
+            );
+            txn.set_component_agent_belief_store(agent, store).unwrap();
+            let mut event_log = worldwake_core::EventLog::new();
+            txn.commit(&mut event_log);
+        }
+        let view = PerAgentBeliefView::from_world(agent, &world);
+
+        let (opportunities, load) = compile_opportunities(agent, &view, &index());
+
+        assert_eq!(load.compiled_count, 1);
+        assert_eq!(opportunities.len(), 1);
+        assert_eq!(
+            opportunities[0].key.anchor,
+            OpportunityAnchor::Entity(entity(2))
         );
     }
 
