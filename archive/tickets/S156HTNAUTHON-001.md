@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` goal-schema declarations
-**Deps**: specs/S156-htn-authority-honesty.md (D1)
+**Deps**: archive/specs/S156-htn-authority-honesty.md (D1)
 
 ## Problem
 

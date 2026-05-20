@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` HTN criteria, methods, registry
-**Deps**: specs/S156-htn-authority-honesty.md (D3)
+**Deps**: archive/specs/S156-htn-authority-honesty.md (D3)
 
 ## Problem
 

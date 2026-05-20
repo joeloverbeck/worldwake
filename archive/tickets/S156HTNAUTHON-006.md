@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: specs/S156-htn-authority-honesty.md (D6), archive/tickets/S156HTNAUTHON-005.md (completed D5 trace contract)
+**Deps**: archive/specs/S156-htn-authority-honesty.md (D6), archive/tickets/S156HTNAUTHON-005.md (completed D5 trace contract)
 
 ## Problem
 
@@ -103,8 +103,8 @@ It names the trace as a transient debug read-model, not authoritative state.
 ### Commands Run
 
 1. Passed `git diff --stat docs/spec-drafting-rules.md docs/planner-contracts.md`
-2. Passed `git diff --check -- docs/spec-drafting-rules.md docs/planner-contracts.md tickets/S156HTNAUTHON-006.md`
-3. Passed `python3 .codex/skills/implement-ticket/scripts/check_closeout.py tickets/S156HTNAUTHON-006.md`
+2. Passed `git diff --check -- docs/spec-drafting-rules.md docs/planner-contracts.md archive/tickets/S156HTNAUTHON-006.md`
+3. Passed `python3 .codex/skills/implement-ticket/scripts/check_closeout.py archive/tickets/S156HTNAUTHON-006.md`
 4. Waived `./scripts/verify.sh` for this ticket iteration because the harness runs it before push after final spec archival.
 
 ## Outcome
@@ -124,6 +124,6 @@ Completed on 2026-05-20.
 ## Verification Result
 
 - Passed `git diff --stat docs/spec-drafting-rules.md docs/planner-contracts.md`
-- Passed `git diff --check -- docs/spec-drafting-rules.md docs/planner-contracts.md tickets/S156HTNAUTHON-006.md`
-- Passed `python3 .codex/skills/implement-ticket/scripts/check_closeout.py tickets/S156HTNAUTHON-006.md`
+- Passed `git diff --check -- docs/spec-drafting-rules.md docs/planner-contracts.md archive/tickets/S156HTNAUTHON-006.md`
+- Passed `python3 .codex/skills/implement-ticket/scripts/check_closeout.py archive/tickets/S156HTNAUTHON-006.md`
 - Waived `./scripts/verify.sh` for this ticket iteration because the harness owns the final pre-push verification gate after the S156 family lands.

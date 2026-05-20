@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-ai` HTN method preconditions
-**Deps**: specs/S156-htn-authority-honesty.md (D2)
+**Deps**: archive/specs/S156-htn-authority-honesty.md (D2)
 
 ## Problem
 
@@ -148,7 +148,7 @@ Completed on 2026-05-20.
 
 ## Verification Result
 
-- Passed `rg -n "AgentRole|RoleTag" crates/worldwake-ai crates/worldwake-cli crates/worldwake-core crates/worldwake-sim crates/worldwake-systems archive/tickets/S156HTNAUTHON-002.md specs/S156-htn-authority-honesty.md` showed only ticket/spec prose references after source edits.
+- Passed `rg -n "AgentRole|RoleTag" crates/worldwake-ai crates/worldwake-cli crates/worldwake-core crates/worldwake-sim crates/worldwake-systems archive/tickets/S156HTNAUTHON-002.md archive/specs/S156-htn-authority-honesty.md` showed only ticket/spec prose references after source edits.
 - Passed `cargo test -p worldwake-ai htn::selector`
 - Passed `cargo test -p worldwake-ai htn::method_schema`
 - Passed `cargo test -p worldwake-ai`

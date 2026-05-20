@@ -25,7 +25,7 @@ AI Architecture Consolidation (Adjunct Wave — derived from `reports/ai-archite
 
 ## Status
 
-DRAFT
+COMPLETED
 
 ## Crates
 
@@ -257,3 +257,33 @@ precondition and records the fallback reason when no method applies.
 4. `cargo clippy --workspace --all-targets -- -D warnings` (variant/field removals must leave no
    dead code or unused-import warnings).
 5. `./scripts/verify.sh` before PR.
+
+## Outcome
+
+Completed on 2026-05-20.
+
+- Removed the `GoalSchema.methods` fossil and kept `MethodRegistry` as the sole method-assignment
+  authority.
+- Removed the no-op `AgentRole` precondition, orphaned `RoleTag`, dead `EntityCriterion` variants,
+  and dead methods that depended on those criteria.
+- Removed unenforced `MethodSchema` fields (`expected_artifacts`, `required_claims`,
+  `failure_modes`) and the validation-only failure-mode assertion.
+- Extended HTN method traces to record rejected candidate methods with failing preconditions and
+  explicit fallback reasons (`NoViableMethod`, `MethodProducedNoStages`).
+- Added the HTN method drafting checklist to `docs/spec-drafting-rules.md` and documented the
+  method-trace fallback/rejection contract in `docs/planner-contracts.md`.
+
+Deviations from the draft:
+
+- No new HTN capability was built; role state, witness/evidence/ledger location resolution, and
+  method-required goals remain out of scope as planned.
+- `./scripts/verify.sh` is the final pre-push gate owned by the harness after this archival
+  commit; per-ticket iterations recorded narrower completed proof and waived the wrapper until the
+  full S156 family landed.
+
+Verification:
+
+- Passed the focused, AI, CLI, golden, and CI-matching clippy commands recorded in
+  `archive/tickets/S156HTNAUTHON-001.md` through `archive/tickets/S156HTNAUTHON-006.md`.
+- Passed scoped Markdown/diff hygiene and closeout checks for the final documentation slice.
+- Pending final harness gate before push: `./scripts/verify.sh`.
