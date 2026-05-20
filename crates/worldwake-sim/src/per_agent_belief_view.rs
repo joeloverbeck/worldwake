@@ -1011,6 +1011,12 @@ impl SpatialBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
+    fn office_patrol_duty(&self, agent: EntityId) -> Option<worldwake_core::OfficePatrolDuty> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_office_patrol_duty(agent).cloned())
+            .flatten()
+    }
+
     fn route_exists(&self, from: EntityId, to: EntityId) -> bool {
         self.world.topology().shortest_path(from, to).is_some()
     }

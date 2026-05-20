@@ -4,7 +4,7 @@ use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
 /// S152COGARCSEE-003 carries personality assignment payloads in the event log.
-pub const SAVE_FORMAT_VERSION: u32 = 95;
+pub const SAVE_FORMAT_VERSION: u32 = 96;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -1365,8 +1365,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_95_after_s152_personality_assigned_payload_landing() {
-        assert_eq!(SAVE_FORMAT_VERSION, 95);
+    fn save_format_version_is_96_after_s153_office_patrol_duty_landing() {
+        assert_eq!(SAVE_FORMAT_VERSION, 96);
     }
 
     #[test]
@@ -1377,7 +1377,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 95);
+        assert_eq!(SAVE_FORMAT_VERSION, 96);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]

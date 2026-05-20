@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden scenario source files: 56
-- Files contributing `golden_*` tests: 56
-- Total `golden_*` tests: 271
+- Golden scenario source files: 58
+- Files contributing `golden_*` tests: 58
+- Total `golden_*` tests: 277
 
 ## Per-Scenario-File Inventory
 
@@ -31,6 +31,7 @@ Do not hand-edit it.
 | `merchant_selling.rs` | 13 |
 | `motive_sources.rs` | 5 |
 | `need_projection.rs` | 1 |
+| `office_vacancy.rs` | 2 |
 | `offices.rs` | 12 |
 | `opportunity_compiler.rs` | 5 |
 | `partial_plan_terminals.rs` | 4 |
@@ -44,6 +45,7 @@ Do not hand-edit it.
 | `portfolio_planning.rs` | 1 |
 | `quantity_aware_acquisition.rs` | 5 |
 | `route_preferences.rs` | 4 |
+| `scaled_contention.rs` | 2 |
 | `scenario_diagnostics_fixture.rs` | 1 |
 | `scenario_diagnostics_replay.rs` | 1 |
 | `simulation_gaps.rs` | 5 |
@@ -67,7 +69,7 @@ Do not hand-edit it.
 | `survival_tell.rs` | 2 |
 | `survival_theft.rs` | 2 |
 | `survival_trade.rs` | 2 |
-| `testimony_reliability.rs` | 3 |
+| `testimony_reliability.rs` | 5 |
 | `travel_physiology.rs` | 12 |
 
 ### `activation_decay.rs`
@@ -242,6 +244,11 @@ Do not hand-edit it.
 
 - `golden_need_projection_chain`
 
+### `office_vacancy.rs`
+
+- `golden_office_vacancy_patrol_gap_lapses_duties_and_records_route_danger`
+- `golden_office_vacancy_patrol_gap_replays_deterministically`
+
 ### `offices.rs`
 
 - `golden_simple_office_claim_via_declare_support`
@@ -345,6 +352,11 @@ Do not hand-edit it.
 - `golden_route_preference_dangerous_traversal_lowers_preference`
 - `golden_route_preference_decays_to_neutral_after_profile_window`
 - `golden_route_preference_and_route_segment_blocker_compose_independently`
+
+### `scaled_contention.rs`
+
+- `golden_scaled_contention_queue_route_blocker_and_survivability`
+- `golden_scaled_contention_replays_deterministically`
 
 ### `scenario_diagnostics_fixture.rs`
 
@@ -493,6 +505,8 @@ Do not hand-edit it.
 - `golden_testimony_reliability_route_hazard_refutation_records_context`
 - `golden_testimony_reliability_confirmation_raises_trust_above_neutral`
 - `golden_testimony_reliability_repeated_false_accusation_suppresses_source`
+- `golden_false_rumor_justice_contradiction_updates_unreliable_source`
+- `golden_false_rumor_justice_contradiction_deterministic_replay`
 
 ### `travel_physiology.rs`
 

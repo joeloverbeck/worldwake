@@ -1689,6 +1689,13 @@ fn extract_patrol_candidates(
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
+    if ctx
+        .view
+        .office_patrol_duty(ctx.agent)
+        .is_some_and(|duty| !duty.is_actionable())
+    {
+        return;
+    }
     let (Some(route), Some(_profile)) = (
         ctx.view.patrol_route(ctx.agent),
         ctx.view.patrol_profile(ctx.agent),
@@ -7302,8 +7309,9 @@ mod tests {
         InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
         InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
         LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData,
-        OpportunityAnchor, OpportunityKey, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
-        PlaceVisitRecord, PreferenceProfile, ProofRequirement, PunishmentFineSelectionTrace,
+        OfficePatrolDuty, OfficePatrolDutyLifecycle, OfficePatrolDutyProvenance, OpportunityAnchor,
+        OpportunityKey, PatrolProfile, PatrolRoute, PerceptionSource, Permille, PlaceVisitRecord,
+        PreferenceProfile, ProofRequirement, PunishmentFineSelectionTrace,
         PunishmentFineTraceFacts, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
         RecordEntryId, RecordKind, ResourceSource, RewardSource, RightKind, SharedTellState,
         ShelterTag, SleepQualityProfile, SleepRecoveryModifier, SocialObservation,
@@ -7433,6 +7441,7 @@ mod tests {
         justice_disposition_profiles: BTreeMap<EntityId, worldwake_core::JusticeDispositionProfile>,
         patrol_profiles: BTreeMap<EntityId, PatrolProfile>,
         patrol_routes: BTreeMap<EntityId, PatrolRoute>,
+        office_patrol_duties: BTreeMap<EntityId, OfficePatrolDuty>,
         pursuit_profiles: BTreeMap<EntityId, worldwake_core::PursuitProfile>,
         expectation_stores: BTreeMap<EntityId, ExpectationStore>,
         last_seen_memories: BTreeMap<EntityId, LastSeenMemory>,
@@ -7525,6 +7534,7 @@ mod tests {
                 justice_disposition_profiles: BTreeMap::new(),
                 patrol_profiles: BTreeMap::new(),
                 patrol_routes: BTreeMap::new(),
+                office_patrol_duties: BTreeMap::new(),
                 pursuit_profiles: BTreeMap::new(),
                 expectation_stores: BTreeMap::new(),
                 last_seen_memories: BTreeMap::new(),
@@ -7792,6 +7802,10 @@ mod tests {
 
         fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
             self.patrol_routes.get(&agent).cloned()
+        }
+
+        fn office_patrol_duty(&self, agent: EntityId) -> Option<OfficePatrolDuty> {
+            self.office_patrol_duties.get(&agent).cloned()
         }
 
         fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
@@ -9424,6 +9438,59 @@ mod tests {
         );
         assert!(
             !invalid_route_result
+                .candidates
+                .iter()
+                .any(|candidate| matches!(candidate.key.kind, GoalKind::Patrol { .. }))
+        );
+    }
+
+    #[test]
+    fn lapsed_office_patrol_duty_suppresses_patrol_candidate() {
+        let agent = entity(1);
+        let office = entity(2);
+        let square = entity(10);
+        let gate = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, square);
+        view.entities_at.insert(square, vec![agent]);
+        view.patrol_profiles.insert(agent, patrol_profile(550));
+        view.patrol_routes.insert(
+            agent,
+            PatrolRoute {
+                assigned_places: vec![square, gate],
+                current_index: 1,
+            },
+        );
+        view.office_patrol_duties.insert(
+            agent,
+            OfficePatrolDuty {
+                issuing_office: office,
+                delegate: None,
+                assignee: agent,
+                assigned_places: vec![square, gate],
+                created_tick: Tick(1),
+                renewal_due_tick: Tick(5),
+                grace_ticks: 2,
+                lifecycle: OfficePatrolDutyLifecycle::Lapsed { since: Tick(8) },
+                provenance: OfficePatrolDutyProvenance::LapsedByVacancy { tick: Tick(8) },
+            },
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(9),
+            6,
+            false,
+        );
+
+        assert!(
+            !result
                 .candidates
                 .iter()
                 .any(|candidate| matches!(candidate.key.kind, GoalKind::Patrol { .. }))

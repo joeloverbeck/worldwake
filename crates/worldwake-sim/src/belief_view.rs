@@ -18,15 +18,15 @@ use worldwake_core::{
     JusticeDispositionProfile, LastHarvestTrace, LastSeenMemory, LatrineFullness,
     LawAbidingProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
     ObligationExecutionTracker, ObligationSatiationProfile, ObservationOmissionLog, OfficeData,
-    PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness,
-    PlaceTag, PlaceTagSet, PortfolioWeightsProfile, PreferenceProfile, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordData, RecordKind, RecordedViolation, ResourceExtractionQueues,
-    ResourceSource, RewardEncumbrance, RewardSource, RightKind, RiskWeightProfile, RouteExperience,
-    RoutePreferenceProfile, SleepQualityProfile, SocialObservation, SourceReliability,
-    StockStoragePolicy, SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic,
-    TestimonyTrustProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, WashBasinState, WorkstationTag,
-    Wound, effective_claim_confidence,
+    OfficePatrolDuty, PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource, Permille,
+    PlaceDirtiness, PlaceTag, PlaceTagSet, PortfolioWeightsProfile, PreferenceProfile, Quantity,
+    RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind, RecordedViolation,
+    ResourceExtractionQueues, ResourceSource, RewardEncumbrance, RewardSource, RightKind,
+    RiskWeightProfile, RouteExperience, RoutePreferenceProfile, SleepQualityProfile,
+    SocialObservation, SourceReliability, StockStoragePolicy, SubstitutePreferences, TellMemoryKey,
+    TellProfile, TellTopic, TestimonyTrustProfile, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationDispositionProfile,
+    WashBasinState, WorkstationTag, Wound, effective_claim_confidence,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -279,6 +279,10 @@ pub trait GoalSpatialBeliefView {
         None
     }
     fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
+        let _ = agent;
+        None
+    }
+    fn office_patrol_duty(&self, agent: EntityId) -> Option<OfficePatrolDuty> {
         let _ = agent;
         None
     }
@@ -612,6 +616,10 @@ pub trait GoalBeliefView: BelievedAuthorityView + LocalPhysicalObservationView {
         None
     }
     fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
+        let _ = agent;
+        None
+    }
+    fn office_patrol_duty(&self, agent: EntityId) -> Option<OfficePatrolDuty> {
         let _ = agent;
         None
     }
@@ -1128,6 +1136,10 @@ pub trait SpatialBeliefView {
         let _ = agent;
         None
     }
+    fn office_patrol_duty(&self, agent: EntityId) -> Option<OfficePatrolDuty> {
+        let _ = agent;
+        None
+    }
     fn route_exists(&self, from: EntityId, to: EntityId) -> bool;
     fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge>;
     fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)>;
@@ -1634,6 +1646,10 @@ impl<T: SpatialBeliefView + ?Sized> GoalSpatialBeliefView for T {
 
     fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
         SpatialBeliefView::patrol_route(self, agent)
+    }
+
+    fn office_patrol_duty(&self, agent: EntityId) -> Option<OfficePatrolDuty> {
+        SpatialBeliefView::office_patrol_duty(self, agent)
     }
 
     fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
@@ -2257,6 +2273,13 @@ where
 
     fn patrol_route(&self, agent: worldwake_core::EntityId) -> Option<worldwake_core::PatrolRoute> {
         GoalSpatialBeliefView::patrol_route(self, agent)
+    }
+
+    fn office_patrol_duty(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::OfficePatrolDuty> {
+        GoalSpatialBeliefView::office_patrol_duty(self, agent)
     }
 
     fn pursuit_profile(

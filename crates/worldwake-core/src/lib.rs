@@ -285,7 +285,10 @@ pub use offices::{
     EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
 };
 pub use operating_mode::OperatingMode;
-pub use patrol::{PatrolProfile, PatrolRoute};
+pub use patrol::{
+    OfficePatrolDuty, OfficePatrolDutyLifecycle, OfficePatrolDutyProvenance, PatrolProfile,
+    PatrolRoute,
+};
 pub use percentile::PercentileBucket;
 pub use place_dirtiness::{LatrineFullness, PlaceDirtiness, WashBasinState};
 pub use plan_step_guards::{

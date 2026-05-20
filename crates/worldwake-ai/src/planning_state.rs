@@ -36,9 +36,9 @@ use worldwake_core::{
     BelievedEntityState, BelievedInstitutionalClaim, CombatProfile, CommodityKind, ContentionGrant,
     DemandObservation, DisposalProfile, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
     InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits,
-    MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity,
-    RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource, SharedTellState,
-    SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
+    MetabolismProfile, OfficeData, OfficePatrolDuty, PatrolProfile, PatrolRoute, Permille,
+    PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource,
+    SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
     TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
     UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound, load_per_unit,
     to_shared_belief_snapshot,
@@ -1422,6 +1422,13 @@ impl SpatialBeliefView for PlanningState<'_> {
             .entities
             .get(&agent)
             .and_then(|snapshot| snapshot.spatial.patrol_route.clone())
+    }
+
+    fn office_patrol_duty(&self, agent: EntityId) -> Option<OfficePatrolDuty> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.spatial.office_patrol_duty.clone())
     }
 
     fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {

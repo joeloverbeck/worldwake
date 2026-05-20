@@ -1,7 +1,44 @@
 //! Authoritative patrol route state and per-agent patrol configuration.
 
-use crate::{Component, EntityId, Permille};
+use crate::{Component, EntityId, Permille, Tick};
 use serde::{Deserialize, Serialize};
+
+/// Office-issued patrol obligation carried by the assigned guard.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct OfficePatrolDuty {
+    pub issuing_office: EntityId,
+    pub delegate: Option<EntityId>,
+    pub assignee: EntityId,
+    pub assigned_places: Vec<EntityId>,
+    pub created_tick: Tick,
+    pub renewal_due_tick: Tick,
+    pub grace_ticks: u32,
+    pub lifecycle: OfficePatrolDutyLifecycle,
+    pub provenance: OfficePatrolDutyProvenance,
+}
+
+impl OfficePatrolDuty {
+    #[must_use]
+    pub const fn is_actionable(&self) -> bool {
+        matches!(self.lifecycle, OfficePatrolDutyLifecycle::Active)
+    }
+}
+
+impl Component for OfficePatrolDuty {}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum OfficePatrolDutyLifecycle {
+    Active,
+    Degraded { since: Tick },
+    Lapsed { since: Tick },
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum OfficePatrolDutyProvenance {
+    IssuedByOffice { tick: Tick },
+    RenewedByOffice { tick: Tick },
+    LapsedByVacancy { tick: Tick },
+}
 
 /// Ordered patrol route assignment plus persistent waypoint progress.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -31,8 +68,11 @@ impl Component for PatrolProfile {}
 
 #[cfg(test)]
 mod tests {
-    use super::{PatrolProfile, PatrolRoute};
-    use crate::{EntityId, Permille, traits::Component};
+    use super::{
+        OfficePatrolDuty, OfficePatrolDutyLifecycle, OfficePatrolDutyProvenance, PatrolProfile,
+        PatrolRoute,
+    };
+    use crate::{EntityId, Permille, Tick, traits::Component};
     use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
 
@@ -54,6 +94,20 @@ mod tests {
         }
     }
 
+    fn sample_office_patrol_duty() -> OfficePatrolDuty {
+        OfficePatrolDuty {
+            issuing_office: entity(20),
+            delegate: Some(entity(21)),
+            assignee: entity(22),
+            assigned_places: vec![entity(3), entity(5)],
+            created_tick: Tick(7),
+            renewal_due_tick: Tick(12),
+            grace_ticks: 4,
+            lifecycle: OfficePatrolDutyLifecycle::Active,
+            provenance: OfficePatrolDutyProvenance::IssuedByOffice { tick: Tick(7) },
+        }
+    }
+
     fn sample_patrol_profile() -> PatrolProfile {
         PatrolProfile {
             base_dwell_ticks: 12,
@@ -72,8 +126,10 @@ mod tests {
     fn patrol_components_satisfy_required_traits() {
         assert_component_bounds::<PatrolRoute>();
         assert_component_bounds::<PatrolProfile>();
+        assert_component_bounds::<OfficePatrolDuty>();
         assert_value_bounds::<PatrolRoute>();
         assert_value_bounds::<PatrolProfile>();
+        assert_value_bounds::<OfficePatrolDuty>();
     }
 
     #[test]
@@ -94,5 +150,16 @@ mod tests {
         let roundtrip: PatrolProfile = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, profile);
+    }
+
+    #[test]
+    fn office_patrol_duty_roundtrips_through_bincode() {
+        let duty = sample_office_patrol_duty();
+
+        let bytes = bincode::serialize(&duty).unwrap();
+        let roundtrip: OfficePatrolDuty = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, duty);
+        assert!(roundtrip.is_actionable());
     }
 }

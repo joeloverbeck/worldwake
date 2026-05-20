@@ -72,7 +72,7 @@ Hard requirement: every failure must reproduce locally before fixing.
 2. Confirm the failure signature matches what CI reported.
 3. If the failure does not reproduce locally despite a clean checkout and matching toolchain (`rustup show` should match `1.93.0`), escalate per Step 5. Do not proceed with a hypothesis-driven fix.
 
-`./scripts/verify.sh` matches CI exactly (it runs `cargo fmt --all -- --check`, `cargo test --workspace`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo run -p worldwake-cli --bin scenario-coverage -- --check` in order). Use it as the canonical local gate, but run the narrowest class-specific repro first to avoid rebuilds.
+`./scripts/verify.sh` runs the CI workflow gates *except the gated golden-matrix workflows* (`golden-*.yml`): it runs `cargo fmt --all -- --check`, `cargo test --workspace`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo run -p worldwake-cli --bin scenario-coverage -- --check` in order. Because `cargo test --workspace` does not run `#[ignore]` tests, verify.sh never exercises the per-family gated goldens — re-run the relevant gated family separately (see the golden-matrix taxonomy row). Use it as the canonical local gate, but run the narrowest class-specific repro first to avoid rebuilds.
 
 ### 5. Diagnose and decide
 
@@ -133,7 +133,9 @@ Run the narrowest correct verification first, then broaden.
 
 1. The class-specific repro command from Step 4 — confirm it now passes.
 2. Crate-level tests for the affected crate (e.g., `cargo test -p worldwake-ai`).
-3. `./scripts/verify.sh` — the canonical pre-PR gate; matches CI exactly.
+3. `./scripts/verify.sh` — the canonical pre-PR gate. It matches the CI workflow gates *except the gated golden-matrix workflows* (`golden-*.yml`), which run `#[ignore]` tests verify.sh skips; re-run the relevant gated family separately per the golden-matrix taxonomy row.
+
+When the fix touches engine or framework code (tick pipeline, scheduler, action validation, planner, component registration), re-run the *entire* gated golden family for the failing workflow — e.g., all `golden-survival.yml` scenarios via `cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1` — not just the single failing scenario. Framework changes affect sibling scenarios that the single-scenario repro and verify.sh cannot catch (CLAUDE.md's Authoritative-to-AI Impact Rule: ALL golden tests must pass).
 
 When the fix touches only test code, fixture data, or other files outside `crates/worldwake-{core,sim,systems,ai,cli}/src/`, the verification scope shrinks to (a) the originally-failing tests and (b) sibling tests in the same `--test` target or fixture module. Production-code goldens (e.g., baseline, scattered, preferences, trade) need not be re-run unless their own scenario `.ron` or fixture file also changed in the commit. State explicitly in the approval summary that "no production code changed → goldens X/Y/Z not re-run" so the reviewer can confirm the scope shrink.
 
@@ -164,6 +166,8 @@ Before any `git add`, `git commit`, or `git push`:
    - The proposed commit message(s) for multi-commit sequences.
 4. Wait for explicit user approval. Do not commit or push without it.
 
+**If the changes were already committed or pushed externally** (e.g., the user committed during a long verification window): do not silently re-do or amend a *pushed* commit. Run `git status` and `git log` / `git branch -r --contains <sha>` to confirm whether the commit reached origin, verify the committed diff matches your intended fix, and surface any commit-message-convention deviation (imperative style + `Co-Authored-By` trailer) for the user to decide on — amending a pushed feature-branch commit requires a force-push with explicit authorization. Then skip to Step 12 monitoring.
+
 ### 11. Commit and push
 
 On approval:
@@ -187,7 +191,7 @@ After push:
    - `gh run list --branch <branch> --limit 1` to identify the run ID, or
    - `gh run watch <run-id>` to stream status until completion.
    - If `gh run watch` exits or stalls before the run reaches a terminal state (e.g., upstream API 5xx, exit-without-conclusion), fall back to polling: `until gh run view <run-id> --json status --jq '.status' | grep -q completed; do sleep 30; done`, then re-check the conclusion via `gh run view <run-id> --json conclusion --jq '.conclusion'`.
-   - For CI runs that may exceed the prompt-cache TTL (Golden Survival typically takes 15+ minutes), pair the polling background task with a `ScheduleWakeup` fallback at 1200-1800s so the loop survives if the background watcher stalls or its notification is lost. The polling background task fires its own notification on success, so the wakeup only matters as a fallback.
+   - For CI runs that may exceed the prompt-cache TTL (Golden Survival typically takes 15+ minutes): if you started the poll as a harness-tracked background task (`run_in_background`), its completion notification is the primary signal — you do not need a `ScheduleWakeup`, since polling harness-tracked work with a wakeup is wasted. Add a `ScheduleWakeup` fallback (1200-1800s) only for *untracked* external waits, or if the background watcher itself could stall silently without firing a notification.
    - Exit codes from background `cargo test` and `gh run view` invocations can be misleading — a backgrounded `cargo test` whose tests panic has been observed to surface `exit code 0` in the harness notification even though `test result: FAILED` is in the captured output. Always grep the captured output for `test result: FAILED|panicked|conclusion.*failure` before trusting the notification's exit code.
 2. Report the final status:
    - **Green ✓**: report success and stop.

@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 207
-- Contributing golden scenario source files: 51
-- Associated tests: 253
+- Scenario blocks: 210
+- Contributing golden scenario source files: 53
+- Associated tests: 259
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1060,6 +1060,18 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Proves**: the debug assertion rejects empty motive_sources at explicit validation points in test builds.
 
+### Scenario 444: S153 Office Vacancy Patrol Gap
+
+- Source: `office_vacancy.rs:392`
+- Systems: Offices, Patrol, AI, Travel, Combat
+- GoalKinds: Patrol, Travel
+- ActionDomains: Travel
+- Principles: P7, P14, P20, P21, P31
+
+**Setup**: two guards hold office-backed patrol duties for the village-square to south-gate route, the issuing office is vacant before renewal, and a merchant later traverses the route as a hostile event is observed.
+
+**Proves**: vacancy-driven duty lifecycle lapses both duties, patrol candidates disappear through the live duty path, no guard patrol commits, the merchant completes ordinary travel through the gap, and local route-danger experience records the hostile traversal.
+
 ### Scenario 11: Simple Office Claim via DeclareSupport
 
 - Source: `offices.rs:18`
@@ -1811,6 +1823,18 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Proves**: the preference remains inspectable as a soft signal while the blocker is independently active as a hard suppression surface.
 
+### Scenario 445: S153 Scaled Contention Route Blocker Composition
+
+- Source: `scaled_contention.rs:293`
+- Systems: AI, Needs, Travel, Production, Contention
+- GoalKinds: ConsumeOwnedCommodity, AcquireCommodity, Wash
+- ActionDomains: Production, Travel, Needs
+- Principles: P1, P8, P25, P31
+
+**Setup**: six agents share two two-slot wells and one single-slot wash basin; one direct remote route carries prior dangerous traversal state and a TTL route-segment blocker.
+
+**Proves**: capacity grants and surplus queue state remain first-class, route preference and route-segment blockers compose, one hungry-not-thirsty agent has local apple substitution, and all six agents stay alive under the authored envelope.
+
 ### Scenario 421: Survival-baseline diagnostics fixture
 
 - Source: `scenario_diagnostics_fixture.rs:1`
@@ -2521,7 +2545,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 424: S151 Stale Route-Hazard Refutation Records Trust Context
 
-- Source: `testimony_reliability.rs:100`
+- Source: `testimony_reliability.rs:115`
 - Systems: AI, EventLog
 - GoalKinds: AskWitness
 - ActionDomains: DecisionHistory
@@ -2533,7 +2557,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 425: S151 Accurate Threat Confirmation Raises Source Trust
 
-- Source: `testimony_reliability.rs:133`
+- Source: `testimony_reliability.rs:148`
 - Systems: AI, EventLog
 - GoalKinds: AskWitness
 - ActionDomains: DecisionHistory
@@ -2545,7 +2569,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 426: S151 Repeated False Accusation Crosses Suppression Threshold
 
-- Source: `testimony_reliability.rs:162`
+- Source: `testimony_reliability.rs:177`
 - Systems: AI, EventLog
 - GoalKinds: AskWitness
 - ActionDomains: DecisionHistory
@@ -2554,6 +2578,18 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Setup**: the same witness is refuted twice for accusation credibility, meeting the minimum-observation gate; unrelated topics are absent so the threshold crossing belongs to this source/topic pair.
 
 **Proves**: repeated refutations produce a below-threshold trust summary and the suppression payload carries the accusation topic context.
+
+### Scenario 443: S153 False-Rumor Justice Contradiction Updates Source Trust
+
+- Source: `testimony_reliability.rs:215`
+- Systems: AI, EventLog
+- GoalKinds: AskWitness, Accuse
+- ActionDomains: DecisionHistory
+- Principles: P15, P16, P31
+
+**Setup**: an unreliable witness has two prior refutations for accusation credibility, while a second corroborating witness has no negative reliability history for the same topic.
+
+**Proves**: a later corroborating contradiction advances only the unreliable source's contradicted-claims counter, keeps that source below the trust threshold, and preserves the provenance event used by the decision payload that suppresses the unreliable testimony path.
 
 ### Scenario 58: Travel Need Escalation
 

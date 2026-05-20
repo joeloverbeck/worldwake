@@ -8,8 +8,10 @@
 
 pub mod commodity_assumption_falsification;
 pub mod need_projection_assertions;
+pub mod route_blocker_assertions;
 pub mod soak_world;
 pub mod survival_forensics_assertions;
+pub mod testimony_assertions;
 mod timeline;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -52,11 +54,15 @@ pub use need_projection_assertions::{
     blocker_is_suppressed, first_need_horizon_entry, frame_contains_need_safe_until_tick,
 };
 #[allow(unused_imports)]
+pub use route_blocker_assertions::expect_route_blocker_lifecycle;
+#[allow(unused_imports)]
 pub use survival_forensics_assertions::{
     dump_reports_for_debug, expect_deterministic_reports, expect_sleep_progress_barrier_window,
     expect_wash_vs_water_competition_window, observe_critical_windows,
     sample_local_survival_state_summary, synthetic_planning_trace, synthetic_ranked_goal_summary,
 };
+#[allow(unused_imports)]
+pub use testimony_assertions::expect_testimony_reliability_update;
 #[allow(unused_imports)]
 pub use timeline::{CrossLayerTimelineBuilder, TimelineLayer};
 pub use worldwake_core::{ProductionOutputOwner, ProductionOutputOwnershipPolicy};
