@@ -11,6 +11,7 @@ use crate::{
         LocationTemplate, MethodSchema, MethodSelection, PayloadTemplate, PayloadValueTemplate,
         RecipeTemplate, SubgoalTemplate, build_method_registry, select_method_with_recipes,
     },
+    planning_snapshot::AdmissionSource,
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
@@ -902,11 +903,7 @@ fn resolve_payload_template_places(
 fn workstation_places(state: &PlanningState<'_>, tag: WorkstationTag) -> Vec<EntityId> {
     places_for_entities(
         state,
-        state
-            .snapshot()
-            .entities
-            .keys()
-            .copied()
+        entities_admitted_for_physical_fields(state)
             .filter(|entity| state.workstation_tag(*entity) == Some(tag)),
     )
 }
@@ -914,7 +911,7 @@ fn workstation_places(state: &PlanningState<'_>, tag: WorkstationTag) -> Vec<Ent
 fn seller_places(state: &PlanningState<'_>, commodity: CommodityKind) -> Vec<EntityId> {
     places_for_entities(
         state,
-        state.snapshot().entities.keys().copied().filter(|entity| {
+        entities_admitted_for_physical_fields(state).filter(|entity| {
             state.item_lot_commodity(*entity) == Some(commodity) && state.has_sale_listing(*entity)
         }),
     )
@@ -923,11 +920,33 @@ fn seller_places(state: &PlanningState<'_>, commodity: CommodityKind) -> Vec<Ent
 fn resource_source_places(state: &PlanningState<'_>, commodity: CommodityKind) -> Vec<EntityId> {
     places_for_entities(
         state,
-        state.snapshot().entities.keys().copied().filter(|entity| {
+        entities_admitted_for_physical_fields(state).filter(|entity| {
             state
                 .resource_source(*entity)
                 .is_some_and(|source| source.commodity == commodity)
         }),
+    )
+}
+
+fn entities_admitted_for_physical_fields<'state>(
+    state: &'state PlanningState<'_>,
+) -> impl Iterator<Item = EntityId> + 'state {
+    state
+        .snapshot()
+        .entities
+        .iter()
+        .filter_map(|(entity, snapshot)| {
+            admission_exposes_physical_fields(snapshot.admission).then_some(*entity)
+        })
+}
+
+fn admission_exposes_physical_fields(source: AdmissionSource) -> bool {
+    matches!(
+        source,
+        AdmissionSource::SelfAuthoritative
+            | AdmissionSource::LocalSameTickPhysical
+            | AdmissionSource::GroundedEvidence
+            | AdmissionSource::BeliefLastSeen
     )
 }
 
@@ -953,7 +972,7 @@ fn acquisition_places_for_commodity(
     per_stage_limit: u8,
 ) -> Vec<EntityId> {
     let mut places = BTreeSet::new();
-    for entity in state.snapshot().entities.keys().copied() {
+    for entity in entities_admitted_for_physical_fields(state) {
         let Some(place) = state.effective_place(entity) else {
             continue;
         };
@@ -986,17 +1005,26 @@ fn place_supports_commodity(
     place: EntityId,
     commodity: CommodityKind,
 ) -> bool {
-    state.entities_at(place).into_iter().any(|entity| {
-        state.resource_source(entity).is_some_and(|source| {
-            source.commodity == commodity && source.available_quantity > Quantity(0)
-        }) || state
-            .merchandise_profile(entity)
-            .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
-            || (state.item_lot_commodity(entity) == Some(commodity)
-                && state.commodity_quantity(entity, commodity) > Quantity(0)
-                && state.direct_possessor(entity).is_none()
-                && state.direct_container(entity).is_none())
+    entities_admitted_for_physical_fields(state).any(|entity| {
+        state.effective_place(entity) == Some(place)
+            && (commodity_entity_supports_commodity(state, entity, commodity))
     })
+}
+
+fn commodity_entity_supports_commodity(
+    state: &PlanningState<'_>,
+    entity: EntityId,
+    commodity: CommodityKind,
+) -> bool {
+    state.resource_source(entity).is_some_and(|source| {
+        source.commodity == commodity && source.available_quantity > Quantity(0)
+    }) || state
+        .merchandise_profile(entity)
+        .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
+        || (state.item_lot_commodity(entity) == Some(commodity)
+            && state.commodity_quantity(entity, commodity) > Quantity(0)
+            && state.direct_possessor(entity).is_none()
+            && state.direct_container(entity).is_none())
 }
 
 fn root_goal_satisfaction_allowed(goal: &GoalOffer, state: &PlanningState<'_>) -> bool {
@@ -1127,7 +1155,9 @@ fn sub_goal_for_stage(stage: &StrategicStage) -> TacticalSubGoal {
 
 #[cfg(test)]
 mod tests {
-    use super::{TacticalSubGoal, plan};
+    use super::{
+        TacticalSubGoal, acquisition_places_for_commodity, plan, seller_places, workstation_places,
+    };
     use crate::build_planning_snapshot;
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -1638,12 +1668,118 @@ mod tests {
         build_planning_snapshot(view, actor, &BTreeSet::new(), &BTreeSet::new(), horizon)
     }
 
+    fn set_admission(
+        snapshot: &mut crate::PlanningSnapshot,
+        entity: EntityId,
+        admission: crate::planning_snapshot::AdmissionSource,
+    ) {
+        snapshot
+            .entities
+            .get_mut(&entity)
+            .expect("test entity should be present in planning snapshot")
+            .admission = admission;
+    }
+
     fn base_budget() -> worldwake_core::ExecutionBudget {
         worldwake_core::ExecutionBudget::new(
             worldwake_core::ExecutionBudget::default().beam_width(),
             3,
             worldwake_core::ExecutionBudget::default().preferred_operator_boost(),
         )
+    }
+
+    #[test]
+    fn seller_places_ignores_public_topology_sale_lot() {
+        let actor = entity(1);
+        let place = entity(10);
+        let sale_lot = entity(20);
+        let mut view = StubBeliefView::default();
+        register_agent(&mut view, actor, place);
+        view.alive.insert(sale_lot, true);
+        view.kinds.insert(sale_lot, EntityKind::ItemLot);
+        view.effective_places.insert(sale_lot, place);
+        view.entities_at.entry(place).or_default().push(sale_lot);
+        view.item_lot_commodities
+            .insert(sale_lot, CommodityKind::Bread);
+
+        let mut snapshot = snapshot(&view, actor, 0);
+        set_admission(
+            &mut snapshot,
+            sale_lot,
+            crate::planning_snapshot::AdmissionSource::PublicTopology,
+        );
+        snapshot
+            .entities
+            .get_mut(&sale_lot)
+            .expect("sale lot should be present")
+            .economic
+            .has_sale_listing = true;
+        let state = crate::PlanningState::new(&snapshot);
+
+        assert!(seller_places(&state, CommodityKind::Bread).is_empty());
+    }
+
+    #[test]
+    fn workstation_places_ignores_public_topology_entity() {
+        let actor = entity(1);
+        let place = entity(10);
+        let workstation = entity(20);
+        let mut view = StubBeliefView::default();
+        register_agent(&mut view, actor, place);
+        register_workstation(&mut view, workstation, place, WorkstationTag::Mill);
+
+        let mut snapshot = snapshot(&view, actor, 0);
+        set_admission(
+            &mut snapshot,
+            workstation,
+            crate::planning_snapshot::AdmissionSource::PublicTopology,
+        );
+        let state = crate::PlanningState::new(&snapshot);
+
+        assert!(workstation_places(&state, WorkstationTag::Mill).is_empty());
+    }
+
+    #[test]
+    fn acquisition_places_ignore_public_topology_resource_fields() {
+        let actor = entity(1);
+        let place = entity(10);
+        let resource = entity(20);
+        let mut view = StubBeliefView::default();
+        register_agent(&mut view, actor, place);
+        register_facility(
+            &mut view,
+            resource,
+            place,
+            ResourceSource {
+                commodity: CommodityKind::Water,
+                available_quantity: Quantity(2),
+                max_quantity: Quantity(2),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            },
+        );
+
+        let mut snapshot = snapshot(&view, actor, 0);
+        set_admission(
+            &mut snapshot,
+            resource,
+            crate::planning_snapshot::AdmissionSource::PublicTopology,
+        );
+        let state = crate::PlanningState::new(&snapshot);
+
+        assert!(
+            acquisition_places_for_commodity(
+                &state,
+                &snapshot,
+                actor,
+                place,
+                CommodityKind::Water,
+                3,
+            )
+            .is_empty()
+        );
     }
 
     #[test]

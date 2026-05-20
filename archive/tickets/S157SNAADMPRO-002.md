@@ -1,6 +1,6 @@
 # S157SNAADMPRO-002: Source-restricted strategic scans
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` strategic plan search (`search/strategic.rs`)
@@ -8,16 +8,16 @@
 
 ## Problem
 
-Strategic search scans the admitted entity map directly — `state.snapshot().entities.keys()` —
-to discover workstations, sellers, resource sources, and acquisition places
-(`crates/worldwake-ai/src/search/strategic.rs:902,914,923,956`). That raw scan is only sound if
-snapshot admission is airtight: nothing stops a scan from reading, say, a seller's
-`item_lot_commodity`/`has_sale_listing` on an entity that was admitted purely as an evidence
-carrier or topology place. Now that ticket 001 records why each entity was admitted, this ticket
-restricts the strategic scans to entities whose admission source legitimately exposes the field
-being read, so the scan cannot consume a field admitted for an unrelated reason (S157 D2; FND-7,
-FND-14A, FND-20). This is defense-in-depth: post-S155 the snapshot is built from a belief-correct
-view, so the restriction is expected to be behavior-preserving — proven by the golden suite.
+Before this ticket, strategic search scanned the admitted entity map directly —
+`state.snapshot().entities.keys()` — to discover workstations, sellers, resource sources, and
+acquisition places (`crates/worldwake-ai/src/search/strategic.rs:902,914,923,956`). That raw scan
+was only sound if snapshot admission was airtight: nothing stopped a scan from reading, say, a
+seller's `item_lot_commodity`/`has_sale_listing` on an entity that was admitted purely as a
+topology place. Ticket 001 records why each entity was admitted; this ticket restricts the
+strategic scans to entities whose admission source legitimately exposes the field being read, so
+the scan cannot consume a field admitted for an unrelated reason (S157 D2; FND-7, FND-14A,
+FND-20). This is defense-in-depth: post-S155 the snapshot is built from a belief-correct view, so
+the restriction is behavior-preserving — proven by the golden suite.
 
 ## Assumption Reassessment (2026-05-20)
 
@@ -62,12 +62,12 @@ view, so the restriction is expected to be behavior-preserving — proven by the
    aliased. The four call sites move to the new accessor in this ticket; the old direct-scan form
    is removed (FND-28).
 
-## Verification Layers
+## Verified Layers
 
-1. A strategic scan does not pick up an entity admitted for an unrelated reason -> focused unit
-   test: build a `PlanningState` where an entity carries a seller-relevant field but was admitted
-   as `GroundedEvidence`/`PublicTopology`, and assert `seller_places`/`workstation_places` does
-   **not** return its place.
+1. A strategic scan does not pick up an entity admitted for topology-only visibility -> focused
+   unit tests: build a `PlanningState` where entities carry seller/workstation/resource fields but
+   are admitted as `PublicTopology`, and assert the strategic scan helpers do **not** return their
+   place.
 2. Legitimate strategic discovery is unchanged -> existing focused tests (`test_single_location_goal_no_travel`,
    `test_multi_location_prerequisite_then_goal`, `test_belief_only_excludes_unknown_locations`)
    continue to pass with no edits to their assertions.
@@ -77,34 +77,36 @@ view, so the restriction is expected to be behavior-preserving — proven by the
    which only the full agent decision cycle exercises; a decision-trace assertion alone would not
    prove cross-scenario neutrality.
 
-## What to Change
+## Landed Changes
 
 ### 1. Add a source-restricted entity accessor
 
-Add an accessor (on `PlanningState` or as a free helper in `search/strategic.rs`, matching where
-`SnapshotEntity.admission` is reachable per ticket 001) that yields admitted entity ids filtered
-by both a field predicate and the set of admission sources legally allowed to expose that field.
-The allowed-source set per field follows FND-14A: physical/economic facility fields
-(`workstation_tag`, `item_lot_commodity` + `has_sale_listing`, `resource_source`,
-`place_supports_commodity`) are exposable for entities admitted via `SelfAuthoritative`,
-`LocalSameTickPhysical`, `BeliefLastSeen`, `GroundedEvidence`, and `PublicTopology` (the carriers
-through which a planner could lawfully know a place/facility's physical commodity state).
-Determine the exact per-field allowed-source policy during implementation against the FND-14A
-split; document the chosen policy inline.
+Added `entities_admitted_for_physical_fields()` and `admission_exposes_physical_fields()` in
+`search/strategic.rs`. The accessor yields admitted entity ids filtered by the set of admission
+sources legally allowed to expose physical/economic facility fields.
+The allowed-source set per field follows FND-14A and the live S157 evidence-backed planner
+contract: physical/economic facility fields (`workstation_tag`, `item_lot_commodity` +
+`has_sale_listing`, `resource_source`, `place_supports_commodity`) are exposable for entities
+admitted via `SelfAuthoritative`, `LocalSameTickPhysical`, `GroundedEvidence`, and
+`BeliefLastSeen`. `GroundedEvidence` remains allowed because existing exact evidence-backed
+production planning uses evidence-carried facilities/items as the lawful target of the field read.
+`PublicTopology` and `PossessionContainmentFrontier` do not expose these place/facility commodity
+fields for strategic place discovery.
 
 ### 2. Route the four scans through the accessor
 
-Replace the raw `state.snapshot().entities.keys()` iteration in `workstation_places` (902),
-`seller_places` (914), `resource_source_places` (923), and `acquisition_places_for_commodity`
-(956) with the new source-restricted accessor. Preserve the existing per-function field predicates
-and the `places_for_entities` place-dedup/sort behavior.
+Replaced the raw `state.snapshot().entities.keys()` iteration in `workstation_places`,
+`seller_places`, `resource_source_places`, and `acquisition_places_for_commodity` with the
+source-restricted accessor. `place_supports_commodity()` now checks commodity support only through
+entities admitted by that same source policy, preserving existing field predicates and
+place-dedup/sort behavior.
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-ai/src/search/strategic.rs` (modify — add accessor, route the four scans)
-- `Likely: crates/worldwake-ai/src/planning_snapshot.rs` (modify — only if the per-id source
-  reader belongs on `PlanningState`/`PlanningSnapshot` rather than in `strategic.rs`; confirm
-  against ticket 001's exposed surface — `grep AdmissionSource` consumers)
+- `crates/worldwake-ai/src/search/strategic.rs` (modified — added the accessor, routed the four
+  scan families, and added focused tests)
+- No change: `crates/worldwake-ai/src/planning_snapshot.rs` (ticket 001's direct
+  `SnapshotEntity.admission` field was sufficient)
 
 ## Out of Scope
 
@@ -115,35 +117,63 @@ and the `places_for_entities` place-dedup/sort behavior.
   validation surface changes.
 - Broadening the scan to new entity kinds or new fields.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests Passed
 
-1. A focused test asserts an entity carrying a seller-relevant field but admitted as
-   `GroundedEvidence` (or `PublicTopology`) is **not** returned by `seller_places`.
+1. Focused tests assert entities carrying seller/workstation/resource fields but admitted as
+   `PublicTopology` are **not** returned by the strategic place scans.
 2. `test_single_location_goal_no_travel`, `test_multi_location_prerequisite_then_goal`, and
    `test_belief_only_excludes_unknown_locations` pass unchanged.
-3. Existing suite: `cargo test -p worldwake-ai` and the golden suite
+3. Existing suite passed: `cargo test -p worldwake-ai` and the golden suite
    `cargo test -p worldwake-ai --test golden_ai`
 
 ### Invariants
 
 1. A strategic place scan reads a field only on entities whose admission source legally exposes
-   that field; an entity admitted for an unrelated reason is never returned by that scan.
+   that field; a topology-only entity is never returned by that scan.
 2. The source restriction is a no-op for correctly-admitted entities — `golden_ai` world outcomes
    are unchanged.
 3. The four scans share a single source-aware accessor; no inline per-site admission guard exists.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
-1. `crates/worldwake-ai/src/search/strategic.rs` (`#[cfg(test)]` after line 1128) — new focused
-   non-leakage test(s) per scan family, building a `PlanningState` with a field-bearing but
-   wrong-source entity.
+1. `crates/worldwake-ai/src/search/strategic.rs` (`#[cfg(test)]`) — focused non-leakage tests for
+   seller, workstation, and acquisition scan families, building a `PlanningState` with a
+   field-bearing but topology-only entity.
 
-### Commands
+### Commands Run
 
 1. `cargo test -p worldwake-ai strategic`
-2. `cargo test -p worldwake-ai --test golden_ai`
-3. `scripts/verify.sh`
+2. `cargo test -p worldwake-ai`
+3. `cargo test -p worldwake-ai --test golden_ai`
+
+## Outcome
+
+Completed on 2026-05-20.
+
+- Strategic place discovery now uses one source-aware physical-field accessor instead of raw
+  `PlanningSnapshot.entities.keys()` scans.
+- `GroundedEvidence` remains a legal physical/economic field source because live exact
+  evidence-backed production planning uses evidence-carried facilities/items as the target of the
+  read.
+- `PublicTopology` and `PossessionContainmentFrontier` do not expose these commodity/facility
+  fields for strategic place discovery.
+
+## Deviations
+
+- The original negative example named `GroundedEvidence` as an unrelated source. Focused proof
+  showed that excluding `GroundedEvidence` breaks existing exact evidence-backed production
+  planning, so the wrong-source regression tests use `PublicTopology` instead.
+- `scripts/verify.sh` was not run in this ticket iteration; the `implement-spec-tickets` harness
+  owns that full pre-push gate after the S157 ticket queue finishes.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai strategic`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo test -p worldwake-ai --test golden_ai`
+- Waived `scripts/verify.sh` for this ticket iteration because the harness finalization step owns
+  the full pre-push gate after all S157 tickets land.

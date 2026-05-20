@@ -6,10 +6,9 @@ Add an explicit **admission source** to every entity (and relevant non-self fiel
 into `PlanningSnapshot`, plus a snapshot-admission trace, so the planner can prove *why* an
 entity is visible and cannot read fields that were admitted for an unrelated reason. Ticket
 `S157SNAADMPRO-001` landed the per-entity `SnapshotEntity.admission` source tag and changed
-`collect_entities()` to retain admission provenance. Strategic search still scans
-`state.snapshot().entities.keys()` for workstations, sellers, resource sources, and acquisition
-places until `S157SNAADMPRO-002` lands, and trace surfacing remains owned by
-`S157SNAADMPRO-003`.
+`collect_entities()` to retain admission provenance. `S157SNAADMPRO-002` replaced the strategic
+workstation, seller, resource-source, and acquisition-place scans with a source-restricted
+physical-field accessor. Trace surfacing remains owned by `S157SNAADMPRO-003`.
 
 This spec is **defense-in-depth** and a debuggability/provenance improvement (FND-15, FND-29),
 not a correctness fix. The remote-truth leak was already closed at the source by **S155**
@@ -52,9 +51,8 @@ strategic search scans the admitted entity map directly. Current state:
   evidence, topology, local same-tick, belief-last-seen, and possession/containment-frontier
   admission sources.
 - `build_planning_snapshot()` passes that source into `build_snapshot_entity()` for every admitted id.
-- `search/strategic.rs` scans `state.snapshot().entities.keys()` to find workstations, sellers,
-  resource sources, and acquisition places; this remaining restriction work is ticket
-  `S157SNAADMPRO-002`.
+- `search/strategic.rs` now uses a source-restricted physical-field accessor to find
+  workstations, sellers, resource sources, and acquisition places.
 
 ### Why this matters
 
@@ -144,11 +142,13 @@ landed because no live hypothetical-effect id path feeds `build_planning_snapsho
 (no `Serialize`/`Deserialize`), so there is no serde-default or save/replay-compatibility concern
 for the field.
 
-### D2 — Source-restricted strategic scans
-Replace raw `state.snapshot().entities.keys()` scans in `search/strategic.rs` with accessors
-that restrict by admission source (e.g. `entities_admitted_for(predicate)` /
-`visible_entities_by_source(...)`), so workstation/seller/resource/acquisition scans only see
-entities whose source legitimately exposes those fields.
+### D2 — Source-restricted strategic scans (landed by `S157SNAADMPRO-002`)
+Replaced raw `state.snapshot().entities.keys()` scans in `search/strategic.rs` with the
+`entities_admitted_for_physical_fields()` accessor, so workstation/seller/resource/acquisition
+scans only see entities whose source legitimately exposes those fields. The landed policy admits
+`SelfAuthoritative`, `LocalSameTickPhysical`, `GroundedEvidence`, and `BeliefLastSeen` for these
+physical/economic facility fields, while excluding topology-only and possession-frontier
+admissions.
 
 ### D3 — Snapshot-admission trace
 Surface per-entity admission source in the decision/snapshot trace for "why is this entity in
