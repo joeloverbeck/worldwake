@@ -555,6 +555,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                office_patrol_duties,
+                OfficePatrolDuty,
+                insert_office_patrol_duty,
+                get_office_patrol_duty,
+                get_office_patrol_duty_mut,
+                remove_office_patrol_duty,
+                has_office_patrol_duty,
+                iter_office_patrol_duties,
+                insert_component_office_patrol_duty,
+                get_component_office_patrol_duty,
+                get_component_office_patrol_duty_mut,
+                remove_component_office_patrol_duty,
+                has_component_office_patrol_duty,
+                entities_with_office_patrol_duty,
+                query_office_patrol_duty,
+                count_with_office_patrol_duty,
+                "OfficePatrolDuty",
+                |kind| kind == EntityKind::Agent,
+                OfficePatrolDuty,
+                crate::OfficePatrolDuty,
+                set_component_office_patrol_duty,
+                clear_component_office_patrol_duty,
+                txn_simple_set
+            }
+            {
                 office_data,
                 OfficeData,
                 insert_office_data,

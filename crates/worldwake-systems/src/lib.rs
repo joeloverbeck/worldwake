@@ -78,7 +78,9 @@ pub use offices::{
     count_present_hostile_faction_pairs_at, office_is_vacant, offices_with_jurisdiction,
     public_order, succession_system,
 };
-pub use patrol::patrol_route_adaptation_system;
+pub use patrol::{
+    office_patrol_duty_lifecycle_system, patrol_route_adaptation_system, patrol_system,
+};
 pub use patrol_actions::register_patrol_action;
 pub use perception::perception_system;
 pub use production::resource_regeneration_system;
@@ -105,7 +107,7 @@ pub fn dispatch_table() -> SystemDispatchTable {
         succession_system,
         perception_system,
         bandit_camp_system,
-        patrol_route_adaptation_system,
+        patrol_system,
         evidence_decay_system,
         item_decay_system,
         check_overdue_expectations,

@@ -9,12 +9,12 @@ use worldwake_core::{
     DemandObservation, DisposalProfile, DriveThresholds, EntityId, EntityKind,
     EpistemicDispositionProfile, ExpectationStore, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefRead, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille,
-    PlaceTag, Quantity, RecipeId, RecordData, RecordedViolation, ResourceSource, RoutePreference,
-    RoutePreferenceProfile, SocialObservation, StockStoragePolicy, SuccessionLaw, TellMemoryKey,
-    TellProfile, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WashBasinState,
-    WorkstationTag, Wound,
+    MerchandiseProfile, MetabolismProfile, OfficeData, OfficePatrolDuty, PatrolProfile,
+    PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecordData, RecordedViolation,
+    ResourceSource, RoutePreference, RoutePreferenceProfile, SocialObservation, StockStoragePolicy,
+    SuccessionLaw, TellMemoryKey, TellProfile, TheftDispositionProfile, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile,
+    WashBasinState, WorkstationTag, Wound,
 };
 use worldwake_sim::{BeliefRead, RuntimeBeliefView};
 
@@ -127,6 +127,7 @@ pub(crate) struct SnapshotSpatial {
     pub(crate) effective_place: Option<EntityId>,
     pub(crate) in_transit_state: Option<InTransitOnEdge>,
     pub(crate) patrol_route: Option<PatrolRoute>,
+    pub(crate) office_patrol_duty: Option<OfficePatrolDuty>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -238,6 +239,7 @@ impl Default for SnapshotEntity {
                 effective_place: None,
                 in_transit_state: None,
                 patrol_route: None,
+                office_patrol_duty: None,
             },
             inventory: SnapshotInventory {
                 direct_container: None,
@@ -1045,6 +1047,7 @@ fn build_snapshot_entity(
         .or_else(|| view.effective_place(entity));
     let in_transit_state = view.in_transit_state(entity);
     let patrol_route = view.patrol_route(entity);
+    let office_patrol_duty = view.office_patrol_duty(entity);
     let co_located_with_actor = view
         .effective_place(actor)
         .zip(view.effective_place(entity))
@@ -1138,6 +1141,7 @@ fn build_snapshot_entity(
             effective_place,
             in_transit_state,
             patrol_route,
+            office_patrol_duty,
         },
         inventory: SnapshotInventory {
             direct_container,

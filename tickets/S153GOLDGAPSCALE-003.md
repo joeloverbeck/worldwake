@@ -73,7 +73,7 @@ Run `python3 scripts/golden_inventory.py --write --check-docs` and commit the re
 
 - No production code changes — test + harness only.
 - No committed RON scenario file (inline fixture); RON backing is optional.
-- The false-rumor-justice (D2 → archived ticket 001) and office-vacancy substrate/golden chain (D3 → `archive/tickets/S153GOLDGAPSCALE-002.md`, active substrate ticket 004).
+- The false-rumor-justice (D2 → archived ticket 001) and office-vacancy substrate/golden chain (D3 → `archive/tickets/S153GOLDGAPSCALE-002.md`, completed substrate ticket 004, active golden ticket 005).
 - `expect_testimony_reliability_update` helper (ticket 001's D5 slice).
 
 ## Acceptance Criteria

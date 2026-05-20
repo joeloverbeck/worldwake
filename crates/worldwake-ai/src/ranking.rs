@@ -2108,6 +2108,13 @@ fn investigation_motive(candidate: &GoalOffer, context: &RankingContext<'_>) -> 
 }
 
 fn patrol_motive(context: &RankingContext<'_>) -> u32 {
+    if context
+        .view
+        .office_patrol_duty(context.agent)
+        .is_some_and(|duty| !duty.is_actionable())
+    {
+        return 0;
+    }
     let (Some(profile), Some(route)) = (
         context.view.patrol_profile(context.agent),
         context.view.patrol_route(context.agent),
@@ -3223,13 +3230,14 @@ mod tests {
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
         JusticeDispositionProfile, LastSeenMemory, LatrineFullness, LoadUnits, MerchandiseProfile,
         MetabolismProfile, MotiveSource, MotiveSourceRef, MultiplierPermille, NoticeTopic,
-        ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, OpportunityAnchor,
-        OpportunityEntry, OpportunityKey, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
-        PlaceDirtiness, PreferenceProfile, ProofRequirement, PunishmentKind, Quantity, RecipeId,
-        RecordedViolation, ReliabilityRecord, ResourceSource, RewardSource, RightKind,
-        RouteExperience, ShelterTag, SleepQualityProfile, SleepRecoveryModifier, SourceKey,
-        SourceReliability, SubstitutePreferences, SurveyMemory, SurveyRecord, TellTopic,
-        TestimonyReliability, TheftDispositionProfile, TheftFacts, Tick, TickRange, TradeCategory,
+        ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, OfficePatrolDuty,
+        OfficePatrolDutyLifecycle, OfficePatrolDutyProvenance, OpportunityAnchor, OpportunityEntry,
+        OpportunityKey, PatrolProfile, PatrolRoute, PerceptionSource, Permille, PlaceDirtiness,
+        PreferenceProfile, ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordedViolation,
+        ReliabilityRecord, ResourceSource, RewardSource, RightKind, RouteExperience, ShelterTag,
+        SleepQualityProfile, SleepRecoveryModifier, SourceKey, SourceReliability,
+        SubstitutePreferences, SurveyMemory, SurveyRecord, TellTopic, TestimonyReliability,
+        TheftDispositionProfile, TheftFacts, Tick, TickRange, TradeCategory,
         TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId, ViolationKind,
         WashBasinState, WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
     };
@@ -3299,6 +3307,7 @@ mod tests {
         bandit_flee_thresholds: BTreeMap<EntityId, Permille>,
         patrol_profiles: BTreeMap<EntityId, PatrolProfile>,
         patrol_routes: BTreeMap<EntityId, PatrolRoute>,
+        office_patrol_duties: BTreeMap<EntityId, OfficePatrolDuty>,
         active_violation_records: BTreeMap<EntityId, Vec<RecordedViolation>>,
         expectation_stores: BTreeMap<EntityId, ExpectationStore>,
         last_seen_memories: BTreeMap<EntityId, LastSeenMemory>,
@@ -3476,6 +3485,10 @@ mod tests {
 
         fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
             self.patrol_routes.get(&agent).cloned()
+        }
+
+        fn office_patrol_duty(&self, agent: EntityId) -> Option<OfficePatrolDuty> {
+            self.office_patrol_duties.get(&agent).cloned()
         }
 
         fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
@@ -5505,6 +5518,44 @@ mod tests {
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
         assert_eq!(ranked[0].motive_score, 550);
+    }
+
+    #[test]
+    fn lapsed_office_patrol_duty_zeroes_patrol_motive() {
+        let agent = entity(1);
+        let office = entity(2);
+        let place = entity(99);
+        let mut view = base_view(agent);
+        view.patrol_profiles.insert(agent, patrol_profile(550));
+        view.patrol_routes.insert(agent, patrol_route(place));
+        view.office_patrol_duties.insert(
+            agent,
+            OfficePatrolDuty {
+                issuing_office: office,
+                delegate: None,
+                assignee: agent,
+                assigned_places: vec![place],
+                created_tick: Tick(1),
+                renewal_due_tick: Tick(5),
+                grace_ticks: 2,
+                lifecycle: OfficePatrolDutyLifecycle::Lapsed { since: Tick(8) },
+                provenance: OfficePatrolDutyProvenance::LapsedByVacancy { tick: Tick(8) },
+            },
+        );
+
+        let outcome = rank(
+            &[goal_at_place(GoalKind::Patrol { place }, place)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        );
+
+        assert!(outcome.ranked.is_empty());
+        assert_eq!(
+            outcome.zero_motive,
+            vec![GoalKey::from(GoalKind::Patrol { place })]
+        );
     }
 
     #[test]

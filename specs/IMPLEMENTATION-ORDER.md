@@ -730,7 +730,7 @@ S153 (hard deps on archived S143, archived S148, archived S150, archived S151)
   - soft depends on archived S146/S148/S151 (modifies profile types each introduces)
 
 **Wave 5** (final, after Wave 4):
-- **S153**: Golden Gaps — AI Architecture Scaling — false rumor justice is landed by `archive/tickets/S153GOLDGAPSCALE-001.md`; office vacancy → patrol gap is blocked behind the office-backed patrol duty substrate in `tickets/S153GOLDGAPSCALE-004.md`; scaled contention remains active in `tickets/S153GOLDGAPSCALE-003.md`. Belief-wall trap (regression for S143) is covered by S143STABELVIE-006; 4 PR-15 scenarios deferred (100-goal dense market, 20-agent contention, long production chain, boundary shock).
+- **S153**: Golden Gaps — AI Architecture Scaling — false rumor justice is landed by `archive/tickets/S153GOLDGAPSCALE-001.md`; office-backed patrol duty substrate is landed by `archive/tickets/S153GOLDGAPSCALE-004.md`; office vacancy → patrol gap golden remains active in `tickets/S153GOLDGAPSCALE-005.md`; scaled contention remains active in `tickets/S153GOLDGAPSCALE-003.md`. Belief-wall trap (regression for S143) is covered by S143STABELVIE-006; 4 PR-15 scenarios deferred (100-goal dense market, 20-agent contention, long production chain, boundary shock).
   - hard depends on archived S143, archived S148, archived S150, archived S151
 
 ### Phase 12 Gate
@@ -751,7 +751,7 @@ S153 (hard deps on archived S143, archived S148, archived S150, archived S151)
 - [x] S150 archived: cross-goal blocker goldens prove `RouteSegment` and `Counterparty` blockers suppress multi-goal candidates and clear on observation
 - [x] S151 archived: testimony-reliability goldens prove confirmation/refutation trust summaries and suppressed-goal payload context; route-preference goldens prove dangerous-traversal penalty, decay, and composition with route-segment blockers
 - [x] S152 archived: archetype goldens prove deterministic seeded assignment, comparative resolved-profile diversification, `PersonalityAssigned` event replay/inspectability, explicit override precedence, and save/load preservation
-- [ ] S153 remaining golden coverage passes: false-rumor justice helper-level reliability coverage is landed by `archive/tickets/S153GOLDGAPSCALE-001.md`, office-vacancy requires `tickets/S153GOLDGAPSCALE-004.md` before the runtime golden can be truthful, scaled-contention remains active, and belief-wall trap is covered by S143STABELVIE-006
+- [ ] S153 remaining golden coverage passes: false-rumor justice helper-level reliability coverage is landed by `archive/tickets/S153GOLDGAPSCALE-001.md`, office-backed patrol duty substrate is landed by `archive/tickets/S153GOLDGAPSCALE-004.md`, office-vacancy runtime golden remains active in `tickets/S153GOLDGAPSCALE-005.md`, scaled-contention remains active, and belief-wall trap is covered by S143STABELVIE-006
 - [ ] PR-9 (incremental snapshots / multi-queue search) reassessed against S144 diagnostics: actual planning-cost bottlenecks identified or proposal stays deferred
 - [ ] Canonical regression G coverage reconciled with live S153 scope: S153 currently proves the false-rumor reliability substrate through Scenario 443, while any later end-to-end wrongful-accusation correction workflow needs an explicit owner before it can be a phase gate
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean

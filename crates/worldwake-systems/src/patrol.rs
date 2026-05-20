@@ -1,10 +1,28 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    AgentBeliefStore, CauseRef, EntityId, EventTag, PatrolProfile, PatrolRoute, PerceptionProfile,
-    SocialObservationDetail, Tick, ViolationKind, ViolationMemory, VisibilitySpec, WitnessData,
-    WorldTxn, belief::compute_activation,
+    AgentBeliefStore, CauseRef, EntityId, EventLog, EventTag, OfficePatrolDuty,
+    OfficePatrolDutyLifecycle, OfficePatrolDutyProvenance, PatrolProfile, PatrolRoute,
+    PerceptionProfile, SocialObservationDetail, Tick, ViolationKind, ViolationMemory,
+    VisibilitySpec, WitnessData, WorldTxn, belief::compute_activation,
 };
 use worldwake_sim::{ActionInstance, ActionInstanceId, SystemError, SystemExecutionContext};
+
+pub fn patrol_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
+    let SystemExecutionContext {
+        world,
+        event_log,
+        rng: _rng,
+        active_actions,
+        action_defs: _action_defs,
+        politics_trace: _,
+        perception_trace: _,
+        tick,
+        system_id: _system_id,
+    } = ctx;
+
+    run_office_patrol_duty_lifecycle(world, event_log, tick)?;
+    run_patrol_route_adaptation(world, event_log, active_actions, tick)
+}
 
 pub fn patrol_route_adaptation_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
     let SystemExecutionContext {
@@ -19,6 +37,15 @@ pub fn patrol_route_adaptation_system(ctx: SystemExecutionContext<'_>) -> Result
         system_id: _system_id,
     } = ctx;
 
+    run_patrol_route_adaptation(world, event_log, active_actions, tick)
+}
+
+fn run_patrol_route_adaptation(
+    world: &mut worldwake_core::World,
+    event_log: &mut EventLog,
+    active_actions: &BTreeMap<ActionInstanceId, ActionInstance>,
+    tick: Tick,
+) -> Result<(), SystemError> {
     let updates = world
         .query_patrol_route()
         .filter_map(|(agent, route)| {
@@ -62,6 +89,104 @@ pub fn patrol_route_adaptation_system(ctx: SystemExecutionContext<'_>) -> Result
 
     let _ = txn.commit(event_log);
     Ok(())
+}
+
+pub fn office_patrol_duty_lifecycle_system(
+    ctx: SystemExecutionContext<'_>,
+) -> Result<(), SystemError> {
+    let SystemExecutionContext {
+        world,
+        event_log,
+        rng: _rng,
+        active_actions: _active_actions,
+        action_defs: _action_defs,
+        politics_trace: _,
+        perception_trace: _,
+        tick,
+        system_id: _system_id,
+    } = ctx;
+
+    run_office_patrol_duty_lifecycle(world, event_log, tick)
+}
+
+fn run_office_patrol_duty_lifecycle(
+    world: &mut worldwake_core::World,
+    event_log: &mut EventLog,
+    tick: Tick,
+) -> Result<(), SystemError> {
+    let updates = world
+        .query_office_patrol_duty()
+        .filter_map(|(agent, duty)| {
+            next_office_patrol_duty_lifecycle(
+                duty,
+                world.get_component_office_data(duty.issuing_office),
+                tick,
+            )
+            .map(|updated| (agent, updated))
+        })
+        .collect::<Vec<_>>();
+
+    if updates.is_empty() {
+        return Ok(());
+    }
+
+    let mut txn = WorldTxn::new(
+        world,
+        tick,
+        CauseRef::SystemTick(tick),
+        None,
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    txn.add_tag(EventTag::System)
+        .add_tag(EventTag::WorldMutation);
+
+    for (agent, duty) in updates {
+        txn.add_target(agent);
+        txn.set_component_office_patrol_duty(agent, duty)
+            .map_err(|error| SystemError::new(error.to_string()))?;
+    }
+
+    let _ = txn.commit(event_log);
+    Ok(())
+}
+
+fn next_office_patrol_duty_lifecycle(
+    duty: &OfficePatrolDuty,
+    office_data: Option<&worldwake_core::OfficeData>,
+    tick: Tick,
+) -> Option<OfficePatrolDuty> {
+    let office_is_vacant = office_data.is_none_or(|data| data.vacancy_since.is_some());
+    if !office_is_vacant {
+        return None;
+    }
+
+    let lapse_tick = Tick(
+        duty.renewal_due_tick
+            .0
+            .saturating_add(u64::from(duty.grace_ticks)),
+    );
+
+    match duty.lifecycle {
+        OfficePatrolDutyLifecycle::Active if tick >= lapse_tick => Some(lapsed_duty(duty, tick)),
+        OfficePatrolDutyLifecycle::Active if tick >= duty.renewal_due_tick => {
+            let mut updated = duty.clone();
+            updated.lifecycle = OfficePatrolDutyLifecycle::Degraded { since: tick };
+            Some(updated)
+        }
+        OfficePatrolDutyLifecycle::Degraded { .. } if tick >= lapse_tick => {
+            Some(lapsed_duty(duty, tick))
+        }
+        _ => None,
+    }
+}
+
+fn lapsed_duty(duty: &OfficePatrolDuty, tick: Tick) -> OfficePatrolDuty {
+    let mut updated = duty.clone();
+    updated.lifecycle = OfficePatrolDutyLifecycle::Lapsed { since: tick };
+    updated.provenance = OfficePatrolDutyProvenance::LapsedByVacancy { tick };
+    updated
 }
 
 fn has_active_action(
@@ -253,16 +378,17 @@ fn social_observation_reactive_window(profile: worldwake_core::PerceptionProfile
 
 #[cfg(test)]
 mod tests {
-    use super::patrol_route_adaptation_system;
+    use super::{office_patrol_duty_lifecycle_system, patrol_route_adaptation_system};
     use crate::dispatch_table;
     use std::collections::BTreeMap;
     use worldwake_core::{
         ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, CauseRef, CommodityKind,
-        ControlSource, EventLog, PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource,
-        Permille, PrototypePlace, Quantity, RecordedViolation, Seed, SocialObservation,
-        SocialObservationDetail, TheftFacts, Tick, ViolationId, ViolationKind, ViolationMemory,
-        VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
-        prototype_place_entity,
+        ControlSource, EventLog, OfficeData, OfficePatrolDuty, OfficePatrolDutyLifecycle,
+        OfficePatrolDutyProvenance, PatrolProfile, PatrolRoute, PerceptionProfile,
+        PerceptionSource, Permille, PrototypePlace, Quantity, RecordedViolation, Seed,
+        SocialObservation, SocialObservationDetail, SuccessionLaw, TheftFacts, Tick, ViolationId,
+        ViolationKind, ViolationMemory, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload,
@@ -435,6 +561,138 @@ mod tests {
             tick: Tick(10),
             system_id: SystemId::Patrol,
         }
+    }
+
+    fn seed_vacant_office(
+        world: &mut World,
+        seat: worldwake_core::EntityId,
+    ) -> worldwake_core::EntityId {
+        let mut txn = new_txn(world, 1);
+        let office = txn.create_office("Watch Captain").unwrap();
+        txn.set_component_office_data(
+            office,
+            OfficeData {
+                title: "Watch Captain".to_string(),
+                seat,
+                jurisdiction: [seat].into(),
+                succession_law: SuccessionLaw::Support,
+                eligibility_rules: Vec::new(),
+                succession_period_ticks: 12,
+                vacancy_since: Some(Tick(4)),
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+        office
+    }
+
+    fn office_patrol_duty(
+        office: worldwake_core::EntityId,
+        guard: worldwake_core::EntityId,
+        places: Vec<worldwake_core::EntityId>,
+        renewal_due_tick: u64,
+        grace_ticks: u32,
+    ) -> OfficePatrolDuty {
+        OfficePatrolDuty {
+            issuing_office: office,
+            delegate: None,
+            assignee: guard,
+            assigned_places: places,
+            created_tick: Tick(2),
+            renewal_due_tick: Tick(renewal_due_tick),
+            grace_ticks,
+            lifecycle: OfficePatrolDutyLifecycle::Active,
+            provenance: OfficePatrolDutyProvenance::IssuedByOffice { tick: Tick(2) },
+        }
+    }
+
+    #[test]
+    fn office_patrol_duty_degrades_when_vacant_office_misses_renewal() {
+        let square = prototype_place_entity(PrototypePlace::VillageSquare);
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let guard = seed_guard(
+            &mut world,
+            square,
+            PatrolRoute {
+                assigned_places: vec![square],
+                current_index: 0,
+            },
+            patrol_profile(1000),
+            None,
+        );
+        let office = seed_vacant_office(&mut world, square);
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_component_office_patrol_duty(
+            guard,
+            office_patrol_duty(office, guard, vec![square], 10, 4),
+        )
+        .unwrap();
+        commit_txn(txn);
+        let defs = ActionDefRegistry::new();
+        let mut log = EventLog::new();
+        let mut rng = test_rng();
+
+        office_patrol_duty_lifecycle_system(system_context(
+            &mut world,
+            &mut log,
+            &mut rng,
+            &BTreeMap::new(),
+            &defs,
+        ))
+        .unwrap();
+
+        assert_eq!(
+            world
+                .get_component_office_patrol_duty(guard)
+                .unwrap()
+                .lifecycle,
+            OfficePatrolDutyLifecycle::Degraded { since: Tick(10) }
+        );
+        assert_ne!(log.next_id(), worldwake_core::EventId(0));
+    }
+
+    #[test]
+    fn degraded_office_patrol_duty_lapses_after_grace_window() {
+        let square = prototype_place_entity(PrototypePlace::VillageSquare);
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let guard = seed_guard(
+            &mut world,
+            square,
+            PatrolRoute {
+                assigned_places: vec![square],
+                current_index: 0,
+            },
+            patrol_profile(1000),
+            None,
+        );
+        let office = seed_vacant_office(&mut world, square);
+        let mut duty = office_patrol_duty(office, guard, vec![square], 6, 4);
+        duty.lifecycle = OfficePatrolDutyLifecycle::Degraded { since: Tick(6) };
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_component_office_patrol_duty(guard, duty).unwrap();
+        commit_txn(txn);
+        let defs = ActionDefRegistry::new();
+        let mut log = EventLog::new();
+        let mut rng = test_rng();
+
+        office_patrol_duty_lifecycle_system(system_context(
+            &mut world,
+            &mut log,
+            &mut rng,
+            &BTreeMap::new(),
+            &defs,
+        ))
+        .unwrap();
+
+        let duty = world.get_component_office_patrol_duty(guard).unwrap();
+        assert_eq!(
+            duty.lifecycle,
+            OfficePatrolDutyLifecycle::Lapsed { since: Tick(10) }
+        );
+        assert_eq!(
+            duty.provenance,
+            OfficePatrolDutyProvenance::LapsedByVacancy { tick: Tick(10) }
+        );
     }
 
     #[test]

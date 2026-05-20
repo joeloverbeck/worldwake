@@ -39,7 +39,7 @@ use crate::{
     obligation::{ObligationExecutionTracker, ObligationSatiationProfile},
     observation_context::PlaceVisibilityProfile,
     offices::{OfficeData, OfficeForceProfile, OfficeForceState},
-    patrol::{PatrolProfile, PatrolRoute},
+    patrol::{OfficePatrolDuty, PatrolProfile, PatrolRoute},
     place_dirtiness::{LatrineFullness, PlaceDirtiness, WashBasinState},
     production::{
         CarryCapacity, InTransitOnEdge, KnownRecipes, LastHarvestTrace, ProductionJob,
@@ -160,7 +160,8 @@ mod tests {
         ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
         DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, GoalKey, GoalKind,
         HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
-        MetabolismProfile, PatrolProfile, PatrolRoute, Permille, PlaceVisitRecord, ProductionJob,
+        MetabolismProfile, OfficePatrolDuty, OfficePatrolDutyLifecycle, OfficePatrolDutyProvenance,
+        PatrolProfile, PatrolRoute, Permille, PlaceVisitRecord, ProductionJob,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity,
         ResourceSource, RewardEncumbrance, Tick, TravelEdgeId, UniqueItem, UniqueItemKind,
         WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
@@ -341,6 +342,20 @@ mod tests {
         }
     }
 
+    fn sample_office_patrol_duty() -> OfficePatrolDuty {
+        OfficePatrolDuty {
+            issuing_office: entity(26),
+            delegate: None,
+            assignee: entity(8),
+            assigned_places: vec![entity(42), entity(43)],
+            created_tick: Tick(4),
+            renewal_due_tick: Tick(9),
+            grace_ticks: 3,
+            lifecycle: OfficePatrolDutyLifecycle::Active,
+            provenance: OfficePatrolDutyProvenance::IssuedByOffice { tick: Tick(4) },
+        }
+    }
+
     fn sample_faction_data() -> FactionData {
         FactionData {
             name: "River Pact".to_string(),
@@ -425,6 +440,7 @@ mod tests {
         tables.insert_office_data(entity(26), sample_office_data());
         tables.insert_office_force_profile(entity(27), sample_office_force_profile());
         tables.insert_office_force_state(entity(28), sample_office_force_state());
+        tables.insert_office_patrol_duty(agent_id, sample_office_patrol_duty());
         tables.insert_faction_data(entity(29), sample_faction_data());
         tables.insert_record_data(entity(30), sample_record_data());
         tables.insert_item_lot(
@@ -511,6 +527,7 @@ mod tests {
         assert_eq!(tables.iter_office_data().count(), 0);
         assert_eq!(tables.iter_office_force_profile().count(), 0);
         assert_eq!(tables.iter_office_force_state().count(), 0);
+        assert_eq!(tables.iter_office_patrol_duties().count(), 0);
         assert_eq!(tables.iter_faction_data().count(), 0);
         assert_eq!(tables.iter_record_data().count(), 0);
         assert_eq!(tables.iter_carry_capacities().count(), 0);
