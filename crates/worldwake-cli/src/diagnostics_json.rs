@@ -9,7 +9,9 @@ use worldwake_ai::{
         PerformanceMetrics, PlanningMetrics, RevalidationRepairMetrics,
     },
 };
-use worldwake_core::{Discrepancy, GoalKind, MethodSchemaId, PercentileBucket, Permille, Tick};
+use worldwake_core::{
+    CognitiveArchetype, Discrepancy, GoalKind, MethodSchemaId, PercentileBucket, Permille, Tick,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 struct DiagnosticsMapEntry<K> {
@@ -26,6 +28,8 @@ struct MethodUsageDiagnosticsEntry {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 struct ScenarioDiagnosticsJson {
     tick_range: (Tick, Tick),
+    #[serde(default)]
+    agent_archetypes: Vec<DiagnosticsMapEntry<CognitiveArchetype>>,
     goal_pressure: GoalPressureDiagnosticsJson,
     planning: PlanningDiagnosticsJson,
     revalidation_repair: RevalidationRepairDiagnosticsJson,
@@ -110,6 +114,7 @@ impl From<&ScenarioDiagnosticsReport> for ScenarioDiagnosticsJson {
     fn from(report: &ScenarioDiagnosticsReport) -> Self {
         Self {
             tick_range: report.tick_range,
+            agent_archetypes: diagnostics_map_entries(&report.agent_archetypes),
             goal_pressure: GoalPressureDiagnosticsJson {
                 candidates_emitted_by_kind: diagnostics_map_entries(
                     &report.goal_pressure.candidates_emitted_by_kind,
@@ -166,6 +171,7 @@ impl From<ScenarioDiagnosticsJson> for ScenarioDiagnosticsReport {
     fn from(report: ScenarioDiagnosticsJson) -> Self {
         Self {
             tick_range: report.tick_range,
+            agent_archetypes: diagnostics_map_from_entries(report.agent_archetypes),
             goal_pressure: GoalPressureMetrics {
                 candidates_emitted_by_kind: diagnostics_map_from_entries(
                     report.goal_pressure.candidates_emitted_by_kind,

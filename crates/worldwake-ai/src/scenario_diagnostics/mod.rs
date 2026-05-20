@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
-    Discrepancy, GoalKind, MethodSchemaId, PercentileBucket, Permille, Tick, TopicScope,
+    CognitiveArchetype, Discrepancy, GoalKind, MethodSchemaId, PercentileBucket, Permille, Tick,
+    TopicScope,
 };
 
 use crate::{PlanTerminalKindDiscriminant, SlotKind};
@@ -13,6 +14,7 @@ pub use aggregator::build_scenario_diagnostics;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ScenarioDiagnosticsReport {
     pub tick_range: (Tick, Tick),
+    pub agent_archetypes: BTreeMap<CognitiveArchetype, u64>,
     pub goal_pressure: GoalPressureMetrics,
     pub planning: PlanningMetrics,
     pub revalidation_repair: RevalidationRepairMetrics,
@@ -137,7 +139,9 @@ mod tests {
     };
     use crate::{PlanTerminalKindDiscriminant, SlotKind};
     use std::collections::BTreeMap;
-    use worldwake_core::{Discrepancy, GoalKind, PercentileBucket, Permille, Tick, TopicScope};
+    use worldwake_core::{
+        CognitiveArchetype, Discrepancy, GoalKind, PercentileBucket, Permille, Tick, TopicScope,
+    };
 
     #[test]
     fn scenario_diagnostics_report_round_trips_through_serde() {
@@ -207,6 +211,7 @@ mod tests {
     fn populated_report() -> ScenarioDiagnosticsReport {
         ScenarioDiagnosticsReport {
             tick_range: (Tick(3), Tick(9)),
+            agent_archetypes: BTreeMap::from([(CognitiveArchetype::Cautious, 2)]),
             goal_pressure: GoalPressureMetrics {
                 candidates_emitted_by_kind: BTreeMap::from([(GoalKind::Sleep, 4)]),
                 candidates_emitted_by_slot: BTreeMap::from([(SlotKind::NeedSurvival, 3)]),

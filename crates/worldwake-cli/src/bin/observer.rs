@@ -4135,6 +4135,13 @@ fn render_scenario_diagnostics_text(
     )?;
     writeln!(out)?;
 
+    render_metric_map(
+        out,
+        "Agent archetype distribution",
+        &report.agent_archetypes,
+        options.top_n,
+    )?;
+
     writeln!(out, "### Goal Pressure\n")?;
     render_metric_map(
         out,
@@ -5943,6 +5950,7 @@ fn main() {
             repair_traces.extend(trace.repair_attempts.iter().cloned());
         }
         Some(build_scenario_diagnostics(
+            sim.world(),
             &decision_traces,
             &plan_traces,
             &repair_traces,
@@ -8014,6 +8022,10 @@ mod tests {
     fn sample_scenario_diagnostics_report() -> ScenarioDiagnosticsReport {
         ScenarioDiagnosticsReport {
             tick_range: (Tick(0), Tick(9)),
+            agent_archetypes: BTreeMap::from([
+                (worldwake_core::CognitiveArchetype::Cautious, 2),
+                (worldwake_core::CognitiveArchetype::Bold, 1),
+            ]),
             goal_pressure: worldwake_ai::scenario_diagnostics::GoalPressureMetrics {
                 candidates_emitted_by_kind: BTreeMap::from([
                     (
@@ -8180,6 +8192,8 @@ mod tests {
         .unwrap();
 
         assert!(out.contains("## Section 13 \u{2014} Scenario Diagnostics"));
+        assert!(out.contains("#### Agent archetype distribution"));
+        assert!(out.contains("`Cautious`"));
         assert!(out.contains("#### Candidates emitted by goal kind"));
         assert!(out.contains("**Method usage**"));
         assert!(out.contains("ProduceWithGather"));
@@ -8227,6 +8241,7 @@ mod tests {
 
         let decoded = scenario_diagnostics_report_from_json(&out).unwrap();
         assert_eq!(decoded, report);
+        assert!(out.contains("\"agent_archetypes\""));
         assert!(out.contains("\"candidates_emitted_by_kind\""));
         assert!(out.contains("\"NeedHorizonExceeded\""));
     }

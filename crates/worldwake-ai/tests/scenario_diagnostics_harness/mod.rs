@@ -1,7 +1,7 @@
 //! Golden regression coverage for aggregate scenario diagnostics.
 #![allow(dead_code)]
 
-use std::{fs, path::PathBuf, sync::OnceLock};
+use std::{collections::BTreeMap, fs, path::PathBuf, sync::OnceLock};
 
 use crate::golden_harness::GoldenHarness;
 use worldwake_ai::{
@@ -14,7 +14,7 @@ use worldwake_cli::{
     },
     scenario::{load_scenario_file, spawn_scenario},
 };
-use worldwake_core::Tick;
+use worldwake_core::{CognitiveArchetype, EntityKind, Tick, World};
 
 const SURVIVAL_TICKS: u64 = 1440;
 const EXPECTED_DIAGNOSTICS_PATH: &str = "tests/fixtures/expected-scenario-diagnostics.json";
@@ -49,13 +49,33 @@ fn run_survival_baseline_diagnostics() -> ScenarioDiagnosticsReport {
         repair_traces.extend(trace.repair_attempts.iter().cloned());
     }
 
-    build_scenario_diagnostics(
+    let report = build_scenario_diagnostics(
+        &harness.world,
         &decision_traces,
         &plan_traces,
         &repair_traces,
         &harness.event_log,
         (Tick(0), Tick(SURVIVAL_TICKS.saturating_sub(1))),
-    )
+    );
+    assert_eq!(
+        report.agent_archetypes,
+        archetype_distribution_from_world(&harness.world)
+    );
+    report
+}
+
+fn archetype_distribution_from_world(world: &World) -> BTreeMap<CognitiveArchetype, u64> {
+    let mut distribution = BTreeMap::new();
+    for agent in world.entities_of_kind(EntityKind::Agent) {
+        let Some(component) = world.get_component_cognitive_archetype_component(agent) else {
+            continue;
+        };
+        distribution
+            .entry(component.archetype)
+            .and_modify(|count| *count += 1)
+            .or_insert(1);
+    }
+    distribution
 }
 
 fn survival_baseline_diagnostics() -> &'static ScenarioDiagnosticsReport {
@@ -64,6 +84,7 @@ fn survival_baseline_diagnostics() -> &'static ScenarioDiagnosticsReport {
 
 fn assert_schema_covered(report: &ScenarioDiagnosticsReport) {
     assert_eq!(report.tick_range, (Tick(0), Tick(1439)));
+    assert!(!report.agent_archetypes.is_empty());
     assert!(!report.goal_pressure.candidates_emitted_by_kind.is_empty());
     assert!(!report.goal_pressure.candidates_emitted_by_slot.is_empty());
     assert!(
