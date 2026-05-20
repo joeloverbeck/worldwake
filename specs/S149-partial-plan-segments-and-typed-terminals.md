@@ -8,7 +8,7 @@ Folds in PR-10 (Partial plans as first-class objects) and PR-5 (Information barr
 
 Before S149PARPLASEG-001, the planner had three `PlanTerminalKind` variants: `GoalSatisfied`, `ProgressBarrier`, `CombatCommitment`, and every non-success terminal path used `ProgressBarrier`. S149PARPLASEG-001 replaced that generic terminal with typed terminals: `GoalSatisfied`, `CombatCommitment`, `InformationBarrier`, `CoordinationBarrier`, `ResourceBarrier`, `JurisdictionBarrier`, `SearchBudgetExhausted` (seven variants), and re-keyed diagnostics by `PlanTerminalKindDiscriminant`. Remaining S149 work builds partial-plan storage and resumption on top of those typed terminals. S139 added `GoalKind::AskWitness` as a sensing *goal*, but the planner cannot yet express "I made partial progress and stopped at an information barrier — when I learn fact F, I can resume."
 
-S149 ships both as the same architectural layer: typed terminal barriers and first-class `PartialPlanSegment` storage. When a plan attempts goal G and reaches a typed barrier B, the planner stores a `PartialPlanSegment` carrying the prefix steps that did succeed, the barrier type, the resume conditions that would clear the barrier, and the abandon conditions that would invalidate the partial plan. The agenda manager (S115) gains the ability to resume a suspended intention from its `PartialPlanSegment` when its resume conditions hold, picking up at the prefix-tail rather than replanning from scratch.
+S149 ships both as the same architectural layer: typed terminal barriers and first-class `PartialPlanSegment` storage. When a plan attempts goal G and reaches a typed barrier B, the planner stores a `PartialPlanSegment` carrying the prefix steps that did succeed, the barrier type, the resume conditions that would clear the barrier, and the abandon conditions that would invalidate the partial plan. S149PARPLASEG-005 lands the agenda-manager lifecycle slice for stored segments: evaluating resume/abandon conditions, incrementing bounded retry state, and returning a typed resumed segment. Executable suffix re-entry from `remaining_skeleton` is deferred to S149PARPLASEG-010 because the current skeleton carrier is not yet sufficient to reconstruct lawful `PlannedStep`s without a planner resolver contract.
 
 The typed barriers map onto the *existing* failure-attribution surfaces so the failure-handling pipeline absorbs them uniformly. Three barriers reuse existing `Discrepancy` variants (S109): `InformationBarrier` ⇒ `Discrepancy::MissingObservation`; `ResourceBarrier` ⇒ `Discrepancy::BeliefStale`; `JurisdictionBarrier` ⇒ `Discrepancy::NoLegalBinding`; `SearchBudgetExhausted` ⇒ `Discrepancy::SearchBudgetExhausted`. `CoordinationBarrier` reuses the existing `BlockingFact::ReservationConflict` blocker surface (`crates/worldwake-core/src/blocker_memory.rs:241`) rather than `Discrepancy`, because contention attribution is carried by the live blocker taxonomy, not the discrepancy taxonomy (see D6).
 
@@ -23,7 +23,7 @@ Phase 12: AI Architecture Evolution — Draft
 - `worldwake-core` — no new condition types (reuses existing `IntentionResumeCondition` / `IntentionAbandonCondition` from S148). No new component. `TellTopic` (already core, `belief.rs:1737`) is reused as the information-gap topic.
 - `worldwake-sim` — `SAVE_FORMAT_VERSION` was bumped to 91 by S149PARPLASEG-001 for the typed-terminal serialized-format break, then to 92 by S149PARPLASEG-003 because adding `AgendaEntry.partial_plan_segment` changes the bincode shape of the ai runtime payload. Version 91 saves are rejected at the existing save-header boundary; no compatibility decoder is introduced.
 - `worldwake-systems` — no change.
-- `worldwake-ai` — `PlanTerminalKind`, the payload-free `PlanTerminalKindDiscriminant` histogram key, and all `ProgressBarrier` removal sites landed in S149PARPLASEG-001; S149PARPLASEG-002 added the `PartialPlanSegment` carrier type (and `PartialPlanSegmentId`, `BarrierFact`, `PlannedSkeletonStep`) here because their fields reference ai-resident types (`PlanTerminalKind`, `PlannedStep`, `PlannerOpKind`, `GoalOffer`, `BeliefPredicate`); remaining tickets add `PartialPlanSegment` storage on `AgendaEntry` and extend agenda-manager resumption.
+- `worldwake-ai` — `PlanTerminalKind`, the payload-free `PlanTerminalKindDiscriminant` histogram key, and all `ProgressBarrier` removal sites landed in S149PARPLASEG-001; S149PARPLASEG-002 added the `PartialPlanSegment` carrier type (and `PartialPlanSegmentId`, `BarrierFact`, `PlannedSkeletonStep`) here because their fields reference ai-resident types (`PlanTerminalKind`, `PlannedStep`, `PlannerOpKind`, `GoalOffer`, `BeliefPredicate`); S149PARPLASEG-003 added `PartialPlanSegment` storage on `AgendaEntry`; S149PARPLASEG-005 adds the suspended-entry lifecycle evaluator; S149PARPLASEG-010 owns executable segment writing and tactical suffix re-entry.
 - `worldwake-cli` — observer renders barrier type per terminal in the planning-diagnostic sections; S144 diagnostics aggregate barrier-kind distribution.
 
 ## Dependencies
@@ -171,6 +171,7 @@ fn try_resume_partial_plan(
     actor: EntityId,
     belief_view: &dyn RuntimeBeliefView,   // crates/worldwake-sim/src/belief_view.rs:1596
     tick: Tick,
+    patience_limit: u32,
 ) -> Option<ResumedPlan>;
 ```
 
@@ -179,9 +180,9 @@ For each suspended `AgendaEntry` (in `AgendaState.suspended`, `crates/worldwake-
 2. Check `resume_conditions` — if any holds, return the segment for retry.
 3. Otherwise leave suspended.
 
-A returned `ResumedPlan` (new type) re-enters the planner at the tactical phase with the `completed_prefix` already applied to the planning state. The tactical planner attempts to complete the `remaining_skeleton` against the new world state.
+A returned `ResumedPlan` identifies the suspended agenda entry and updated `PartialPlanSegment` that is eligible for retry. S149PARPLASEG-010 owns the executable planner re-entry contract that applies `completed_prefix` to planning state and completes `remaining_skeleton` against the new world state.
 
-`PartialPlanSegment.resume_attempt_count` increments per try; when it exceeds `IntentionFrame.patience_limit` (per S148, `crates/worldwake-core/src/intention_frame.rs:141`), the segment is abandoned (`IntentionAbandonCondition::PatienceExhausted`).
+`PartialPlanSegment.resume_attempt_count` increments per try; when it exceeds the supplied `IntentionFrame.patience_limit` (per S148, `crates/worldwake-core/src/intention_frame.rs:141`), the segment is abandoned (`IntentionAbandonCondition::PatienceExhausted`). The agenda entry does not store its own patience limit.
 
 ### D6: Barrier → failure-attribution mapping
 
@@ -284,7 +285,7 @@ Potential loop: failed resume → retry → fails again → retry. Bounded by `I
 
 ### Planner-Formalism Analysis
 
-S149 is plain GOAP/affordance search. Resumption (D5) re-enters the *existing* tactical search over the recorded `completed_prefix` and `remaining_skeleton`; it does not register any HTN `MethodSchema` and does not encode goal-specific decomposition (the Non-Goals exclude method-decomposition resumption — that lives in S147). The typed terminals are search outcomes, not method contracts. No method-required goal is introduced, so no schema contract or fallback-invalidity argument is needed.
+S149 is plain GOAP/affordance search. Resumption remains intended to re-enter the *existing* tactical search over the recorded `completed_prefix` and `remaining_skeleton`; it must not register any HTN `MethodSchema` and must not encode goal-specific decomposition (the Non-Goals exclude method-decomposition resumption — that lives in S147). Live reassessment during S149PARPLASEG-005 showed that the current `PlannedSkeletonStep` carrier is not executable by itself, so executable re-entry is deferred to S149PARPLASEG-010 rather than inventing a parallel planner path. The typed terminals are search outcomes, not method contracts. No method-required goal is introduced, so no schema contract or fallback-invalidity argument is needed.
 
 ## SystemFn Integration
 

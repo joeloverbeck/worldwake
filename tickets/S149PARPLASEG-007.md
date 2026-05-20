@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — per-actor contention "watching" list and contention-state resume trigger
-**Deps**: archive/tickets/S149PARPLASEG-004.md, S149PARPLASEG-005
+**Deps**: archive/tickets/S149PARPLASEG-004.md, archive/tickets/S149PARPLASEG-005.md, tickets/S149PARPLASEG-010.md
 
 ## Problem
 
@@ -14,7 +14,7 @@ D8 lets an intention suspended on a `CoordinationBarrier` resume when the contes
 
 1. `ContentionGrant` is at `crates/worldwake-core/src/contention.rs:43` with `{ actor, intended_action, granted_at, expires_at }`. Its lifecycle is queue-state-mediated (expiry via `expires_at`); reassessment found NO discrete "grant invalidation" event type — the resume trigger must hook contention-queue state transitions, not a phantom event. (Confirm the exact queue-state signal during implementation; `Likely: crates/worldwake-systems/src/facility_queue.rs` or the contention-queue state module — grep `ContentionGrant` / `ContentionQueue` consumers.)
 2. The barrier records `BlockingFact::ReservationConflict { affordance, contention_event }` (ticket 004); the resume condition is `IntentionResumeCondition::ArtifactLegalEffectActive(contested_resource)` or `OpportunityVisible` (ticket 004 derivation).
-3. Shared boundary under audit: the per-actor watching list (new ai runtime state on the agenda manager) and the existing contention-queue state surface. Phase distinction: this ticket is the resume-trigger wiring; the resume decision/re-entry is ticket 005, the barrier attribution is ticket 004.
+3. Shared boundary under audit: the per-actor watching list (new ai runtime state on the agenda manager) and the existing contention-queue state surface. Phase distinction: this ticket is the resume-trigger wiring; the resume decision is ticket 005, executable segment writing/re-entry is ticket 010, and barrier attribution is ticket 004.
 4. Information-path: the resume signal is a read of existing contention-queue state by the watching agent's agenda pass — no new transport path, no new event tag (FND-26, state-mediated).
 5. Multi-substrate note: contention spans facility queues (`ContentionQueue`) and resource-extraction queues (`ResourceExtractionQueues`). This ticket hooks the substrate(s) carrying the `contested_resource` for the coordination-barrier scenario; confirm which substrate the watching list reads during implementation and scope the hook to it (the golden in 009 uses an oven-reservation/facility-queue case).
 
@@ -27,7 +27,7 @@ D8 lets an intention suspended on a `CoordinationBarrier` resume when the contes
 
 1. Suspended coordination intention is added to the watching list keyed on `contested_resource` → focused runtime test.
 2. Contention-state transition (grant expiry / re-grant) fires the resume condition for a watching intention → focused runtime test on the watching-list check against contention state.
-3. Resume re-entry after re-availability → exercised by ticket 005's resume path + ticket 009 golden (oven-reservation case); this ticket asserts the trigger, not the full re-plan.
+3. Resume re-entry after re-availability → exercised by ticket 010's executable re-entry path + ticket 009 golden (oven-reservation case); this ticket asserts the trigger, not the full re-plan.
 
 ## What to Change
 
@@ -47,7 +47,8 @@ During the agenda tick pass, check the watching list against current contention-
 ## Out of Scope
 
 - Adding any new event tag or grant-invalidation event (explicitly avoided).
-- The resume decision/re-entry mechanics (ticket 005).
+- The resume decision mechanics (ticket 005).
+- Executable segment writing and tactical re-entry (ticket 010).
 - Information-barrier companions (ticket 006).
 
 ## Acceptance Criteria

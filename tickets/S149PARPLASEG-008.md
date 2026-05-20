@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — observer planning-diagnostic rendering (read-only tooling)
-**Deps**: archive/tickets/S149PARPLASEG-001.md, archive/tickets/S149PARPLASEG-003.md, S149PARPLASEG-005
+**Deps**: archive/tickets/S149PARPLASEG-001.md, archive/tickets/S149PARPLASEG-003.md, archive/tickets/S149PARPLASEG-005.md, tickets/S149PARPLASEG-010.md
 
 ## Problem
 
@@ -13,7 +13,7 @@ D9 makes barriers debuggable: the observer renders, per plan attempt, the typed 
 ## Assumption Reassessment (2026-05-20)
 
 1. The spec's original "Observer Section 7 (planning)" is wrong — Section 7 is "End-State Inventory & Resources" (`crates/worldwake-cli/src/bin/observer.rs:4975`). The planning-diagnostic sections are Section 9 "Budget Exhaustion Snapshots" (1418) and Section 13 "Scenario Diagnostics" (4002, which carries `terminal_kind_distribution`). Section header convention: `## Section <N> — <Title>\n`.
-2. `terminal_kind_distribution` is keyed by `PlanTerminalKindDiscriminant` after ticket 001 (`scenario_diagnostics/mod.rs:43`); Section 13 already aggregates it, so the seven typed kinds appear there with no observer change beyond label text. The new work is per-attempt barrier rendering (terminal + barrier fact + resume/abandon), which reads `PartialPlanSegment` fields (tickets 002/003) populated by ticket 005.
+2. `terminal_kind_distribution` is keyed by `PlanTerminalKindDiscriminant` after ticket 001 (`scenario_diagnostics/mod.rs:43`); Section 13 already aggregates it, so the seven typed kinds appear there with no observer change beyond label text. The new work is per-attempt barrier rendering (terminal + barrier fact + resume/abandon), which reads `PartialPlanSegment` fields (tickets 002/003) populated by ticket 010 and lifecycle-updated by ticket 005.
 3. Shared boundary under audit: the observer's planning-diagnostic section formatting and the read-only `PartialPlanSegment` surface. This is observer-only tooling — no engine/simulation-state mutation; items 4–15 of the template are inapplicable.
 4. Output-format fidelity: new lines must follow the existing section's formatting (indented sub-lines under a `Plan terminal:` header, matching the example in the spec). Render the resume condition as the derived `IntentionResumeCondition` (e.g. `BeliefStatusChanged(...)`), not the spec's original `BeliefUpdated` text.
 
@@ -44,7 +44,7 @@ Ensure the Section 13 `terminal_kind_distribution` rendering labels the seven di
 ## Out of Scope
 
 - Any change to the typed-terminal taxonomy or discriminant (ticket 001).
-- Producing/storing segments (tickets 002/003/005).
+- Producing/storing segments (tickets 002/003/010).
 - Golden E2E coverage (ticket 009).
 
 ## Acceptance Criteria

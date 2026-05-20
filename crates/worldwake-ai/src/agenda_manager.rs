@@ -1,14 +1,16 @@
 use crate::{
     AgendaEntry, AgendaEntryKey, AgendaPhase, AgendaState, GoalKind, GoalOffer, KillCondition,
-    RevivalTrigger, enterprise::restock_gap_at_destination, goal_switching::compare_goal_switch,
-    ranking,
+    PartialPlanSegment, RevivalTrigger, enterprise::restock_gap_at_destination,
+    goal_switching::compare_goal_switch, ranking,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    AgendaProfile, BlockerKey, CommodityKind, Discrepancy, DiscrepancyMemory, EntityId,
-    ExpectationId, ExpectationState, OpportunityAnchor, Permille, Quantity, Tick,
+    AgendaProfile, ArtifactLegalEffectTag, BeliefStatusTag, BlockerKey, CommodityKind, Discrepancy,
+    DiscrepancyMemory, EntityBeliefClaim, EntityId, ExpectationId, ExpectationState,
+    IntentionAbandonCondition, IntentionResumeCondition, OpportunityAnchor, Permille, Quantity,
+    Tick, effective_claim_confidence,
 };
-use worldwake_sim::GoalBeliefView;
+use worldwake_sim::{GoalBeliefView, RuntimeBeliefView};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgendaTransitions {
@@ -39,10 +41,226 @@ pub enum CommitTransition {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResumedPlan {
+    pub key: AgendaEntryKey,
+    pub entry: AgendaEntry,
+    pub segment: PartialPlanSegment,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum RejectionLifecycle {
     Satisfied,
     InfeasibleUntil { trigger: RevivalTrigger },
     Dead,
+}
+
+pub fn try_resume_partial_plan(
+    state: &mut AgendaState,
+    actor: EntityId,
+    belief_view: &dyn RuntimeBeliefView,
+    tick: Tick,
+    patience_limit: u32,
+) -> Option<ResumedPlan> {
+    let keys: Vec<_> = state.suspended.keys().copied().collect();
+    for key in keys {
+        let Some(segment) = state
+            .suspended
+            .get(&key)
+            .and_then(|entry| entry.partial_plan_segment.as_ref())
+            .cloned()
+        else {
+            continue;
+        };
+
+        if segment.abandon_conditions.iter().any(|condition| {
+            partial_plan_abandon_condition_holds(
+                condition,
+                &segment,
+                belief_view,
+                actor,
+                patience_limit,
+            )
+        }) {
+            state.suspended.remove(&key);
+            continue;
+        }
+
+        if !segment.resume_conditions.iter().any(|condition| {
+            partial_plan_resume_condition_holds(condition, &segment, belief_view, actor, tick)
+        }) {
+            continue;
+        }
+
+        let Some(mut entry) = state.suspended.remove(&key) else {
+            continue;
+        };
+        let mut segment = segment;
+        segment.resume_attempt_count = segment.resume_attempt_count.saturating_add(1);
+        segment.last_resume_attempt_tick = Some(tick);
+        if u32::from(segment.resume_attempt_count) > patience_limit {
+            continue;
+        }
+
+        entry.phase = AgendaPhase::Pending;
+        entry.last_reconsidered_tick = tick;
+        entry.partial_plan_segment = Some(segment.clone());
+        return Some(ResumedPlan {
+            key,
+            entry,
+            segment,
+        });
+    }
+    None
+}
+
+fn partial_plan_abandon_condition_holds(
+    condition: &IntentionAbandonCondition,
+    segment: &PartialPlanSegment,
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    patience_limit: u32,
+) -> bool {
+    match condition {
+        IntentionAbandonCondition::MotiveSourceLost(_) => false,
+        IntentionAbandonCondition::AssumptionPermanentlyBroken(_) => false,
+        IntentionAbandonCondition::OpportunityForeverGone(anchor) => {
+            opportunity_anchor_gone(*anchor, view)
+        }
+        IntentionAbandonCondition::PatienceExhausted => {
+            u32::from(segment.resume_attempt_count) >= patience_limit
+        }
+        IntentionAbandonCondition::ArtifactDestroyed(artifact) => {
+            known_artifact_state(view, agent, *artifact).is_some_and(|artifact_state| {
+                matches!(
+                    artifact_state.existence,
+                    worldwake_core::ArtifactExistence::Destroyed { .. }
+                )
+            })
+        }
+        IntentionAbandonCondition::ArtifactLegalEffectLost(artifact) => {
+            known_artifact_state(view, agent, *artifact).is_some_and(|artifact_state| {
+                ArtifactLegalEffectTag::from(&artifact_state.legal_effect)
+                    != ArtifactLegalEffectTag::Active
+            })
+        }
+    }
+}
+
+fn partial_plan_resume_condition_holds(
+    condition: &IntentionResumeCondition,
+    segment: &PartialPlanSegment,
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    tick: Tick,
+) -> bool {
+    match condition {
+        IntentionResumeCondition::BeliefStatusChanged {
+            subject,
+            target_status,
+        } => belief_status_matches(view, agent, *subject, *target_status, tick),
+        IntentionResumeCondition::OpportunityVisible(anchor) => {
+            opportunity_anchor_visible(*anchor, view, agent)
+        }
+        IntentionResumeCondition::LocationReached(place) => {
+            view.effective_place(agent) == Some(*place)
+        }
+        IntentionResumeCondition::TickElapsed(elapsed) => {
+            tick.0.saturating_sub(segment.created_tick.0) >= u64::from(*elapsed)
+        }
+        IntentionResumeCondition::ArtifactLegalEffectActive(artifact) => {
+            known_artifact_state(view, agent, *artifact).is_some_and(|artifact_state| {
+                ArtifactLegalEffectTag::from(&artifact_state.legal_effect)
+                    == ArtifactLegalEffectTag::Active
+            })
+        }
+    }
+}
+
+fn opportunity_anchor_gone(anchor: OpportunityAnchor, view: &dyn RuntimeBeliefView) -> bool {
+    match anchor {
+        OpportunityAnchor::Place(place) | OpportunityAnchor::Entity(place)
+            if view.entity_kind(place).is_none() =>
+        {
+            true
+        }
+        OpportunityAnchor::None | OpportunityAnchor::Place(_) => false,
+        OpportunityAnchor::Entity(entity) => view.is_dead(entity),
+    }
+}
+
+fn opportunity_anchor_visible(
+    anchor: OpportunityAnchor,
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+) -> bool {
+    match anchor {
+        OpportunityAnchor::None => true,
+        OpportunityAnchor::Place(place) => view.effective_place(agent) == Some(place),
+        OpportunityAnchor::Entity(entity) => view
+            .effective_place(entity)
+            .is_some_and(|place| view.effective_place(agent) == Some(place)),
+    }
+}
+
+fn known_artifact_state(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    artifact: EntityId,
+) -> Option<worldwake_core::BelievedArtifactState> {
+    view.known_entity_beliefs(agent)
+        .into_iter()
+        .find(|(entity, _)| *entity == artifact)
+        .and_then(|(_, state)| state.believed_artifact)
+}
+
+fn belief_status_matches(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    subject: EntityId,
+    target_status: BeliefStatusTag,
+    tick: Tick,
+) -> bool {
+    let Some(store) = view.agent_belief_store(agent) else {
+        return false;
+    };
+    let Some(claims) = store.entity_claims.get(&subject) else {
+        return false;
+    };
+
+    if target_status == BeliefStatusTag::Disputed {
+        return claims
+            .iter()
+            .filter(|claim| claim.refuted_at_tick.is_none())
+            .take(2)
+            .count()
+            > 1;
+    }
+
+    claims
+        .iter()
+        .any(|claim| belief_status_tag_for_claim(view, agent, claim, tick) == target_status)
+}
+
+fn belief_status_tag_for_claim(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    claim: &EntityBeliefClaim,
+    tick: Tick,
+) -> BeliefStatusTag {
+    if claim.refuted_at_tick.is_some() {
+        return BeliefStatusTag::Contradicted;
+    }
+
+    let effective = effective_claim_confidence(claim, tick, &view.belief_confidence_policy(agent));
+    let threshold = view.claim_confidence_threshold(agent).value();
+    let certain_floor = threshold.saturating_mul(2).min(1000);
+    if effective >= certain_floor {
+        BeliefStatusTag::Certain
+    } else if effective >= threshold {
+        BeliefStatusTag::Probable
+    } else {
+        BeliefStatusTag::Stale
+    }
 }
 
 pub(crate) fn classify_rejection(
@@ -601,8 +819,9 @@ mod tests {
     };
     use crate::agent_tick::portfolio::FeasibilityVerdict;
     use crate::{
-        AgendaEntry, AgendaOrigin, AgendaPhase, AgendaState, FeasibilityHint, GoalKey, GoalKind,
-        GoalOffer, GoalPriorityClass, KillCondition, RevivalTrigger,
+        AgendaEntry, AgendaOrigin, AgendaPhase, AgendaState, BarrierFact, FeasibilityHint, GoalKey,
+        GoalKind, GoalOffer, GoalPriorityClass, KillCondition, PartialPlanSegment,
+        PartialPlanSegmentId, PlanTerminalKind, RevivalTrigger,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -610,10 +829,15 @@ mod tests {
         AcquisitionQuantity, AgendaProfile, BeliefConfidencePolicy, CommodityConsumableProfile,
         CommodityKind, DemandObservation, DemandObservationReason, Discrepancy, DriveThresholds,
         EntityId, EntityKind, ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState,
-        ExpectationStore, LoadUnits, MerchandiseProfile, OpportunityAnchor, OpportunityKey,
-        Quantity, ResourceSource, Tick, UniqueItemKind, WorkstationTag,
+        ExpectationStore, IntentionAbandonCondition, IntentionResumeCondition, LoadUnits,
+        MerchandiseProfile, OpportunityAnchor, OpportunityKey, Quantity, ResourceSource, Tick,
+        UniqueItemKind, WorkstationTag,
     };
-    use worldwake_sim::GoalBeliefView;
+    use worldwake_sim::{
+        ActionDuration, CombatBeliefView, ControlBeliefView, DurationExpr, EconomicBeliefView,
+        EntityBeliefView, FacilityBeliefView, GoalBeliefView, InventoryBeliefView,
+        ProfileBeliefView, RuntimeBeliefView, SpatialBeliefView, TemporalBeliefView,
+    };
 
     const AGENT: EntityId = EntityId {
         slot: 1,
@@ -835,6 +1059,286 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Default)]
+    struct ResumeBeliefView {
+        entity_places: BTreeMap<EntityId, EntityId>,
+        dead: BTreeSet<EntityId>,
+    }
+
+    impl worldwake_sim::BelievedAuthorityView for ResumeBeliefView {}
+    impl worldwake_sim::LocalPhysicalObservationView for ResumeBeliefView {}
+    impl RuntimeBeliefView for ResumeBeliefView {}
+
+    impl ControlBeliefView for ResumeBeliefView {
+        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn has_control(&self, _entity: EntityId) -> bool {
+            false
+        }
+    }
+
+    impl EntityBeliefView for ResumeBeliefView {
+        fn is_alive(&self, entity: EntityId) -> bool {
+            !self.dead.contains(&entity)
+        }
+
+        fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
+            (!self.dead.contains(&entity) && self.entity_places.contains_key(&entity))
+                .then_some(EntityKind::Agent)
+        }
+
+        fn is_dead(&self, entity: EntityId) -> bool {
+            self.dead.contains(&entity)
+        }
+
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+    }
+
+    impl ProfileBeliefView for ResumeBeliefView {
+        fn homeostatic_needs(&self, _agent: EntityId) -> Option<worldwake_core::HomeostaticNeeds> {
+            None
+        }
+
+        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+
+        fn metabolism_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::MetabolismProfile> {
+            None
+        }
+    }
+
+    impl SpatialBeliefView for ResumeBeliefView {
+        fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
+            self.entity_places.get(&entity).copied()
+        }
+
+        fn is_in_transit(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn route_exists(&self, from: EntityId, to: EntityId) -> bool {
+            from == to
+        }
+
+        fn in_transit_state(&self, _entity: EntityId) -> Option<worldwake_core::InTransitOnEdge> {
+            None
+        }
+
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            _place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            Vec::new()
+        }
+    }
+
+    impl TemporalBeliefView for ResumeBeliefView {
+        fn reservation_conflicts(
+            &self,
+            _entity: EntityId,
+            _range: worldwake_core::TickRange,
+        ) -> bool {
+            false
+        }
+
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<worldwake_core::TickRange> {
+            Vec::new()
+        }
+
+        fn estimate_duration(
+            &self,
+            _actor: EntityId,
+            _duration: &DurationExpr,
+            _targets: &[EntityId],
+            _payload: &worldwake_sim::ActionPayload,
+        ) -> Option<ActionDuration> {
+            None
+        }
+    }
+
+    impl InventoryBeliefView for ResumeBeliefView {
+        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn knows_recipe(&self, _actor: EntityId, _recipe: worldwake_core::RecipeId) -> bool {
+            false
+        }
+
+        fn unique_item_count(&self, _holder: EntityId, _kind: UniqueItemKind) -> u32 {
+            0
+        }
+
+        fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity {
+            Quantity(0)
+        }
+
+        fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
+            None
+        }
+
+        fn item_lot_consumable_profile(
+            &self,
+            _entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
+            None
+        }
+
+        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn known_recipes(&self, _agent: EntityId) -> Vec<worldwake_core::RecipeId> {
+            Vec::new()
+        }
+    }
+
+    impl CombatBeliefView for ResumeBeliefView {
+        fn combat_profile(&self, _agent: EntityId) -> Option<worldwake_core::CombatProfile> {
+            None
+        }
+
+        fn wounds(&self, _agent: EntityId) -> Vec<worldwake_core::Wound> {
+            Vec::new()
+        }
+
+        fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn has_wounds(&self, _entity: EntityId) -> bool {
+            false
+        }
+    }
+
+    impl EconomicBeliefView for ResumeBeliefView {
+        fn trade_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::TradeDispositionProfile> {
+            None
+        }
+
+        fn controlled_commodity_quantity_at_place(
+            &self,
+            _agent: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Quantity {
+            Quantity(0)
+        }
+
+        fn local_controlled_lots_for(
+            &self,
+            _agent: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn listed_sale_lots_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn seller_for_sale_lot(&self, _lot: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
+            Vec::new()
+        }
+
+        fn merchandise_profile(&self, _entity: EntityId) -> Option<MerchandiseProfile> {
+            None
+        }
+    }
+
+    impl worldwake_sim::SocialBeliefView for ResumeBeliefView {
+        fn belief_confidence_policy(&self, _agent: EntityId) -> BeliefConfidencePolicy {
+            BeliefConfidencePolicy::default()
+        }
+
+        fn intention_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::IntentionDispositionProfile> {
+            None
+        }
+    }
+
+    impl worldwake_sim::PoliticalBeliefView for ResumeBeliefView {}
+
+    impl FacilityBeliefView for ResumeBeliefView {
+        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
+            None
+        }
+
+        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
+            None
+        }
+
+        fn has_production_job(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn matching_workstations_at(
+            &self,
+            _place: EntityId,
+            _tag: WorkstationTag,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn resource_sources_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+    }
+
     fn goal_offer(goal: GoalKind, anchor: OpportunityAnchor) -> GoalOffer {
         GoalOffer {
             key: GoalKey::from(goal),
@@ -881,6 +1385,44 @@ mod tests {
         }
     }
 
+    fn partial_plan_segment(
+        resume_conditions: Vec<IntentionResumeCondition>,
+        abandon_conditions: Vec<IntentionAbandonCondition>,
+        resume_attempt_count: u8,
+    ) -> PartialPlanSegment {
+        PartialPlanSegment {
+            id: PartialPlanSegmentId::new(Tick(10), resume_attempt_count.into()),
+            goal: goal_offer(GoalKind::Sleep, OpportunityAnchor::Place(PLACE)),
+            completed_prefix: Vec::new(),
+            remaining_skeleton: None,
+            terminal_barrier: PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 3,
+                budget_total: 3,
+            },
+            barrier_fact: BarrierFact::BudgetExhausted {
+                remaining_stages: 1,
+            },
+            resume_conditions,
+            abandon_conditions,
+            created_tick: Tick(10),
+            last_resume_attempt_tick: None,
+            resume_attempt_count,
+            causal_links: Vec::new(),
+        }
+    }
+
+    fn suspended_partial_entry(segment: PartialPlanSegment) -> AgendaEntry {
+        let mut entry = agenda_entry(
+            GoalKind::Sleep,
+            OpportunityAnchor::Place(PLACE),
+            50,
+            Tick(10),
+        );
+        entry.phase = AgendaPhase::Suspended;
+        entry.partial_plan_segment = Some(segment);
+        entry
+    }
+
     fn default_profile() -> AgendaProfile {
         AgendaProfile {
             pending_capacity: 16,
@@ -917,6 +1459,124 @@ mod tests {
             Tick(10),
             default_profile().revive_cooldown_ticks,
         )
+    }
+
+    #[test]
+    fn try_resume_partial_plan_returns_segment_when_resume_condition_holds() {
+        let segment = partial_plan_segment(
+            vec![IntentionResumeCondition::TickElapsed(4)],
+            Vec::new(),
+            1,
+        );
+        let key = OpportunityKey {
+            goal_key: segment.goal.key,
+            anchor: segment.goal.anchor,
+        };
+        let mut state = AgendaState::default();
+        state
+            .suspended
+            .insert(key, suspended_partial_entry(segment));
+
+        let resumed = super::try_resume_partial_plan(
+            &mut state,
+            AGENT,
+            &ResumeBeliefView::default(),
+            Tick(14),
+            3,
+        )
+        .expect("eligible partial segment should resume");
+
+        assert_eq!(resumed.key, key);
+        assert_eq!(resumed.entry.phase, AgendaPhase::Pending);
+        assert_eq!(resumed.segment.resume_attempt_count, 2);
+        assert_eq!(resumed.segment.last_resume_attempt_tick, Some(Tick(14)));
+        assert!(state.suspended.is_empty());
+    }
+
+    #[test]
+    fn try_resume_partial_plan_leaves_suspended_when_resume_condition_is_unsatisfied() {
+        let segment = partial_plan_segment(
+            vec![IntentionResumeCondition::TickElapsed(4)],
+            Vec::new(),
+            1,
+        );
+        let key = OpportunityKey {
+            goal_key: segment.goal.key,
+            anchor: segment.goal.anchor,
+        };
+        let mut state = AgendaState::default();
+        state
+            .suspended
+            .insert(key, suspended_partial_entry(segment));
+
+        let resumed = super::try_resume_partial_plan(
+            &mut state,
+            AGENT,
+            &ResumeBeliefView::default(),
+            Tick(13),
+            3,
+        );
+
+        assert_eq!(resumed, None);
+        assert!(state.suspended.contains_key(&key));
+    }
+
+    #[test]
+    fn try_resume_partial_plan_abandons_before_resume_when_abandon_condition_holds() {
+        let segment = partial_plan_segment(
+            vec![IntentionResumeCondition::TickElapsed(4)],
+            vec![IntentionAbandonCondition::OpportunityForeverGone(
+                OpportunityAnchor::Entity(TARGET),
+            )],
+            1,
+        );
+        let key = OpportunityKey {
+            goal_key: segment.goal.key,
+            anchor: segment.goal.anchor,
+        };
+        let mut state = AgendaState::default();
+        state
+            .suspended
+            .insert(key, suspended_partial_entry(segment));
+
+        let resumed = super::try_resume_partial_plan(
+            &mut state,
+            AGENT,
+            &ResumeBeliefView::default(),
+            Tick(14),
+            3,
+        );
+
+        assert_eq!(resumed, None);
+        assert!(state.suspended.is_empty());
+    }
+
+    #[test]
+    fn try_resume_partial_plan_abandons_when_resume_attempt_exceeds_patience_limit() {
+        let segment = partial_plan_segment(
+            vec![IntentionResumeCondition::TickElapsed(4)],
+            Vec::new(),
+            3,
+        );
+        let key = OpportunityKey {
+            goal_key: segment.goal.key,
+            anchor: segment.goal.anchor,
+        };
+        let mut state = AgendaState::default();
+        state
+            .suspended
+            .insert(key, suspended_partial_entry(segment));
+
+        let resumed = super::try_resume_partial_plan(
+            &mut state,
+            AGENT,
+            &ResumeBeliefView::default(),
+            Tick(14),
+            3,
+        );
+
+        assert_eq!(resumed, None);
+        assert!(state.suspended.is_empty());
     }
 
     #[test]

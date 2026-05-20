@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — companion-intention synthesis for information barriers
-**Deps**: archive/tickets/S149PARPLASEG-004.md, S149PARPLASEG-005
+**Deps**: archive/tickets/S149PARPLASEG-004.md, archive/tickets/S149PARPLASEG-005.md, tickets/S149PARPLASEG-010.md
 
 ## Problem
 
@@ -14,7 +14,7 @@ D7 makes ignorance an actionable plan outcome: when a plan terminal is `Informat
 
 1. `GoalKind::AskWitness` is at `crates/worldwake-core/src/goal.rs:145` with payload `{ witness: EntityId, topic: TellTopic }` (NOT `{ topic, .. }` and NOT `InformationGapTopic`). The companion synthesis must supply a concrete `witness: EntityId` and pass the barrier's `TellTopic` through. `GoalKindDiscriminant::AskWitness` exists at goal.rs:213.
 2. The companion intention is slot-typed `SlotKind::SocialMotive` (`crates/worldwake-core/src/slot_kind.rs`, S148). It is owned by the suspended primary intention; abandoning the primary cancels the companion.
-3. Shared boundary under audit: the agenda-manager companion-spawn surface and the existing S139 testimony-acquisition path (`AskWitness` goal layer). Phase distinction: this is candidate/companion synthesis; the resume itself (the primary's `BeliefStatusChanged` firing) is owned by ticket 005's resume evaluation.
+3. Shared boundary under audit: the agenda-manager companion-spawn surface and the existing S139 testimony-acquisition path (`AskWitness` goal layer). Phase distinction: this is candidate/companion synthesis; the resume-condition evaluation is owned by ticket 005, while executable segment writing/re-entry is owned by ticket 010.
 4. Live `GoalKind` under test: `AskWitness`. The witness is chosen from co-located or known agents the belief view exposes as plausible sources for the topic (belief-only, FND-14/FND-15). If no plausible witness is known, no companion is spawned (the primary stays suspended until another resume path or abandon fires).
 5. AI regression layer: runtime `agent_tick`/agenda-manager; full action registries required for the E2E commit→belief-update→resume chain (covered by ticket 009 golden), but companion-spawn logic itself is unit-testable.
 
@@ -46,7 +46,8 @@ Wire the companion's cancellation to the primary's abandonment.
 
 ## Out of Scope
 
-- The resume condition firing on commit (ticket 005's resume evaluation already handles `BeliefStatusChanged`).
+- The resume condition evaluation on commit (ticket 005 handles `BeliefStatusChanged`).
+- Executable segment writing and tactical re-entry (ticket 010).
 - Coordination-barrier triggers (ticket 007).
 - E2E information-barrier golden (ticket 009).
 

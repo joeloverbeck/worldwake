@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: No (golden E2E tests only)
-**Deps**: archive/tickets/S149PARPLASEG-001.md, archive/tickets/S149PARPLASEG-002.md, archive/tickets/S149PARPLASEG-003.md, archive/tickets/S149PARPLASEG-004.md, S149PARPLASEG-005, S149PARPLASEG-006, S149PARPLASEG-007, S149PARPLASEG-008
+**Deps**: archive/tickets/S149PARPLASEG-001.md, archive/tickets/S149PARPLASEG-002.md, archive/tickets/S149PARPLASEG-003.md, archive/tickets/S149PARPLASEG-004.md, archive/tickets/S149PARPLASEG-005.md, tickets/S149PARPLASEG-006.md, tickets/S149PARPLASEG-007.md, tickets/S149PARPLASEG-008.md, tickets/S149PARPLASEG-010.md
 
 ## Problem
 
@@ -13,7 +13,7 @@ D11 proves the typed-barrier + partial-plan-resumption layer end-to-end with gol
 ## Assumption Reassessment (2026-05-20)
 
 1. After the S154 consolidation there is no standalone `golden_typed_plan_terminals.rs`; golden tests route through `crates/worldwake-ai/tests/golden_ai.rs` to `tests/scenarios/` (verify exact module layout with `cargo test -p worldwake-ai --test golden_ai -- --list` before authoring). The canonical golden inventory is `docs/generated/golden-e2e-inventory.md`; regenerate with `python3 scripts/golden_inventory.py --write --check-docs` after adding scenarios.
-2. `SafetyBarrier` is out of scope (deferred with the variant per spec Non-Goals), so this ticket covers six scenarios + abandon, not seven: `InformationBarrier`, `CoordinationBarrier`, `ResourceBarrier`, `JurisdictionBarrier`, `SearchBudgetExhausted`, plus the patience-exhausted abandon flow. The `SearchBudgetExhausted` scenario depends on ticket 005's explicit handoff that turns eligible `PlanSearchResult::BudgetExhausted` suspensions into terminal-bearing `PartialPlanSegment`s.
+2. `SafetyBarrier` is out of scope (deferred with the variant per spec Non-Goals), so this ticket covers six scenarios + abandon, not seven: `InformationBarrier`, `CoordinationBarrier`, `ResourceBarrier`, `JurisdictionBarrier`, `SearchBudgetExhausted`, plus the patience-exhausted abandon flow. The `SearchBudgetExhausted` scenario depends on ticket 010's explicit handoff that turns eligible `PlanSearchResult::BudgetExhausted` suspensions into terminal-bearing `PartialPlanSegment`s.
 3. Live `GoalKind`s under test: the primary goal of each scenario plus `AskWitness` for the information-barrier resume chain. Each scenario must route through the real affordance/operator surface for its barrier — confirm the live operator surface per scenario during authoring (no `ProduceCommodity`/`RestockCommodity` narrative assumptions unless the live planner uses them).
 4. Coverage-gap classification: this is the missing golden/E2E layer; focused/unit coverage for each mechanism lands in its owning ticket (001–008). This ticket does not substitute for those unit tests.
 5. Scenario isolation: each barrier scenario must remove unrelated lawful competing affordances so the intended barrier is the one raised. Document per scenario which competing branches were excluded and why (precision-rules §8).
@@ -40,7 +40,7 @@ Author golden scenarios under `crates/worldwake-ai/tests/scenarios/` (per the po
 - `CoordinationBarrier`: agent loses an oven reservation → barrier → `BlockingFact::ReservationConflict` recorded → grant re-available → resume.
 - `ResourceBarrier`: market depleted → barrier → resupply observed → resume.
 - `JurisdictionBarrier`: arrest attempted outside jurisdiction → barrier → travel to jurisdiction → resume.
-- `SearchBudgetExhausted`: budget runs out → eligible suspended segment receives a typed `SearchBudgetExhausted` terminal per ticket 005 → `search_exhaustion_backoff_ticks` TTL → resume.
+- `SearchBudgetExhausted`: budget runs out → eligible suspended segment receives a typed `SearchBudgetExhausted` terminal per ticket 010 → `search_exhaustion_backoff_ticks` TTL → resume.
 
 ### 2. Abandon flow
 

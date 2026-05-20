@@ -56,7 +56,10 @@ pub mod survival_forensics;
 mod testimony_trust;
 mod theft;
 
-pub use agenda_manager::{AgendaTickPolicy, AgendaTransitions, CommitTransition, tick_agenda};
+pub use agenda_manager::{
+    AgendaTickPolicy, AgendaTransitions, CommitTransition, ResumedPlan, tick_agenda,
+    try_resume_partial_plan,
+};
 pub use agenda_types::{
     AgendaEntry, AgendaEntryKey, AgendaOrigin, AgendaPhase, AgendaState, KillCondition,
     RevivalTrigger,
