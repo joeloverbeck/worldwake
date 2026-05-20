@@ -118,7 +118,9 @@ pub use opportunity_expectation_failure::{
     ExpectationFailureCause, ExpectationFailurePhase, OpportunityExpectationFailureIncident,
 };
 pub use partial_plan::{
-    BarrierFact, PartialPlanSegment, PartialPlanSegmentId, PlannedSkeletonStep,
+    BarrierFact, CoordinationBarrierBlockerRecord, PartialPlanSegment, PartialPlanSegmentId,
+    PlannedSkeletonStep, coordination_barrier_blocking_fact, record_coordination_barrier_blocker,
+    resume_conditions_for_barrier_fact, terminal_to_discrepancy,
 };
 pub use plan_guard::{ExpectationKind, Invalidator, PlanExpectation, PlanGuard, RequiredFact};
 pub use plan_guard_build::{

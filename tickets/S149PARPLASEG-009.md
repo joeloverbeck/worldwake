@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: No (golden E2E tests only)
-**Deps**: archive/tickets/S149PARPLASEG-001.md, archive/tickets/S149PARPLASEG-002.md, archive/tickets/S149PARPLASEG-003.md, S149PARPLASEG-004, S149PARPLASEG-005, S149PARPLASEG-006, S149PARPLASEG-007, S149PARPLASEG-008
+**Deps**: archive/tickets/S149PARPLASEG-001.md, archive/tickets/S149PARPLASEG-002.md, archive/tickets/S149PARPLASEG-003.md, archive/tickets/S149PARPLASEG-004.md, S149PARPLASEG-005, S149PARPLASEG-006, S149PARPLASEG-007, S149PARPLASEG-008
 
 ## Problem
 

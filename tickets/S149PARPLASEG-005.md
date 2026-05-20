@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — agenda-manager resumption path; tactical-planner re-entry; barrier-time segment construction
-**Deps**: archive/tickets/S149PARPLASEG-002.md, archive/tickets/S149PARPLASEG-003.md, S149PARPLASEG-004
+**Deps**: archive/tickets/S149PARPLASEG-002.md, archive/tickets/S149PARPLASEG-003.md, archive/tickets/S149PARPLASEG-004.md
 
 ## Problem
 

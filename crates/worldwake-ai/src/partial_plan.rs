@@ -1,10 +1,12 @@
 use crate::{
     GoalOffer, PlanTerminalKind, PlannedStep, PlannerOpKind,
-    htn::{BeliefPredicate, PayloadTemplate},
+    htn::{BeliefPredicate, EntityTemplate, PayloadTemplate},
 };
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
-    CommodityKind, EntityId, EventId, IntentionAbandonCondition, IntentionResumeCondition, Tick,
+    AffordanceKey, BeliefStatusTag, Blocker, BlockerClearingCondition, BlockerMemory, BlockerScope,
+    BlockingFact, CognitiveProfile, CommodityKind, Discrepancy, EntityId, EventId,
+    IntentionAbandonCondition, IntentionResumeCondition, Tick,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -60,17 +62,159 @@ pub enum BarrierFact {
     },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CoordinationBarrierBlockerRecord {
+    pub scope: BlockerScope,
+    pub affordance: AffordanceKey,
+    pub contention_event: Option<EventId>,
+    pub observed_tick: Tick,
+    pub source_event: EventId,
+}
+
+#[must_use]
+pub const fn terminal_to_discrepancy(terminal: &PlanTerminalKind) -> Option<Discrepancy> {
+    match terminal {
+        PlanTerminalKind::GoalSatisfied
+        | PlanTerminalKind::CombatCommitment
+        | PlanTerminalKind::CoordinationBarrier { .. } => None,
+        PlanTerminalKind::InformationBarrier { .. } => Some(Discrepancy::MissingObservation),
+        PlanTerminalKind::ResourceBarrier { .. } => Some(Discrepancy::BeliefStale),
+        PlanTerminalKind::JurisdictionBarrier { .. } => Some(Discrepancy::NoLegalBinding),
+        PlanTerminalKind::SearchBudgetExhausted { .. } => Some(Discrepancy::SearchBudgetExhausted),
+    }
+}
+
+#[must_use]
+pub fn coordination_barrier_blocking_fact(
+    terminal: &PlanTerminalKind,
+    affordance: AffordanceKey,
+    contention_event: Option<EventId>,
+) -> Option<BlockingFact> {
+    match terminal {
+        PlanTerminalKind::CoordinationBarrier { contested_resource }
+            if *contested_resource == affordance.facility =>
+        {
+            Some(BlockingFact::ReservationConflict {
+                affordance,
+                contention_event,
+            })
+        }
+        _ => None,
+    }
+}
+
+pub fn record_coordination_barrier_blocker(
+    memory: &mut BlockerMemory,
+    terminal: &PlanTerminalKind,
+    record: CoordinationBarrierBlockerRecord,
+    cognitive: &CognitiveProfile,
+) -> bool {
+    let Some(blocking_fact) =
+        coordination_barrier_blocking_fact(terminal, record.affordance, record.contention_event)
+    else {
+        return false;
+    };
+    memory.record(Blocker {
+        scope: record.scope,
+        blocking_fact,
+        diagnostic_context: None,
+        observed_tick: record.observed_tick,
+        expires_tick: record.observed_tick + u64::from(cognitive.structural_block_ticks),
+        clearing_condition: BlockerClearingCondition::ContentionChanged {
+            facility: record.affordance.facility,
+        },
+        baseline_snapshot: None,
+        source_event: record.source_event,
+    });
+    true
+}
+
+#[must_use]
+pub fn resume_conditions_for_barrier_fact(
+    fact: &BarrierFact,
+    cognitive: &CognitiveProfile,
+) -> Vec<IntentionResumeCondition> {
+    match fact {
+        BarrierFact::MissingBelief(predicate) => missing_belief_subject(predicate)
+            .map(|subject| {
+                vec![IntentionResumeCondition::BeliefStatusChanged {
+                    subject,
+                    target_status: BeliefStatusTag::Certain,
+                }]
+            })
+            .unwrap_or_default(),
+        BarrierFact::ContestedReservation(target) => {
+            vec![IntentionResumeCondition::ArtifactLegalEffectActive(*target)]
+        }
+        BarrierFact::DepletedResource { place, .. } => {
+            vec![IntentionResumeCondition::BeliefStatusChanged {
+                subject: *place,
+                target_status: BeliefStatusTag::Certain,
+            }]
+        }
+        BarrierFact::NoAuthorityForAction(authority) => {
+            vec![IntentionResumeCondition::ArtifactLegalEffectActive(
+                *authority,
+            )]
+        }
+        BarrierFact::BudgetExhausted { .. } => {
+            vec![IntentionResumeCondition::TickElapsed(
+                cognitive.search_exhaustion_backoff_ticks,
+            )]
+        }
+    }
+}
+
+const fn fixed_entity(template: EntityTemplate) -> Option<EntityId> {
+    match template {
+        EntityTemplate::Fixed(entity) => Some(entity),
+        EntityTemplate::GoalPrimaryEntity
+        | EntityTemplate::GoalSecondaryEntity
+        | EntityTemplate::GoalPlace
+        | EntityTemplate::BountyTarget
+        | EntityTemplate::Violation
+        | EntityTemplate::Institution
+        | EntityTemplate::Escortee => None,
+    }
+}
+
+fn missing_belief_subject(predicate: &BeliefPredicate) -> Option<EntityId> {
+    match predicate {
+        BeliefPredicate::BountyRecordExists { bounty }
+        | BeliefPredicate::BountyExpired { bounty } => fixed_entity(*bounty),
+        BeliefPredicate::TargetLastSeenKnown { target }
+        | BeliefPredicate::TargetBelievedDangerous { target } => fixed_entity(*target),
+        BeliefPredicate::WitnessNamesKnown { violation }
+        | BeliefPredicate::InstitutionalRecordBelievedExtant { violation } => {
+            fixed_entity(*violation)
+        }
+        BeliefPredicate::EscorteeBelievedSafeAt { escortee } => fixed_entity(*escortee),
+        BeliefPredicate::ResourceSourceKnown { .. }
+        | BeliefPredicate::SellerKnown { .. }
+        | BeliefPredicate::OwnedCommodityBelowThreshold { .. }
+        | BeliefPredicate::OwnsInputsForRecipe { .. }
+        | BeliefPredicate::AllyOrBountyOfficeAvailable => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{BarrierFact, PartialPlanSegment, PartialPlanSegmentId, PlannedSkeletonStep};
+    use super::{
+        BarrierFact, CoordinationBarrierBlockerRecord, PartialPlanSegment, PartialPlanSegmentId,
+        PlannedSkeletonStep, coordination_barrier_blocking_fact,
+        record_coordination_barrier_blocker, resume_conditions_for_barrier_fact,
+        terminal_to_discrepancy,
+    };
     use crate::{
         GoalOffer, PlanTerminalKind, PlannedStep, PlannerOpKind, PlanningEntityRef,
-        htn::{BeliefPredicate, CommodityTemplate, PayloadTemplate},
+        htn::{BeliefPredicate, CommodityTemplate, EntityTemplate, PayloadTemplate},
     };
     use std::collections::BTreeSet;
     use worldwake_core::{
-        ActionDefId, CommodityKind, CommodityPurpose, EntityId, EventId, GoalKey, GoalKind,
-        IntentionAbandonCondition, IntentionResumeCondition, OpportunityAnchor, Permille, Tick,
+        ActionDefId, AffordanceKey, BeliefStatusTag, BlockerMemory, BlockerScope, BlockingFact,
+        CognitiveProfile, CommodityKind, CommodityPurpose, Discrepancy, EntityId, EventId, GoalKey,
+        GoalKind, IntentionAbandonCondition, IntentionResumeCondition, OpportunityAnchor, Permille,
+        Tick,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -188,5 +332,165 @@ mod tests {
         assert_ne!(first, later_tick);
         assert!(first < second);
         assert!(second < later_tick);
+    }
+
+    #[test]
+    fn typed_terminals_map_to_existing_discrepancy_surface() {
+        let place = entity(20);
+        let authority = entity(21);
+        let jurisdiction = entity(22);
+        let contested = entity(23);
+
+        let cases = [
+            (PlanTerminalKind::GoalSatisfied, None),
+            (PlanTerminalKind::CombatCommitment, None),
+            (
+                PlanTerminalKind::InformationBarrier {
+                    topic: worldwake_core::TellTopic::EntityBelief { subject: place },
+                },
+                Some(Discrepancy::MissingObservation),
+            ),
+            (
+                PlanTerminalKind::CoordinationBarrier {
+                    contested_resource: contested,
+                },
+                None,
+            ),
+            (
+                PlanTerminalKind::ResourceBarrier {
+                    commodity: CommodityKind::Bread,
+                    place,
+                },
+                Some(Discrepancy::BeliefStale),
+            ),
+            (
+                PlanTerminalKind::JurisdictionBarrier {
+                    authority,
+                    jurisdiction,
+                },
+                Some(Discrepancy::NoLegalBinding),
+            ),
+            (
+                PlanTerminalKind::SearchBudgetExhausted {
+                    budget_consumed: 7,
+                    budget_total: 10,
+                },
+                Some(Discrepancy::SearchBudgetExhausted),
+            ),
+        ];
+
+        for (terminal, expected) in cases {
+            assert_eq!(terminal_to_discrepancy(&terminal), expected);
+        }
+    }
+
+    #[test]
+    fn coordination_barrier_records_reservation_conflict_blocker() {
+        let facility = entity(30);
+        let affordance = AffordanceKey {
+            facility,
+            action: ActionDefId(3),
+        };
+        let terminal = PlanTerminalKind::CoordinationBarrier {
+            contested_resource: facility,
+        };
+        let contention_event = Some(EventId(77));
+        let expected_fact = BlockingFact::ReservationConflict {
+            affordance,
+            contention_event,
+        };
+        assert_eq!(
+            coordination_barrier_blocking_fact(&terminal, affordance, contention_event),
+            Some(expected_fact)
+        );
+
+        let mut memory = BlockerMemory::default();
+        let scope = BlockerScope::Exact(worldwake_core::BlockerKey {
+            goal_key: goal_offer().key,
+            place: Some(entity(31)),
+            target: Some(facility),
+            action_def: Some(ActionDefId(3)),
+        });
+        let cognitive = CognitiveProfile {
+            structural_block_ticks: 12,
+            ..CognitiveProfile::default()
+        };
+        assert!(record_coordination_barrier_blocker(
+            &mut memory,
+            &terminal,
+            CoordinationBarrierBlockerRecord {
+                scope,
+                affordance,
+                contention_event,
+                observed_tick: Tick(40),
+                source_event: EventId(88),
+            },
+            &cognitive,
+        ));
+        let blocker = memory.intents.get(&scope).unwrap();
+        assert_eq!(blocker.blocking_fact, expected_fact);
+        assert_eq!(
+            blocker.clearing_condition,
+            worldwake_core::BlockerClearingCondition::ContentionChanged { facility }
+        );
+        assert_eq!(blocker.observed_tick, Tick(40));
+        assert_eq!(blocker.expires_tick, Tick(52));
+        assert_eq!(blocker.source_event, EventId(88));
+    }
+
+    #[test]
+    fn barrier_facts_derive_existing_resume_conditions() {
+        let target = entity(40);
+        let place = entity(41);
+        let authority = entity(42);
+        let cognitive = CognitiveProfile {
+            search_exhaustion_backoff_ticks: 17,
+            ..CognitiveProfile::default()
+        };
+
+        let cases = [
+            (
+                BarrierFact::MissingBelief(BeliefPredicate::TargetLastSeenKnown {
+                    target: EntityTemplate::Fixed(target),
+                }),
+                vec![IntentionResumeCondition::BeliefStatusChanged {
+                    subject: target,
+                    target_status: BeliefStatusTag::Certain,
+                }],
+            ),
+            (
+                BarrierFact::ContestedReservation(target),
+                vec![IntentionResumeCondition::ArtifactLegalEffectActive(target)],
+            ),
+            (
+                BarrierFact::DepletedResource {
+                    commodity: CommodityKind::Bread,
+                    place,
+                },
+                vec![IntentionResumeCondition::BeliefStatusChanged {
+                    subject: place,
+                    target_status: BeliefStatusTag::Certain,
+                }],
+            ),
+            (
+                BarrierFact::NoAuthorityForAction(authority),
+                vec![IntentionResumeCondition::ArtifactLegalEffectActive(
+                    authority,
+                )],
+            ),
+            (
+                BarrierFact::BudgetExhausted {
+                    remaining_stages: 2,
+                },
+                vec![IntentionResumeCondition::TickElapsed(17)],
+            ),
+        ];
+
+        for (fact, expected) in cases {
+            assert_eq!(
+                resume_conditions_for_barrier_fact(&fact, &cognitive),
+                expected
+            );
+        }
     }
 }
