@@ -78,6 +78,7 @@ opportunity-specific `PlanningSnapshot` and records that source without recomput
 - `crates/worldwake-ai/tests/golden_harness/survival_forensics_assertions.rs`
 - `crates/worldwake-ai/tests/golden_harness/timeline.rs`
 - `crates/worldwake-cli/src/bin/observer.rs`
+- `crates/worldwake-visualizer/src/trace_buffers.rs`
 
 ## Out of Scope
 
@@ -127,7 +128,7 @@ Completed on 2026-05-20.
   planning loop.
 - Added sink/query support and public re-exports for `SnapshotAdmissionTrace` and
   `AdmissionSource`.
-- Updated AI/CLI test helpers for the added trace field.
+- Updated AI/CLI/visualizer test helpers for the added trace field.
 
 ## Deviations
 
@@ -143,3 +144,4 @@ Completed on 2026-05-20.
 - Passed `cargo test -p worldwake-ai --lib decision_trace::tests::sink_records_snapshot_admissions_by_agent_tick -- --exact`.
 - Passed `cargo test -p worldwake-ai --lib planning_snapshot::tests::build_snapshot_includes_actor_evidence_and_places_within_horizon -- --exact`.
 - Passed `cargo test -p worldwake-ai`.
+- Passed `cargo test -p worldwake-visualizer --lib trace_buffers`.

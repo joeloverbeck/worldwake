@@ -185,6 +185,6 @@ Completed on 2026-05-20.
 - The landed enum intentionally excludes a hypothetical-planner-effect variant because no live
   hypothetical-effect id path feeds `build_planning_snapshot`.
 
-Verification included focused admission-source and decision-trace tests plus
-`cargo test -p worldwake-ai` during the ticket-family implementation. The final pre-push gate is
-owned by the harness after spec archival.
+Verification included focused admission-source and decision-trace tests,
+`cargo test -p worldwake-ai`, and visualizer trace-buffer fallout coverage during the
+ticket-family implementation. The final pre-push gate is owned by the harness after spec archival.
