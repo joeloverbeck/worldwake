@@ -1,0 +1,23 @@
+{
+  "originating_spec": "specs/S153-golden-gaps-ai-architecture-scaling.md",
+  "archived_spec": "archive/specs/S153-golden-gaps-ai-architecture-scaling.md",
+  "worktree_root": "/home/joeloverbeck/projects/worldwake",
+  "starting_branch": "main",
+  "current_branch": "implement-S153-golden-gaps-scaling",
+  "base_head": "ea61988df8776b349c78e21eaf67e4309094a2a4",
+  "last_ticket": "archive/tickets/S153GOLDGAPSCALE-003.md",
+  "last_result": "final_spec_archived",
+  "last_work_commit": "4a136f8f55dc141f69611c0b08f744a20308a133",
+  "last_state_commit": "containing_commit",
+  "last_state_commit_kind": "separate",
+  "next_target": null,
+  "queue": [],
+  "implement_ticket_audit": "done",
+  "post_ticket_review_audit": "not_required",
+  "last_implement_ticket_audit": "done",
+  "last_post_ticket_review_audit": "done",
+  "blocked": false,
+  "blocker": null,
+  "dirty_state": "clean",
+  "updated_at": "2026-05-20"
+}

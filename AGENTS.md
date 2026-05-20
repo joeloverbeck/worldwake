@@ -131,11 +131,9 @@ For debugging AI decisions or action execution, see `docs/debugging-traces.md` (
 
 ## Delivery Planning
 
-- The implementation plan spans 22 epics across 4 phases.
-- Phase 1 (`E01`-`E08`) and Phase 2 (`E09`-`E13`) are completed and archived under `archive/specs/`.
-- Active planning material lives in `specs/` and currently includes the `S04`-`S12` specs plus active `E16b`-`E22` epic specs.
-- Phase ordering and gates live in `specs/IMPLEMENTATION-ORDER.md`.
-- Do not treat phase gates as advisory. New phase work should not begin until the prior gate conditions pass.
+- Gameplay-related specs may remain in `specs/` while core AI architecture work is prioritized first.
+- The former implementation-order authority has been retired and archived at `archive/specs/IMPLEMENTATION-ORDER-2026-05-20.md`.
+- Do not infer active phase gates from retired implementation-order material; use the current user request and live specs/tickets as the source of work scope.
 
 ## Dependencies
 

@@ -4,14 +4,17 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
 use crate::golden_harness::*;
-use worldwake_ai::{DecisionOutcome, generate_candidates};
+use worldwake_ai::{DecisionOutcome, GoalKey, PlannerOpKind, generate_candidates};
 use worldwake_core::{
     AgentBeliefStore, BlockerMemory, ClaimId, ClaimValue, CommodityKind, ControlSource, EntityId,
     EntityKind, GoalKind, HomeostaticNeeds, MetabolismProfile, PerceptionSource, Permille,
-    Quantity, Seed, SuccessionLaw, TheftDispositionProfile, Tick, UtilityProfile,
+    PursuitProfile, Quantity, Seed, SuccessionLaw, TheftDispositionProfile, Tick, UtilityProfile,
 };
 use worldwake_core::{EntityBeliefAspect, EntityBeliefClaim};
-use worldwake_sim::{BeliefRead, BelievedAuthorityView, LocalPhysicalObservationView};
+use worldwake_sim::{
+    BeliefRead, BelievedAuthorityView, LocalPhysicalObservationView, SpatialBeliefView,
+    get_affordances,
+};
 
 struct BeliefWallFixture {
     h: GoldenHarness,
@@ -20,6 +23,14 @@ struct BeliefWallFixture {
     chest: EntityId,
     building: EntityId,
     office: EntityId,
+}
+
+struct RemotePursuitFixture {
+    h: GoldenHarness,
+    actor: EntityId,
+    target: EntityId,
+    last_seen_place: EntityId,
+    current_place: EntityId,
 }
 
 fn set_control_source(h: &mut GoldenHarness, agent: EntityId, control_source: ControlSource) {
@@ -33,6 +44,24 @@ fn set_theft_profile(h: &mut GoldenHarness, agent: EntityId, profile: TheftDispo
     let mut txn = new_txn(&mut h.world, 0);
     txn.set_component_theft_disposition_profile(agent, profile)
         .unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn set_pursuit_profile(h: &mut GoldenHarness, agent: EntityId, profile: PursuitProfile) {
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_pursuit_profile(agent, profile).unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn add_hostility(h: &mut GoldenHarness, subject: EntityId, target: EntityId) {
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.add_hostility(subject, target).unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn move_entity(h: &mut GoldenHarness, entity: EntityId, place: EntityId, tick: u64) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_ground_location(entity, place).unwrap();
     commit_txn(txn, &mut h.event_log);
 }
 
@@ -113,6 +142,62 @@ fn build_fixture(seed: Seed) -> BeliefWallFixture {
     }
 }
 
+fn build_remote_pursuit_fixture(seed: Seed) -> RemotePursuitFixture {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let actor = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Stale-Location Actor",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            courage: Permille::new(1000).unwrap(),
+            ..UtilityProfile::default()
+        },
+    );
+    let target = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Moved Target",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, target, ControlSource::Human);
+    set_pursuit_profile(
+        &mut h,
+        actor,
+        PursuitProfile {
+            min_location_confidence: Permille::new(0).unwrap(),
+            max_pursuit_travel_ticks: NonZeroU32::new(20).unwrap(),
+        },
+    );
+
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        actor,
+        target,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    add_hostility(&mut h, actor, target);
+    move_entity(&mut h, target, RULERS_HALL, 1);
+
+    RemotePursuitFixture {
+        h,
+        actor,
+        target,
+        last_seen_place: ORCHARD_FARM,
+        current_place: RULERS_HALL,
+    }
+}
+
 fn authority_view_for(fixture: &BeliefWallFixture) -> worldwake_sim::PerAgentBeliefView<'_> {
     let store = fixture
         .h
@@ -120,6 +205,12 @@ fn authority_view_for(fixture: &BeliefWallFixture) -> worldwake_sim::PerAgentBel
         .get_component_agent_belief_store(fixture.actor)
         .expect("fixture should seed actor belief store");
     worldwake_sim::PerAgentBeliefView::new_at_tick(fixture.actor, Tick(0), &fixture.h.world, store)
+}
+
+fn remote_pursuit_view_for(
+    fixture: &RemotePursuitFixture,
+) -> worldwake_sim::PerAgentBeliefView<'_> {
+    worldwake_sim::PerAgentBeliefView::from_world(fixture.actor, &fixture.h.world)
 }
 
 fn assert_no_authority_beliefs(fixture: &BeliefWallFixture) {
@@ -164,6 +255,103 @@ fn assert_local_physical_observation(fixture: &BeliefWallFixture) {
         Some(EntityKind::Facility)
     );
     assert_eq!(fixture.h.world.owner_of(fixture.chest), Some(fixture.owner));
+}
+
+fn assert_remote_pursuit_uses_last_seen_place(fixture: &RemotePursuitFixture) {
+    let view = remote_pursuit_view_for(fixture);
+    assert_eq!(
+        fixture.h.world.effective_place(fixture.target),
+        Some(fixture.current_place)
+    );
+    assert_eq!(
+        SpatialBeliefView::effective_place(&view, fixture.target),
+        Some(fixture.last_seen_place)
+    );
+
+    let goal = GoalKey::from(GoalKind::EngageHostile {
+        target: fixture.target,
+    });
+    let candidates = generate_candidates(
+        &view,
+        fixture.actor,
+        &BlockerMemory::default(),
+        &fixture.h.recipes,
+        Tick(1),
+    );
+    let pursuit_offer = candidates
+        .iter()
+        .find(|candidate| candidate.key == goal)
+        .unwrap_or_else(|| {
+            panic!(
+                "expected remote EngageHostile candidate from stale belief; candidates={candidates:#?}"
+            )
+        });
+    assert!(
+        pursuit_offer
+            .evidence_places
+            .contains(&fixture.last_seen_place),
+        "pursuit evidence should contain the last-seen place; offer={pursuit_offer:#?}"
+    );
+    assert!(
+        !pursuit_offer
+            .evidence_places
+            .contains(&fixture.current_place),
+        "pursuit evidence must not contain the target's current remote place; offer={pursuit_offer:#?}"
+    );
+}
+
+fn assert_remote_pursuit_trace_never_targets_current_place(fixture: &RemotePursuitFixture) {
+    let goal = GoalKey::from(GoalKind::EngageHostile {
+        target: fixture.target,
+    });
+    let trace_sink = fixture
+        .h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled");
+    let traces = trace_sink.traces_for(fixture.actor);
+    assert!(
+        traces
+            .iter()
+            .any(|trace| matches!(trace.outcome, DecisionOutcome::Planning(_))),
+        "expected at least one planning trace; traces={traces:#?}"
+    );
+
+    let mut saw_last_seen_evidence = false;
+    for trace in &traces {
+        let DecisionOutcome::Planning(ref planning) = trace.outcome else {
+            continue;
+        };
+        for evidence in planning.candidates.evidence_for_goal(goal) {
+            let Some(pursuit) = evidence.pursuit else {
+                continue;
+            };
+            if pursuit.believed_place == Some(fixture.last_seen_place) {
+                saw_last_seen_evidence = true;
+            }
+            assert_ne!(
+                pursuit.believed_place,
+                Some(fixture.current_place),
+                "decision trace must not use the target's current remote place: {pursuit:#?}"
+            );
+        }
+        if planning.selection.selected_goal_is(goal)
+            && let Some(plan) = planning.selection.selected_plan.as_ref()
+        {
+            assert!(
+                !plan
+                    .steps
+                    .iter()
+                    .any(|step| step.op_kind == PlannerOpKind::Travel
+                        && step.targets.contains(&fixture.current_place)),
+                "selected pursuit plan must not travel to the target's current remote place; plan={plan:#?}"
+            );
+        }
+    }
+    assert!(
+        saw_last_seen_evidence,
+        "expected decision trace evidence for stale last-seen place; traces={traces:#?}"
+    );
 }
 
 fn is_steal_item(goal: GoalKind, target: EntityId) -> bool {
@@ -230,6 +418,19 @@ fn assert_no_steal_action_committed(fixture: &BeliefWallFixture) {
                 && matches!(event.kind, worldwake_sim::ActionTraceKind::Committed { .. })),
         "ownerless-in-belief co-located chest must not reach a committed steal action"
     );
+}
+
+fn affordance_fingerprint(fixture: &BeliefWallFixture) -> Vec<String> {
+    let view = authority_view_for(fixture);
+    get_affordances(&view, fixture.actor, &fixture.h.defs, &fixture.h.handlers)
+        .into_iter()
+        .map(|affordance| {
+            format!(
+                "{:?}|{:?}|{:?}",
+                affordance.def_id, affordance.bound_targets, affordance.payload_override
+            )
+        })
+        .collect()
 }
 
 // Scenario 420: Belief Wall Trap Suppresses Theft
@@ -356,4 +557,51 @@ fn explicit_owner_belief_is_the_theft_candidate_gate() {
             .any(|candidate| is_steal_item(candidate.key.kind, fixture.chest)),
         "explicit owner belief should be sufficient to admit the theft candidate; candidates={candidates:#?}"
     );
+}
+
+// Scenario 454: Stale Remote Pursuit Uses Last-Seen Place
+//
+// Systems: Perception, AI, Combat
+// ActionDomains: Combat, Travel
+// Places: VillageSquare, OrchardFarm, RulersHall
+// Principles: 7, 14, 14A, 15, 29
+//
+// Setup: An AI actor has a direct stale belief that a hostile target was at Orchard Farm. The target is then moved to Ruler's Hall with no witness, testimony, record, or local observation channel delivering that move to the actor.
+//
+// Proves: Remote pursuit candidate generation and the decision trace use the actor's stale last-known place and never the target's current authoritative remote place.
+//
+// Chain: direct observation belief -> hidden remote move -> belief-view effective_place -> remote hostile candidate evidence -> decision trace excludes live remote truth.
+#[test]
+fn golden_belief_wall_trap_remote_pursuit_uses_stale_location_not_live_truth() {
+    let mut fixture = build_remote_pursuit_fixture(Seed([0x46; 32]));
+
+    assert_remote_pursuit_uses_last_seen_place(&fixture);
+
+    fixture.h.step_once();
+
+    assert_remote_pursuit_trace_never_targets_current_place(&fixture);
+}
+
+// Scenario 455: Control Source Swap Preserves Belief Affordances
+//
+// Systems: Perception, AI
+// ActionDomains: Crime, Travel, Production
+// Places: VillageSquare, OrchardFarm
+// Principles: 14, 14A, 19
+//
+// Setup: One agent body stands in an unchanged belief and world state beside a locally observed but socially unknown chest; only `ControlSource` is swapped from AI to Human.
+//
+// Proves: The lawful belief-facing affordance set is identical for AI and human control of the same body, preserving agent symmetry while social control facts remain belief-gated.
+//
+// Chain: stable body/world/belief state -> AI affordance enumeration -> control-source swap -> Human affordance enumeration -> identical affordance fingerprint.
+#[test]
+fn golden_belief_wall_trap_control_source_swap_preserves_affordances() {
+    let mut fixture = build_fixture(Seed([0x47; 32]));
+
+    let ai_affordances = affordance_fingerprint(&fixture);
+    set_control_source(&mut fixture.h, fixture.actor, ControlSource::Human);
+    let human_affordances = affordance_fingerprint(&fixture);
+
+    assert_eq!(ai_affordances, human_affordances);
+    assert_no_authority_beliefs(&fixture);
 }

@@ -440,6 +440,13 @@ impl ControlBeliefView for PerAgentBeliefView<'_> {
         {
             return true;
         }
+        let accessible = entity == self.agent
+            || self.believed_entity(entity).is_some()
+            || self.world.possessor_of(entity) == Some(self.agent)
+            || self.world.owner_of(entity) == Some(self.agent);
+        if !accessible {
+            return false;
+        }
         self.world.can_exercise_control(actor, entity).is_ok()
     }
 
@@ -953,12 +960,18 @@ impl SpatialBeliefView for PerAgentBeliefView<'_> {
             return self.world.effective_place(entity);
         }
 
+        if self.has_authoritative_local_visibility(entity)
+            || self.world.possessor_of(entity) == Some(self.agent)
+        {
+            return self.world.effective_place(entity);
+        }
+
         self.believed_entity(entity)
             .and_then(|state| state.last_known_place)
             .or_else(|| {
-                self.knows_entity(entity)
-                    .then(|| self.world.effective_place(entity))
-                    .flatten()
+                self.world
+                    .get_component_last_seen_memory(self.agent)
+                    .and_then(|memory| memory.records.get(&entity).map(|record| record.place))
             })
     }
 
@@ -1799,8 +1812,9 @@ impl InventoryBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
-        let accessible =
-            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        let accessible = self.knows_entity(entity)
+            || self.has_authoritative_local_visibility(entity)
+            || self.world.possessor_of(entity) == Some(self.agent);
         accessible
             .then(|| {
                 self.world
@@ -1816,16 +1830,18 @@ impl InventoryBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
-        let accessible =
-            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        let accessible = self.knows_entity(entity)
+            || self.has_authoritative_local_visibility(entity)
+            || self.world.possessor_of(entity) == Some(self.agent);
         accessible
             .then(|| self.world.direct_container(entity))
             .flatten()
     }
 
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
-        let accessible =
-            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        let accessible = self.has_authoritative_local_visibility(entity)
+            || self.knows_entity(entity)
+            || self.world.possessor_of(entity) == Some(self.agent);
         accessible
             .then(|| self.world.possessor_of(entity))
             .flatten()
@@ -2543,12 +2559,14 @@ mod tests {
         let places = world.topology().place_ids().collect::<Vec<_>>();
         let place = places[0];
         let believed_place = places[1];
+        let authoritative_other_place = places[2];
         let (agent, other) = {
             let mut txn = new_txn(&mut world, 1);
             let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
             txn.set_ground_location(agent, place).unwrap();
-            txn.set_ground_location(other, place).unwrap();
+            txn.set_ground_location(other, authoritative_other_place)
+                .unwrap();
             commit_txn(txn);
             (agent, other)
         };
@@ -2866,6 +2884,88 @@ mod tests {
         assert_eq!(
             SpatialBeliefView::effective_place(&view, other),
             Some(place_a)
+        );
+    }
+
+    #[test]
+    fn effective_place_uses_last_seen_without_refreshing_remote_truth() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let actor_place = places[0];
+        let last_seen_place = places[1];
+        let current_remote_place = places[2];
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, actor_place).unwrap();
+            txn.set_ground_location(other, last_seen_place).unwrap();
+            txn.set_component_last_seen_memory(
+                agent,
+                LastSeenMemory {
+                    records: BTreeMap::from([(
+                        other,
+                        LastSeenRecord {
+                            subject: other,
+                            place: last_seen_place,
+                            observed_tick: Tick(1),
+                            source: agent,
+                            provenance: LastSeenProvenance::DirectObservation,
+                        },
+                    )]),
+                    capacity: 8,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, other)
+        };
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_ground_location(other, current_remote_place)
+                .unwrap();
+            commit_txn(txn);
+        }
+
+        let view = PerAgentBeliefView::from_world(agent, &world);
+
+        assert_eq!(world.effective_place(other), Some(current_remote_place));
+        assert_eq!(
+            SpatialBeliefView::effective_place(&view, other),
+            Some(last_seen_place)
+        );
+    }
+
+    #[test]
+    fn effective_place_keeps_authoritative_reads_for_local_or_possessed_entities() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let actor_place = places[0];
+        let remote_place = places[1];
+        let (agent, co_located, possessed) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let co_located = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let possessed = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(agent, actor_place).unwrap();
+            txn.set_ground_location(co_located, actor_place).unwrap();
+            txn.set_ground_location(possessed, remote_place).unwrap();
+            txn.set_possessor(possessed, agent).unwrap();
+            commit_txn(txn);
+            (agent, co_located, possessed)
+        };
+
+        let view = PerAgentBeliefView::from_world(agent, &world);
+
+        assert_eq!(
+            SpatialBeliefView::effective_place(&view, co_located),
+            Some(actor_place)
+        );
+        assert_eq!(
+            SpatialBeliefView::effective_place(&view, possessed),
+            world.effective_place(possessed)
         );
     }
 
@@ -5269,6 +5369,53 @@ mod tests {
     }
 
     #[test]
+    fn co_located_unknown_item_lot_exposes_physical_inventory_facts() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, loose_lot, held_lot, holder) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let holder = txn.create_agent("Holder", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(holder, place).unwrap();
+            let loose_lot = txn
+                .create_item_lot_with_owner(CommodityKind::Water, Quantity(2), place, None)
+                .unwrap();
+            let held_lot = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(held_lot, place).unwrap();
+            txn.set_possessor(held_lot, holder).unwrap();
+            commit_txn(txn);
+            (agent, loose_lot, held_lot, holder)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            InventoryBeliefView::item_lot_commodity(&view, loose_lot),
+            Some(CommodityKind::Water)
+        );
+        assert_eq!(
+            InventoryBeliefView::direct_container(&view, loose_lot),
+            None
+        );
+        assert_eq!(
+            InventoryBeliefView::direct_possessor(&view, loose_lot),
+            None
+        );
+        assert_eq!(
+            InventoryBeliefView::item_lot_commodity(&view, held_lot),
+            Some(CommodityKind::Bread)
+        );
+        assert_eq!(
+            InventoryBeliefView::direct_possessor(&view, held_lot),
+            Some(holder)
+        );
+    }
+
+    #[test]
     fn believed_rights_returns_rights_for_known_entity() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
@@ -5317,6 +5464,103 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert!(ControlBeliefView::believed_rights(&view, other, lot).is_empty());
+    }
+
+    #[test]
+    fn can_control_returns_false_for_belief_inaccessible_authoritatively_controlled_entity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let seat = places[0];
+        let remote_place = places[1];
+        let (agent, item) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, seat).unwrap();
+            let office = txn.create_office("Storehouse Steward").unwrap();
+            txn.set_component_office_data(
+                office,
+                OfficeData {
+                    title: "Steward".to_string(),
+                    seat,
+                    jurisdiction: BTreeSet::from([seat, remote_place]),
+                    succession_law: SuccessionLaw::Support,
+                    eligibility_rules: Vec::new(),
+                    succession_period_ticks: 8,
+                    vacancy_since: None,
+                },
+            )
+            .unwrap();
+            create_record(&mut txn, seat, agent, RecordKind::OfficeRegister);
+            txn.assign_office(office, agent).unwrap();
+            let item = txn
+                .create_item_lot_with_owner(
+                    CommodityKind::Bread,
+                    Quantity(1),
+                    remote_place,
+                    Some(office),
+                )
+                .unwrap();
+            commit_txn(txn);
+            (agent, item)
+        };
+
+        assert!(world.can_exercise_control(agent, item).is_ok());
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert!(!ControlBeliefView::can_control(&view, agent, item));
+    }
+
+    #[test]
+    fn can_control_returns_true_for_belief_accessible_controlled_entity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let seat = places[0];
+        let remote_place = places[1];
+        let (agent, item) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, seat).unwrap();
+            let item = txn
+                .create_item_lot_with_owner(
+                    CommodityKind::Bread,
+                    Quantity(1),
+                    remote_place,
+                    Some(agent),
+                )
+                .unwrap();
+            commit_txn(txn);
+            (agent, item)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(item, entity_belief(remote_place, true, 1, 10));
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert!(ControlBeliefView::can_control(&view, agent, item));
+    }
+
+    #[test]
+    fn can_control_returns_true_for_colocated_unowned_item_without_belief() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(CommodityKind::Bread, Quantity(1), place, None)
+                .unwrap();
+            commit_txn(txn);
+            (agent, lot)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert!(ControlBeliefView::can_control(&view, agent, lot));
     }
 
     #[test]
