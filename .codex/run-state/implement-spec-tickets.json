@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implement-S149-partial-plan-segments",
   "base_head": "25389affcd7368b0c8375f64d47c0560bdc5f433",
-  "last_ticket": "archive/tickets/S149PARPLASEG-010.md",
+  "last_ticket": "archive/tickets/S149PARPLASEG-006.md",
   "last_result": "completed_archived",
-  "last_work_commit": "1ef9474b1e948e1e358e0b0f24febac70182e3b1",
+  "last_work_commit": "654d010d6d908de41a91fde1f2bd3bb5607c685c",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S149PARPLASEG-006.md",
+  "next_target": "tickets/S149PARPLASEG-007.md",
   "queue": [
-    "tickets/S149PARPLASEG-006.md",
     "tickets/S149PARPLASEG-007.md",
     "tickets/S149PARPLASEG-008.md",
     "tickets/S149PARPLASEG-009.md"
