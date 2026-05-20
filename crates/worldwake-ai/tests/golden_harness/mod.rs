@@ -8,6 +8,7 @@
 
 pub mod commodity_assumption_falsification;
 pub mod need_projection_assertions;
+pub mod route_blocker_assertions;
 pub mod soak_world;
 pub mod survival_forensics_assertions;
 pub mod testimony_assertions;
@@ -52,6 +53,8 @@ pub use commodity_assumption_falsification::{
 pub use need_projection_assertions::{
     blocker_is_suppressed, first_need_horizon_entry, frame_contains_need_safe_until_tick,
 };
+#[allow(unused_imports)]
+pub use route_blocker_assertions::expect_route_blocker_lifecycle;
 #[allow(unused_imports)]
 pub use survival_forensics_assertions::{
     dump_reports_for_debug, expect_deterministic_reports, expect_sleep_progress_barrier_window,

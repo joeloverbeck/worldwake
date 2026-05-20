@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 209
-- Contributing golden scenario source files: 52
-- Associated tests: 257
+- Scenario blocks: 210
+- Contributing golden scenario source files: 53
+- Associated tests: 259
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1822,6 +1822,18 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Setup**: the same segment has a positive route preference and an active RouteSegment blocker; the alternate segment has neither.
 
 **Proves**: the preference remains inspectable as a soft signal while the blocker is independently active as a hard suppression surface.
+
+### Scenario 445: S153 Scaled Contention Route Blocker Composition
+
+- Source: `scaled_contention.rs:293`
+- Systems: AI, Needs, Travel, Production, Contention
+- GoalKinds: ConsumeOwnedCommodity, AcquireCommodity, Wash
+- ActionDomains: Production, Travel, Needs
+- Principles: P1, P8, P25, P31
+
+**Setup**: six agents share two two-slot wells and one single-slot wash basin; one direct remote route carries prior dangerous traversal state and a TTL route-segment blocker.
+
+**Proves**: capacity grants and surplus queue state remain first-class, route preference and route-segment blockers compose, one hungry-not-thirsty agent has local apple substitution, and all six agents stay alive under the authored envelope.
 
 ### Scenario 421: Survival-baseline diagnostics fixture
 

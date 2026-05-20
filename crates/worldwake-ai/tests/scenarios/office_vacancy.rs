@@ -78,11 +78,11 @@ fn seed_guard_patrol_duty(h: &mut GoldenHarness, guard: EntityId, office: Entity
     commit_txn(txn, &mut h.event_log);
 }
 
-fn belief_view_for<'a>(
-    h: &'a GoldenHarness,
+fn belief_view_for(
+    h: &GoldenHarness,
     agent: EntityId,
     tick: Tick,
-) -> worldwake_sim::PerAgentBeliefView<'a> {
+) -> worldwake_sim::PerAgentBeliefView<'_> {
     let store = h
         .world
         .get_component_agent_belief_store(agent)

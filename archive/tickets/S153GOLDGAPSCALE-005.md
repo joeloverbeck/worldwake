@@ -59,7 +59,7 @@ Regenerated the golden inventory, scenario index, coverage matrix, and new offic
 ## Out of Scope
 
 - Additional production duty lifecycle state beyond the prerequisite.
-- The scaled-contention golden (`tickets/S153GOLDGAPSCALE-003.md`).
+- The scaled-contention golden (`archive/tickets/S153GOLDGAPSCALE-003.md`).
 - A hidden scenario flag or authored script that directly suppresses patrols.
 
 ## Acceptance Result

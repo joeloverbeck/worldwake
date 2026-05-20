@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden scenario source files: 57
-- Files contributing `golden_*` tests: 57
-- Total `golden_*` tests: 275
+- Golden scenario source files: 58
+- Files contributing `golden_*` tests: 58
+- Total `golden_*` tests: 277
 
 ## Per-Scenario-File Inventory
 
@@ -45,6 +45,7 @@ Do not hand-edit it.
 | `portfolio_planning.rs` | 1 |
 | `quantity_aware_acquisition.rs` | 5 |
 | `route_preferences.rs` | 4 |
+| `scaled_contention.rs` | 2 |
 | `scenario_diagnostics_fixture.rs` | 1 |
 | `scenario_diagnostics_replay.rs` | 1 |
 | `simulation_gaps.rs` | 5 |
@@ -351,6 +352,11 @@ Do not hand-edit it.
 - `golden_route_preference_dangerous_traversal_lowers_preference`
 - `golden_route_preference_decays_to_neutral_after_profile_window`
 - `golden_route_preference_and_route_segment_blocker_compose_independently`
+
+### `scaled_contention.rs`
+
+- `golden_scaled_contention_queue_route_blocker_and_survivability`
+- `golden_scaled_contention_replays_deterministically`
 
 ### `scenario_diagnostics_fixture.rs`
 

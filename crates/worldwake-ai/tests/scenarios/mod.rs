@@ -30,6 +30,7 @@ pub mod portfolio_five_slots;
 pub mod portfolio_planning;
 pub mod quantity_aware_acquisition;
 pub mod route_preferences;
+pub mod scaled_contention;
 pub mod scenario_diagnostics_fixture;
 pub mod scenario_diagnostics_replay;
 pub mod simulation_gaps;

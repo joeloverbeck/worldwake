@@ -114,7 +114,7 @@ Completed on 2026-05-20.
 - Added the shared golden helper `expect_testimony_reliability_update`.
 - Regenerated golden inventory, scenario index, testimony-reliability detail page, and coverage matrix.
 - Updated `specs/S153-golden-gaps-ai-architecture-scaling.md` so D2 describes the existing-module helper-level proof instead of a duplicate `false_rumor_justice.rs` module.
-- Updated `specs/IMPLEMENTATION-ORDER.md` and then-pending siblings `archive/tickets/S153GOLDGAPSCALE-002.md` / `tickets/S153GOLDGAPSCALE-003.md` so active handoff prose no longer overstates false-rumor justice as end-to-end or cites stale `CLAUDE.md` guidance. `S153GOLDGAPSCALE-002` was later rejected and archived after live reassessment proved the office-vacancy golden needs a new substrate owner.
+- Updated `specs/IMPLEMENTATION-ORDER.md` and then-pending siblings `archive/tickets/S153GOLDGAPSCALE-002.md` / the now-archived `archive/tickets/S153GOLDGAPSCALE-003.md` so active handoff prose no longer overstates false-rumor justice as end-to-end or cites stale `CLAUDE.md` guidance. `S153GOLDGAPSCALE-002` was later rejected and archived after live reassessment proved the office-vacancy golden needs a new substrate owner.
 
 ## Deviations
 

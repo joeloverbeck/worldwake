@@ -83,7 +83,7 @@ Landed later in `archive/tickets/S153GOLDGAPSCALE-005.md`; this ticket landed no
 
 ## Out of Scope
 
-- The scaled-contention golden and route-blocker helper (`tickets/S153GOLDGAPSCALE-003.md`).
+- The scaled-contention golden and route-blocker helper (`archive/tickets/S153GOLDGAPSCALE-003.md`).
 - A general duty system for every possible institutional duty kind beyond the patrol duty path needed for Canonical Scenario F.
 - Omniscient town-manager code, hidden scenario flags, or planner-only fake duty state.
 - Backward-compatibility support for a parallel non-duty patrol-obligation path once the new path is canonical.
