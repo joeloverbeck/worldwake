@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 210
+- Scenario blocks: 212
 - Contributing golden scenario source files: 53
-- Associated tests: 259
+- Associated tests: 261
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -219,7 +219,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 420: Belief Wall Trap Suppresses Theft
 
-- Source: `belief_wall_trap.rs:235`
+- Source: `belief_wall_trap.rs:436`
 - Systems: Perception, AI, Crime
 - ActionDomains: Crime
 - Places: VillageSquare, OrchardFarm
@@ -230,6 +230,34 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: FND-14A's co-location exception remains physical-only: local observation sees the chest/building, `BelievedAuthorityView` returns `Unknown` for social authority facts, and theft is absent from both candidate generation and the decision trace.
 
 **Cross-system chain**: bootstrap authoritative ownership -> local physical observation -> authority-belief absence -> theft candidate generation wall -> no committed steal.
+
+### Scenario 454: Stale Remote Pursuit Uses Last-Seen Place
+
+- Source: `belief_wall_trap.rs:562`
+- Systems: Perception, AI, Combat
+- ActionDomains: Combat, Travel
+- Places: VillageSquare, OrchardFarm, RulersHall
+- Principles: 7, 14, 14A, 15, 29
+
+**Setup**: An AI actor has a direct stale belief that a hostile target was at Orchard Farm. The target is then moved to Ruler's Hall with no witness, testimony, record, or local observation channel delivering that move to the actor.
+
+**Proves**: Remote pursuit candidate generation and the decision trace use the actor's stale last-known place and never the target's current authoritative remote place.
+
+**Cross-system chain**: direct observation belief -> hidden remote move -> belief-view effective_place -> remote hostile candidate evidence -> decision trace excludes live remote truth.
+
+### Scenario 455: Control Source Swap Preserves Belief Affordances
+
+- Source: `belief_wall_trap.rs:585`
+- Systems: Perception, AI
+- ActionDomains: Crime, Travel, Production
+- Places: VillageSquare, OrchardFarm
+- Principles: 14, 14A, 19
+
+**Setup**: One agent body stands in an unchanged belief and world state beside a locally observed but socially unknown chest; only `ControlSource` is swapped from AI to Human.
+
+**Proves**: The lawful belief-facing affordance set is identical for AI and human control of the same body, preserving agent symmetry while social control facts remain belief-gated.
+
+**Cross-system chain**: stable body/world/belief state -> AI affordance enumeration -> control-source swap -> Human affordance enumeration -> identical affordance fingerprint.
 
 ### Scenario 447: S152 Seeded Assignment Is Deterministic
 
@@ -1825,7 +1853,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 445: S153 Scaled Contention Route Blocker Composition
 
-- Source: `scaled_contention.rs:293`
+- Source: `scaled_contention.rs:295`
 - Systems: AI, Needs, Travel, Production, Contention
 - GoalKinds: ConsumeOwnedCommodity, AcquireCommodity, Wash
 - ActionDomains: Production, Travel, Needs

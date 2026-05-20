@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden scenario source files: 58
 - Files contributing `golden_*` tests: 58
-- Total `golden_*` tests: 277
+- Total `golden_*` tests: 279
 
 ## Per-Scenario-File Inventory
 
@@ -16,7 +16,7 @@ Do not hand-edit it.
 | `activation_decay.rs` | 6 |
 | `ai_decisions.rs` | 15 |
 | `artifact_lifecycle.rs` | 5 |
-| `belief_wall_trap.rs` | 3 |
+| `belief_wall_trap.rs` | 5 |
 | `cognitive_archetypes.rs` | 7 |
 | `contention_inspectability.rs` | 5 |
 | `cross_goal_blocker_scoping.rs` | 8 |
@@ -112,6 +112,8 @@ Do not hand-edit it.
 - `golden_belief_wall_trap_suppresses_theft_without_authority_belief`
 - `golden_belief_wall_trap_replays_deterministically`
 - `explicit_owner_belief_is_the_theft_candidate_gate`
+- `golden_belief_wall_trap_remote_pursuit_uses_stale_location_not_live_truth`
+- `golden_belief_wall_trap_control_source_swap_preserves_affordances`
 
 ### `cognitive_archetypes.rs`
 

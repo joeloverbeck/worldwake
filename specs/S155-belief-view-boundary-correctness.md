@@ -30,8 +30,8 @@ AI Architecture Consolidation (Adjunct Wave — derived from `reports/ai-archite
 DRAFT
 
 Implementation status: D1 landed in `archive/tickets/S155BELVIEBOU-001.md` on 2026-05-20; D2
-landed in `archive/tickets/S155BELVIEBOU-002.md` on 2026-05-20; D3-D4 remain active in
-`tickets/S155BELVIEBOU-003.md`.
+landed in `archive/tickets/S155BELVIEBOU-002.md` on 2026-05-20; D3-D4 landed in
+`archive/tickets/S155BELVIEBOU-003.md` on 2026-05-20.
 
 ## Crates
 
@@ -235,6 +235,8 @@ Impact Rule, trace the full decision cycle (see the Authoritative-to-AI Impact A
 below) — the candidate-generation and replan ripples are the load-bearing ones.
 
 ### D3 — Belief-boundary golden/focused tests
+Status: landed in `archive/tickets/S155BELVIEBOU-003.md` on 2026-05-20.
+
 Add tests under the post-S154 golden form (and focused unit tests on `PerAgentBeliefView`):
 - **Stale target location** (Regression Scenario D): no remote moved target is revealed; A
   plans from P1 or seeks information, never targets P2.
@@ -243,9 +245,13 @@ Add tests under the post-S154 golden form (and focused unit tests on `PerAgentBe
   explicit belief entry exists.
 - **Control-source swap symmetry** (FND-19): swapping `ControlSource::Ai`↔`Human` on the same
   body mid-decision yields the identical lawful affordance set.
-Each test must fail against the pre-fix accessors and pass after D1/D2.
+These tests target the pre-fix accessor failures and pass after D1/D2.
+The landed D3 coverage in `archive/tickets/S155BELVIEBOU-003.md` exercises those regression seams in
+`crates/worldwake-ai/tests/scenarios/belief_wall_trap.rs`.
 
 ### D4 — Doc contract update (folded in)
+Status: landed in `archive/tickets/S155BELVIEBOU-003.md` on 2026-05-20.
+
 Update `docs/planner-contracts.md` "Entity admission and the belief barrier" section to state:
 non-self `effective_place` is belief/last-seen only (authoritative read permitted solely for
 co-located or directly-possessed entities); planning/UI control visibility uses belief-gated

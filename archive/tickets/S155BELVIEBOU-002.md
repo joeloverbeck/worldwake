@@ -95,7 +95,7 @@ Completed on 2026-05-20.
 - `ControlBeliefView::can_control` now preserves the FND-14A co-located unowned-item shortcut, then requires belief accessibility before consulting authoritative `World::can_exercise_control`.
 - Added focused unit coverage for the belief-inaccessible negative case plus the belief-accessible and co-located-unowned positive controls.
 - No caller files, trait declarations, or authoritative dispatch validation were changed.
-- `S155BELVIEBOU-003` remains active for the golden E2E coverage and `docs/planner-contracts.md` contract update.
+- `archive/tickets/S155BELVIEBOU-003.md` later landed the golden E2E coverage and `docs/planner-contracts.md` contract update.
 
 ## Verification Result
 
