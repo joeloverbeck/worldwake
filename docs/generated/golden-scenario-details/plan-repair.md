@@ -93,7 +93,7 @@ Scenarios: 7
 
 **Setup**: repair context has no preserved prefix and no replacement candidates, so earlier local strategies cannot preserve progress.
 
-**Proves**: Abandon is the deterministic final local outcome and returns an empty progress-barrier plan.
+**Proves**: Abandon is the deterministic final local outcome and returns an empty typed-barrier plan.
 
 ### Scenario 414: S137 Phase 11 Approved Repair Gate Witness
 

@@ -31,6 +31,7 @@ pub mod knowledge_path;
 pub mod motive_source_mapping;
 pub mod opportunity_compiler;
 pub mod opportunity_expectation_failure;
+pub mod partial_plan;
 pub mod perf_telemetry;
 pub mod plan_guard;
 pub mod plan_guard_build;
@@ -55,7 +56,10 @@ pub mod survival_forensics;
 mod testimony_trust;
 mod theft;
 
-pub use agenda_manager::{AgendaTickPolicy, AgendaTransitions, CommitTransition, tick_agenda};
+pub use agenda_manager::{
+    AgendaTickPolicy, AgendaTransitions, CommitTransition, ResumedPlan,
+    spawn_information_barrier_companions, tick_agenda, try_resume_partial_plan,
+};
 pub use agenda_types::{
     AgendaEntry, AgendaEntryKey, AgendaOrigin, AgendaPhase, AgendaState, KillCondition,
     RevivalTrigger,
@@ -116,6 +120,13 @@ pub use interrupts::{InterruptDecision, InterruptTrigger, evaluate_interrupt};
 pub use opportunity_expectation_failure::{
     ExpectationFailureCause, ExpectationFailurePhase, OpportunityExpectationFailureIncident,
 };
+pub use partial_plan::{
+    BarrierFact, CoordinationBarrierBlockerRecord, PartialPlanSegment, PartialPlanSegmentId,
+    PartialPlanSegmentSeed, PlannedSkeletonStep, budget_exhausted_partial_plan_segment,
+    build_partial_plan_segment, coordination_barrier_blocking_fact,
+    record_coordination_barrier_blocker, resume_conditions_for_barrier_fact,
+    terminal_to_discrepancy,
+};
 pub use plan_guard::{ExpectationKind, Invalidator, PlanExpectation, PlanGuard, RequiredFact};
 pub use plan_guard_build::{
     build_plan_expectations, build_plan_guard, build_plan_guard_with_causal_links,
@@ -130,10 +141,10 @@ pub use plan_revalidation::{
 pub use plan_selection::{SelectionPolicy, select_best_plan};
 pub use planner_duration_contract::PlannerDurationDependency;
 pub use planner_ops::{
-    ExpectedMaterialization, OpportunityExpectationKind, PlanTerminalKind, PlannedPlan,
-    PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerSyntheticCargo, authoritative_target,
-    authoritative_targets, build_semantics_table, resolve_planning_target_with,
-    resolve_planning_targets_with,
+    ExpectedMaterialization, OpportunityExpectationKind, PlanTerminalKind,
+    PlanTerminalKindDiscriminant, PlannedPlan, PlannedStep, PlannerOpKind, PlannerOpSemantics,
+    PlannerSyntheticCargo, authoritative_target, authoritative_targets, build_semantics_table,
+    resolve_planning_target_with, resolve_planning_targets_with,
 };
 pub use planning_snapshot::{
     PlanningSnapshot, build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,

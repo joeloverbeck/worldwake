@@ -57,7 +57,7 @@ use crate::{
     frame_runtime_snapshot,
     plan_step_expectations::{expire_plan_step_expectations, persist_expectation_store_update},
     ranking::OrderedRanked,
-    tick_agenda,
+    tick_agenda, try_resume_partial_plan,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1787,6 +1787,28 @@ fn process_agent(
                 current_frame.as_ref(),
                 tick,
             );
+        }
+    }
+    {
+        let view = runtime_belief_view(
+            agent,
+            ctx.world,
+            ctx.scheduler,
+            action_defs,
+            recipe_registry,
+        );
+        let patience_limit = current_frame
+            .as_ref()
+            .map_or(30, |frame| frame.patience_limit);
+        if let Some(resumed) = try_resume_partial_plan(
+            &mut current_agenda_state,
+            agent,
+            &view,
+            tick,
+            patience_limit,
+        ) {
+            ranked_candidates.push(resumed.entry);
+            runtime.dirty.insert(crate::DirtySet::REPLAN_SIGNAL);
         }
     }
     let frame_switch_margin = {

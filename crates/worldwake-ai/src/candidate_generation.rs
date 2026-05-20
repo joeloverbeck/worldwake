@@ -19944,7 +19944,10 @@ mod tests {
             },
             goal,
             Vec::new(),
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         )
         .with_committed_source(Some(worldwake_core::SourceKey {
             entity: source_entity,
@@ -20035,7 +20038,10 @@ mod tests {
             },
             goal,
             Vec::new(),
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         )
         .with_committed_source(Some(worldwake_core::SourceKey {
             entity: other_source,

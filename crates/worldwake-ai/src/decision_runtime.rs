@@ -305,13 +305,14 @@ mod tests {
         classify_frame_plan_relation, frame_runtime_snapshot, frame_travel_destination,
         has_active_frame_travel, has_frame,
     };
+    use crate::htn::{BeliefPredicate, CommodityTemplate, PayloadTemplate};
     use crate::{
         AgendaEntry, AgendaOrigin, AgendaPhase, CommodityPurpose, DirtySet, ExhaustionBaseline,
         ExhaustionInvalidationCondition, FeasibilityHint, GoalKey, GoalOffer, GoalPriorityClass,
         HypotheticalEntityId, KillCondition, OpportunityAnchor, OpportunityExpectationKind,
-        OpportunityKey, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
-        PlanningEntityRef, ProfileFixture, RevivalTrigger,
-        decision_trace::SourceReliabilityDiscount,
+        OpportunityKey, PartialPlanSegment, PartialPlanSegmentId, PlanTerminalKind, PlannedPlan,
+        PlannedStep, PlannerOpKind, PlanningEntityRef, ProfileFixture, RevivalTrigger,
+        decision_trace::SourceReliabilityDiscount, partial_plan::BarrierFact,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::ActionDefId;
@@ -365,6 +366,35 @@ mod tests {
         )
     }
 
+    fn sample_partial_plan_segment(goal: GoalOffer) -> PartialPlanSegment {
+        PartialPlanSegment {
+            id: PartialPlanSegmentId::new(Tick(13), 1),
+            goal,
+            completed_prefix: vec![sample_step(8, PlannerOpKind::Travel)],
+            remaining_skeleton: Some(vec![crate::PlannedSkeletonStep {
+                op: PlannerOpKind::AskWitness,
+                target_template: PayloadTemplate::FromContext,
+                expected_pre: vec![BeliefPredicate::SellerKnown {
+                    commodity: CommodityTemplate::Fixed(CommodityKind::Bread),
+                }],
+            }]),
+            terminal_barrier: PlanTerminalKind::ResourceBarrier {
+                commodity: CommodityKind::Bread,
+                place: entity(20),
+            },
+            barrier_fact: BarrierFact::DepletedResource {
+                commodity: CommodityKind::Bread,
+                place: entity(20),
+            },
+            resume_conditions: Vec::new(),
+            abandon_conditions: Vec::new(),
+            created_tick: Tick(13),
+            last_resume_attempt_tick: Some(Tick(14)),
+            resume_attempt_count: 1,
+            causal_links: vec![EventId(88)],
+        }
+    }
+
     fn sample_goal_offer(goal: GoalKey, anchor: OpportunityAnchor) -> GoalOffer {
         GoalOffer {
             key: goal,
@@ -407,6 +437,7 @@ mod tests {
             competition_discount: None,
             source_composite: None,
             feasibility: FeasibilityHint::Uncertain,
+            partial_plan_segment: None,
         }
     }
 
@@ -630,6 +661,8 @@ mod tests {
                     Tick(13),
                 );
                 suspended.kill_condition = KillCondition::TickExpiry { at_tick: Tick(25) };
+                suspended.partial_plan_segment =
+                    Some(sample_partial_plan_segment(suspended.offer.clone()));
 
                 crate::AgendaState {
                     committed: Some(committed),

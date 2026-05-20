@@ -31,7 +31,7 @@ use crate::{
     DirtySet, ExhaustionEntry, ExhaustionRetryState, ExpectationFailureCause,
     ExpectationFailurePhase, KillCondition, OpportunityExpectationFailureIncident, OpportunityKey,
     PlanValue, PlannedPlan, PlannedStep, PlannerOpSemantics, PlanningStateCacheCounters,
-    RevivalTrigger, authoritative_target,
+    RevivalTrigger, authoritative_target, budget_exhausted_partial_plan_segment,
     build_planning_snapshot_with_blocked_facility_uses_and_route_preference,
     planner_ops::committed_source_for_offer, planner_ops::expectation_kind_for_offer,
     ranking::OrderedRanked, revalidate_next_step, select_best_plan,
@@ -171,7 +171,11 @@ impl std::ops::Deref for CandidatePlanningPass {
 fn found_plan_blocks_later_goals(plan: &PlannedPlan) -> bool {
     match plan.terminal_kind {
         crate::PlanTerminalKind::GoalSatisfied | crate::PlanTerminalKind::CombatCommitment => true,
-        crate::PlanTerminalKind::ProgressBarrier => {
+        crate::PlanTerminalKind::InformationBarrier { .. }
+        | crate::PlanTerminalKind::CoordinationBarrier { .. }
+        | crate::PlanTerminalKind::ResourceBarrier { .. }
+        | crate::PlanTerminalKind::JurisdictionBarrier { .. }
+        | crate::PlanTerminalKind::SearchBudgetExhausted { .. } => {
             !matches!(plan.goal.kind, GoalKind::InvestigateViolation { .. })
         }
     }
@@ -1074,6 +1078,54 @@ fn record_exhausted_goals(
         }
     }
     pending_tracker_increments
+}
+
+fn write_budget_exhausted_partial_plan_segments(
+    agenda_state: &mut AgendaState,
+    ranked_candidates: &OrderedRanked<'_>,
+    plans: &[CandidatePlanSearch],
+    tick: Tick,
+    cognitive: &CognitiveProfile,
+) -> usize {
+    let mut written = 0usize;
+    for plan in plans {
+        let PlanSearchResult::BudgetExhausted { expansions_used } = plan.result else {
+            continue;
+        };
+        let Some(candidate) = ranked_candidates.iter().find(|candidate| {
+            candidate.offer.key == plan.opportunity.goal_key
+                && candidate.offer.anchor == plan.opportunity.anchor
+        }) else {
+            continue;
+        };
+
+        let mut entry = candidate.clone();
+        entry.phase = AgendaPhase::Suspended;
+        entry.last_reconsidered_tick = tick;
+        entry.revival_trigger = None;
+        entry.kill_condition = KillCondition::External;
+        entry.partial_plan_segment = Some(budget_exhausted_partial_plan_segment(
+            candidate.offer.clone(),
+            u32::from(expansions_used),
+            u32::from(cognitive.max_node_expansions),
+            tick,
+            written
+                .try_into()
+                .expect("partial segment counter exceeded u16 in one planning tick"),
+            cognitive,
+        ));
+        agenda_state.pending.remove(&entry.key);
+        if agenda_state
+            .committed
+            .as_ref()
+            .is_some_and(|committed| committed.key == entry.key)
+        {
+            agenda_state.committed = None;
+        }
+        agenda_state.suspended.insert(entry.key, entry);
+        written += 1;
+    }
+    written
 }
 
 fn frontier_exhaustion_entry(
@@ -2001,6 +2053,13 @@ fn plan_and_validate_next_step_with_opportunity_index(
                 tick,
                 cognitive,
             );
+            let _ = write_budget_exhausted_partial_plan_segments(
+                agenda_state,
+                ranked_candidates,
+                &plans.plans,
+                tick,
+                cognitive,
+            );
             for plan in &plans.plans {
                 if plan.result.is_found() {
                     runtime.exhaustion_cache.remove(&plan.opportunity);
@@ -2455,6 +2514,13 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
             tick,
             cognitive,
         );
+        let _ = write_budget_exhausted_partial_plan_segments(
+            agenda_state,
+            ranked_candidates,
+            &plans.plans,
+            tick,
+            cognitive,
+        );
         for plan in &plans.plans {
             if plan.result.is_found() {
                 runtime.exhaustion_cache.remove(&plan.opportunity);
@@ -2800,6 +2866,7 @@ mod tests {
         has_pending_budget_retry, plan_completion_tick_for_adoption, plan_search_result_to_trace,
         planning_time_target_belief_presence, record_exhausted_goals, selected_plan_value,
         summarize_ranked_goal, summarize_selected_plan, summarize_snapshot_continuation,
+        write_budget_exhausted_partial_plan_segments,
     };
     use crate::{
         AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
@@ -4033,6 +4100,7 @@ mod tests {
             competition_discount: None,
             source_composite: None,
             feasibility: FeasibilityHint::Likely,
+            partial_plan_segment: None,
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,
             introduced_tick: Tick(0),
@@ -4077,6 +4145,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: selected_goal,
                     anchor: OpportunityAnchor::None,
@@ -4110,6 +4179,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: runner_up,
                     anchor: OpportunityAnchor::None,
@@ -4143,6 +4213,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: third,
                     anchor: OpportunityAnchor::None,
@@ -4176,6 +4247,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: fourth,
                     anchor: OpportunityAnchor::None,
@@ -4219,7 +4291,10 @@ mod tests {
                     expectations: Vec::new(),
                 },
             ],
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         );
         let mut event_log = EventLog::new();
         let agent = entity(1);
@@ -4369,7 +4444,10 @@ mod tests {
                 guard: None,
                 expectations: Vec::new(),
             }],
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         );
 
         let tick = Tick(20);
@@ -4547,6 +4625,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: GoalKey::from(kind),
                     anchor,
@@ -4700,6 +4779,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: survival_goal,
                     anchor: OpportunityAnchor::None,
@@ -4734,6 +4814,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: commitment_goal,
                     anchor: OpportunityAnchor::Place(posting_place),
@@ -4768,6 +4849,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: selected_goal,
                     anchor: OpportunityAnchor::Place(entity(45)),
@@ -5028,6 +5110,7 @@ mod tests {
             competition_discount: None,
             source_composite: None,
             feasibility: FeasibilityHint::Likely,
+            partial_plan_segment: None,
             key: worldwake_core::OpportunityKey {
                 goal_key: opportunity.goal_key,
                 anchor: opportunity.anchor,
@@ -5238,6 +5321,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: goal,
                     anchor: OpportunityAnchor::None,
@@ -5274,6 +5358,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: goal,
                     anchor: OpportunityAnchor::Place(market),
@@ -5962,7 +6047,10 @@ mod tests {
             opportunity(goal),
             goal,
             Vec::new(),
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         );
 
         assert!(!found_plan_blocks_later_goals(&barrier_plan));
@@ -5977,7 +6065,10 @@ mod tests {
             opportunity(goal),
             goal,
             Vec::new(),
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         );
 
         assert!(found_plan_blocks_later_goals(&barrier_plan));
@@ -6632,6 +6723,64 @@ mod tests {
         let entry = runtime.exhaustion_cache.get(&goal).unwrap();
         assert_eq!(entry.consecutive_failures, 2);
         assert_eq!(entry.next_retry_tick, Some(Tick(17)));
+    }
+
+    #[test]
+    fn write_budget_exhausted_partial_plan_segments_suspends_ranked_goal_with_segment() {
+        let opportunity = consume_opportunity(CommodityKind::Bread, OpportunityAnchor::None);
+        let ranked = vec![ranked_goal_with_score(
+            opportunity,
+            GoalPriorityClass::Medium,
+            50,
+        )];
+        let plans = vec![searched_plan(
+            opportunity,
+            PlanSearchResult::BudgetExhausted {
+                expansions_used: 12,
+            },
+        )];
+        let mut cognitive = cognitive(&ProfileFixture {
+            max_node_expansions: 99,
+            ..ProfileFixture::default()
+        });
+        cognitive.search_exhaustion_backoff_ticks = 7;
+        let mut agenda_state = AgendaState::default();
+        agenda_state
+            .pending
+            .insert(ranked[0].key, ranked[0].clone());
+
+        let written = write_budget_exhausted_partial_plan_segments(
+            &mut agenda_state,
+            &ordered(&ranked),
+            &plans,
+            Tick(30),
+            &cognitive,
+        );
+
+        assert_eq!(written, 1);
+        assert!(!agenda_state.pending.contains_key(&opportunity));
+        let suspended = agenda_state
+            .suspended
+            .get(&opportunity)
+            .expect("budget-exhausted goal should be suspended with a segment");
+        assert_eq!(suspended.phase, AgendaPhase::Suspended);
+        let segment = suspended.partial_plan_segment.as_ref().unwrap();
+        assert_eq!(segment.goal, ranked[0].offer);
+        assert_eq!(
+            segment.terminal_barrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 12,
+                budget_total: 99,
+            }
+        );
+        assert_eq!(
+            segment.resume_conditions,
+            vec![worldwake_core::IntentionResumeCondition::TickElapsed(7)]
+        );
+        assert_eq!(
+            segment.abandon_conditions,
+            vec![worldwake_core::IntentionAbandonCondition::PatienceExhausted]
+        );
     }
 
     #[test]

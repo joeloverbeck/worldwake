@@ -5638,8 +5638,16 @@
         "count": 651
       },
       {
-        "key": "ProgressBarrier",
-        "count": 179
+        "key": "InformationBarrier",
+        "count": 1
+      },
+      {
+        "key": "CoordinationBarrier",
+        "count": 12
+      },
+      {
+        "key": "ResourceBarrier",
+        "count": 166
       }
     ],
     "heuristic_helpful_action_hit_rate": 9,
@@ -5774,7 +5782,7 @@
     "cache_invalidation_count": 0,
     "planning_state_cache_entities_at_hits": 767,
     "planning_state_cache_entities_at_misses": 4073,
-    "planning_state_cache_effective_place_hits": 494057,
+    "planning_state_cache_effective_place_hits": 494069,
     "planning_state_cache_effective_place_misses": 185992,
     "planning_state_cache_invalidations": 16974
   }

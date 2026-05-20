@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use worldwake_ai::{
-    PlanGuard, PlanRepairContext, PlanTerminalKind, PlannedStep, PlannerOpKind, PlanningEntityRef,
-    RepairFailure, RepairOutcome, RepairPlanCandidate, attempt_repair_then_replan,
+    PlanGuard, PlanRepairContext, PlannedStep, PlannerOpKind, PlanningEntityRef, RepairFailure,
+    RepairOutcome, RepairPlanCandidate, attempt_repair_then_replan,
 };
 use worldwake_core::{
     AcquisitionQuantity, ActionDefId, BeliefClaimKey, Blocker, BlockerClearingCondition,
@@ -378,12 +378,12 @@ fn recently_failed_repair_kind_is_skipped_without_global_suppression() {
     else {
         panic!("visible prefix should still repair after the recently failed kind is skipped");
     };
-    assert_eq!(kind, RepairKind::DowngradeToProgressBarrier);
+    assert_eq!(kind, RepairKind::DowngradeToTypedBarrier);
     assert_eq!(
         rejected.first(),
         Some(&(RepairKind::RebindTarget, RepairFailure::RecentlyFailed))
     );
-    assert_eq!(new_plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert!(new_plan.terminal_kind.is_barrier());
     assert_eq!(new_plan.steps, prefix);
 }
 
@@ -397,7 +397,7 @@ fn recently_failed_repair_kind_is_skipped_without_global_suppression() {
 // Proves: the blocker can be removed by its structural clearing condition and
 //         the same condition is visible to localized repair.
 // Cross-system chain: DiscrepancyClearing -> BlockerMemory sweep ->
-//                     progress-barrier repair.
+//                     typed-barrier repair.
 #[test]
 fn commodity_availability_changed_clears_blocker_structurally() {
     let goal = goal_key();
@@ -458,7 +458,7 @@ fn commodity_availability_changed_clears_blocker_structurally() {
     let RepairOutcome::Repaired { kind, new_plan, .. } = outcome else {
         panic!("visible commodity-clearing discrepancy should repair to a progress barrier");
     };
-    assert_eq!(kind, RepairKind::DowngradeToProgressBarrier);
+    assert_eq!(kind, RepairKind::DowngradeToTypedBarrier);
     assert_eq!(new_plan.steps, prefix);
 }
 
@@ -525,9 +525,9 @@ fn repair_budget_exhaustion_falls_through_to_full_replan() {
 // Setup: repair context has no preserved prefix and no replacement candidates,
 //        so earlier local strategies cannot preserve progress.
 // Proves: Abandon is the deterministic final local outcome and returns an empty
-//         progress-barrier plan.
+//         typed-barrier plan.
 // Cross-system chain: failed local repair axes -> Abandon ->
-//                     ProgressBarrier plan shape.
+//                     typed barrier plan shape.
 #[test]
 fn abandon_returns_empty_progress_barrier_after_prior_strategies_fail() {
     let goal = goal_key();
@@ -556,7 +556,7 @@ fn abandon_returns_empty_progress_barrier_after_prior_strategies_fail() {
         panic!("abandon should be the final local outcome after earlier attempts fail");
     };
     assert_eq!(kind, RepairKind::Abandon);
-    assert_eq!(new_plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert!(new_plan.terminal_kind.is_barrier());
     assert!(new_plan.steps.is_empty());
 }
 

@@ -979,9 +979,13 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
                             .into(),
                         );
                     }
-                    // ProgressBarrier is stored as a fallback — keep searching
+                    // Barrier terminals are stored as fallbacks — keep searching
                     // for a GoalSatisfied plan across deeper expansion levels.
-                    PlanTerminalKind::ProgressBarrier => {
+                    PlanTerminalKind::InformationBarrier { .. }
+                    | PlanTerminalKind::CoordinationBarrier { .. }
+                    | PlanTerminalKind::ResourceBarrier { .. }
+                    | PlanTerminalKind::JurisdictionBarrier { .. }
+                    | PlanTerminalKind::SearchBudgetExhausted { .. } => {
                         if best_barrier.is_none() {
                             best_barrier = Some(PlannedPlan::new(
                                 opportunity,

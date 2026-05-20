@@ -2,6 +2,7 @@ use super::candidates::{
     CandidateSearchContext, CommodityFilterContext, apply_commodity_relevance_filter,
     candidate_blocked_by_place, relevant_action_defs, root_candidate_trace_from_candidate,
 };
+use super::transition::terminal_kind;
 use super::{
     FrontierEntry, SearchCandidate, SearchNode, TacticalGoal, compare_search_nodes,
     compute_heuristic, prune_travel_away_from_goal, search_candidate_from_planner,
@@ -1661,7 +1662,7 @@ fn search_returns_travel_then_consume_for_adjacent_food() {
     assert_eq!(plan.steps.len(), 2);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
     assert_eq!(plan.steps[1].op_kind, PlannerOpKind::MoveCargo);
-    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert!(plan.terminal_kind.is_barrier());
 }
 
 #[test]
@@ -1795,7 +1796,7 @@ fn search_returns_travel_then_trade_barrier_for_reachable_seller() {
     .into_plan()
     .unwrap();
 
-    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert!(plan.terminal_kind.is_barrier());
     assert_eq!(plan.steps.len(), 2);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
     assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Trade);
@@ -1923,7 +1924,7 @@ fn search_returns_travel_then_trade_barrier_for_remote_listed_sale_lot_without_c
     .into_plan()
     .unwrap();
 
-    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert!(plan.terminal_kind.is_barrier());
     assert_eq!(plan.steps.len(), 2);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
     assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Trade);
@@ -2053,7 +2054,7 @@ fn search_returns_travel_then_trade_barrier_for_remote_displayed_sale_lot_with_c
     .into_plan()
     .unwrap();
 
-    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert!(plan.terminal_kind.is_barrier());
     assert_eq!(plan.steps.len(), 2);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
     assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Trade);
@@ -2162,7 +2163,7 @@ fn search_prefers_local_trade_barrier_over_cheaper_nonterminal_travel_options() 
     .into_plan()
     .expect("local trade barrier should not be pruned by cheaper travel branches");
 
-    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert!(plan.terminal_kind.is_barrier());
     assert_eq!(plan.steps.len(), 1);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Trade);
     assert!(matches!(
@@ -2259,7 +2260,7 @@ fn search_returns_trade_barrier_for_recipe_input_acquire_goal() {
     .into_plan()
     .expect("local recipe-input acquire goal should plan through trade");
 
-    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert!(plan.terminal_kind.is_barrier());
     assert_eq!(plan.steps.len(), 1);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Trade);
     assert!(matches!(
@@ -2501,10 +2502,7 @@ fn search_beam_width_1_prunes_viable_slower_branch() {
     .unwrap();
 
     assert!(!narrow_beam_plan.is_found());
-    assert_eq!(
-        wide_beam_plan.terminal_kind,
-        PlanTerminalKind::ProgressBarrier
-    );
+    assert!(wide_beam_plan.terminal_kind.is_barrier());
     assert_eq!(wide_beam_plan.steps.len(), 2);
     assert_eq!(wide_beam_plan.steps[0].op_kind, PlannerOpKind::Travel);
     assert_eq!(wide_beam_plan.steps[1].op_kind, PlannerOpKind::MoveCargo);
@@ -2585,10 +2583,7 @@ fn search_beam_width_widening_keeps_more_successors() {
     .unwrap();
 
     assert!(!beam_two_plan.is_found());
-    assert_eq!(
-        beam_three_plan.terminal_kind,
-        PlanTerminalKind::ProgressBarrier
-    );
+    assert!(beam_three_plan.terminal_kind.is_barrier());
     assert_eq!(beam_three_plan.steps.len(), 2);
     assert_eq!(
         beam_three_plan.steps[0].targets,
@@ -2669,10 +2664,7 @@ fn search_returns_none_when_large_beam_still_exhausts_node_budget() {
     .unwrap();
 
     assert!(!exhausted_plan.is_found());
-    assert_eq!(
-        sufficient_budget_plan.terminal_kind,
-        PlanTerminalKind::ProgressBarrier
-    );
+    assert!(sufficient_budget_plan.terminal_kind.is_barrier());
     assert_eq!(
         sufficient_budget_plan.steps[0].targets,
         vec![PlanningEntityRef::Authoritative(pantry)]
@@ -4596,7 +4588,7 @@ fn search_finds_restock_progress_barrier_from_branchy_market_hub() {
     .into_plan()
     .expect("default search budget should find the branchy market-hub restock route");
 
-    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert!(plan.terminal_kind.is_barrier());
     assert_eq!(plan.steps.len(), 4);
     assert_eq!(
         plan.steps.last().map(|step| step.op_kind),
@@ -5549,7 +5541,7 @@ fn search_queues_before_harvest_at_exclusive_facility_without_grant() {
     .into_plan()
     .expect("exclusive orchard should yield a queue barrier plan");
 
-    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert!(plan.terminal_kind.is_barrier());
     assert_eq!(plan.steps.len(), 1);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::QueueForFacilityUse);
     assert_eq!(
@@ -5612,7 +5604,7 @@ fn search_acquire_self_consume_queues_before_harvest_at_exclusive_facility_witho
     .into_plan()
     .expect("exclusive orchard self-consume should still queue before harvest");
 
-    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert!(plan.terminal_kind.is_barrier());
     assert_eq!(plan.steps.len(), 1);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::QueueForFacilityUse);
     assert_eq!(
@@ -5673,7 +5665,7 @@ fn search_skips_queue_when_matching_grant_is_already_active() {
     .into_plan()
     .expect("matching grant should allow direct harvest plan");
 
-    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert!(plan.terminal_kind.is_barrier());
     assert_eq!(plan.steps.len(), 1);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Harvest);
     assert_eq!(
@@ -9039,11 +9031,161 @@ fn build_successor_keeps_accuse_step_target_bound_to_accused() {
     )
     .expect("accuse successor should build");
 
-    assert_eq!(terminal, Some(PlanTerminalKind::ProgressBarrier));
+    assert_eq!(
+        terminal,
+        Some(PlanTerminalKind::CoordinationBarrier {
+            contested_resource: outpost
+        })
+    );
     assert_eq!(
         successor.steps.as_slice()[0].targets,
         vec![PlanningEntityRef::Authoritative(accused)],
         "Accuse should preserve the accused as the executable step target even when search routes via the register place"
+    );
+}
+
+#[test]
+fn terminal_kind_reports_tactical_explore_as_information_barrier() {
+    let actor = entity(1);
+    let missing = entity(2);
+    let destination = entity(10);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, missing, destination]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(missing, EntityKind::Agent);
+    view.kinds.insert(destination, EntityKind::Place);
+    view.effective_places.insert(actor, destination);
+
+    let goal = GoalOffer {
+        anchor: worldwake_core::OpportunityAnchor::Place(destination),
+        key: GoalKey::from(GoalKind::SearchForMissing {
+            subject: missing,
+            last_seen: Some(destination),
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([destination]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
+        acquisition_quantity: None,
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let state = PlanningState::new(&snapshot);
+    let step = PlannedStep {
+        def_id: ActionDefId(1),
+        targets: vec![PlanningEntityRef::Authoritative(destination)],
+        target_place: Some(destination),
+        payload_override: None,
+        op_kind: PlannerOpKind::SearchPlace,
+        estimated_ticks: 1,
+        is_materialization_barrier: false,
+        expected_materializations: Vec::new(),
+        guard: None,
+        expectations: Vec::new(),
+    };
+
+    assert_eq!(
+        terminal_kind(
+            &goal,
+            &state,
+            &step,
+            Some(&TacticalGoal::Explore { destination })
+        ),
+        Some(PlanTerminalKind::InformationBarrier {
+            topic: worldwake_core::TellTopic::EntityBelief {
+                subject: destination
+            }
+        })
+    );
+}
+
+#[test]
+fn terminal_kind_reports_move_cargo_progress_as_resource_barrier() {
+    let actor = entity(1);
+    let pantry = entity(10);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, pantry]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(pantry, EntityKind::Place);
+    view.effective_places.insert(actor, pantry);
+
+    let goal = consume_goal(CommodityKind::Bread);
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let state = PlanningState::new(&snapshot);
+    let step = PlannedStep {
+        def_id: ActionDefId(1),
+        targets: vec![PlanningEntityRef::Authoritative(pantry)],
+        target_place: Some(pantry),
+        payload_override: None,
+        op_kind: PlannerOpKind::MoveCargo,
+        estimated_ticks: 1,
+        is_materialization_barrier: false,
+        expected_materializations: Vec::new(),
+        guard: None,
+        expectations: Vec::new(),
+    };
+
+    assert_eq!(
+        terminal_kind(&goal, &state, &step, None),
+        Some(PlanTerminalKind::ResourceBarrier {
+            commodity: CommodityKind::Bread,
+            place: pantry
+        })
+    );
+}
+
+#[test]
+fn terminal_kind_reports_queue_progress_as_coordination_barrier() {
+    let actor = entity(1);
+    let orchard = entity(10);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, orchard]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(orchard, EntityKind::Place);
+    view.effective_places.insert(actor, orchard);
+
+    let goal = consume_goal(CommodityKind::Apple);
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let state = PlanningState::new(&snapshot);
+    let step = PlannedStep {
+        def_id: ActionDefId(1),
+        targets: vec![PlanningEntityRef::Authoritative(orchard)],
+        target_place: Some(orchard),
+        payload_override: None,
+        op_kind: PlannerOpKind::QueueForFacilityUse,
+        estimated_ticks: 1,
+        is_materialization_barrier: false,
+        expected_materializations: Vec::new(),
+        guard: None,
+        expectations: Vec::new(),
+    };
+
+    assert_eq!(
+        terminal_kind(&goal, &state, &step, None),
+        Some(PlanTerminalKind::CoordinationBarrier {
+            contested_resource: orchard
+        })
     );
 }
 
@@ -10176,7 +10318,7 @@ fn search_local_acquire_goal_remains_direct_without_prerequisite_stage() {
     assert_eq!(plan.steps[1].op_kind, PlannerOpKind::MoveCargo);
 }
 
-/// When only a `ProgressBarrier` exists and no `GoalSatisfied` is reachable,
+/// When only a `typed barrier` exists and no `GoalSatisfied` is reachable,
 /// the deferred barrier is returned as a fallback after the frontier is
 /// exhausted.
 #[test]
@@ -10265,16 +10407,12 @@ fn search_returns_deferred_barrier_as_fallback_after_frontier_exhaustion() {
     .into_plan()
     .expect("deferred barrier should be returned as fallback");
 
-    assert_eq!(
-        plan.terminal_kind,
-        PlanTerminalKind::ProgressBarrier,
-        "barrier fallback should be returned after frontier exhaustion"
-    );
+    assert!(plan.terminal_kind.is_barrier());
     assert_eq!(plan.steps.len(), 1);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Trade);
 }
 
-/// When the node expansion budget is exhausted but a `ProgressBarrier` was
+/// When the node expansion budget is exhausted but a `typed barrier` was
 /// found earlier, the barrier plan is returned instead of `BudgetExhausted`.
 #[test]
 fn search_returns_deferred_barrier_on_budget_exhaustion() {
@@ -10355,7 +10493,7 @@ fn search_returns_deferred_barrier_on_budget_exhaustion() {
     );
 
     // Tight budget: only 2 expansions.  Expansion 1 finds the Trade
-    // ProgressBarrier (deferred).  Expansion 2 exhausts the budget.
+    // typed barrier (deferred).  Expansion 2 exhausts the budget.
     let tight_budget = ProfileFixture {
         max_node_expansions: 2,
         ..ProfileFixture::default()
@@ -10378,11 +10516,7 @@ fn search_returns_deferred_barrier_on_budget_exhaustion() {
     let plan = result
         .into_plan()
         .expect("deferred barrier should be returned on budget exhaustion");
-    assert_eq!(
-        plan.terminal_kind,
-        PlanTerminalKind::ProgressBarrier,
-        "barrier found before budget exhaustion should be returned"
-    );
+    assert!(plan.terminal_kind.is_barrier());
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Trade);
 }
 
@@ -11468,7 +11602,7 @@ fn local_critical_sleep_returns_progress_barrier_after_one_step() {
     let plan = result
         .into_plan()
         .expect("critical local sleep should plan");
-    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert!(plan.terminal_kind.is_barrier());
     assert_eq!(plan.steps.len(), 1);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Sleep);
 }
@@ -14005,7 +14139,7 @@ fn fulfill_post_notice_search_finds_travel_then_post_notice_progress_barrier() {
         ),
     };
 
-    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert!(plan.terminal_kind.is_barrier());
     assert_eq!(plan.steps.len(), 2);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
     assert_eq!(plan.steps[1].op_kind, PlannerOpKind::PostNotice);
@@ -14090,7 +14224,7 @@ fn fulfill_post_notice_search_finds_same_place_post_notice_progress_barrier() {
         ),
     };
 
-    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert!(plan.terminal_kind.is_barrier());
     assert_eq!(plan.steps.len(), 1);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::PostNotice);
     assert_eq!(
@@ -14189,7 +14323,7 @@ fn fulfill_post_bounty_search_finds_travel_then_post_bounty_progress_barrier() {
         ),
     };
 
-    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert!(plan.terminal_kind.is_barrier());
     assert_eq!(plan.steps.len(), 2);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
     assert_eq!(plan.steps[1].op_kind, PlannerOpKind::PostBounty);
@@ -15307,7 +15441,7 @@ fn search_empty_beliefs_exploration_fallback_returns_nearest_travel_barrier() {
         .into_plan()
         .expect("exploration fallback should return a nearest travel barrier");
 
-    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert!(plan.terminal_kind.is_barrier());
     assert_eq!(plan.steps.len(), 1);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
     assert_eq!(

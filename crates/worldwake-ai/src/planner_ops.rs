@@ -5,8 +5,8 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
-    ActionDefId, ActionDomain, BeliefClaimKey, EntityBeliefAspect, EntityId, MethodSchemaId,
-    SourceKey, Tick,
+    ActionDefId, ActionDomain, BeliefClaimKey, CommodityKind, EntityBeliefAspect, EntityId,
+    MethodSchemaId, SourceKey, TellTopic, Tick,
 };
 use worldwake_sim::{ActionDef, ActionDefRegistry, ActionPayload, MaterializationTag};
 
@@ -387,8 +387,63 @@ pub fn authoritative_targets(targets: &[PlanningEntityRef]) -> Option<Vec<Entity
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum PlanTerminalKind {
     GoalSatisfied,
-    ProgressBarrier,
     CombatCommitment,
+    InformationBarrier {
+        topic: TellTopic,
+    },
+    CoordinationBarrier {
+        contested_resource: EntityId,
+    },
+    ResourceBarrier {
+        commodity: CommodityKind,
+        place: EntityId,
+    },
+    JurisdictionBarrier {
+        authority: EntityId,
+        jurisdiction: EntityId,
+    },
+    SearchBudgetExhausted {
+        budget_consumed: u16,
+        budget_total: u16,
+    },
+}
+
+impl PlanTerminalKind {
+    #[must_use]
+    pub const fn is_barrier(self) -> bool {
+        !matches!(self, Self::GoalSatisfied | Self::CombatCommitment)
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum PlanTerminalKindDiscriminant {
+    GoalSatisfied,
+    CombatCommitment,
+    InformationBarrier,
+    CoordinationBarrier,
+    ResourceBarrier,
+    JurisdictionBarrier,
+    SearchBudgetExhausted,
+}
+
+impl From<&PlanTerminalKind> for PlanTerminalKindDiscriminant {
+    fn from(value: &PlanTerminalKind) -> Self {
+        match value {
+            PlanTerminalKind::GoalSatisfied => Self::GoalSatisfied,
+            PlanTerminalKind::CombatCommitment => Self::CombatCommitment,
+            PlanTerminalKind::InformationBarrier { .. } => Self::InformationBarrier,
+            PlanTerminalKind::CoordinationBarrier { .. } => Self::CoordinationBarrier,
+            PlanTerminalKind::ResourceBarrier { .. } => Self::ResourceBarrier,
+            PlanTerminalKind::JurisdictionBarrier { .. } => Self::JurisdictionBarrier,
+            PlanTerminalKind::SearchBudgetExhausted { .. } => Self::SearchBudgetExhausted,
+        }
+    }
+}
+
+impl From<PlanTerminalKind> for PlanTerminalKindDiscriminant {
+    fn from(value: PlanTerminalKind) -> Self {
+        Self::from(&value)
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -1116,7 +1171,10 @@ mod tests {
             },
             goal,
             vec![sample_step(), second],
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         );
 
         assert_eq!(plan.total_estimated_ticks, 14);
@@ -1132,7 +1190,10 @@ mod tests {
             },
             goal,
             Vec::new(),
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         );
 
         assert_eq!(plan.total_estimated_ticks, 0);

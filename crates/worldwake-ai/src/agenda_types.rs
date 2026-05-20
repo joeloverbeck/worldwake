@@ -1,12 +1,13 @@
 use crate::{
-    GoalOffer, GoalPriorityClass, RankedGoalProvenance, SourceCompositeRank,
+    GoalOffer, GoalPriorityClass, PartialPlanSegment, RankedGoalProvenance, SourceCompositeRank,
     decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
     feasibility::FeasibilityHint,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
-    CommodityKind, EntityId, ExpectationId, MotiveSourceRef, OpportunityKey, Quantity, Tick,
+    CommodityKind, EntityId, ExpectationId, MotiveSourceRef, OpportunityKey, Quantity, SlotKind,
+    Tick,
 };
 
 pub type AgendaEntryKey = OpportunityKey;
@@ -37,6 +38,8 @@ pub struct AgendaEntry {
     pub competition_discount: Option<CompetitionDiscount>,
     pub source_composite: Option<SourceCompositeRank>,
     pub feasibility: FeasibilityHint,
+    #[serde(default)]
+    pub partial_plan_segment: Option<PartialPlanSegment>,
 }
 
 impl AgendaEntry {
@@ -74,6 +77,7 @@ impl AgendaEntry {
             competition_discount,
             source_composite,
             feasibility,
+            partial_plan_segment: None,
         }
     }
 
@@ -97,11 +101,21 @@ pub enum AgendaPhase {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum AgendaOrigin {
     NeedDrive,
-    Obligation { artifact: EntityId },
-    SocialCommitment { expectation: ExpectationId },
-    Opportunity { evidence: EntityId },
+    Obligation {
+        artifact: EntityId,
+    },
+    SocialCommitment {
+        expectation: ExpectationId,
+    },
+    Opportunity {
+        evidence: EntityId,
+    },
     Exploration,
     Enterprise,
+    Companion {
+        primary: AgendaEntryKey,
+        slot: SlotKind,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -141,9 +155,17 @@ mod tests {
     use super::{
         AgendaEntry, AgendaOrigin, AgendaPhase, AgendaState, KillCondition, RevivalTrigger,
     };
-    use crate::{FeasibilityHint, GoalKey, GoalKind, GoalOffer, GoalPriorityClass};
+    use crate::{
+        BarrierFact, FeasibilityHint, GoalKey, GoalKind, GoalOffer, GoalPriorityClass,
+        PartialPlanSegment, PartialPlanSegmentId, PlanTerminalKind, PlannedStep, PlannerOpKind,
+        PlanningEntityRef,
+        htn::{BeliefPredicate, CommodityTemplate, PayloadTemplate},
+    };
     use std::collections::{BTreeMap, BTreeSet};
-    use worldwake_core::{EntityId, OpportunityAnchor, OpportunityKey, Quantity, Tick};
+    use worldwake_core::{
+        ActionDefId, CommodityKind, CommodityPurpose, EntityId, EventId, IntentionAbandonCondition,
+        IntentionResumeCondition, OpportunityAnchor, OpportunityKey, Quantity, SlotKind, Tick,
+    };
 
     #[test]
     fn agenda_state_default_is_empty() {
@@ -201,6 +223,7 @@ mod tests {
         assert_eq!(entry.last_reconsidered_tick, Tick(7));
         assert_eq!(entry.revival_trigger, None);
         assert_eq!(entry.kill_condition, KillCondition::External);
+        assert_eq!(entry.partial_plan_segment, None);
     }
 
     #[test]
@@ -223,5 +246,122 @@ mod tests {
         let bytes = bincode::serialize(&kill).unwrap();
         let roundtrip: KillCondition = bincode::deserialize(&bytes).unwrap();
         assert_eq!(roundtrip, kill);
+
+        let origin = AgendaOrigin::Companion {
+            primary: OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::Sleep),
+                anchor: OpportunityAnchor::Place(EntityId {
+                    slot: 9,
+                    generation: 0,
+                }),
+            },
+            slot: SlotKind::SocialMotive,
+        };
+        let bytes = bincode::serialize(&origin).unwrap();
+        let roundtrip: AgendaOrigin = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(roundtrip, origin);
+    }
+
+    fn entity(slot: u32) -> EntityId {
+        EntityId {
+            slot,
+            generation: 0,
+        }
+    }
+
+    fn planned_step() -> PlannedStep {
+        PlannedStep {
+            def_id: ActionDefId(1),
+            targets: vec![PlanningEntityRef::Authoritative(entity(10))],
+            target_place: Some(entity(20)),
+            payload_override: None,
+            op_kind: PlannerOpKind::Travel,
+            estimated_ticks: 3,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
+        }
+    }
+
+    fn partial_segment(goal: GoalOffer) -> PartialPlanSegment {
+        PartialPlanSegment {
+            id: PartialPlanSegmentId::new(Tick(7), 2),
+            goal,
+            completed_prefix: vec![planned_step()],
+            remaining_skeleton: Some(vec![crate::PlannedSkeletonStep {
+                op: PlannerOpKind::AskWitness,
+                target_template: PayloadTemplate::FromContext,
+                expected_pre: vec![BeliefPredicate::SellerKnown {
+                    commodity: CommodityTemplate::Fixed(CommodityKind::Bread),
+                }],
+            }]),
+            terminal_barrier: PlanTerminalKind::ResourceBarrier {
+                commodity: CommodityKind::Bread,
+                place: entity(20),
+            },
+            barrier_fact: BarrierFact::DepletedResource {
+                commodity: CommodityKind::Bread,
+                place: entity(20),
+            },
+            resume_conditions: vec![IntentionResumeCondition::TickElapsed(4)],
+            abandon_conditions: vec![IntentionAbandonCondition::PatienceExhausted],
+            created_tick: Tick(7),
+            last_resume_attempt_tick: Some(Tick(9)),
+            resume_attempt_count: 1,
+            causal_links: vec![EventId(42)],
+        }
+    }
+
+    #[test]
+    fn agenda_state_roundtrip_preserves_suspended_partial_plan_segment() {
+        let offer = GoalOffer {
+            key: GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+                quantity: worldwake_core::AcquisitionQuantity::single(),
+            }),
+            anchor: OpportunityAnchor::Place(entity(20)),
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
+            acquisition_quantity: Some(worldwake_core::AcquisitionQuantity::single()),
+        };
+        let mut entry = AgendaEntry::pending(
+            offer.clone(),
+            Tick(7),
+            GoalPriorityClass::High,
+            900,
+            Vec::new(),
+            None,
+            None,
+            None,
+            None,
+            FeasibilityHint::Uncertain,
+        );
+        entry.phase = AgendaPhase::Suspended;
+        entry.partial_plan_segment = Some(partial_segment(offer));
+        let state = AgendaState {
+            committed: None,
+            pending: BTreeMap::new(),
+            suspended: BTreeMap::from([(entry.key, entry.clone())]),
+        };
+
+        let bytes = bincode::serialize(&state).unwrap();
+        let roundtrip: AgendaState = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(
+            roundtrip
+                .suspended
+                .get(&entry.key)
+                .unwrap()
+                .partial_plan_segment,
+            entry.partial_plan_segment
+        );
     }
 }

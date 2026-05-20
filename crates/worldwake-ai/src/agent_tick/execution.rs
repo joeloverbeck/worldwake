@@ -1526,7 +1526,7 @@ mod tests {
                 "visible discrepancy with a committed prefix should repair to a progress barrier"
             );
         };
-        assert_eq!(kind, RepairKind::DowngradeToProgressBarrier);
+        assert_eq!(kind, RepairKind::DowngradeToTypedBarrier);
 
         let mut event_log = EventLog::new();
         apply_repaired_plan_and_emit(
@@ -1544,10 +1544,7 @@ mod tests {
             .current_plan
             .as_ref()
             .expect("repaired plan should stay active");
-        assert_eq!(
-            repaired_plan.terminal_kind,
-            PlanTerminalKind::ProgressBarrier
-        );
+        assert!(repaired_plan.terminal_kind.is_barrier());
         assert_eq!(repaired_plan.steps, vec![prefix]);
         assert_eq!(runtime.current_step_index, 1);
         let events = event_log.events_by_tag(EventTag::RepairApplied);
@@ -1562,7 +1559,7 @@ mod tests {
                 agent,
                 goal_key,
                 step_index: 1,
-                repair_kind: RepairKind::DowngradeToProgressBarrier,
+                repair_kind: RepairKind::DowngradeToTypedBarrier,
                 substitute_target: None,
                 substitute_recipe: None,
             })

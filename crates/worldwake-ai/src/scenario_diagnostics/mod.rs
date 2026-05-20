@@ -4,7 +4,7 @@ use worldwake_core::{
     Discrepancy, GoalKind, MethodSchemaId, PercentileBucket, Permille, Tick, TopicScope,
 };
 
-use crate::{PlanTerminalKind, SlotKind};
+use crate::{PlanTerminalKindDiscriminant, SlotKind};
 
 pub mod aggregator;
 
@@ -40,7 +40,7 @@ pub struct PlanningMetrics {
     pub frontier_exhaustion_rate: Permille,
     pub beam_truncation_ratio: Permille,
     pub plan_depth: PercentileBucket,
-    pub terminal_kind_distribution: BTreeMap<PlanTerminalKind, u64>,
+    pub terminal_kind_distribution: BTreeMap<PlanTerminalKindDiscriminant, u64>,
     pub heuristic_helpful_action_hit_rate: Permille,
     #[serde(default)]
     pub method_usage: BTreeMap<Option<MethodSchemaId>, MethodUsageCounts>,
@@ -135,7 +135,7 @@ mod tests {
         GoalPressureMetrics, PerformanceMetrics, PlanningMetrics, RevalidationRepairMetrics,
         ScenarioDiagnosticsReport,
     };
-    use crate::{PlanTerminalKind, SlotKind};
+    use crate::{PlanTerminalKindDiscriminant, SlotKind};
     use std::collections::BTreeMap;
     use worldwake_core::{Discrepancy, GoalKind, PercentileBucket, Permille, Tick, TopicScope};
 
@@ -226,7 +226,10 @@ mod tests {
                 frontier_exhaustion_rate: Permille::new_unchecked(285),
                 beam_truncation_ratio: Permille::new_unchecked(125),
                 plan_depth: PercentileBucket::from_sorted(&[1, 2, 4, 8]),
-                terminal_kind_distribution: BTreeMap::from([(PlanTerminalKind::GoalSatisfied, 6)]),
+                terminal_kind_distribution: BTreeMap::from([(
+                    PlanTerminalKindDiscriminant::GoalSatisfied,
+                    6,
+                )]),
                 heuristic_helpful_action_hit_rate: Permille::new_unchecked(625),
                 method_usage: BTreeMap::new(),
             },

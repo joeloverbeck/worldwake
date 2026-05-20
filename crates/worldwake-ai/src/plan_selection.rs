@@ -187,6 +187,7 @@ mod tests {
             competition_discount: None,
             source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            partial_plan_segment: None,
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,
             introduced_tick: Tick(0),
@@ -382,6 +383,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: goal,
                     anchor: local_anchor,
@@ -416,6 +418,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: goal,
                     anchor: remote_anchor,
@@ -483,6 +486,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: goal,
                     anchor: dangerous_anchor,
@@ -517,6 +521,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: goal,
                     anchor: safe_anchor,
@@ -792,6 +797,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+                partial_plan_segment: None,
                 key: worldwake_core::OpportunityKey {
                     goal_key: GoalKey::from(worldwake_core::GoalKind::Patrol { place: market }),
                     anchor: OpportunityAnchor::Place(market),
@@ -894,6 +900,7 @@ mod tests {
                 competition_discount: None,
                 source_composite: None,
                 feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+                partial_plan_segment: None,
 
                 phase: crate::AgendaPhase::Pending,
                 origin: crate::AgendaOrigin::NeedDrive,
@@ -966,7 +973,10 @@ mod tests {
                     expectations: Vec::new(),
                 },
             ],
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         );
         let refreshed_plan = plan(goal, 3, 2);
         let candidates = vec![ranked(

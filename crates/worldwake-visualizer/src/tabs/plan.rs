@@ -298,7 +298,10 @@ mod tests {
                 }),
                 expectations: Vec::new(),
             }],
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::ResourceBarrier {
+                commodity: CommodityKind::Bread,
+                place,
+            },
         )
     }
 

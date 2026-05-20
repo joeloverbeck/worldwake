@@ -20,9 +20,10 @@ use worldwake_ai::opportunity_compiler::{
     BelievedLegalStatus, ClaimTopic, EffectFactKey, Opportunity, RiskFact,
 };
 use worldwake_ai::{
-    ActionTraceSnapshot, AgendaEntry, AgendaState, AgentTickDriver, CriticalWindowReport,
-    ExhaustionSummary, KillCondition, LocalSurvivalStateSummary, RevivalTrigger,
-    ScenarioDiagnosticsReport, SurvivalForensicExtractor, build_scenario_diagnostics,
+    ActionTraceSnapshot, AgendaEntry, AgendaState, AgentTickDriver, BarrierFact,
+    CriticalWindowReport, ExhaustionSummary, KillCondition, LocalSurvivalStateSummary,
+    PlanTerminalKind, RevivalTrigger, ScenarioDiagnosticsReport, SurvivalForensicExtractor,
+    build_scenario_diagnostics,
 };
 use worldwake_cli::diagnostics_json::scenario_diagnostics_report_to_json_pretty;
 use worldwake_cli::display::{entity_display_name, format_goal_kind};
@@ -3822,6 +3823,111 @@ fn format_kill_condition(world: &worldwake_core::World, kill: &KillCondition) ->
     }
 }
 
+fn format_plan_terminal_kind(world: &worldwake_core::World, terminal: PlanTerminalKind) -> String {
+    match terminal {
+        PlanTerminalKind::GoalSatisfied => "GoalSatisfied".to_string(),
+        PlanTerminalKind::CombatCommitment => "CombatCommitment".to_string(),
+        PlanTerminalKind::InformationBarrier { topic } => {
+            format!("InformationBarrier(topic={topic:?})")
+        }
+        PlanTerminalKind::CoordinationBarrier { contested_resource } => format!(
+            "CoordinationBarrier(contested_resource={})",
+            entity_display_name(world, contested_resource)
+        ),
+        PlanTerminalKind::ResourceBarrier { commodity, place } => format!(
+            "ResourceBarrier(commodity={commodity:?}, place={})",
+            entity_display_name(world, place)
+        ),
+        PlanTerminalKind::JurisdictionBarrier {
+            authority,
+            jurisdiction,
+        } => format!(
+            "JurisdictionBarrier(authority={}, jurisdiction={})",
+            entity_display_name(world, authority),
+            entity_display_name(world, jurisdiction)
+        ),
+        PlanTerminalKind::SearchBudgetExhausted {
+            budget_consumed,
+            budget_total,
+        } => format!(
+            "SearchBudgetExhausted(budget_consumed={budget_consumed}, budget_total={budget_total})"
+        ),
+    }
+}
+
+fn format_barrier_fact(world: &worldwake_core::World, fact: &BarrierFact) -> String {
+    match fact {
+        BarrierFact::MissingBelief(predicate) => format!("MissingBelief({predicate:?})"),
+        BarrierFact::ContestedReservation(resource) => {
+            format!(
+                "ContestedReservation({})",
+                entity_display_name(world, *resource)
+            )
+        }
+        BarrierFact::DepletedResource { commodity, place } => format!(
+            "DepletedResource(commodity={commodity:?}, place={})",
+            entity_display_name(world, *place)
+        ),
+        BarrierFact::NoAuthorityForAction(authority) => {
+            format!(
+                "NoAuthorityForAction({})",
+                entity_display_name(world, *authority)
+            )
+        }
+        BarrierFact::BudgetExhausted { remaining_stages } => {
+            format!("BudgetExhausted(remaining_stages={remaining_stages})")
+        }
+    }
+}
+
+fn write_partial_plan_barrier_details(
+    out: &mut String,
+    world: &worldwake_core::World,
+    entry: &AgendaEntry,
+) {
+    let Some(segment) = &entry.partial_plan_segment else {
+        return;
+    };
+
+    writeln!(
+        out,
+        "  Plan terminal: {}",
+        format_plan_terminal_kind(world, segment.terminal_barrier)
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "    Barrier fact: {}",
+        format_barrier_fact(world, &segment.barrier_fact)
+    )
+    .unwrap();
+    if segment.resume_conditions.is_empty() {
+        writeln!(out, "    Resume on: none").unwrap();
+    } else {
+        for condition in &segment.resume_conditions {
+            writeln!(
+                out,
+                "    Resume on: {}",
+                format_resume_condition(world, condition)
+            )
+            .unwrap();
+        }
+    }
+    if segment.abandon_conditions.is_empty() {
+        writeln!(out, "    Abandon if: none").unwrap();
+    } else {
+        for condition in &segment.abandon_conditions {
+            writeln!(
+                out,
+                "    Abandon if: {} ({} resume attempts used)",
+                format_abandon_condition(world, condition),
+                segment.resume_attempt_count
+            )
+            .unwrap();
+        }
+    }
+}
+
 fn write_agenda_state_summary(
     out: &mut String,
     world: &worldwake_core::World,
@@ -3866,6 +3972,7 @@ fn write_agenda_state_summary(
                 format_kill_condition(world, &entry.kill_condition)
             )
             .unwrap();
+            write_partial_plan_barrier_details(out, world, entry);
         }
     }
 
@@ -6826,6 +6933,7 @@ mod tests {
             competition_discount: None,
             source_composite: None,
             feasibility: worldwake_ai::FeasibilityHint::Uncertain,
+            partial_plan_segment: None,
         }
     }
 
@@ -7699,6 +7807,29 @@ mod tests {
             Tick(13),
         );
         suspended.kill_condition = KillCondition::TickExpiry { at_tick: Tick(25) };
+        suspended.partial_plan_segment = Some(worldwake_ai::PartialPlanSegment {
+            id: worldwake_ai::PartialPlanSegmentId::new(Tick(13), 1),
+            goal: suspended.offer.clone(),
+            completed_prefix: Vec::new(),
+            remaining_skeleton: None,
+            terminal_barrier: worldwake_ai::PlanTerminalKind::ResourceBarrier {
+                commodity: CommodityKind::Bread,
+                place: entity(18),
+            },
+            barrier_fact: worldwake_ai::BarrierFact::DepletedResource {
+                commodity: CommodityKind::Bread,
+                place: entity(18),
+            },
+            resume_conditions: vec![IntentionResumeCondition::BeliefStatusChanged {
+                subject: entity(18),
+                target_status: BeliefStatusTag::Certain,
+            }],
+            abandon_conditions: vec![IntentionAbandonCondition::PatienceExhausted],
+            created_tick: Tick(13),
+            last_resume_attempt_tick: Some(Tick(14)),
+            resume_attempt_count: 1,
+            causal_links: Vec::new(),
+        });
 
         let mut driver = driver_with_runtime(
             agent,
@@ -7751,6 +7882,15 @@ mod tests {
         assert!(report.contains(
             "- MoveCargo { commodity: Bread, destination: EntityId { slot: 44, generation: 0 } } | expires at tick 25"
         ));
+        assert!(
+            report.contains("  Plan terminal: ResourceBarrier(commodity=Bread, place=Unknown#18)")
+        );
+        assert!(
+            report
+                .contains("    Barrier fact: DepletedResource(commodity=Bread, place=Unknown#18)")
+        );
+        assert!(report.contains("    Resume on: BeliefStatusChanged(Unknown#18, Certain)"));
+        assert!(report.contains("    Abandon if: PatienceExhausted (1 resume attempts used)"));
     }
 
     #[test]
@@ -7840,8 +7980,31 @@ mod tests {
                 beam_truncation_ratio: Permille::new_unchecked(333),
                 plan_depth: PercentileBucket::from_sorted(&[1, 2, 4, 8]),
                 terminal_kind_distribution: BTreeMap::from([
-                    (worldwake_ai::PlanTerminalKind::GoalSatisfied, 4),
-                    (worldwake_ai::PlanTerminalKind::ProgressBarrier, 2),
+                    (worldwake_ai::PlanTerminalKindDiscriminant::GoalSatisfied, 4),
+                    (
+                        worldwake_ai::PlanTerminalKindDiscriminant::CombatCommitment,
+                        1,
+                    ),
+                    (
+                        worldwake_ai::PlanTerminalKindDiscriminant::InformationBarrier,
+                        1,
+                    ),
+                    (
+                        worldwake_ai::PlanTerminalKindDiscriminant::CoordinationBarrier,
+                        1,
+                    ),
+                    (
+                        worldwake_ai::PlanTerminalKindDiscriminant::ResourceBarrier,
+                        1,
+                    ),
+                    (
+                        worldwake_ai::PlanTerminalKindDiscriminant::JurisdictionBarrier,
+                        1,
+                    ),
+                    (
+                        worldwake_ai::PlanTerminalKindDiscriminant::SearchBudgetExhausted,
+                        2,
+                    ),
                 ]),
                 heuristic_helpful_action_hit_rate: Permille::new_unchecked(750),
                 method_usage: BTreeMap::from([
@@ -7944,6 +8107,28 @@ mod tests {
         assert!(out.contains("(no method): 5 attempts"));
         assert!(out.contains("| ...others (1) | 2 |"));
         assert!(out.contains("| n | min | p50 | p95 | p99 | max | mean |"));
+    }
+
+    #[test]
+    fn render_scenario_diagnostics_section_text_lists_typed_terminal_discriminants() {
+        let report = sample_scenario_diagnostics_report();
+        let mut out = String::new();
+
+        render_scenario_diagnostics_section(
+            &report,
+            &DiagnosticsRenderOptions::default(),
+            &mut out,
+        )
+        .unwrap();
+
+        assert!(out.contains("#### Terminal kind distribution"));
+        assert!(out.contains("`GoalSatisfied`"));
+        assert!(out.contains("`CombatCommitment`"));
+        assert!(out.contains("`InformationBarrier`"));
+        assert!(out.contains("`CoordinationBarrier`"));
+        assert!(out.contains("`ResourceBarrier`"));
+        assert!(out.contains("`JurisdictionBarrier`"));
+        assert!(out.contains("`SearchBudgetExhausted`"));
     }
 
     #[test]

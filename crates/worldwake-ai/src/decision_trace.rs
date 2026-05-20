@@ -1083,7 +1083,7 @@ pub struct SearchExpansionSummary {
     pub candidates_generated: u16,
     /// Candidates for which `build_successor` returned `None`.
     pub candidates_skipped: u16,
-    /// Terminal successors found (`GoalSatisfied`, `ProgressBarrier`, `CombatCommitment`).
+    /// Terminal successors found (`GoalSatisfied`, `typed barrier`, `CombatCommitment`).
     pub terminal_successors: u16,
     /// Non-terminal successors before beam truncation.
     pub non_terminal_before_beam: u16,

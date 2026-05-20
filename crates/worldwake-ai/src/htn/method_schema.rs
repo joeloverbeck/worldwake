@@ -68,7 +68,7 @@ impl From<&MethodFailureMode> for MethodFailureKind {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum BeliefPredicate {
     BountyRecordExists {
         bounty: EntityTemplate,
@@ -129,7 +129,7 @@ pub enum RoleTag {
     Civilian,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum LocationTemplate {
     LastKnownTargetPlace { target: EntityTemplate },
     NearestSellerOf { commodity: CommodityTemplate },
@@ -147,13 +147,13 @@ pub enum TopicTemplate {
     ViolationCircumstances { violation: EntityTemplate },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PayloadTemplate {
     FromContext,
     Explicit(PayloadValueTemplate),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PayloadValueTemplate {
     Trade {
         commodity: CommodityTemplate,
@@ -205,7 +205,7 @@ pub enum ClaimRequirement {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EntityTemplate {
     GoalPrimaryEntity,
     GoalSecondaryEntity,
@@ -217,14 +217,14 @@ pub enum EntityTemplate {
     Fixed(EntityId),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum CommodityTemplate {
     GoalCommodity,
     RecipeInput { recipe: RecipeTemplate, ordinal: u8 },
     Fixed(CommodityKind),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum RecipeTemplate {
     GoalRecipe,
     Fixed(u32),

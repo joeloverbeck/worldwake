@@ -447,7 +447,7 @@ pub enum RepairKind {
     RebindTarget,
     ReplaceProvider,
     InsertVerification,
-    DowngradeToProgressBarrier,
+    DowngradeToTypedBarrier,
     Abandon,
 }
 

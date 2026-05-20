@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 196
-- Contributing golden scenario source files: 49
-- Associated tests: 242
+- Scenario blocks: 200
+- Contributing golden scenario source files: 50
+- Associated tests: 246
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -671,7 +671,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 431: S147 ProduceWithGather Method Selection
 
-- Source: `htn_methods.rs:788`
+- Source: `htn_methods.rs:791`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -684,7 +684,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 433: S147 Autonomous Produce Method Trace Propagation
 
-- Source: `htn_methods.rs:824`
+- Source: `htn_methods.rs:827`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -697,7 +697,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 434: S147 FulfillBountyInvestigation Method Selection
 
-- Source: `htn_methods.rs:898`
+- Source: `htn_methods.rs:901`
 - Systems: AI, Search, SocialArtifact
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Travel
@@ -710,7 +710,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 436: S147 FulfillBountyDirect Method Selection
 
-- Source: `htn_methods.rs:938`
+- Source: `htn_methods.rs:941`
 - Systems: AI, Search, SocialArtifact, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Combat, Travel
@@ -723,7 +723,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 437: S147 EscortToHome Method Selection
 
-- Source: `htn_methods.rs:982`
+- Source: `htn_methods.rs:985`
 - Systems: AI, Search, Care, Travel
 - GoalKinds: EscortToSafety
 - ActionDomains: Care, Travel
@@ -736,7 +736,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 438: S147 Method Failure Producer
 
-- Source: `htn_methods.rs:1029`
+- Source: `htn_methods.rs:1032`
 - Systems: AI, Search, Care, FailureHandling
 - GoalKinds: EscortToSafety
 - ActionDomains: Care
@@ -749,7 +749,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 435: S147 Autonomous FulfillBountyInvestigation Method Trace
 
-- Source: `htn_methods.rs:1072`
+- Source: `htn_methods.rs:1075`
 - Systems: AI, Search, SocialArtifact, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Combat, Travel
@@ -762,7 +762,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 432: S147 Disabled Methods Fall Back To Flat Strategic Search
 
-- Source: `htn_methods.rs:1122`
+- Source: `htn_methods.rs:1125`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -1017,7 +1017,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Setup**: A with enterprise_weight=pm(900) holds 5 bread. B at jurisdiction, no loyalty. C (competitor) at OrchardFarm with pre-declared self-support. Wider beam_width=16 for branchy adjacency graph.
 
-**Proves**: DeclareSupport alone would tie with C (ProgressBarrier). Coalition-aware planner finds Bribe(B, bread) + DeclareSupport(self). A bribes B (full 5 bread transfer). B's loyalty increases and B generates SupportCandidateForOffice(A). A's coalition (2) beats C (1). Conservation: bread total unchanged.
+**Proves**: DeclareSupport alone would tie with C (typed barrier). Coalition-aware planner finds Bribe(B, bread) + DeclareSupport(self). A bribes B (full 5 bread transfer). B's loyalty increases and B generates SupportCandidateForOffice(A). A's coalition (2) beats C (1). Conservation: bread total unchanged.
 
 **Cross-system chain**: AI goal -> coalition-aware planner Bribe op -> commodity transfer -> conservation -> loyalty increase -> target SupportCandidateForOffice -> DeclareSupport -> support counting -> decisive installation.
 
@@ -1210,6 +1210,54 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: S138 opportunity compilation is deterministic on the default replay and the per-tick compiled work remains bounded by the cognitive profile cap.
 
 **Cross-system chain**: authored scenario -> agent_tick read phase -> OpportunityCompilerLoad -> deterministic event-log hash.
+
+### Scenario 439: S149 Typed Terminal Segments Carry Resume And Failure Shape
+
+- Source: `partial_plan_terminals.rs:184`
+- Systems: AI, EventLog
+- GoalKinds: AcquireCommodity, AskWitness
+- ActionDomains: Planning, Agenda
+- Principles: P15, P16, P20, P21, P29
+
+**Setup**: fixture constructs one segment per live S149 barrier terminal; no autonomous trade, arrest, witness, or facility branches are staged because the mechanism-owned unit and golden suites already exercise those producers.
+
+**Proves**: every non-safety S149 barrier terminal maps to the expected discriminant, failure-attribution surface, resume condition, and PatienceExhausted abandon condition.
+
+### Scenario 440: S149 Suspended Agenda Entries Preserve Partial Plan Segments
+
+- Source: `partial_plan_terminals.rs:227`
+- Systems: AI, SaveLoad
+- GoalKinds: AcquireCommodity
+- ActionDomains: Agenda
+- Principles: P4, P20, P21, P29
+
+**Setup**: fixture suspends one agenda entry for each live S149 barrier terminal; no competing goals are inserted because this scenario proves the per-intention storage boundary, not ranking or branch selection.
+
+**Proves**: suspended agenda entries retain their typed partial-plan segments across the serialized agenda-state payload and no shared segment pool is introduced.
+
+### Scenario 441: S149 Partial Plan Resume And Patience Abandon Lifecycle
+
+- Source: `partial_plan_terminals.rs:277`
+- Systems: AI
+- GoalKinds: AcquireCommodity
+- ActionDomains: Agenda
+- Principles: P20, P21, P29
+
+**Setup**: fixture uses a concrete PerAgentBeliefView over a prototype world and a suspended SearchBudgetExhausted segment with a TickElapsed resume condition; no autonomous candidates are staged because the lifecycle boundary under test is agenda resume/abandon.
+
+**Proves**: eligible partial-plan segments resume back to Pending with an incremented retry counter, while PatienceExhausted removes an over-limit segment before replaying the stale tail.
+
+### Scenario 442: S149 Coordination Barrier Uses Blocker Memory
+
+- Source: `partial_plan_terminals.rs:351`
+- Systems: AI, EventLog
+- GoalKinds: AcquireCommodity
+- ActionDomains: Planning, Contention
+- Principles: P8, P12, P20, P29
+
+**Setup**: fixture isolates the coordination terminal from other barriers and records it through the public blocker-memory helper with a concrete contested affordance.
+
+**Proves**: CoordinationBarrier remains a BlockingFact::ReservationConflict path rather than a Discrepancy, preserving the contention-owned failure-attribution surface.
 
 ### Scenario 116: Concealment Reduces Witnessed-Event Fidelity
 
@@ -1497,7 +1545,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Setup**: repair context has no preserved prefix and no replacement candidates, so earlier local strategies cannot preserve progress.
 
-**Proves**: Abandon is the deterministic final local outcome and returns an empty progress-barrier plan.
+**Proves**: Abandon is the deterministic final local outcome and returns an empty typed-barrier plan.
 
 ### Scenario 414: S137 Phase 11 Approved Repair Gate Witness
 
@@ -1543,7 +1591,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 167: Portfolio Rejects Infeasible Commitment After Sleep Blocker Suppression
 
-- Source: `portfolio_planning.rs:219`
+- Source: `portfolio_planning.rs:220`
 - Systems: AI, Needs, Social, Production, Decision History
 - GoalKinds: Sleep, ReportMissing, ProduceCommodity
 - ActionDomains: Needs, Social, Production

@@ -2,8 +2,9 @@ use crate::{PlanTerminalKind, PlannedPlan, PlannedStep};
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
     BeliefClaimKey, BeliefRef, BreachSignature, CausalLink, CausalProvider, CognitiveProfile,
-    DiscrepancyClearing, DiscrepancyEntry, EntityBeliefAspect, OpportunityKey, PlanningFact,
-    RecordTopic, RepairKind, RepairMemory,
+    CommodityKind, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, EntityBeliefAspect,
+    EntityId, GoalKind, OpportunityKey, PlanningFact, RecordTopic, RepairKind, RepairMemory,
+    TellTopic,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -64,7 +65,7 @@ pub fn attempt_order() -> [RepairKind; 5] {
         RepairKind::RebindTarget,
         RepairKind::ReplaceProvider,
         RepairKind::InsertVerification,
-        RepairKind::DowngradeToProgressBarrier,
+        RepairKind::DowngradeToTypedBarrier,
         RepairKind::Abandon,
     ]
 }
@@ -128,12 +129,15 @@ fn attempt_kind(
             attempt_candidate_repair(context, kind).ok_or(RepairFailure::NoProviderReplacement)
         }
         RepairKind::InsertVerification => Err(RepairFailure::NoEpistemicSubstrate),
-        RepairKind::DowngradeToProgressBarrier => downgrade_to_progress_barrier(context),
+        RepairKind::DowngradeToTypedBarrier => downgrade_to_typed_barrier(context),
         RepairKind::Abandon => Ok(PlannedPlan::new(
             context.opportunity,
             context.breach_signature.goal_key,
             Vec::new(),
-            PlanTerminalKind::ProgressBarrier,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0,
+            },
         )),
     }
 }
@@ -156,7 +160,7 @@ fn attempt_candidate_repair(
     ))
 }
 
-fn downgrade_to_progress_barrier(
+fn downgrade_to_typed_barrier(
     context: &PlanRepairContext<'_>,
 ) -> Result<PlannedPlan, RepairFailure> {
     if !discrepancy_clearing_is_repair_search_visible(context.discrepancy_entry) {
@@ -169,9 +173,89 @@ fn downgrade_to_progress_barrier(
         context,
         None,
         None,
-        PlanTerminalKind::ProgressBarrier,
+        typed_barrier_for_repair_context(context),
         false,
     ))
+}
+
+fn typed_barrier_for_repair_context(context: &PlanRepairContext<'_>) -> PlanTerminalKind {
+    let target = repair_target(context);
+    match context.discrepancy_entry.discrepancy {
+        Discrepancy::MissingObservation => PlanTerminalKind::InformationBarrier {
+            topic: TellTopic::EntityBelief { subject: target },
+        },
+        Discrepancy::BeliefStale
+        | Discrepancy::BeliefContradicted
+        | Discrepancy::SourceInvalidated
+        | Discrepancy::PartialExecutionDrift => {
+            if let Some(commodity) = goal_commodity(context.breach_signature.goal_key.kind) {
+                PlanTerminalKind::ResourceBarrier {
+                    commodity,
+                    place: context
+                        .discrepancy_entry
+                        .scope
+                        .exact_place()
+                        .unwrap_or(target),
+                }
+            } else {
+                PlanTerminalKind::InformationBarrier {
+                    topic: TellTopic::EntityBelief { subject: target },
+                }
+            }
+        }
+        Discrepancy::NoLegalBinding | Discrepancy::ArtifactNotActionable { .. } => {
+            PlanTerminalKind::JurisdictionBarrier {
+                authority: target,
+                jurisdiction: context
+                    .discrepancy_entry
+                    .scope
+                    .exact_place()
+                    .unwrap_or(target),
+            }
+        }
+        Discrepancy::SearchBudgetExhausted => PlanTerminalKind::SearchBudgetExhausted {
+            budget_consumed: 0,
+            budget_total: 0,
+        },
+        Discrepancy::NoWillingCounterparty
+        | Discrepancy::RouteUnknown
+        | Discrepancy::ImproperPlanningState
+        | Discrepancy::NeedHorizonExceeded { .. }
+        | Discrepancy::Omission(_)
+        | Discrepancy::MethodFailure(_)
+        | Discrepancy::AbandonConditionFired(_) => PlanTerminalKind::CoordinationBarrier {
+            contested_resource: target,
+        },
+    }
+}
+
+fn repair_target(context: &PlanRepairContext<'_>) -> EntityId {
+    context
+        .breach_signature
+        .step_target
+        .or_else(|| context.discrepancy_entry.scope.exact_target())
+        .or_else(|| context.discrepancy_entry.scope.exact_place())
+        .or(context.opportunity.goal_key.entity)
+        .or(context.opportunity.goal_key.place)
+        .unwrap_or(EntityId {
+            slot: 0,
+            generation: 0,
+        })
+}
+
+fn goal_commodity(goal: GoalKind) -> Option<CommodityKind> {
+    match goal {
+        GoalKind::ConsumeOwnedCommodity { commodity }
+        | GoalKind::AcquireCommodity { commodity, .. }
+        | GoalKind::SellCommodity { commodity }
+        | GoalKind::RestockCommodity { commodity }
+        | GoalKind::MoveCargo { commodity, .. }
+        | GoalKind::ExploreLocation {
+            hypothesis: worldwake_core::HypothesisKind::MayContainCommodity { commodity },
+            ..
+        } => Some(commodity),
+        _ => None,
+    }
 }
 
 fn plan_from_parts(
@@ -424,7 +508,7 @@ mod tests {
                 RepairKind::RebindTarget,
                 RepairKind::ReplaceProvider,
                 RepairKind::InsertVerification,
-                RepairKind::DowngradeToProgressBarrier,
+                RepairKind::DowngradeToTypedBarrier,
                 RepairKind::Abandon,
             ]
         );
@@ -702,7 +786,7 @@ mod tests {
     }
 
     #[test]
-    fn downgrade_to_progress_barrier_preserves_committed_prefix_only() {
+    fn downgrade_to_typed_barrier_preserves_committed_prefix_only() {
         let prefix = vec![step()];
         let suffix = vec![step()];
         let entry = discrepancy_entry(DiscrepancyClearing::TtlExpiry);
@@ -712,10 +796,16 @@ mod tests {
         let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
 
         let RepairOutcome::Repaired { kind, new_plan, .. } = outcome else {
-            panic!("visible discrepancy should downgrade to a progress barrier");
+            panic!("visible discrepancy should downgrade to a typed barrier");
         };
-        assert_eq!(kind, RepairKind::DowngradeToProgressBarrier);
-        assert_eq!(new_plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+        assert_eq!(kind, RepairKind::DowngradeToTypedBarrier);
+        assert_eq!(
+            new_plan.terminal_kind,
+            PlanTerminalKind::ResourceBarrier {
+                commodity: worldwake_core::CommodityKind::Bread,
+                place: entity(3)
+            }
+        );
         assert_eq!(new_plan.steps, prefix);
     }
 
@@ -733,7 +823,13 @@ mod tests {
             panic!("abandon should be the final local outcome after earlier attempts fail");
         };
         assert_eq!(kind, RepairKind::Abandon);
-        assert_eq!(new_plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+        assert_eq!(
+            new_plan.terminal_kind,
+            PlanTerminalKind::SearchBudgetExhausted {
+                budget_consumed: 0,
+                budget_total: 0
+            }
+        );
         assert!(new_plan.steps.is_empty());
     }
 }
