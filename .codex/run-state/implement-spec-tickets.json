@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implement-S152-cognitive-archetypes",
   "base_head": "8ac7e218386e0e681f7e1ee2cb511e8314295adb",
-  "last_ticket": "archive/tickets/S152COGARCSEE-005.md",
+  "last_ticket": "archive/tickets/S152COGARCSEE-006.md",
   "last_result": "completed_archived",
-  "last_work_commit": "f94289d3d8bec0eeb1fa85cc4dba36afca9a95d7",
+  "last_work_commit": "8dc3834119d4c872b1df618be7ebd06e612fb0f9",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S152COGARCSEE-006.md",
+  "next_target": "tickets/S152COGARCSEE-007.md",
   "queue": [
-    "tickets/S152COGARCSEE-006.md",
     "tickets/S152COGARCSEE-007.md",
     "tickets/S152COGARCSEE-008.md"
   ],
