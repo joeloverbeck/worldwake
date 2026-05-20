@@ -247,13 +247,13 @@ pub partial_plan_segment: Option<PartialPlanSegment>,
 
 ### D11: Golden coverage
 
-A golden scenario module (under the post-S154 `golden_ai` test target — `crates/worldwake-ai/tests/golden_ai.rs` routes to `tests/scenarios/`; there is no standalone `golden_typed_plan_terminals.rs` path) covers:
-- `InformationBarrier` end-to-end: agent lacks target location → barrier raised → companion `AskWitness` commits → primary intention resumes → completion.
-- `CoordinationBarrier`: agent loses oven reservation → barrier raised → `BlockingFact::ReservationConflict` recorded → grant re-available → resume.
-- `ResourceBarrier`: market depleted → barrier raised → resupply observed → resume.
-- `JurisdictionBarrier`: agent attempts arrest outside jurisdiction → barrier raised → travel to jurisdiction → resume.
-- `SearchBudgetExhausted`: budget runs out → eligible suspended segment receives a typed `SearchBudgetExhausted` terminal per the segment-construction ticket → `search_exhaustion_backoff_ticks` TTL → resume.
-- Abandon-condition flow: patience-exhausted abandons; observer surfaces the abandonment.
+A focused golden contract module landed under the post-S154 `golden_ai` test target (`crates/worldwake-ai/tests/golden_ai.rs` routes to `tests/scenarios/`; there is no standalone `golden_typed_plan_terminals.rs` path). `crates/worldwake-ai/tests/scenarios/partial_plan_terminals.rs` covers the shared public S149 contract:
+- all non-safety barrier terminals (`InformationBarrier`, `CoordinationBarrier`, `ResourceBarrier`, `JurisdictionBarrier`, `SearchBudgetExhausted`) build persisted `PartialPlanSegment`s with the expected discriminant, failure-attribution surface, resume condition, and `PatienceExhausted` abandon condition
+- suspended `AgendaEntry` runtime payloads preserve typed partial-plan segments through the serialized agenda-state shape
+- `try_resume_partial_plan` resumes an eligible `SearchBudgetExhausted` segment after the profile-backed `TickElapsed` backoff and clears an over-limit segment via `PatienceExhausted`
+- `CoordinationBarrier` records through `BlockingFact::ReservationConflict` rather than the `Discrepancy` taxonomy
+
+The mechanism-owned producer suites from S149PARPLASEG-001 through S149PARPLASEG-008 remain the proof that planner/search/agenda/observer paths emit, route, and render those carriers. D11 does not add brittle autonomous authored-world scenarios for every barrier producer.
 
 (`SafetyBarrier` coverage is deferred with the variant — see Non-Goals.)
 
@@ -321,7 +321,7 @@ The typed terminals are produced in `search` and feed replan; no `validate_*`/pr
 
 ## Test Plan
 
-- D11 golden coverage (6 scenarios above).
+- D11 golden coverage (the `partial_plan_terminals` contract scenarios above).
 - Determinism: same resume condition + same belief update → same suffix retry.
 - Save/load coverage for `PartialPlanSegment` and companion agenda origins against current format version 93, with explicit rejection of the pre-companion version 92 at the save-header boundary.
 - `cargo test -p worldwake-ai` clean after the `ProgressBarrier` migration (D3).

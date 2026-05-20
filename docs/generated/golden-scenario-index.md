@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 196
-- Contributing golden scenario source files: 49
-- Associated tests: 242
+- Scenario blocks: 200
+- Contributing golden scenario source files: 50
+- Associated tests: 246
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1211,6 +1211,54 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: authored scenario -> agent_tick read phase -> OpportunityCompilerLoad -> deterministic event-log hash.
 
+### Scenario 439: S149 Typed Terminal Segments Carry Resume And Failure Shape
+
+- Source: `partial_plan_terminals.rs:184`
+- Systems: AI, EventLog
+- GoalKinds: AcquireCommodity, AskWitness
+- ActionDomains: Planning, Agenda
+- Principles: P15, P16, P20, P21, P29
+
+**Setup**: fixture constructs one segment per live S149 barrier terminal; no autonomous trade, arrest, witness, or facility branches are staged because the mechanism-owned unit and golden suites already exercise those producers.
+
+**Proves**: every non-safety S149 barrier terminal maps to the expected discriminant, failure-attribution surface, resume condition, and PatienceExhausted abandon condition.
+
+### Scenario 440: S149 Suspended Agenda Entries Preserve Partial Plan Segments
+
+- Source: `partial_plan_terminals.rs:227`
+- Systems: AI, SaveLoad
+- GoalKinds: AcquireCommodity
+- ActionDomains: Agenda
+- Principles: P4, P20, P21, P29
+
+**Setup**: fixture suspends one agenda entry for each live S149 barrier terminal; no competing goals are inserted because this scenario proves the per-intention storage boundary, not ranking or branch selection.
+
+**Proves**: suspended agenda entries retain their typed partial-plan segments across the serialized agenda-state payload and no shared segment pool is introduced.
+
+### Scenario 441: S149 Partial Plan Resume And Patience Abandon Lifecycle
+
+- Source: `partial_plan_terminals.rs:277`
+- Systems: AI
+- GoalKinds: AcquireCommodity
+- ActionDomains: Agenda
+- Principles: P20, P21, P29
+
+**Setup**: fixture uses a concrete PerAgentBeliefView over a prototype world and a suspended SearchBudgetExhausted segment with a TickElapsed resume condition; no autonomous candidates are staged because the lifecycle boundary under test is agenda resume/abandon.
+
+**Proves**: eligible partial-plan segments resume back to Pending with an incremented retry counter, while PatienceExhausted removes an over-limit segment before replaying the stale tail.
+
+### Scenario 442: S149 Coordination Barrier Uses Blocker Memory
+
+- Source: `partial_plan_terminals.rs:351`
+- Systems: AI, EventLog
+- GoalKinds: AcquireCommodity
+- ActionDomains: Planning, Contention
+- Principles: P8, P12, P20, P29
+
+**Setup**: fixture isolates the coordination terminal from other barriers and records it through the public blocker-memory helper with a concrete contested affordance.
+
+**Proves**: CoordinationBarrier remains a BlockingFact::ReservationConflict path rather than a Discrepancy, preserving the contention-owned failure-attribution surface.
+
 ### Scenario 116: Concealment Reduces Witnessed-Event Fidelity
 
 - Source: `perception_exposure.rs:421`
@@ -1465,7 +1513,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 411: S137 Commodity Availability Changed Clears Blocker Structurally
 
-- Source: `plan_repair.rs:396`
+- Source: `plan_repair.rs:390`
 - Systems: AI, Core
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1477,7 +1525,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 412: S137 Repair Budget Exhaustion Falls Through To Full Replan
 
-- Source: `plan_repair.rs:471`
+- Source: `plan_repair.rs:465`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1489,7 +1537,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 413: S137 Abandon Produces Empty Progress Barrier
 
-- Source: `plan_repair.rs:526`
+- Source: `plan_repair.rs:520`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1501,7 +1549,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 414: S137 Phase 11 Approved Repair Gate Witness
 
-- Source: `plan_repair.rs:575`
+- Source: `plan_repair.rs:563`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1543,7 +1591,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 167: Portfolio Rejects Infeasible Commitment After Sleep Blocker Suppression
 
-- Source: `portfolio_planning.rs:219`
+- Source: `portfolio_planning.rs:220`
 - Systems: AI, Needs, Social, Production, Decision History
 - GoalKinds: Sleep, ReportMissing, ProduceCommodity
 - ActionDomains: Needs, Social, Production

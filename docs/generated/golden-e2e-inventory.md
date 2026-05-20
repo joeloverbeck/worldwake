@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden scenario source files: 54
-- Files contributing `golden_*` tests: 54
-- Total `golden_*` tests: 260
+- Golden scenario source files: 55
+- Files contributing `golden_*` tests: 55
+- Total `golden_*` tests: 264
 
 ## Per-Scenario-File Inventory
 
@@ -32,6 +32,7 @@ Do not hand-edit it.
 | `need_projection.rs` | 1 |
 | `offices.rs` | 12 |
 | `opportunity_compiler.rs` | 5 |
+| `partial_plan_terminals.rs` | 4 |
 | `perception_exposure.rs` | 7 |
 | `perception_omission.rs` | 3 |
 | `place_dirtiness.rs` | 9 |
@@ -252,6 +253,13 @@ Do not hand-edit it.
 - `effect_schema_index_miss_emits_no_opportunity`
 - `learned_opportunity_memory_damps_repeated_bread_opportunity`
 - `survival_baseline_replay_is_deterministic_and_compiler_load_is_bounded`
+
+### `partial_plan_terminals.rs`
+
+- `golden_s149_typed_terminal_segments_carry_resume_and_failure_shape`
+- `golden_s149_suspended_agenda_entries_preserve_partial_plan_segments`
+- `golden_s149_partial_plan_resume_and_patience_abandon_lifecycle`
+- `golden_s149_coordination_barrier_records_blocker_memory_not_discrepancy`
 
 ### `perception_exposure.rs`
 

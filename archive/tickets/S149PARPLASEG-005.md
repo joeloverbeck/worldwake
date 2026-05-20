@@ -49,7 +49,7 @@ Created the now-archived `archive/tickets/S149PARPLASEG-010.md` for segment writ
 - `crates/worldwake-ai/src/agenda_manager.rs` — `try_resume_partial_plan`, retry bounding, `ResumedPlan`, focused tests.
 - `crates/worldwake-ai/src/lib.rs` — public re-export for `ResumedPlan` and `try_resume_partial_plan`.
 - `archive/tickets/S149PARPLASEG-010.md` — executable segment writer + tactical re-entry follow-up.
-- `archive/tickets/S149PARPLASEG-006.md`, `archive/tickets/S149PARPLASEG-007.md`, `archive/tickets/S149PARPLASEG-008.md`, `tickets/S149PARPLASEG-009.md` — dependency and handoff updates for the new executable re-entry owner.
+- `archive/tickets/S149PARPLASEG-006.md`, `archive/tickets/S149PARPLASEG-007.md`, `archive/tickets/S149PARPLASEG-008.md`, `archive/tickets/S149PARPLASEG-009.md` — dependency and handoff updates for the new executable re-entry owner.
 - `specs/S149-partial-plan-segments-and-typed-terminals.md` — active spec wording aligned to the narrowed 005 seam and new 010 owner.
 
 ## Out of Scope

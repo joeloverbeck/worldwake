@@ -79,7 +79,7 @@ S149 D7 is landed for the agenda-manager companion-spawn layer. Information barr
 
 ## Deviations
 
-The ticket's reassessed scope remained narrow. The E2E commit -> belief update -> resume chain stays with S149PARPLASEG-009, and executable segment re-entry stays with the already archived S149PARPLASEG-010.
+The ticket's reassessed scope remained narrow. Later S149 golden contract coverage landed in `archive/tickets/S149PARPLASEG-009.md`, and executable segment re-entry stays with the already archived `archive/tickets/S149PARPLASEG-010.md`.
 
 ## Verification Result
 
