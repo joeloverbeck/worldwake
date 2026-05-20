@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 200
-- Contributing golden scenario source files: 50
-- Associated tests: 246
+- Scenario blocks: 207
+- Contributing golden scenario source files: 51
+- Associated tests: 253
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -231,6 +231,90 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: bootstrap authoritative ownership -> local physical observation -> authority-belief absence -> theft candidate generation wall -> no committed steal.
 
+### Scenario 447: S152 Seeded Assignment Is Deterministic
+
+- Source: `cognitive_archetypes.rs:127`
+- Systems: Scenario, AI
+- GoalKinds: None
+- ActionDomains: Scenario
+- Principles: P2, P22, P31
+
+**Setup**: the same minimal two-agent scenario is spawned twice with the same seed and no explicit archetype overrides.
+
+**Proves**: archetype assignment and the resolved profile-bearing world state are identical for identical scenario input.
+
+### Scenario 448: S152 Cautious Backoff Exceeds Bold Backoff
+
+- Source: `cognitive_archetypes.rs:178`
+- Systems: Scenario, AI
+- GoalKinds: None
+- ActionDomains: Scenario
+- Principles: P3, P22, P31
+
+**Setup**: two otherwise identical agents differ only by explicit archetype: Cautious versus Bold.
+
+**Proves**: the resolved CognitiveProfile backoff fields consumed by failure_handling.rs are longer for Cautious than Bold.
+
+### Scenario 449: S152 Sociable Reasks Sooner Than Skeptical
+
+- Source: `cognitive_archetypes.rs:212`
+- Systems: Scenario, AI
+- GoalKinds: AskWitness
+- ActionDomains: Social
+- Principles: P3, P15, P22
+
+**Setup**: two otherwise identical agents differ only by explicit archetype: Sociable versus Skeptical.
+
+**Proves**: the resolved EpistemicDispositionProfile ask-memory retention field consumed by the AskWitness emitter is lower for Sociable.
+
+### Scenario 450: S152 Greedy Boosts Economic Portfolio Weight
+
+- Source: `cognitive_archetypes.rs:243`
+- Systems: Scenario, AI
+- GoalKinds: ProduceCommodity, Trade
+- ActionDomains: Portfolio
+- Principles: P3, P20, P22
+
+**Setup**: two otherwise identical agents differ only by explicit archetype: Greedy versus Cautious.
+
+**Proves**: the resolved PortfolioWeightsProfile ranks EconomicOpportunity higher for Greedy than Cautious, without adding a new slot.
+
+### Scenario 451: S152 PersonalityAssigned Event Per Agent
+
+- Source: `cognitive_archetypes.rs:285`
+- Systems: Scenario, EventLog
+- GoalKinds: None
+- ActionDomains: Scenario
+- Principles: P4, P22A, P29
+
+**Setup**: three agents spawn with explicit archetypes and no other differing authored profile state.
+
+**Proves**: the append-only event log records exactly one PersonalityAssigned payload per spawned agent.
+
+### Scenario 452: S152 Explicit Override Pins Archetype
+
+- Source: `cognitive_archetypes.rs:327`
+- Systems: Scenario, AI
+- GoalKinds: None
+- ActionDomains: Scenario
+- Principles: P2, P22, P31
+
+**Setup**: the scenario policy can only draw Cautious, while the agent pins Greedy explicitly.
+
+**Proves**: AgentDef.archetype takes precedence over policy assignment and the event payload records Explicit as the source.
+
+### Scenario 453: S152 Save Load Preserves Archetype State
+
+- Source: `cognitive_archetypes.rs:367`
+- Systems: Scenario, SaveLoad
+- GoalKinds: None
+- ActionDomains: Scenario
+- Principles: P4, P12, P22A
+
+**Setup**: an explicit Fearful agent is spawned and immediately save/load round-tripped through the golden harness.
+
+**Proves**: the stored CognitiveArchetypeComponent and resolved profile values survive the save boundary.
+
 ### Scenario 393: Single-Slot Orchard Emits Arrival-Time Contention Payload
 
 - Source: `contention_inspectability.rs:332`
@@ -283,7 +367,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 384: S136 Decision Payload Eat Commitment Records Drink Rejection
 
-- Source: `decision_payload.rs:76`
+- Source: `decision_payload.rs:77`
 - Systems: AI, EventLog
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: DecisionHistory
@@ -295,7 +379,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 385: S136 Decision Payload Stale-Belief Replan References Claim
 
-- Source: `decision_payload.rs:135`
+- Source: `decision_payload.rs:136`
 - Systems: AI, EventLog
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: DecisionHistory
@@ -307,7 +391,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 386: S136 Decision Payload Commodity Assumption Breach Records Observation
 
-- Source: `decision_payload.rs:186`
+- Source: `decision_payload.rs:187`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -319,7 +403,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 387: S136 Decision Payload Source Failure Records Source Observation
 
-- Source: `decision_payload.rs:245`
+- Source: `decision_payload.rs:246`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -391,7 +475,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
 
-- Source: `experience_preferences.rs:546`
+- Source: `experience_preferences.rs:548`
 - Systems: Travel, learned route experience, belief view, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -403,7 +487,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 92: Combat-Aborted Travel Still Creates Hostile Route Memory
 
-- Source: `experience_preferences.rs:570`
+- Source: `experience_preferences.rs:572`
 - Systems: Travel, interrupt/abort, learned route experience, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -415,7 +499,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 93: Preference Profiles Create Route Diversity From the Same Memory
 
-- Source: `experience_preferences.rs:591`
+- Source: `experience_preferences.rs:593`
 - Systems: learned route experience, belief view, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -918,7 +1002,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 403: S141 Motive Sources Hunger And Greed Sum For Market Offer
 
-- Source: `motive_sources.rs:100`
+- Source: `motive_sources.rs:102`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Needs, Trade
@@ -930,7 +1014,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 404: S141 Motive Sources Commit Payload Preserves Hunger And Greed
 
-- Source: `motive_sources.rs:142`
+- Source: `motive_sources.rs:144`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -942,7 +1026,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 405: S141 Motive Sources Pain Contribution Dominates Hunger
 
-- Source: `motive_sources.rs:189`
+- Source: `motive_sources.rs:191`
 - Systems: AI
 - GoalKinds: TreatWounds, ConsumeOwnedCommodity
 - ActionDomains: Medical, Needs
@@ -954,7 +1038,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 406: S141 Motive Sources Greed Weight Variation Is Profile State
 
-- Source: `motive_sources.rs:235`
+- Source: `motive_sources.rs:237`
 - Systems: AI
 - GoalKinds: SellCommodity
 - ActionDomains: DecisionHistory
@@ -966,7 +1050,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 407: S141 Motive Sources Empty Offer Assertion
 
-- Source: `motive_sources.rs:260`
+- Source: `motive_sources.rs:262`
 - Systems: AI
 - GoalKinds: Sleep
 - ActionDomains: DecisionHistory
@@ -1477,7 +1561,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 408: S137 Merchant-Moved Breach Rebinds To Sibling
 
-- Source: `plan_repair.rs:215`
+- Source: `plan_repair.rs:216`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1489,7 +1573,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 409: S137 Stale Belief Attempts Insert Verification
 
-- Source: `plan_repair.rs:287`
+- Source: `plan_repair.rs:288`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1501,7 +1585,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 410: S137 Recently Failed Repair Kind Is Skipped
 
-- Source: `plan_repair.rs:339`
+- Source: `plan_repair.rs:340`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1513,7 +1597,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 411: S137 Commodity Availability Changed Clears Blocker Structurally
 
-- Source: `plan_repair.rs:390`
+- Source: `plan_repair.rs:391`
 - Systems: AI, Core
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1525,7 +1609,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 412: S137 Repair Budget Exhaustion Falls Through To Full Replan
 
-- Source: `plan_repair.rs:465`
+- Source: `plan_repair.rs:466`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1537,7 +1621,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 413: S137 Abandon Produces Empty Progress Barrier
 
-- Source: `plan_repair.rs:520`
+- Source: `plan_repair.rs:521`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1549,7 +1633,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 414: S137 Phase 11 Approved Repair Gate Witness
 
-- Source: `plan_repair.rs:563`
+- Source: `plan_repair.rs:564`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -2437,7 +2521,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 424: S151 Stale Route-Hazard Refutation Records Trust Context
 
-- Source: `testimony_reliability.rs:98`
+- Source: `testimony_reliability.rs:100`
 - Systems: AI, EventLog
 - GoalKinds: AskWitness
 - ActionDomains: DecisionHistory
@@ -2449,7 +2533,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 425: S151 Accurate Threat Confirmation Raises Source Trust
 
-- Source: `testimony_reliability.rs:131`
+- Source: `testimony_reliability.rs:133`
 - Systems: AI, EventLog
 - GoalKinds: AskWitness
 - ActionDomains: DecisionHistory
@@ -2461,7 +2545,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 426: S151 Repeated False Accusation Crosses Suppression Threshold
 
-- Source: `testimony_reliability.rs:160`
+- Source: `testimony_reliability.rs:162`
 - Systems: AI, EventLog
 - GoalKinds: AskWitness
 - ActionDomains: DecisionHistory

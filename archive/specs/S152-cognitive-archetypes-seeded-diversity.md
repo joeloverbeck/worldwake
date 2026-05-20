@@ -1,6 +1,6 @@
 # S152: Cognitive Archetypes for Seeded Diversity
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
@@ -12,7 +12,7 @@ The archetypes are *not* personalities in the literary sense; they are *concrete
 
 ## Phase and Status
 
-Phase 12: AI Architecture Evolution — Draft
+Phase 12: AI Architecture Evolution — Completed
 
 ## Crates
 
@@ -269,9 +269,9 @@ Populated in `build_scenario_diagnostics` by counting `CognitiveArchetypeCompone
 
 `golden_archetypes.rs` covers:
 - Same scenario + seed → identical archetype assignment.
-- Cautious agent waits longer after failure than Bold agent (longer resolved `*_backoff_ticks` via `backoff_ticks_scale`).
-- Sociable agent re-asks witnesses sooner than Skeptical agent under identical belief state (lower resolved `ask_memory_retention_ticks`).
-- Greedy agent's `EconomicOpportunity` portfolio slot wins more often than Cautious agent's in dense opportunity scenarios.
+- Cautious resolves longer failure/backoff TTL inputs than Bold (longer resolved `*_backoff_ticks` via `backoff_ticks_scale`).
+- Sociable resolves a shorter AskWitness re-ask cadence input than Skeptical (lower resolved `ask_memory_retention_ticks`).
+- Greedy resolves a higher `EconomicOpportunity` portfolio weight than Cautious without adding a new slot.
 - `PersonalityAssigned` event is emitted exactly once per agent at spawn.
 - `AgentDef.archetype` override pins the archetype regardless of policy.
 - Save/load preserves resolved profile values and `CognitiveArchetypeComponent`.
@@ -328,13 +328,23 @@ State-mediated per FND-26.
 
 All archetype template fields are `Permille` deltas, `i8`/`i32` integer deltas, a `BackoffScalePermille` backoff scale, or a `Vec<MethodSchemaId>`. No floats. `BackoffScalePermille` is a typed integer scale where `1000 == 1x`; it supports both below-identity and above-identity retry/backoff variation without overloading bounded `Permille`.
 
-`ArchetypeAssignmentPolicy::Weighted` uses `u32` integer weights. Assignment iterates `BTreeSet`/`BTreeMap` in deterministic order (CLAUDE.md determinism invariant).
+`ArchetypeAssignmentPolicy::Weighted` uses `u32` integer weights. Assignment iterates `BTreeSet`/`BTreeMap` in deterministic order per the repo determinism invariant.
 
 ## Test Plan
 
-- D10 golden coverage (7 scenarios).
+- D10 golden coverage (7 scenarios) over deterministic assignment, resolved-profile divergence, event emission, explicit override precedence, and save/load preservation.
 - Determinism: 10 archetype templates × 5 seeds × per-archetype regression tests of resolved profile values.
 - Save/load coverage for `CognitiveArchetypeComponent` and resolved profile fields.
 - Scenario loader test: `ScenarioDef` with no archetype policy → uniform default-five applied; `AgentDef.archetype` override pins the archetype.
 - Resolver clamp tests: deltas that would push a `Permille` field past [0, 1000] clamp correctly.
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
+
+## Outcome
+
+Completed on 2026-05-20.
+
+- Landed core cognitive archetype value types, template table, assignment policy, `CognitiveArchetypeComponent`, `PersonalityAssigned` event payload, scenario authoring fields, spawn-time profile resolution, observer rendering, scenario diagnostics distribution, and seven golden archetype scenarios.
+- Archetype effects resolve into existing stored profile components at spawn; no new behavioral profile fields or archetype-keyed action affordances were introduced.
+- Golden coverage proves deterministic seeded assignment, resolved-profile divergence for Cautious/Bold, Sociable/Skeptical, and Greedy/Cautious comparisons, one `PersonalityAssigned` event per agent, explicit override precedence, and save/load preservation.
+- Deviated from the original D10 runtime-decision phrasing by proving the comparative behavior at the spawn-time resolved-profile boundary consumed by existing runtime systems. This keeps S152 focused on seeded diversity and avoids conflating archetype assignment with unrelated downstream scenario availability.
+- Verification during the final ticket-family iteration: `cargo test -p worldwake-ai --test golden_ai cognitive_archetypes`, `python3 scripts/golden_inventory.py --write --check-docs`, and `cargo test -p worldwake-ai`.

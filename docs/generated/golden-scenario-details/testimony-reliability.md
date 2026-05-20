@@ -7,7 +7,7 @@ Scenarios: 3
 
 ### Scenario 424: S151 Stale Route-Hazard Refutation Records Trust Context
 
-- Source: `testimony_reliability.rs:98`
+- Source: `testimony_reliability.rs:100`
 - Systems: AI, EventLog
 - GoalKinds: AskWitness
 - ActionDomains: DecisionHistory
@@ -22,7 +22,7 @@ Scenarios: 3
 
 ### Scenario 425: S151 Accurate Threat Confirmation Raises Source Trust
 
-- Source: `testimony_reliability.rs:131`
+- Source: `testimony_reliability.rs:133`
 - Systems: AI, EventLog
 - GoalKinds: AskWitness
 - ActionDomains: DecisionHistory
@@ -37,7 +37,7 @@ Scenarios: 3
 
 ### Scenario 426: S151 Repeated False Accusation Crosses Suppression Threshold
 
-- Source: `testimony_reliability.rs:160`
+- Source: `testimony_reliability.rs:162`
 - Systems: AI, EventLog
 - GoalKinds: AskWitness
 - ActionDomains: DecisionHistory

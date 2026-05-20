@@ -83,7 +83,7 @@ Added `BackoffScalePermille` to `crates/worldwake-core/src/numerics.rs` and expo
 - `crates/worldwake-core/src/cognitive_archetype.rs` (new)
 - `crates/worldwake-core/src/numerics.rs` (modify — add `BackoffScalePermille`)
 - `crates/worldwake-core/src/lib.rs` (modify — module + re-exports)
-- `specs/S152-cognitive-archetypes-seeded-diversity.md` (modify — correct backoff scale type)
+- `archive/specs/S152-cognitive-archetypes-seeded-diversity.md` (modify — correct backoff scale type)
 
 ## Out of Scope
 
