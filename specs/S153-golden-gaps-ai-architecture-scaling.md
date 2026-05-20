@@ -6,7 +6,7 @@
 
 PR-15 (Adversarial regression scenarios) from `reports/ai-architecture-improvements.md` lists eight adversarial scenario patterns the architecture should produce but currently lacks golden coverage for. The triage scope-down originally narrowed this spec to four patterns where Phase 12's other accepted specs provide the substrate to make the goldens meaningful: belief-wall trap (regression for S143's trait separation), false rumor justice (regression for S151's testimony reliability), office vacancy → patrol gap (regression for S148's portfolio expansion exercising obligation/duty slots under stress), scaled contention (regression for S150's cross-goal blocker scoping under realistic resource pressure).
 
-Status update (2026-05-13): `archive/tickets/S143STABELVIE-006.md` landed the belief-wall trap regression as `crates/worldwake-ai/tests/scenarios/belief_wall_trap.rs` (a module registered in `crates/worldwake-ai/tests/scenarios/mod.rs` and run through the `golden_ai` harness binary) with inline harness construction rather than a RON scenario. S153's remaining active scope is therefore the three not-yet-landed adversarial patterns: false rumor justice, office vacancy → patrol gap, and scaled contention.
+Status update (2026-05-13): `archive/tickets/S143STABELVIE-006.md` landed the belief-wall trap regression as `crates/worldwake-ai/tests/scenarios/belief_wall_trap.rs` (a module registered in `crates/worldwake-ai/tests/scenarios/mod.rs` and run through the `golden_ai` harness binary) with inline harness construction rather than a RON scenario. S153's remaining active scope was therefore the three not-yet-landed adversarial patterns: false rumor justice, office vacancy → patrol gap, and scaled contention. Status update (2026-05-20): `archive/tickets/S153GOLDGAPSCALE-001.md` landed false-rumor justice at helper/event-payload level; `tickets/S153GOLDGAPSCALE-004.md` now owns the office-backed patrol duty substrate required before the office-vacancy golden can be truthful; scaled contention remains active in `tickets/S153GOLDGAPSCALE-003.md`.
 
 Four scenarios deferred until substrate ships: 100-goal dense market (needs S144 diagnostics to verify behavior at scale); 20-agent route bottleneck (needs S147 HTN methods for caravan/escort decomposition); long production chain (4+ prereqs) (covered after S146 GoalSchema per-goal budgets land); boundary shock (covered by Phase 7's planned S62 + S64).
 
@@ -20,7 +20,7 @@ Phase 12: AI Architecture Evolution — Draft
 
 ## Crates
 
-- `worldwake-ai` — owns the remaining golden coverage under `crates/worldwake-ai/tests/scenarios/`: false-rumor justice extends the existing `testimony_reliability.rs` owner; office vacancy and scaled contention are planned as new `office_vacancy.rs` / `scaled_contention.rs` modules, each exercised through the `golden_ai` harness, plus the new `golden_harness/` assertion helpers (D5). `tests/scenarios/belief_wall_trap.rs` already landed under S143STABELVIE-006.
+- `worldwake-ai` — owns the remaining golden coverage under `crates/worldwake-ai/tests/scenarios/`: false-rumor justice extended the existing `testimony_reliability.rs` owner; office vacancy is deferred behind `tickets/S153GOLDGAPSCALE-004.md` because the live branch lacks office-backed patrol duty state; scaled contention is planned as a new `scaled_contention.rs` module exercised through the `golden_ai` harness, plus the new `golden_harness/` assertion helpers (D5). `tests/scenarios/belief_wall_trap.rs` already landed under S143STABELVIE-006.
 - `worldwake-cli` — owns any committed `scenarios/*.ron` files a scenario chooses to use (RON is optional per the inline-fixture precedent) and the scenario loader path those files exercise.
 - Other crates: no source change.
 
@@ -89,21 +89,23 @@ Status update (2026-05-20): `archive/tickets/S153GOLDGAPSCALE-001.md` landed the
 
 **Why not a duplicate**: Existing goldens test single-source testimony updates. This golden tests *cross-source contradiction with prior reliability state*, which is uniquely enabled by S151.
 
-### D3: `crates/worldwake-ai/tests/scenarios/office_vacancy.rs` (+ optional `scenarios/*.ron`)
+### D3: Office-vacancy → patrol-gap substrate and golden
 
-**Setup**: Town with a magistrate office + 2 guards holding patrol duties issued by the magistrate. The magistrate dies (concrete `DeadAt { tick }` component set on the magistrate — death substrate at `crates/worldwake-core/src/combat.rs:77`, not an event tag). The office becomes vacant. Each guard's patrol duty is backed by an S59 `Expectation` record ("guard should patrol route X by tick Z") carrying an authored `deadline_tick` (~200 ticks out) plus `grace_ticks` (`crates/worldwake-core/src/expectation.rs`); with the magistrate dead, no successor renews those records. A bandit appears on a route.
+Status update (2026-05-20): `archive/tickets/S153GOLDGAPSCALE-002.md` was rejected during live reassessment because its test-only premise was false. `GoalKind::Patrol` is driven by `PatrolRoute` / `PatrolProfile` and vacancy-aware patrol motive; `ExpectationStore` overdue state drives missing-person search/report motives, not patrol-duty validity. The office-vacancy golden must wait for `tickets/S153GOLDGAPSCALE-004.md`, which owns office-backed patrol duty assignments as first-class institutional world state.
+
+**Setup after substrate lands**: Town with a magistrate office + 2 guards holding concrete office-backed patrol duty assignments issued by the magistrate or lawful delegate. The magistrate dies (concrete `DeadAt { tick }` component set on the magistrate — death substrate at `crates/worldwake-core/src/combat.rs:77`, not an event tag). The office becomes vacant. Each guard's patrol duty has issuer, assignee, jurisdiction/route, lifecycle state, renewal/deadline policy, legal effect/actionability, and causal provenance. With the magistrate dead and no successor/delegate renewing the duties, the duty assignments degrade or lapse. A bandit appears on a route.
 
 **Assertions**:
 1. After the magistrate dies, the office is observable as vacant (S140 lifecycle `ArtifactLegalEffect::Suspended`).
 2. Each guard's `ObligationDuty` slot (`SlotKind::ObligationDuty`, S148) still ranks the patrol duty initially.
-3. Within the next ~200 ticks (`deadline_tick + grace_ticks`), each patrol `Expectation` transitions `Active → Overdue` via the `check_overdue_expectations` system (`crates/worldwake-systems/src/expectation_check.rs:7`, transition at `:62`). The transition surfaces as a `WorldMutation`-tagged event (also tagged `EventTag::System`) carrying the updated `ExpectationStore` component delta — there is **no** dedicated `ExpectationFailure` event tag; the golden asserts on the `ExpectationState::Overdue` transition via that `ExpectationStore` delta.
-4. With the patrol expectations overdue (no longer `Active`) and no successor renewing them, the guards' `ObligationDuty` slot has no valid patrol duty to rank; `EconomicOpportunity` or `SocialMotive` can win instead.
+3. Within the authored renewal/deadline window, each office-backed patrol duty transitions from active/actionable to degraded, suspended, lapsed, or equivalent non-actionable lifecycle state through explicit duty maintenance. The transition surfaces as append-only causal history and inspectable duty state.
+4. With the patrol duties no longer active/actionable and no successor/delegate renewing them, the guards' `ObligationDuty` slot has no valid patrol duty to rank; `EconomicOpportunity` or `SocialMotive` can win instead.
 5. The bandit traverses an unpatrolled route — visible in event log as a route-traversal event with no guard interception.
 6. A traveling merchant observes the bandit; route preferences (S151) record the dangerous traversal.
 
-**GoalKinds/ActionDomains exercised**: `GoalKind::Patrol`, S59 `Expectation` overdue transition (`ExpectationStore` delta), `SlotKind::ObligationDuty` portfolio slot dynamics.
+**GoalKinds/ActionDomains exercised**: `GoalKind::Patrol`, office-backed patrol duty lifecycle, `SlotKind::ObligationDuty` portfolio slot dynamics.
 
-**Emergence justification**: The patrol gap is not authored — it emerges from (a) the magistrate's death lawfully suspending the office's legal effects, (b) obligations expiring per their TTL with no successor renewing them, (c) the portfolio slot system letting other slots win when ObligationDuty has nothing valid. No hidden scenario flag fires.
+**Emergence justification**: The patrol gap is not authored — it emerges from (a) the magistrate's death lawfully suspending the office's legal effects, (b) office-backed patrol duties degrading or lapsing with no successor/delegate renewing them, (c) the portfolio slot system letting other slots win when `ObligationDuty` has nothing valid. No hidden scenario flag fires.
 
 **Why not a duplicate**: Existing goldens test obligation issuance and patrol behavior. This golden tests the *vacancy → gap* failure mode the assessment specifically calls out.
 
@@ -153,10 +155,10 @@ Each remaining S153 scenario block carries a `// Falsification:` comment block: 
 Each scenario exercises an existing information path:
 - Belief-wall trap: already covered by S143STABELVIE-006 through observation via S143's `LocalPhysicalObservationView` and absent authority beliefs through `BelievedAuthorityView`.
 - False-rumor justice: testimony through S139's AskWitness; reliability updates through S151's confirmation/refutation hooks.
-- Office vacancy: office legal-effect suspension through S140 (`ArtifactLegalEffect::Suspended`); patrol-expectation `Active → Overdue` transition through S59 (`check_overdue_expectations`, `deadline_tick + grace_ticks`); portfolio slot dynamics through S148; route-danger propagation through perception.
+- Office vacancy: office legal-effect suspension through S140 (`ArtifactLegalEffect::Suspended`); office-backed patrol duty lifecycle through `tickets/S153GOLDGAPSCALE-004.md`; portfolio slot dynamics through S148; route-danger propagation through perception.
 - Scaled contention: grant/queue lifecycle through S140; route blockers through S150; route preferences through S151.
 
-No new information path introduced.
+False-rumor justice and scaled contention introduce no new information path. Office vacancy now requires an office-backed patrol duty information path owned by `tickets/S153GOLDGAPSCALE-004.md`; agents must learn the duty and its lapse/degradation through records, assignment, notices, testimony, or observation of non-performance rather than global truth.
 
 ### Positive-Feedback Analysis
 
@@ -164,23 +166,23 @@ Not applicable. Goldens validate existing dampeners.
 
 ### Concrete Dampeners
 
-Tested rather than introduced: queue grant capacity (scaled contention), expectation `deadline_tick + grace_ticks` (office vacancy), testimony trust threshold (`TestimonyTrustProfile.minimum_observations`, false rumor), route-blocker TTL — `BlockerClearingCondition::TtlOnly` (scaled contention).
+Tested rather than introduced: queue grant capacity (scaled contention), office-backed duty renewal/deadline or lapse dampener (office vacancy, owned by `tickets/S153GOLDGAPSCALE-004.md`), testimony trust threshold (`TestimonyTrustProfile.minimum_observations`, false rumor), route-blocker TTL — `BlockerClearingCondition::TtlOnly` (scaled contention).
 
 ### Stored State vs. Derived Read-Model List
 
-No new stored state. No new derived read-model.
+False-rumor justice and scaled contention add no new stored state. Office vacancy now requires new office-backed patrol duty assignment state before the golden can truthfully land; `tickets/S153GOLDGAPSCALE-004.md` owns that state and any derived AI/planner read-models.
 
 ## SystemFn Integration
 
-Not applicable.
+False-rumor justice and scaled contention do not add SystemFn integration. Office vacancy requires duty lifecycle maintenance owned by `tickets/S153GOLDGAPSCALE-004.md`.
 
 ## Component Registration
 
-Not applicable.
+False-rumor justice and scaled contention do not add components. Office vacancy may require new component or record registration for office-backed patrol duty assignments; `tickets/S153GOLDGAPSCALE-004.md` owns the final placement.
 
 ## Cross-System Interactions
 
-Goldens exercise integration paths between archived S143, archived S148, archived S150, and archived S151 substrate; no new cross-system interaction is introduced.
+False-rumor justice and scaled contention exercise integration paths between archived S143, archived S148, archived S150, and archived S151 substrate without introducing new cross-system interaction. Office vacancy requires new state-mediated interaction between office lifecycle, patrol duty lifecycle, AI portfolio selection, and route-danger observation; `tickets/S153GOLDGAPSCALE-004.md` owns that integration through state and event history, not direct system-to-system calls.
 
 ## Profile-Driven Parameters
 

@@ -1,6 +1,6 @@
 # S153GOLDGAPSCALE-002: Office-vacancy → patrol-gap golden
 
-**Status**: PENDING
+**Status**: REJECTED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
@@ -21,6 +21,14 @@ S153 D3 calls for a golden proving the vacancy → patrol-gap failure mode that 
 5. **Divergence stop-condition (precision rule 13):** if reassessment finds the chain is *not* producible by existing systems — e.g., patrol duties are not `Expectation`-backed, or office suspension does not propagate to invalidate the `ObligationDuty` slot's patrol candidate — STOP and surface the substrate gap to the user via the 1-3-1 rule. Do **not** add engine functionality to make the golden pass; that would violate the spec's test-only contract. Classify the gap as a separate substrate ticket.
 6. AI-regression layer: golden E2E with full action registries (the chain spans death, artifact lifecycle, the expectation system, and the portfolio), not a needs-only harness.
 7. Cumulative arithmetic (precision rule 7): the patrol `Expectation` uses an authored `deadline_tick + grace_ticks` (~200 ticks out). State the concrete deadline so the `Active → Overdue` transition is reachable within the scenario's tick budget and the bandit's traversal window aligns with the post-overdue gap.
+
+## Reassessment Decision (2026-05-20)
+
+The live branch disproves this ticket's test-only premise. `GoalKind::Patrol` is currently driven by `PatrolRoute` / `PatrolProfile` and vacancy-aware patrol motive in `crates/worldwake-ai/src/ranking.rs::patrol_motive`; `ExpectationStore` overdue state feeds `SearchForMissing`, `ReportMissing`, and `ReportFound` through `expectation_response_motive`, not patrol-duty validity. There is no concrete office-backed duty assignment artifact that connects an office, assignee guards, patrol route coverage, renewal/expiry, vacancy degradation, and `ObligationDuty` slot validity.
+
+Per `docs/FOUNDATIONS.md`, forcing this golden would violate the architecture target: FND-23 requires offices and duties to be world state, FND-25 / FND-25A require social artifacts to have lifecycle, visibility, legality, and actionability, FND-21 requires commitments to revise when their real backing assumptions break, and FND-29 / FND-29A require the causal and knowledge path to remain inspectable. The office-vacancy golden must wait for a real institutional-duty substrate rather than synthesizing the patrol gap inside a test fixture.
+
+Successor owner: `tickets/S153GOLDGAPSCALE-004.md`.
 
 ## Architecture Check
 
@@ -97,3 +105,17 @@ Run `python3 scripts/golden_inventory.py --write --check-docs` and commit the re
 2. `cargo clippy -p worldwake-ai --all-targets -- -D warnings`
 3. `python3 scripts/golden_inventory.py --write --check-docs`
 4. `scripts/verify.sh`
+
+## Outcome
+
+Rejected on 2026-05-20.
+
+- No golden or production code was added under this ticket.
+- Live reassessment proved the requested test-only golden is not implementable against current architecture: patrol duties are not expectation-backed, and office vacancy does not invalidate an `ObligationDuty` patrol candidate through a concrete duty lifecycle.
+- The required FOUNDATIONS-aligned next step is a substrate ticket for office-backed patrol duty assignments as first-class world state, captured in `tickets/S153GOLDGAPSCALE-004.md`.
+
+## Verification Result
+
+- Passed live-code reassessment by inspecting `crates/worldwake-ai/src/ranking.rs::expectation_response_motive`, `crates/worldwake-ai/src/ranking.rs::patrol_motive`, `crates/worldwake-core/src/patrol.rs`, and `crates/worldwake-core/src/expectation.rs`.
+- Passed FOUNDATIONS reassessment against FND-21, FND-23, FND-25, FND-25A, FND-29, and FND-29A.
+- Waived executable Cargo verification because this ticket landed no code, test, generated artifact, or executable behavior change.
