@@ -489,13 +489,7 @@ fn apply_input(
 }
 
 fn is_best_effort_start_failure(error: &ActionError) -> bool {
-    matches!(
-        error,
-        ActionError::ReservationUnavailable(_)
-            | ActionError::PreconditionFailed(_)
-            | ActionError::InvalidTarget(_)
-            | ActionError::AbortRequested(_)
-    )
+    error.is_recoverable_revalidation_failure() || matches!(error, ActionError::AbortRequested(_))
 }
 
 fn resolve_affordance(

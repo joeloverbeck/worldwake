@@ -385,7 +385,9 @@ fn map_replan_reason(
             AbortReason::Interrupted { kind, .. } => ReplanReason::ActionInterrupted {
                 reason: map_interrupt_reason(*kind),
             },
-            AbortReason::CommitConditionFailed { .. } | AbortReason::ExternalAbort { .. } => {
+            AbortReason::CommitConditionFailed { .. }
+            | AbortReason::ExternalAbort { .. }
+            | AbortReason::AuthoritativeRevalidationFailed { .. } => {
                 map_failure_classification(classification)
             }
         },

@@ -300,6 +300,28 @@ pub enum ActionError {
     InternalError(String),
 }
 
+impl ActionError {
+    /// Returns `true` when this error reflects a recoverable authoritative
+    /// re-validation failure: the world changed under a planned or in-flight
+    /// action so that a precondition which held at selection or start no
+    /// longer holds. Belief-only planning (FND-14) guarantees agents will
+    /// sometimes attempt actions that fail authoritative re-validation — the
+    /// reserving/encumbering facts are authoritative-only and never appear in
+    /// the planner's beliefs. Such failures must abort the action and trigger
+    /// a replan, never crash the tick. Engine-invariant violations
+    /// (`InternalError`, `UnknownAction*`, `InvalidActionStatus`, …) are not
+    /// recoverable and remain fatal.
+    #[must_use]
+    pub fn is_recoverable_revalidation_failure(&self) -> bool {
+        matches!(
+            self,
+            ActionError::ReservationUnavailable(_)
+                | ActionError::PreconditionFailed(_)
+                | ActionError::InvalidTarget(_)
+        )
+    }
+}
+
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub enum ActionAbortRequestReason {
     PayloadEntityMismatch {
@@ -398,6 +420,16 @@ pub enum AbortReason {
         kind: ExternalAbortReason,
         detail: Option<String>,
     },
+    /// An in-flight or finalizing action could not commit because an
+    /// authoritative re-validation in its handler failed (the world changed
+    /// under it since start). Distinct from `CommitConditionFailed`, which
+    /// covers declarative `commit_conditions`; this covers handler-internal
+    /// re-validation that cannot be expressed as a `Precondition`. The detail
+    /// carries the originating `ActionError` message so the AI failure handler
+    /// can classify it the same way it classifies a start-time failure.
+    AuthoritativeRevalidationFailed {
+        detail: String,
+    },
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -438,6 +470,13 @@ impl AbortReason {
     #[must_use]
     pub const fn external_abort(kind: ExternalAbortReason) -> Self {
         Self::ExternalAbort { kind, detail: None }
+    }
+
+    #[must_use]
+    pub fn authoritative_revalidation_failed(detail: impl Into<String>) -> Self {
+        Self::AuthoritativeRevalidationFailed {
+            detail: detail.into(),
+        }
     }
 
     #[must_use]

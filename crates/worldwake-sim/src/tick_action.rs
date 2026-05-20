@@ -142,6 +142,11 @@ fn tick_action_inner(
                 def, instance, handler, &context, txn, event_log, rng, reason,
             );
         }
+        Err(err) if err.is_recoverable_revalidation_failure() => {
+            return revalidation_failed_during_finalize(
+                def, instance, handler, &context, txn, event_log, rng, &err,
+            );
+        }
         Err(err) => return Err(err),
     };
     let should_finalize = matches!(progress, ActionProgress::Complete) || duration_elapsed;
@@ -217,8 +222,58 @@ fn tick_action_inner(
                 )?;
                 Ok(TickOutcome::Aborted { reason, replan })
             }
+            Err(err) if err.is_recoverable_revalidation_failure() => {
+                revalidation_failed_during_finalize(
+                    def, instance, handler, &context, txn, event_log, rng, &err,
+                )
+            }
             Err(err) => Err(err),
         }
+    }
+}
+
+/// Converts a recoverable authoritative re-validation failure (returned by an
+/// action handler at tick or commit) into a graceful abort + replan, mirroring
+/// the `BestEffort` handling of start-time failures (`tick_step.rs`) and the
+/// declarative `commit_conditions` abort path above. Belief-only planning
+/// (FND-14) guarantees agents will attempt actions whose authoritative-only
+/// preconditions (reservations, encumbrances) regressed since selection; the
+/// engine must never crash the tick over such divergence.
+#[allow(clippy::too_many_arguments)]
+fn revalidation_failed_during_finalize(
+    def: &crate::ActionDef,
+    instance: &mut ActionInstance,
+    handler: &crate::ActionHandler,
+    context: &ActionExecutionContext<'_>,
+    txn: WorldTxn<'_>,
+    event_log: &mut EventLog,
+    rng: &mut DeterministicRng,
+    error: &ActionError,
+) -> Result<TickOutcome, ActionError> {
+    let reason = AbortReason::authoritative_revalidation_failed(revalidation_failure_detail(error));
+    let replan = finalize_failed_action(
+        def,
+        instance,
+        handler,
+        context,
+        txn,
+        event_log,
+        rng,
+        &FailedActionTermination {
+            status: ActionStatus::Aborted,
+            reason: reason.clone(),
+            event_tag: EventTag::ActionAborted,
+        },
+    )?;
+    Ok(TickOutcome::Aborted { reason, replan })
+}
+
+/// Extracts the diagnostic detail from a recoverable re-validation error so the
+/// AI failure handler can classify it identically to a start-time failure.
+fn revalidation_failure_detail(error: &ActionError) -> String {
+    match error {
+        ActionError::PreconditionFailed(detail) => detail.clone(),
+        other => format!("{other:?}"),
     }
 }
 
@@ -255,6 +310,7 @@ mod tests {
         complete_on_tick: bool,
         mutate_on_tick: bool,
         fail_after_tick_mutation: bool,
+        fail_commit_with_precondition: Option<String>,
         abort_requested_on_tick: Option<crate::ActionAbortRequestReason>,
         replace_local_state: Option<ActionState>,
         abort_reasons: Vec<AbortReason>,
@@ -377,6 +433,9 @@ mod tests {
         state.commit_calls += 1;
         state.commit_event_log_len = event_log.len();
         state.commit_saw_system_tag = !event_log.events_by_tag(EventTag::System).is_empty();
+        if let Some(detail) = state.fail_commit_with_precondition.clone() {
+            return Err(ActionError::PreconditionFailed(detail));
+        }
         Ok(state.commit_outcome.clone())
     }
 
@@ -1136,6 +1195,73 @@ mod tests {
                 }
             )]
         );
+    }
+
+    #[test]
+    fn tick_action_aborts_and_replans_when_commit_handler_revalidation_fails() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        hook_state().lock().unwrap().fail_commit_with_precondition =
+            Some("institutional treasury lacks unencumbered Coin x4".to_string());
+        let (mut world, mut log, mut active_actions, defs, handlers, instance_id, actor, target) =
+            start_sample_action(
+                NonZeroU32::MIN,
+                vec![ReservationReq { target_index: 0 }],
+                vec![Precondition::ActorAlive],
+                BTreeSet::from([EventTag::Travel]),
+            );
+        let mut rng = test_rng();
+
+        // A handler that returns a recoverable `PreconditionFailed` at commit
+        // (the world changed under the in-flight action) must abort gracefully
+        // and request a replan — never propagate a fatal tick error.
+        let outcome = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+                recipe_registry: test_recipes(),
+                action_defs: &defs,
+            },
+        )
+        .expect("recoverable commit-time revalidation failure must not crash the tick");
+
+        let expected_reason = AbortReason::authoritative_revalidation_failed(
+            "institutional treasury lacks unencumbered Coin x4",
+        );
+        assert_eq!(
+            outcome,
+            TickOutcome::Aborted {
+                reason: expected_reason.clone(),
+                replan: ReplanNeeded {
+                    agent: actor,
+                    failed_action_def: ActionDefId(0),
+                    failed_instance: instance_id,
+                    reason: expected_reason.clone(),
+                    tick: Tick(11),
+                },
+            }
+        );
+        assert!(!active_actions.contains_key(&instance_id));
+        assert!(world.reservations_for(target).is_empty());
+        assert_eq!(log.events_by_tag(EventTag::ActionAborted).len(), 1);
+        let record = log
+            .get(log.events_by_tag(EventTag::ActionAborted)[0])
+            .unwrap();
+        assert!(!record.tags().contains(&EventTag::Travel));
+
+        let state = hook_state().lock().unwrap().clone();
+        assert_eq!(state.commit_calls, 1);
+        assert_eq!(state.abort_calls, 1);
+        assert_eq!(state.abort_reasons, vec![expected_reason]);
     }
 
     #[test]

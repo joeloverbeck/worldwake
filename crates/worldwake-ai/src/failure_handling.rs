@@ -793,6 +793,13 @@ fn map_replan_abort_reason(
                 .as_deref()
                 .and_then(|detail| parse_abort_detail(detail, step)),
         },
+        // A commit-time authoritative re-validation failure carries the same
+        // `PreconditionFailed`-style detail a start-time failure would, so
+        // classify it identically (see `map_start_failure_reason`).
+        AbortReason::AuthoritativeRevalidationFailed { detail } => {
+            classify_precondition_failure_detail(detail, step)
+                .or_else(|| parse_abort_detail(detail, step))
+        }
     }
 }
 
