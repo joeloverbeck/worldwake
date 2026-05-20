@@ -24,7 +24,7 @@ Phase 12: AI Architecture Evolution — Draft
 - `worldwake-sim` — `SAVE_FORMAT_VERSION` was bumped to 91 by S149PARPLASEG-001 for the typed-terminal serialized-format break, to 92 by S149PARPLASEG-003 because adding `AgendaEntry.partial_plan_segment` changed the bincode shape of the ai runtime payload, and to 93 by S149PARPLASEG-006 because adding `AgendaOrigin::Companion { primary, slot }` changed the serialized agenda-origin shape. Version 92 saves are rejected at the existing save-header boundary; no compatibility decoder is introduced.
 - `worldwake-systems` — no change.
 - `worldwake-ai` — `PlanTerminalKind`, the payload-free `PlanTerminalKindDiscriminant` histogram key, and all `ProgressBarrier` removal sites landed in S149PARPLASEG-001; S149PARPLASEG-002 added the `PartialPlanSegment` carrier type (and `PartialPlanSegmentId`, `BarrierFact`, `PlannedSkeletonStep`) here because their fields reference ai-resident types (`PlanTerminalKind`, `PlannedStep`, `PlannerOpKind`, `GoalOffer`, `BeliefPredicate`); S149PARPLASEG-003 added `PartialPlanSegment` storage on `AgendaEntry`; S149PARPLASEG-005 added the suspended-entry lifecycle evaluator; S149PARPLASEG-010 added executable segment writing and tactical suffix re-entry.
-- `worldwake-cli` — observer renders barrier type per terminal in the planning-diagnostic sections; S144 diagnostics aggregate barrier-kind distribution.
+- `worldwake-cli` — observer renders per-suspended-entry barrier details in the per-agent agenda summary; S144 diagnostics aggregate barrier-kind distribution.
 
 ## Dependencies
 
@@ -64,7 +64,7 @@ Phase 12: AI Architecture Evolution — Draft
 | FND-21 (Intentions Are Revisable Commitments) | Resume/abandon conditions on the segment make every partial intention explicitly revisable. |
 | FND-26 (Systems Interact Through State, Not Through Each Other) | Partial-plan resumption reads belief-view state to evaluate resume conditions; no cross-system command. |
 | FND-28 (No Backward Compatibility in Live Authority Paths) | Generic `ProgressBarrier` is removed and all sites migrated (D3); resume/abandon conditions reuse the single existing core types rather than introducing a parallel taxonomy. |
-| FND-29 (Debuggability Is a Product Feature) | Observer planning-diagnostic sections (Section 9 Budget Exhaustion Snapshots and Section 13 Scenario Diagnostics) surface per-attempt barrier types; S144 aggregates `terminal_kind_distribution` keyed by the payload-free discriminant. |
+| FND-29 (Debuggability Is a Product Feature) | The observer surfaces per-suspended-entry partial-plan barrier details in Section 8's agenda summary, while Section 13 Scenario Diagnostics aggregates `terminal_kind_distribution` keyed by the payload-free discriminant. |
 
 ## Deliverables
 
@@ -224,13 +224,13 @@ When a plan terminal is `CoordinationBarrier { contested_resource }`, the agenda
 
 ### D9: Observer rendering
 
-The observer's planning-diagnostic surface renders per-attempt barrier types. The relevant existing sections are **Section 9 — Budget Exhaustion Snapshots** (`crates/worldwake-cli/src/bin/observer.rs:1418`) and **Section 13 — Scenario Diagnostics** (`observer.rs:4002`, which carries `terminal_kind_distribution`); there is no "Section 7 (planning)" — Section 7 is "End-State Inventory & Resources". Extend the appropriate section to print, following the existing `## Section <N> — <Title>` header convention:
+The observer renders per-suspended-entry barrier details where the live `PartialPlanSegment` is available: **Section 8 — Per-Agent Decision Summary**, under the existing suspended agenda entry. Section 13 — Scenario Diagnostics remains the aggregate surface for `terminal_kind_distribution`; there is no "Section 7 (planning)" — Section 7 is "End-State Inventory & Resources". The per-entry block follows the existing indented sub-line convention:
 
 ```
 Plan terminal: ResourceBarrier(commodity=Grain, place=ThornwallMarket#42)
   Barrier fact: DepletedResource — observed stock = 0 at tick 1247
-  Resume on: BeliefStatusChanged(ThornwallMarket#42 -> Known: commodity available)
-  Abandon if: PatienceExhausted (3 resume attempts left)
+  Resume on: BeliefStatusChanged(ThornwallMarket#42, Known)
+  Abandon if: PatienceExhausted (1 resume attempts used)
 ```
 
 S144's `PlanningMetrics.terminal_kind_distribution` is keyed by `PlanTerminalKindDiscriminant` (D2) and gains all seven typed kinds.
