@@ -271,6 +271,14 @@ impl<'w> PerAgentBeliefView<'w> {
             .flatten()
     }
 
+    fn believed_contention_state_of(
+        &self,
+        entity: EntityId,
+    ) -> Option<worldwake_core::BelievedContentionState> {
+        self.believed_entity(entity)
+            .and_then(|state| state.believed_contention)
+    }
+
     /// True when the observing agent is physically co-located with `entity`.
     ///
     /// Used to gate observability of directly perceivable physical properties
@@ -1119,18 +1127,27 @@ impl TemporalBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
+        if !self.has_authoritative_local_visibility(facility) {
+            return None;
+        }
         self.world
             .get_component_contention_queue(facility)
             .and_then(|queue| queue.position_of(actor))
     }
 
     fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
+        if !self.has_authoritative_local_visibility(facility) {
+            return None;
+        }
         self.world
             .get_component_contention_queue(facility)
             .and_then(|queue| queue.granted.as_ref())
     }
 
     fn extraction_slot_queue_position(&self, source: EntityId, actor: EntityId) -> Option<u32> {
+        if !self.has_authoritative_local_visibility(source) {
+            return None;
+        }
         self.world
             .get_component_resource_extraction_queues(source)
             .and_then(|queues| {
@@ -1142,6 +1159,9 @@ impl TemporalBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn actor_holds_extraction_slot_grant(&self, source: EntityId, actor: EntityId) -> bool {
+        if !self.has_authoritative_local_visibility(source) {
+            return false;
+        }
         self.world
             .get_component_resource_extraction_queues(source)
             .is_some_and(|queues| {
@@ -1175,6 +1195,17 @@ impl TemporalBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn contention_queue_is_full(&self, entity: EntityId) -> bool {
+        if !self.has_authoritative_local_visibility(entity) {
+            let Some(contention) = self.believed_contention_state_of(entity) else {
+                return false;
+            };
+            let Some(policy) = self.world.get_component_contention_policy(entity) else {
+                return false;
+            };
+            return policy
+                .max_waiters
+                .is_some_and(|limit| contention.queue_length >= u32::from(limit));
+        }
         let Some(policy) = self.world.get_component_contention_policy(entity) else {
             return false;
         };
@@ -1848,13 +1879,25 @@ impl InventoryBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
-        self.world
-            .get_component_carry_capacity(entity)
-            .map(|CarryCapacity(capacity)| *capacity)
+        let observable = entity == self.agent
+            || self.has_authoritative_local_visibility(entity)
+            || self.world.possessor_of(entity) == Some(self.agent);
+        observable
+            .then(|| {
+                self.world
+                    .get_component_carry_capacity(entity)
+                    .map(|CarryCapacity(capacity)| *capacity)
+            })
+            .flatten()
     }
 
     fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
-        load_of_entity(self.world, entity).ok()
+        let observable = entity == self.agent
+            || self.has_authoritative_local_visibility(entity)
+            || self.world.possessor_of(entity) == Some(self.agent);
+        observable
+            .then(|| load_of_entity(self.world, entity).ok())
+            .flatten()
     }
 
     fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {
@@ -2092,6 +2135,10 @@ impl EconomicBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+        if self.world.effective_place(self.agent) != Some(place) {
+            return Vec::new();
+        }
+
         self.entities_at(place)
             .into_iter()
             .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::ItemLot))
@@ -2111,6 +2158,10 @@ impl EconomicBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
+        if !self.has_authoritative_local_visibility(lot) {
+            return None;
+        }
+
         if !self.world.has_component_sale_listing(lot) {
             return None;
         }
@@ -2123,7 +2174,7 @@ impl EconomicBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn has_sale_listing(&self, lot: EntityId) -> bool {
-        self.world.has_component_sale_listing(lot)
+        self.has_authoritative_local_visibility(lot) && self.world.has_component_sale_listing(lot)
     }
 
     fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
@@ -2205,7 +2256,12 @@ impl FacilityBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn has_production_job(&self, entity: EntityId) -> bool {
-        self.world.has_component_production_job(entity)
+        if entity == self.agent || self.has_authoritative_local_visibility(entity) {
+            return self.world.has_component_production_job(entity);
+        }
+        self.believed_activity_of(entity).is_some_and(|activity| {
+            activity.action_domain == worldwake_core::ActionDomain::Production
+        })
     }
 
     fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
@@ -2795,7 +2851,7 @@ mod tests {
     }
 
     #[test]
-    fn remote_listed_sale_lot_stays_sale_visible_through_display_container() {
+    fn remote_listed_sale_lot_does_not_read_live_sale_listing() {
         use worldwake_core::{LoadUnits, StockAssignment, StockAssignmentKind};
 
         let mut world = World::new(build_prototype_world()).unwrap();
@@ -2844,12 +2900,13 @@ mod tests {
 
         assert_eq!(
             EconomicBeliefView::listed_sale_lots_at(&view, market, CommodityKind::Bread),
-            vec![listed_lot]
+            Vec::<EntityId>::new()
         );
         assert_eq!(
             EconomicBeliefView::seller_for_sale_lot(&view, listed_lot),
-            Some(merchant)
+            None
         );
+        assert!(!EconomicBeliefView::has_sale_listing(&view, listed_lot));
         assert_eq!(
             InventoryBeliefView::direct_container(&view, listed_lot),
             Some(display)

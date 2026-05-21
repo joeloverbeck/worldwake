@@ -1,4 +1,5 @@
 
+**Status**: COMPLETED
 
 # **First-Iteration Hostile AI Architecture Audit — Worldwake**
 
@@ -973,3 +974,9 @@ For the second iteration, focus on one of these, in order:
 4. **Player-POV action surface audit.** Verify that the human-controlled character sees exactly the same lawful action surface an AI-controlled version would see, with debug truth fully separated.  
 5. **Candidate/ranking scalability audit.** Measure candidate fan-out, snapshot size, search expansions, beam pruning, trace volume, and blocker churn across synthetic 50/100/250-agent scenarios.
 
+## Outcome
+
+- Completion date: 2026-05-21.
+- What changed: Archived as exploited after the first-iteration AI architecture audit findings had been consumed by follow-on architecture work.
+- Deviations from original plan: No implementation changes were made as part of archival; the report remains historical advisory material.
+- Verification: Matched by the requested `reports/ai-architecture-consolidation-first*` pattern and prepared for archival under `archive/reports/`.

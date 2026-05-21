@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 212
+- Scenario blocks: 216
 - Contributing golden scenario source files: 53
-- Associated tests: 261
+- Associated tests: 265
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -219,7 +219,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 420: Belief Wall Trap Suppresses Theft
 
-- Source: `belief_wall_trap.rs:436`
+- Source: `belief_wall_trap.rs:1101`
 - Systems: Perception, AI, Crime
 - ActionDomains: Crime
 - Places: VillageSquare, OrchardFarm
@@ -233,7 +233,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 454: Stale Remote Pursuit Uses Last-Seen Place
 
-- Source: `belief_wall_trap.rs:562`
+- Source: `belief_wall_trap.rs:1227`
 - Systems: Perception, AI, Combat
 - ActionDomains: Combat, Travel
 - Places: VillageSquare, OrchardFarm, RulersHall
@@ -245,9 +245,65 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: direct observation belief -> hidden remote move -> belief-view effective_place -> remote hostile candidate evidence -> decision trace excludes live remote truth.
 
+### Scenario 456: Remote Sale Listing Does Not Leak Live Truth
+
+- Source: `belief_wall_trap.rs:1250`
+- Systems: Perception, AI, Trade
+- ActionDomains: Trade
+- Places: VillageSquare, OrchardFarm
+- Principles: 7, 14, 14A, 16, 19
+
+**Setup**: An actor at Village Square has stale prior beliefs about a remote
+
+**Proves**: The economic belief-view accessors do not enumerate remote sale
+
+**Cross-system chain**: prior remote belief -> live remote sale listing remains authoritative
+
+### Scenario 457: Remote Production Job Does Not Leak Live Truth
+
+- Source: `belief_wall_trap.rs:1275`
+- Systems: Perception, AI, Production
+- ActionDomains: Production
+- Places: VillageSquare, OrchardFarm
+- Principles: 7, 14, 14A, 16, 19
+
+**Setup**: An actor at Village Square has stale prior belief of a remote mill at Orchard Farm; the authoritative remote mill starts a production job without testimony, record, or local observation carrying that activity to the actor.
+
+**Proves**: `PerAgentBeliefView::has_production_job` does not expose live remote production-job state, while co-located busy/idle workstation state and an explicit `Activity` belief remain lawful sources.
+
+**Cross-system chain**: prior remote workstation belief -> hidden remote job start -> production belief view -> no remote busy/free leak -> explicit activity belief restores believed remote busy state.
+
+### Scenario 458: Remote Load Change Does Not Leak Live Truth
+
+- Source: `belief_wall_trap.rs:1295`
+- Systems: Perception, AI, Inventory
+- ActionDomains: Trade, Travel
+- Places: VillageSquare, OrchardFarm
+- Principles: 7, 14, 14A, 16, 19
+
+**Setup**: An actor at Village Square has stale prior beliefs about a remote carrier and remote water lot at Orchard Farm; the authoritative remote carry capacity and lot load exist, but no lawful carrier brings those physical facts back to the actor.
+
+**Proves**: `carry_capacity` and `load_of_entity` do not expose live remote physical state, while co-located load remains directly observable.
+
+**Cross-system chain**: prior remote entity belief -> live remote capacity/load remains authoritative -> inventory belief view -> no remote physical-state leak.
+
+### Scenario 459: Remote Queue Grant Does Not Leak Live Truth
+
+- Source: `belief_wall_trap.rs:1314`
+- Systems: Perception, AI, Production
+- ActionDomains: Production
+- Places: VillageSquare, OrchardFarm
+- Principles: 7, 14, 14A, 16, 19
+
+**Setup**: An actor at Village Square has stale prior beliefs about a remote contended facility and resource source at Orchard Farm; the authoritative remote queue and extraction grant then change without testimony, record, or local observation carrying that state back to the actor.
+
+**Proves**: The temporal contention accessors do not expose live remote queue position, grant, extraction-slot grant, or queue fullness. Co-located contention remains directly observable, and an explicit `ContentionState` belief can still expose aggregate remote queue fullness.
+
+**Cross-system chain**: prior remote entity belief -> hidden remote queue/grant mutation -> temporal belief view -> no remote contention-state leak -> explicit contention belief restores aggregate believed fullness.
+
 ### Scenario 455: Control Source Swap Preserves Belief Affordances
 
-- Source: `belief_wall_trap.rs:585`
+- Source: `belief_wall_trap.rs:1334`
 - Systems: Perception, AI
 - ActionDomains: Crime, Travel, Production
 - Places: VillageSquare, OrchardFarm
@@ -783,7 +839,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 431: S147 ProduceWithGather Method Selection
 
-- Source: `htn_methods.rs:791`
+- Source: `htn_methods.rs:820`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -796,7 +852,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 433: S147 Autonomous Produce Method Trace Propagation
 
-- Source: `htn_methods.rs:827`
+- Source: `htn_methods.rs:856`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -809,7 +865,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 434: S147 FulfillBountyInvestigation Method Selection
 
-- Source: `htn_methods.rs:901`
+- Source: `htn_methods.rs:938`
 - Systems: AI, Search, SocialArtifact
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Travel
@@ -822,7 +878,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 436: S147 FulfillBountyDirect Method Selection
 
-- Source: `htn_methods.rs:941`
+- Source: `htn_methods.rs:978`
 - Systems: AI, Search, SocialArtifact, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Combat, Travel
@@ -835,7 +891,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 437: S147 EscortToHome Method Selection
 
-- Source: `htn_methods.rs:985`
+- Source: `htn_methods.rs:1022`
 - Systems: AI, Search, Care, Travel
 - GoalKinds: EscortToSafety
 - ActionDomains: Care, Travel
@@ -848,7 +904,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 438: S147 Method Failure Producer
 
-- Source: `htn_methods.rs:1032`
+- Source: `htn_methods.rs:1069`
 - Systems: AI, Search, Care, FailureHandling
 - GoalKinds: EscortToSafety
 - ActionDomains: Care
@@ -861,7 +917,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 435: S147 Autonomous FulfillBountyInvestigation Method Trace
 
-- Source: `htn_methods.rs:1075`
+- Source: `htn_methods.rs:1112`
 - Systems: AI, Search, SocialArtifact, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Combat, Travel
@@ -874,7 +930,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 432: S147 Disabled Methods Fall Back To Flat Strategic Search
 
-- Source: `htn_methods.rs:1125`
+- Source: `htn_methods.rs:1162`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -902,7 +958,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 75: Displayed Lot Retains SaleListing Through Presence Cycle
 
-- Source: `merchant_selling.rs:353`
+- Source: `merchant_selling.rs:363`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - ActionDomains: Trade
@@ -912,7 +968,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 76: Buyer Trades Against Listed Lot
 
-- Source: `merchant_selling.rs:423`
+- Source: `merchant_selling.rs:433`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity, SellCommodity
 - ActionDomains: Trade
@@ -920,19 +976,19 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Proves**: buyer discovers and trades against concrete listed lot with conservation
 
-### Scenario 84: Remote Branch Selection Reaches Local Trade Binding
+### Scenario 84: Remote Listing Belief Does Not Select A Trade Branch
 
-- Source: `merchant_selling.rs:525`
+- Source: `merchant_selling.rs:535`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity
-- ActionDomains: Travel, Trade
-- Principles: P1, P3, P4
+- ActionDomains: Trade
+- Principles: P1, P3, P4, P7, P14
 
-**Proves**: buyer first selects the remote seller-backed `Travel -> Trade` path and, after arrival, reaches a concrete local `trade` next step before seller departure. The mismatch event itself stays owned by the focused `agent_tick` execution proof.
+**Proves**: inferred remote seller and lot beliefs do not select a seller-backed trade branch from current remote sale-listing truth. A concrete trade binding now requires local observation or another explicit carrier.
 
 ### Scenario 85: Seller Return Revives Pending Purchase Agenda Entry
 
-- Source: `merchant_selling.rs:636`
+- Source: `merchant_selling.rs:611`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Trade
@@ -942,7 +998,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 86: Seller Return Restores Displayed Listing After Pending Revival
 
-- Source: `merchant_selling.rs:786`
+- Source: `merchant_selling.rs:762`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Trade
@@ -952,7 +1008,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 87: Seller Return Completes Resumed Purchase After Live Three-Coin Offer
 
-- Source: `merchant_selling.rs:934`
+- Source: `merchant_selling.rs:911`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Trade
@@ -962,7 +1018,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 77: Unlisted Stock Not Sellable
 
-- Source: `merchant_selling.rs:1080`
+- Source: `merchant_selling.rs:1058`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -972,7 +1028,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 79b: Unstage Round Trip Preserves Storage Contract
 
-- Source: `merchant_selling.rs:1232`
+- Source: `merchant_selling.rs:1210`
 - Systems: Trade, AI
 - ActionDomains: Trade
 - Principles: P4, P24
@@ -981,7 +1037,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 80: Buyer Discovers Listed Lots, Not Unlisted Stock
 
-- Source: `merchant_selling.rs:1246`
+- Source: `merchant_selling.rs:1224`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -991,7 +1047,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 82: Seller Departure Invalidates Listing
 
-- Source: `merchant_selling.rs:1314`
+- Source: `merchant_selling.rs:1292`
 - Systems: Trade
 - Principles: P3, P7
 
@@ -999,7 +1055,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 83: Dead Seller Invalidates Listing
 
-- Source: `merchant_selling.rs:1371`
+- Source: `merchant_selling.rs:1349`
 - Systems: Trade
 - Principles: P3, P4
 
@@ -1007,7 +1063,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 88: Demand Memory Raises Sell Ranking
 
-- Source: `merchant_selling.rs:1443`
+- Source: `merchant_selling.rs:1421`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - Principles: P1, P3, P20
@@ -1016,7 +1072,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 96: Hungry Merchant Eats Own Listed Sale Stock
 
-- Source: `merchant_selling.rs:1515`
+- Source: `merchant_selling.rs:1493`
 - Systems: Needs, Trade, AI
 - GoalKinds: ConsumeOwnedCommodity, SellCommodity
 - ActionDomains: Needs (eat), Trade (staff_market)

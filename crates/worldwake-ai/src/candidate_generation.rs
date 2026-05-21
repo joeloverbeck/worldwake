@@ -6348,7 +6348,13 @@ fn belief_gated_places(
         .copied()
         .filter_map(|place| {
             if current_place == Some(place)
-                || place_has_direct_acquisition_support(view, agent, place, commodity)
+                || place_has_direct_acquisition_support(
+                    view,
+                    agent,
+                    place,
+                    commodity,
+                    options.recipes,
+                )
                 || (options.search.include_recipes
                     && place_has_recipe_backed_acquisition_support(
                         view,
@@ -6372,6 +6378,7 @@ fn place_has_direct_acquisition_support(
     agent: EntityId,
     place: EntityId,
     commodity: CommodityKind,
+    recipes: &RecipeRegistry,
 ) -> bool {
     view.listed_sale_lots_at(place, commodity)
         .into_iter()
@@ -6382,8 +6389,9 @@ fn place_has_direct_acquisition_support(
             .resource_sources_at(place, commodity)
             .into_iter()
             .any(|source| {
-                view.resource_source(source)
-                    .is_some_and(|resource| resource.available_quantity > Quantity(0))
+                resource_source_supports_acquisition(
+                    view, agent, place, source, commodity, recipes, false,
+                )
             })
         || view
             .corpse_entities_at(place)
@@ -6648,10 +6656,15 @@ fn acquisition_path_evidence_inner(
             place_evidence.merge(local_lots);
         }
         for source in view.resource_sources_at(candidate_place, commodity) {
-            if view
-                .resource_source(source)
-                .is_some_and(|resource| resource.available_quantity > Quantity(0))
-            {
+            if resource_source_supports_acquisition(
+                view,
+                agent,
+                candidate_place,
+                source,
+                commodity,
+                recipes,
+                options.include_recipes,
+            ) {
                 place_evidence.places.insert(candidate_place);
                 place_evidence.entities.insert(source);
                 place_trace.contributor(
@@ -6743,10 +6756,15 @@ fn acquisition_path_evidence_at_place(
         place_evidence.merge(local_lots);
     }
     for source in view.resource_sources_at(candidate_place, commodity) {
-        if view
-            .resource_source(source)
-            .is_some_and(|resource| resource.available_quantity > Quantity(0))
-        {
+        if resource_source_supports_acquisition(
+            view,
+            agent,
+            candidate_place,
+            source,
+            commodity,
+            recipes,
+            options.include_recipes,
+        ) {
             place_evidence.places.insert(candidate_place);
             place_evidence.entities.insert(source);
             place_trace.contributor(
@@ -6798,6 +6816,68 @@ fn acquisition_path_evidence_at_place(
     }
 
     (!place_evidence.is_empty()).then_some((place_evidence, place_trace))
+}
+
+fn resource_source_supports_acquisition(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: EntityId,
+    source: EntityId,
+    commodity: CommodityKind,
+    recipes: &RecipeRegistry,
+    include_recipes: bool,
+) -> bool {
+    let Some(resource) = view.resource_source(source) else {
+        return false;
+    };
+    if resource.commodity != commodity || resource.available_quantity == Quantity(0) {
+        return false;
+    }
+    if !recipes.iter().any(|(_, recipe)| {
+        recipe.inputs.is_empty()
+            && recipe
+                .outputs
+                .iter()
+                .any(|(output, _)| *output == commodity)
+    }) {
+        return true;
+    }
+    include_recipes
+        || known_harvest_recipe_supports_source(view, agent, place, source, commodity, recipes)
+}
+
+fn known_harvest_recipe_supports_source(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: EntityId,
+    source: EntityId,
+    commodity: CommodityKind,
+    recipes: &RecipeRegistry,
+) -> bool {
+    let Some(resource) = view.resource_source(source) else {
+        return false;
+    };
+    if resource.commodity != commodity || resource.available_quantity == Quantity(0) {
+        return false;
+    }
+
+    view.known_recipes(agent).into_iter().any(|recipe_id| {
+        recipes.get(recipe_id).is_some_and(|recipe| {
+            recipe.inputs.is_empty()
+                && recipe
+                    .outputs
+                    .iter()
+                    .any(|(output, _)| *output == commodity)
+                && recipe
+                    .required_workstation_tag
+                    .is_some_and(|tag| view.matching_workstations_at(place, tag).contains(&source))
+                && recipe
+                    .required_tool_kinds
+                    .iter()
+                    .all(|tool| view.unique_item_count(agent, *tool) > 0)
+                && !view.has_production_job(source)
+        })
+    })
 }
 
 fn reachable_places_within_horizon(
@@ -10859,6 +10939,99 @@ mod tests {
                 recipe_id: RecipeId(0),
             }
         ));
+    }
+
+    #[test]
+    fn remote_harvest_source_without_known_recipe_does_not_emit_acquire_branch() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let market = entity(10);
+        let crossroads = entity(11);
+        let orchard = entity(12);
+        let workstation = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller, workstation]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.entity_kinds.insert(market, EntityKind::Place);
+        view.entity_kinds.insert(crossroads, EntityKind::Place);
+        view.entity_kinds.insert(orchard, EntityKind::Place);
+        view.entity_kinds.insert(workstation, EntityKind::Facility);
+        view.effective_places.insert(agent, market);
+        view.effective_places.insert(seller, market);
+        view.effective_places.insert(workstation, orchard);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.adjacent_places.insert(market, vec![crossroads]);
+        view.adjacent_places
+            .insert(crossroads, vec![market, orchard]);
+        view.adjacent_places.insert(orchard, vec![crossroads]);
+        view.register_seller(market, CommodityKind::Apple, seller);
+        view.known_recipes.insert(agent, vec![RecipeId(99)]);
+        view.workstations
+            .insert((orchard, WorkstationTag::OrchardRow), vec![workstation]);
+        view.sources_at
+            .insert((orchard, CommodityKind::Apple), vec![workstation]);
+        view.resource_sources.insert(
+            workstation,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            },
+        );
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(sample_recipe(
+            vec![(CommodityKind::Apple, Quantity(2))],
+            Vec::new(),
+            WorkstationTag::OrchardRow,
+        ));
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &ViolationMemory::default(),
+            &recipes,
+            Tick(5),
+            2,
+            false,
+        );
+
+        assert!(
+            !result.candidates.iter().any(|candidate| {
+                candidate.key.kind
+                    == GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Apple,
+                        purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
+                    }
+                    && candidate.anchor == worldwake_core::OpportunityAnchor::Place(orchard)
+                    && candidate.evidence_entities.contains(&workstation)
+            }),
+            "unknown apple harvest recipe must not make the remote orchard source a viable acquisition branch: {:?}",
+            result.candidates
+        );
+        assert!(
+            result.candidates.iter().any(|candidate| {
+                candidate.key.kind
+                    == GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Apple,
+                        purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
+                    }
+                    && candidate.anchor == worldwake_core::OpportunityAnchor::Place(market)
+                    && candidate.evidence_entities.contains(&seller)
+            }),
+            "local seller-backed acquisition should remain viable after the infeasible resource branch is pruned: {:?}",
+            result.candidates
+        );
     }
 
     #[test]
@@ -22472,6 +22645,9 @@ mod tests {
         );
         view.carry_capacities.insert(agent, LoadUnits(20));
         view.entity_loads.insert(agent, LoadUnits(0));
+        view.known_recipes.insert(agent, vec![RecipeId(0)]);
+        view.unique_item_counts
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
         view.workstation_tags
             .insert(workstation, WorkstationTag::OrchardRow);
         view.workstations
@@ -22564,6 +22740,9 @@ mod tests {
         );
         view.carry_capacities.insert(agent, LoadUnits(20));
         view.entity_loads.insert(agent, LoadUnits(0));
+        view.known_recipes.insert(agent, vec![RecipeId(0)]);
+        view.unique_item_counts
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
         view.workstation_tags
             .insert(workstation, WorkstationTag::OrchardRow);
         view.workstations

@@ -4811,13 +4811,13 @@ fn unseen_death_does_not_create_corpse_reaction_without_reobservation() {
 }
 
 #[test]
-fn expired_remote_acquisition_belief_remains_until_perception_refresh() {
+fn expired_remote_seller_belief_remains_until_perception_refresh_without_acquisition_leak() {
     let (mut harness, seller, _local_witness, _origin, destination, _bread) =
         stale_remote_acquisition_harness();
 
     let mut before = ranked_goals_at(&mut harness, Tick(1));
     let before = crate::ranking::sort_in_place(&mut before);
-    assert!(has_goal(
+    assert!(!has_goal(
         &before,
         GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -4838,7 +4838,7 @@ fn expired_remote_acquisition_belief_remains_until_perception_refresh() {
     let mut after_retention_without_refresh = ranked_goals_at(&mut harness, Tick(10));
     let after_retention_without_refresh =
         crate::ranking::sort_in_place(&mut after_retention_without_refresh);
-    assert!(has_goal(
+    assert!(!has_goal(
         &after_retention_without_refresh,
         GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -4858,13 +4858,13 @@ fn expired_remote_acquisition_belief_remains_until_perception_refresh() {
 }
 
 #[test]
-fn perception_refresh_preserves_remote_seller_belief_above_activation_threshold() {
+fn perception_refresh_preserves_remote_seller_belief_without_acquisition_leak() {
     let (mut harness, seller, local_witness, origin, destination, _bread) =
         stale_remote_acquisition_harness();
 
     let mut before = ranked_goals_at(&mut harness, Tick(1));
     let before = crate::ranking::sort_in_place(&mut before);
-    assert!(has_goal(
+    assert!(!has_goal(
         &before,
         GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -4905,13 +4905,14 @@ fn perception_refresh_preserves_remote_seller_belief_above_activation_threshold(
 }
 
 #[test]
-fn perception_refresh_evicts_remote_acquisition_belief_below_activation_threshold() {
+fn perception_refresh_evicts_remote_seller_belief_below_activation_threshold_without_acquisition_leak()
+ {
     let (mut harness, seller, local_witness, origin, destination, _bread) =
         stale_remote_acquisition_harness();
 
     let mut before = ranked_goals_at(&mut harness, Tick(1));
     let before = crate::ranking::sort_in_place(&mut before);
-    assert!(has_goal(
+    assert!(!has_goal(
         &before,
         GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
