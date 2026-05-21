@@ -2847,7 +2847,7 @@ mod tests {
         LastProactiveExplorationTick, LatrineFullness, LoadUnits, ObservationOmissionLog,
         OfficeData, PatrolProfile, PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness,
         PortfolioWeightsProfile, Quantity, RecordData, RecordEntryId, RecordKind, ResourceSource,
-        RewardEncumbrance, RewardReservation, RewardSource, RoutePreferenceProfile, ShelterTag,
+        RewardEncumbrance, RewardReservation, RoutePreferenceProfile, ShelterTag,
         SleepQualityProfile, SleepRecoveryModifier, SuccessionLaw, SurveyMemory,
         TestimonyTrustProfile, TheftFacts, Tick, UniqueItemKind, ViolationId, VisibilitySpec,
         WashBasinState, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
@@ -3326,7 +3326,6 @@ mod tests {
     struct RewardSourceFixture {
         world: World,
         actor: EntityId,
-        office: EntityId,
         accusation: BelievedInstitutionalClaim,
     }
 
@@ -3355,7 +3354,7 @@ mod tests {
         let places = world.topology().place_ids().collect::<Vec<_>>();
         let seat = places[0];
         let jurisdiction_place = *places.get(1).unwrap_or(&seat);
-        let (actor, office, accused, missing_entity, record) = {
+        let (actor, _office, accused, missing_entity, record) = {
             let mut txn = new_txn(&mut world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let holder = if actor_holds_office {
@@ -3472,7 +3471,6 @@ mod tests {
         RewardSourceFixture {
             world,
             actor,
-            office,
             accusation,
         }
     }
@@ -3895,7 +3893,7 @@ mod tests {
     }
 
     #[test]
-    fn accessor_returns_institutional_source_for_holder_with_funded_unencumbered_office() {
+    fn accessor_hides_institutional_source_without_believed_record_snapshot() {
         let fixture = reward_source_fixture(true, Quantity(5), Quantity(1));
         let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
 
@@ -3905,14 +3903,12 @@ mod tests {
                 fixture.actor,
                 &fixture.accusation
             ),
-            Some(RewardSource::InstitutionalTreasury {
-                treasury_entity: fixture.office
-            })
+            None
         );
     }
 
     #[test]
-    fn accessor_returns_institutional_source_for_non_coin_theft_with_coin_treasury() {
+    fn accessor_hides_non_coin_institutional_source_without_believed_record_snapshot() {
         let fixture = reward_source_fixture_with_commodities(
             true,
             Quantity(5),
@@ -3928,9 +3924,7 @@ mod tests {
                 fixture.actor,
                 &fixture.accusation
             ),
-            Some(RewardSource::InstitutionalTreasury {
-                treasury_entity: fixture.office
-            })
+            None
         );
     }
 

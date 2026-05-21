@@ -295,5 +295,7 @@ serve as the regression/composition suite.
 - Whether a consulted-record belief substrate already stores enough for current
   `record_data`/`office_data` consumers, or whether a believed-record snapshot type
   must be introduced (its own follow-up if substantial — do not expand this spec
-  into a new institutional-belief system).
+  into a new institutional-belief system). `archive/tickets/S162BELVIESOU-003.md`
+  chose the fail-closed accessor fix and deferred the lawful whole-record/office
+  snapshot substrate to `tickets/S162BELVIESOU-006.md`.
 - The exact carrier of the snapshot-through-view invariant (Deliverable 6).

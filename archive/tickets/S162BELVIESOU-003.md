@@ -1,15 +1,15 @@
 # S162BELVIESOU-003: Institutional & social belief-gating
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
-**Engine Changes**: Yes — `worldwake-sim` belief-view institutional/social accessors (`per_agent_belief_view.rs`); possibly `worldwake-core` if a believed-institutional snapshot type is introduced (deferred decision).
+**Engine Changes**: Yes — `worldwake-sim` belief-view institutional/social accessors (`per_agent_belief_view.rs`) plus focused lower-layer reward-source expectations in `belief_view.rs`. No believed-institutional snapshot type was introduced.
 **Deps**: Spec `specs/S162-belief-view-source-gate-hardening.md` (D2, D4)
 
 ## Problem
 
-`record_data` and `office_data` return the **current** authoritative `RecordData`/
-`OfficeData` once the entity is merely `knows_entity` (which includes
+Before this ticket, `record_data` and `office_data` returned the live
+authoritative `RecordData`/`OfficeData` once the entity is merely `knows_entity` (which includes
 co-location/last-seen), making institutional facts (holder, vacancy, jurisdiction,
 succession, penalties, bounties) omniscient. `loyalty_to` and `stock_storage_policy`
 gate on `knows_entity` rather than an explicit belief. All four are social/
@@ -77,7 +77,7 @@ entry even when co-located (FND-14, FND-14A, FND-17).
 2. No backwards-compatibility shim: the current-truth reads are replaced outright
    (FND-28); no parallel "read truth if belief absent" fallback remains.
 
-## Verification Layers
+## Verified Layers
 
 1. Remote record/office change invisible without consult -> focused unit test: actor
    has no institutional belief for the office/record; `office_data`/`record_data`
@@ -92,32 +92,37 @@ entry even when co-located (FND-14, FND-14A, FND-17).
    emission or method selection without a carrier) -> deferred to S162BELVIESOU-005
    goldens; this ticket's proof is the focused accessor tests (strongest lower layer).
 
-## What to Change
+## Landed Changes
 
-### 1. `record_data` (`:1653`) / `office_data` (`:1659`)
+### 1. `record_data` / `office_data`
 
-Replace the `get_component_record_data`/`get_component_office_data` current-truth
-read with a believed-backed read: reconstruct from `believed_office_holder` /
-`believed_force_controller` / `believed_support_declarations_for_office` /
-`known_institutional_beliefs` where available; return `None` (the whole `Option`)
-when the believed substrate does not cover the requested record/office. Never read
-current authoritative truth. Trace `htn/selector.rs` and candidate-generation call
-sites first and confirm each dependent candidate originates from institutional belief
-or is correctly absent.
+`PerAgentBeliefView::record_data` and `PerAgentBeliefView::office_data` now return
+`None` instead of reading current authoritative `RecordData` / `OfficeData` from the
+world. The existing belief substrate exposes normalized institutional beliefs such
+as office holder, force controller, membership, and support declarations, but it
+does not carry a whole believed record/office snapshot. The landed result therefore
+fails closed instead of reconstructing partial structs or falling back to live truth.
 
-### 2. `loyalty_to` (`:1695`) / `stock_storage_policy` (`:2267`)
+### 2. `loyalty_to` / `stock_storage_policy`
 
-Replace the `knows_entity` gate with `self.believed_entity(..).is_some()` (keeping
-`loyalty_to`'s existing self gate on subject), mirroring `merchandise_profile`.
+`loyalty_to` keeps its self-subject gate and now requires an explicit target entity
+belief. `stock_storage_policy` now requires an explicit facility entity belief.
+Neither accessor treats mere co-location or last-seen/entity knowledge as permission
+to read social/institutional policy truth.
 
-### 3. Focused unit coverage
+### 3. Focused unit coverage and dependent fail-closed tests
 
-Add tests for remote-invisible and believed-surfaced cases per accessor.
+Added focused `per_agent_belief_view` tests proving that live record/office data,
+co-located loyalty, and co-located stock policy stay hidden without explicit belief.
+Updated lower-layer `belief_view` reward-source tests and consultation-duration
+coverage to record the same fail-closed behavior when a whole believed record/office
+snapshot is absent.
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-sim/src/per_agent_belief_view.rs` (modify — four accessors + `#[cfg(test)]` tests)
-- `Likely: crates/worldwake-ai/src/htn/selector.rs` (modify — only if a method precondition relied on the now-`None` record/office read and needs to read believed-institutional state instead; confirm via `grep -n "record_data\|office_data" crates/worldwake-ai/src/htn/selector.rs` during reassessment)
+- `crates/worldwake-sim/src/per_agent_belief_view.rs` — modified the four owned accessors and focused tests.
+- `crates/worldwake-sim/src/belief_view.rs` — updated reward-source helper expectations that previously depended on the same live `record_data` / `office_data` path.
+- `crates/worldwake-ai/src/htn/selector.rs` — no change; the `cargo test -p worldwake-ai htn` proof passed with the fail-closed accessor result.
 
 ## Out of Scope
 
@@ -125,30 +130,41 @@ Add tests for remote-invisible and believed-surfaced cases per accessor.
   perception write that populates it — deferred follow-up (Assumption Reassessment 13).
 - Contention gates (S162BELVIESOU-001), control/rights gates (`archive/tickets/S162BELVIESOU-002.md`).
 - Adversarial end-to-end goldens (S162BELVIESOU-005).
+- Restoring planner-visible consult duration, bounty reward-source derivation, or
+  richer office/record candidates through a lawful whole-record/office belief
+  carrier. Those are the same deferred believed snapshot substrate, not an
+  authorized fallback to current truth.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Focused Results
 
-1. New: `office_data`/`record_data` return `None` for an office/record the actor has no institutional belief about, despite live world data.
-2. New: `loyalty_to`/`stock_storage_policy` return `None` for a `knows_entity`-but-not-`believed_entity` target/facility.
-3. New: a believed office holder is reflected through `office_data` (or the accessor returns `None` for uncovered fields — never current truth).
-4. Existing suite: `cargo test -p worldwake-sim` and `cargo test -p worldwake-ai htn`
+1. `office_data` / `record_data` return `None` for believed office/record entities despite live world data.
+2. `loyalty_to` / `stock_storage_policy` return `None` for co-located but not explicitly believed target/facility entities.
+3. Explicit institutional beliefs such as `believed_office_holder` still surface through their normalized belief accessors; whole `office_data` remains `None` because no lawful whole-office snapshot exists.
+4. Existing suites passed: `cargo test -p worldwake-sim` and `cargo test -p worldwake-ai htn`.
 
-### Invariants
+### Verified Invariants
 
 1. No belief-facing institutional/social accessor reads current authoritative `RecordData`/`OfficeData`/loyalty/storage-policy on mere `knows_entity`.
 2. No parallel "fall back to current truth when belief absent" path exists (FND-28).
 
-## Test Plan
+## Outcome
 
-### New/Modified Tests
+Completed on 2026-05-21.
 
-1. `crates/worldwake-sim/src/per_agent_belief_view.rs` (`#[cfg(test)]`) — remote-invisible + believed-surfaced cases for the four accessors; rationale: prove the institutional/social facts are belief-gated.
-2. `crates/worldwake-ai/src/htn/selector.rs` (`#[cfg(test)]`, only if touched) — method selection unaffected by a remote record/office change absent a carrier.
+- Closed the live `PerAgentBeliefView` institutional/social truth leak for `record_data`, `office_data`, `loyalty_to`, and `stock_storage_policy`.
+- Preserved normalized institutional belief accessors (`believed_office_holder`, membership, support declarations, force controller) as the lawful carrier surface.
+- Confirmed HTN selector coverage passes without modifying `worldwake-ai`.
+- Kept the richer `BelievedOfficeData` / `BelievedRecordData` substrate deferred; dependent reads now fail closed instead of using current truth.
 
-### Commands
+## Deviations
 
-1. `cargo test -p worldwake-sim per_agent_belief_view`
-2. `cargo test -p worldwake-ai htn`
-3. `./scripts/verify.sh` (before PR)
+- The ticket's drafted "believed office holder is reflected through `office_data`" acceptance branch resolved to the alternative already allowed by the ticket: `office_data` returns `None` for uncovered whole-struct fields, while `believed_office_holder` remains the lawful normalized accessor.
+- `TemporalBeliefView::estimate_duration` for `DurationExpr::ConsultRecord` and `actor_lawful_reward_source_for_case` no longer derive values through `record_data` / `office_data` when no believed whole-record/office snapshot exists. This is intentional fail-closed behavior for S162-003, not a new live-truth fallback.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-sim per_agent_belief_view`
+- Passed `cargo test -p worldwake-ai htn`
+- Passed `cargo test -p worldwake-sim`

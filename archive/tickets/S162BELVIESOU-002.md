@@ -120,7 +120,7 @@ invisibility regression. Re-verified the existing belief-accessible control test
 
 ## Out of Scope
 
-- Contention gates (S162BELVIESOU-001), institutional/social gates (S162BELVIESOU-003).
+- Contention gates (`archive/tickets/S162BELVIESOU-001.md`), institutional/social gates (`archive/tickets/S162BELVIESOU-003.md`).
 - Authoritative `can_exercise_control` / dispatch-time validation — unchanged.
 - Adversarial end-to-end goldens (S162BELVIESOU-005).
 

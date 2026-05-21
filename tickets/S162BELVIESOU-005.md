@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: None (golden/E2E tests only) — `worldwake-ai`
-**Deps**: `archive/tickets/S162BELVIESOU-001.md`, `archive/tickets/S162BELVIESOU-002.md`, S162BELVIESOU-003 (the gates must land first), Spec `specs/S162-belief-view-source-gate-hardening.md` (D7)
+**Deps**: `archive/tickets/S162BELVIESOU-001.md`, `archive/tickets/S162BELVIESOU-002.md`, `archive/tickets/S162BELVIESOU-003.md`, `tickets/S162BELVIESOU-006.md` (office/record carrier-positive cases need the lawful believed snapshot), Spec `specs/S162-belief-view-source-gate-hardening.md` (D7)
 
 ## Problem
 
@@ -52,6 +52,13 @@ reason rather than "looked plausible."
     behavior (third-iteration report §13). If any existing golden silently relied on a
     now-closed leak, it belongs to the owning gate ticket (001/002/003) to fix, not
     here; flag it as a separate finding if discovered.
+14. Post-S162BELVIESOU-003 update: the institutional/social gate deliberately made
+    whole `record_data` / `office_data` fail closed until a lawful whole-record/office
+    belief snapshot exists. The office/record positive-carrier half of this golden
+    ticket therefore depends on S162BELVIESOU-006. Owner/control, contention, and
+    loyalty no-carrier absence cases may still be reassessed independently, but this
+    ticket should not fake an office/record carrier by seeding authoritative world
+    truth.
 
 ## Architecture Check
 
@@ -108,7 +115,7 @@ If the harness requires it, regenerate the golden inventory docs
 
 - The accessor gate fixes themselves (001/002/003).
 - The snapshot-through-view guard (004).
-- A believed-institutional snapshot type (deferred follow-up from 003).
+- A believed-institutional snapshot type (S162BELVIESOU-006).
 
 ## Acceptance Criteria
 
