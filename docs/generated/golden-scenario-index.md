@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 215
+- Scenario blocks: 216
 - Contributing golden scenario source files: 53
-- Associated tests: 264
+- Associated tests: 265
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -219,7 +219,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 420: Belief Wall Trap Suppresses Theft
 
-- Source: `belief_wall_trap.rs:849`
+- Source: `belief_wall_trap.rs:1101`
 - Systems: Perception, AI, Crime
 - ActionDomains: Crime
 - Places: VillageSquare, OrchardFarm
@@ -233,7 +233,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 454: Stale Remote Pursuit Uses Last-Seen Place
 
-- Source: `belief_wall_trap.rs:975`
+- Source: `belief_wall_trap.rs:1227`
 - Systems: Perception, AI, Combat
 - ActionDomains: Combat, Travel
 - Places: VillageSquare, OrchardFarm, RulersHall
@@ -247,7 +247,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 456: Remote Sale Listing Does Not Leak Live Truth
 
-- Source: `belief_wall_trap.rs:998`
+- Source: `belief_wall_trap.rs:1250`
 - Systems: Perception, AI, Trade
 - ActionDomains: Trade
 - Places: VillageSquare, OrchardFarm
@@ -261,7 +261,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 457: Remote Production Job Does Not Leak Live Truth
 
-- Source: `belief_wall_trap.rs:1023`
+- Source: `belief_wall_trap.rs:1275`
 - Systems: Perception, AI, Production
 - ActionDomains: Production
 - Places: VillageSquare, OrchardFarm
@@ -275,7 +275,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 458: Remote Load Change Does Not Leak Live Truth
 
-- Source: `belief_wall_trap.rs:1043`
+- Source: `belief_wall_trap.rs:1295`
 - Systems: Perception, AI, Inventory
 - ActionDomains: Trade, Travel
 - Places: VillageSquare, OrchardFarm
@@ -287,9 +287,23 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: prior remote entity belief -> live remote capacity/load remains authoritative -> inventory belief view -> no remote physical-state leak.
 
+### Scenario 459: Remote Queue Grant Does Not Leak Live Truth
+
+- Source: `belief_wall_trap.rs:1314`
+- Systems: Perception, AI, Production
+- ActionDomains: Production
+- Places: VillageSquare, OrchardFarm
+- Principles: 7, 14, 14A, 16, 19
+
+**Setup**: An actor at Village Square has stale prior beliefs about a remote contended facility and resource source at Orchard Farm; the authoritative remote queue and extraction grant then change without testimony, record, or local observation carrying that state back to the actor.
+
+**Proves**: The temporal contention accessors do not expose live remote queue position, grant, extraction-slot grant, or queue fullness. Co-located contention remains directly observable, and an explicit `ContentionState` belief can still expose aggregate remote queue fullness.
+
+**Cross-system chain**: prior remote entity belief -> hidden remote queue/grant mutation -> temporal belief view -> no remote contention-state leak -> explicit contention belief restores aggregate believed fullness.
+
 ### Scenario 455: Control Source Swap Preserves Belief Affordances
 
-- Source: `belief_wall_trap.rs:1062`
+- Source: `belief_wall_trap.rs:1334`
 - Systems: Perception, AI
 - ActionDomains: Crime, Travel, Production
 - Places: VillageSquare, OrchardFarm

@@ -6,16 +6,19 @@ use std::num::NonZeroU32;
 use crate::golden_harness::*;
 use worldwake_ai::{DecisionOutcome, GoalKey, PlannerOpKind, generate_candidates};
 use worldwake_core::{
-    ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BlockerMemory, CarryCapacity, ClaimId,
-    ClaimValue, CommodityKind, ControlSource, EntityId, EntityKind, GoalKind, HomeostaticNeeds,
-    LoadUnits, MetabolismProfile, PerceptionSource, Permille, ProductionJob, PursuitProfile,
-    Quantity, RecipeId, SaleListing, Seed, StockAssignment, StockAssignmentKind, SuccessionLaw,
-    TheftDispositionProfile, Tick, UtilityProfile, WorkstationMarker, WorkstationTag,
+    ActionDefId, ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BlockerMemory,
+    CarryCapacity, ClaimId, ClaimValue, CommodityKind, ContentionGrant, ContentionPolicy,
+    ContentionQueue, ControlSource, EntityId, EntityKind, GoalKind, HomeostaticNeeds, LoadUnits,
+    MetabolismProfile, PerceptionSource, Permille, ProductionJob, PursuitProfile, Quantity,
+    RecipeId, ResourceExtractionQueues, SaleListing, Seed, StockAssignment, StockAssignmentKind,
+    SuccessionLaw, TheftDispositionProfile, Tick, UtilityProfile, WorkstationMarker,
+    WorkstationTag,
 };
 use worldwake_core::{EntityBeliefAspect, EntityBeliefClaim};
 use worldwake_sim::{
     BeliefRead, BelievedAuthorityView, EconomicBeliefView, FacilityBeliefView, InventoryBeliefView,
-    LocalPhysicalObservationView, PerAgentBeliefView, SpatialBeliefView, get_affordances,
+    LocalPhysicalObservationView, PerAgentBeliefView, SpatialBeliefView, TemporalBeliefView,
+    get_affordances,
 };
 
 struct BeliefWallFixture {
@@ -56,6 +59,15 @@ struct RemoteLoadFixture {
     remote_carrier: EntityId,
     remote_lot: EntityId,
     local_lot: EntityId,
+}
+
+struct RemoteContentionFixture {
+    h: GoldenHarness,
+    actor: EntityId,
+    remote_facility: EntityId,
+    remote_source: EntityId,
+    local_facility: EntityId,
+    local_source: EntityId,
 }
 
 fn set_control_source(h: &mut GoldenHarness, agent: EntityId, control_source: ControlSource) {
@@ -463,6 +475,143 @@ fn build_remote_load_fixture(seed: Seed) -> RemoteLoadFixture {
     }
 }
 
+fn queued_contention(actor: EntityId, tick: Tick) -> ContentionQueue {
+    let mut queue = ContentionQueue::default();
+    queue
+        .enqueue(actor, ActionDefId(990), tick, None)
+        .expect("fixture queue should accept first waiter");
+    queue
+}
+
+fn granted_contention(actor: EntityId, tick: Tick) -> ContentionQueue {
+    let mut queue = ContentionQueue::default();
+    queue
+        .enqueue(actor, ActionDefId(991), tick, None)
+        .expect("fixture queue should accept first waiter");
+    queue
+        .promote_head(tick, NonZeroU32::new(3).unwrap())
+        .expect("fixture queue should grant head waiter");
+    queue
+}
+
+fn build_remote_contention_fixture(seed: Seed) -> RemoteContentionFixture {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let actor = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Contention-Wall Actor",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let other = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Remote Queue Holder",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, other, ControlSource::Human);
+
+    let (remote_facility, remote_source, local_facility, local_source) = {
+        let mut txn = new_txn(&mut h.world, 0);
+        let remote_facility = txn.create_entity(EntityKind::Facility);
+        let remote_source = txn.create_entity(EntityKind::Facility);
+        let local_facility = txn.create_entity(EntityKind::Facility);
+        let local_source = txn.create_entity(EntityKind::Facility);
+        txn.set_ground_location(remote_facility, ORCHARD_FARM)
+            .unwrap();
+        txn.set_ground_location(remote_source, ORCHARD_FARM)
+            .unwrap();
+        txn.set_ground_location(local_facility, VILLAGE_SQUARE)
+            .unwrap();
+        txn.set_ground_location(local_source, VILLAGE_SQUARE)
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+        (remote_facility, remote_source, local_facility, local_source)
+    };
+
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        actor,
+        remote_facility,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        actor,
+        remote_source,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        actor,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let full_policy = ContentionPolicy {
+        grant_hold_ticks: NonZeroU32::new(3).unwrap(),
+        auto_promote: true,
+        max_waiters: Some(1),
+    };
+    let mut remote_facility_queue = queued_contention(actor, Tick(1));
+    remote_facility_queue.granted = Some(ContentionGrant {
+        actor: other,
+        intended_action: ActionDefId(992),
+        granted_at: Tick(1),
+        expires_at: Tick(4),
+    });
+    let mut local_facility_queue = queued_contention(actor, Tick(1));
+    local_facility_queue.granted = Some(ContentionGrant {
+        actor: other,
+        intended_action: ActionDefId(993),
+        granted_at: Tick(1),
+        expires_at: Tick(4),
+    });
+    let remote_source_queues = ResourceExtractionQueues {
+        queues: vec![granted_contention(actor, Tick(1))],
+    };
+    let local_source_queues = ResourceExtractionQueues {
+        queues: vec![granted_contention(actor, Tick(1))],
+    };
+
+    let mut txn = new_txn(&mut h.world, 1);
+    txn.set_component_contention_policy(remote_facility, full_policy.clone())
+        .unwrap();
+    txn.set_component_contention_policy(local_facility, full_policy)
+        .unwrap();
+    txn.set_component_contention_queue(remote_facility, remote_facility_queue)
+        .unwrap();
+    txn.set_component_contention_queue(local_facility, local_facility_queue)
+        .unwrap();
+    txn.set_component_resource_extraction_queues(remote_source, remote_source_queues)
+        .unwrap();
+    txn.set_component_resource_extraction_queues(local_source, local_source_queues)
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    RemoteContentionFixture {
+        h,
+        actor,
+        remote_facility,
+        remote_source,
+        local_facility,
+        local_source,
+    }
+}
+
 fn authority_view_for(fixture: &BeliefWallFixture) -> worldwake_sim::PerAgentBeliefView<'_> {
     let store = fixture
         .h
@@ -487,6 +636,10 @@ fn remote_production_view_for(fixture: &RemoteProductionFixture) -> PerAgentBeli
 }
 
 fn remote_load_view_for(fixture: &RemoteLoadFixture) -> PerAgentBeliefView<'_> {
+    PerAgentBeliefView::from_world(fixture.actor, &fixture.h.world)
+}
+
+fn remote_contention_view_for(fixture: &RemoteContentionFixture) -> PerAgentBeliefView<'_> {
     PerAgentBeliefView::from_world(fixture.actor, &fixture.h.world)
 }
 
@@ -764,6 +917,105 @@ fn assert_remote_load_and_capacity_do_not_use_live_truth(fixture: &RemoteLoadFix
         InventoryBeliefView::load_of_entity(&view, fixture.local_lot),
         Some(LoadUnits(4)),
         "co-located load remains directly observable"
+    );
+}
+
+fn assert_remote_contention_does_not_use_live_truth(fixture: &RemoteContentionFixture) {
+    let view = remote_contention_view_for(fixture);
+    assert_eq!(
+        fixture.h.world.effective_place(fixture.actor),
+        Some(VILLAGE_SQUARE)
+    );
+    assert_eq!(
+        fixture.h.world.effective_place(fixture.remote_facility),
+        Some(ORCHARD_FARM)
+    );
+    assert!(
+        fixture
+            .h
+            .world
+            .get_component_contention_queue(fixture.remote_facility)
+            .is_some_and(|queue| queue.position_of(fixture.actor) == Some(0)
+                && queue.granted.as_ref().is_some()),
+        "fixture must contain live remote queue position and grant to prove the leak is reachable"
+    );
+    assert!(
+        fixture
+            .h
+            .world
+            .get_component_resource_extraction_queues(fixture.remote_source)
+            .is_some_and(|queues| queues.queues.iter().any(|queue| queue
+                .granted
+                .as_ref()
+                .is_some_and(|grant| grant.actor == fixture.actor))),
+        "fixture must contain a live remote extraction grant to prove the leak is reachable"
+    );
+
+    assert_eq!(
+        view.facility_queue_position(fixture.remote_facility, fixture.actor),
+        None,
+        "remote queue position must not be read from current world truth"
+    );
+    assert_eq!(
+        view.facility_grant(fixture.remote_facility),
+        None,
+        "remote facility grant must not be read from current world truth"
+    );
+    assert_eq!(
+        view.extraction_slot_queue_position(fixture.remote_source, fixture.actor),
+        None,
+        "remote extraction slot queue position must not be read from current world truth"
+    );
+    assert!(
+        !view.actor_holds_extraction_slot_grant(fixture.remote_source, fixture.actor),
+        "remote extraction slot grant must not be read from current world truth"
+    );
+    assert!(
+        !view.contention_queue_is_full(fixture.remote_facility),
+        "remote queue fullness must not be read from current world truth without a contention belief"
+    );
+
+    assert_eq!(
+        view.facility_queue_position(fixture.local_facility, fixture.actor),
+        Some(0),
+        "co-located queue position remains directly observable"
+    );
+    assert!(
+        view.facility_grant(fixture.local_facility).is_some(),
+        "co-located facility grant remains directly observable"
+    );
+    assert!(
+        view.actor_holds_extraction_slot_grant(fixture.local_source, fixture.actor),
+        "co-located extraction grant remains directly observable"
+    );
+    assert!(
+        view.contention_queue_is_full(fixture.local_facility),
+        "co-located queue fullness remains directly observable"
+    );
+}
+
+fn assert_remote_contention_belief_is_used(fixture: &mut RemoteContentionFixture) {
+    seed_belief_from_world(
+        &mut fixture.h.world,
+        &mut fixture.h.event_log,
+        fixture.actor,
+        fixture.remote_facility,
+        Tick(1),
+        PerceptionSource::Report {
+            from: fixture.actor,
+            chain_len: 0,
+        },
+    );
+
+    let view = remote_contention_view_for(fixture);
+    assert!(
+        view.contention_queue_is_full(fixture.remote_facility),
+        "explicit remote contention belief should expose believed queue fullness"
+    );
+    assert_eq!(
+        view.facility_queue_position(fixture.remote_facility, fixture.actor),
+        None,
+        "the current contention belief carrier has no actor-specific queue position"
     );
 }
 
@@ -1057,6 +1309,26 @@ fn golden_belief_wall_trap_remote_load_change_unseen() {
     let fixture = build_remote_load_fixture(Seed([0x4a; 32]));
 
     assert_remote_load_and_capacity_do_not_use_live_truth(&fixture);
+}
+
+// Scenario 459: Remote Queue Grant Does Not Leak Live Truth
+//
+// Systems: Perception, AI, Production
+// ActionDomains: Production
+// Places: VillageSquare, OrchardFarm
+// Principles: 7, 14, 14A, 16, 19
+//
+// Setup: An actor at Village Square has stale prior beliefs about a remote contended facility and resource source at Orchard Farm; the authoritative remote queue and extraction grant then change without testimony, record, or local observation carrying that state back to the actor.
+//
+// Proves: The temporal contention accessors do not expose live remote queue position, grant, extraction-slot grant, or queue fullness. Co-located contention remains directly observable, and an explicit `ContentionState` belief can still expose aggregate remote queue fullness.
+//
+// Chain: prior remote entity belief -> hidden remote queue/grant mutation -> temporal belief view -> no remote contention-state leak -> explicit contention belief restores aggregate believed fullness.
+#[test]
+fn golden_belief_wall_trap_remote_queue_grant_unseen() {
+    let mut fixture = build_remote_contention_fixture(Seed([0x4b; 32]));
+
+    assert_remote_contention_does_not_use_live_truth(&fixture);
+    assert_remote_contention_belief_is_used(&mut fixture);
 }
 
 // Scenario 455: Control Source Swap Preserves Belief Affordances

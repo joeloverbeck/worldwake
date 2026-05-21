@@ -271,6 +271,14 @@ impl<'w> PerAgentBeliefView<'w> {
             .flatten()
     }
 
+    fn believed_contention_state_of(
+        &self,
+        entity: EntityId,
+    ) -> Option<worldwake_core::BelievedContentionState> {
+        self.believed_entity(entity)
+            .and_then(|state| state.believed_contention)
+    }
+
     /// True when the observing agent is physically co-located with `entity`.
     ///
     /// Used to gate observability of directly perceivable physical properties
@@ -1119,18 +1127,27 @@ impl TemporalBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
+        if !self.has_authoritative_local_visibility(facility) {
+            return None;
+        }
         self.world
             .get_component_contention_queue(facility)
             .and_then(|queue| queue.position_of(actor))
     }
 
     fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
+        if !self.has_authoritative_local_visibility(facility) {
+            return None;
+        }
         self.world
             .get_component_contention_queue(facility)
             .and_then(|queue| queue.granted.as_ref())
     }
 
     fn extraction_slot_queue_position(&self, source: EntityId, actor: EntityId) -> Option<u32> {
+        if !self.has_authoritative_local_visibility(source) {
+            return None;
+        }
         self.world
             .get_component_resource_extraction_queues(source)
             .and_then(|queues| {
@@ -1142,6 +1159,9 @@ impl TemporalBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn actor_holds_extraction_slot_grant(&self, source: EntityId, actor: EntityId) -> bool {
+        if !self.has_authoritative_local_visibility(source) {
+            return false;
+        }
         self.world
             .get_component_resource_extraction_queues(source)
             .is_some_and(|queues| {
@@ -1175,6 +1195,17 @@ impl TemporalBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn contention_queue_is_full(&self, entity: EntityId) -> bool {
+        if !self.has_authoritative_local_visibility(entity) {
+            let Some(contention) = self.believed_contention_state_of(entity) else {
+                return false;
+            };
+            let Some(policy) = self.world.get_component_contention_policy(entity) else {
+                return false;
+            };
+            return policy
+                .max_waiters
+                .is_some_and(|limit| contention.queue_length >= u32::from(limit));
+        }
         let Some(policy) = self.world.get_component_contention_policy(entity) else {
             return false;
         };
