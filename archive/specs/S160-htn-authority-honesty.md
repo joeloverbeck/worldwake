@@ -1,6 +1,6 @@
 # S160 — HTN Authority Honesty
 
-**Status:** Draft
+**Status:** COMPLETED
 **Type:** Correctness/honesty fix (planner-local schema metadata + trace, plus an
 escort action-payload field migration in `worldwake-sim`/`worldwake-systems`; no
 new authoritative simulation state, no method-required goals)
@@ -254,3 +254,41 @@ adds no new pursuit pattern.
   construction sites producing `None` (no planner-vs-affordance payload mismatch).
 - All existing `worldwake-ai` HTN goldens pass (behavior of the renamed method is
   identical to its prior behavior — solo pursuit after support declaration).
+
+## Outcome
+
+Completion date: 2026-05-21
+
+S160 landed through tickets `archive/tickets/S160HTNAUTHHON-001.md` through
+`archive/tickets/S160HTNAUTHHON-004.md`.
+
+What changed:
+- `MethodSubgoalAuthority` labels now make current HTN subgoals explicit
+  `StageHint`s, with `RequiredActionLeaf` present only as a guarded future
+  contract variant.
+- HTN method traces now carry the subgoal authority label, and
+  `docs/planner-contracts.md` documents the stage-hint vs. required-leaf
+  distinction.
+- The fake group-hunt method was renamed to
+  `fulfill_bounty_support_declared_direct`, preserving the lawful
+  `DeclareSupport` signal without claiming enforced group coordination.
+- `EscortToSafetyActionPayload.intended_heal_action` now uses
+  `Option<ActionDefId>`: planning and affordance construction produce `None`,
+  action start resolves `Some(heal_id)`, and the care handoff treats unresolved
+  `None` as an internal error. The save format bumped from 96 to 97.
+
+Deviations from original plan:
+- Ticket 004 used existing escort-focused tests as the strongest proof seam
+  rather than adding a separate new test function.
+- No method was made method-required, and no coordination/recruitment system was
+  added.
+
+Verification:
+- `cargo test -p worldwake-ai htn`
+- `cargo test -p worldwake-ai goal_schema::tests::test_relevant_ops_authority_is_hint_only_at_landing`
+- `cargo test -p worldwake-ai integration::htn_registry_validation`
+- `cargo test -p worldwake-ai integration::goal_schema_methods`
+- `cargo test -p worldwake-systems escort`
+- `cargo test -p worldwake-sim -p worldwake-ai`
+- `cargo test -p worldwake-ai`
+- `./scripts/verify.sh`

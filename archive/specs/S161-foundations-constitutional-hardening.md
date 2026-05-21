@@ -73,8 +73,9 @@ points** that near-term architecture is now actively touching:
   selected+rejected methods with `failed_precondition`, and
   `StrategicFallbackReason::{NoViableMethod, MethodProducedNoStages}` all exist and
   are traceable via `AgentDecisionTrace`. Method preconditions read
-  `RuntimeBeliefView`, not authoritative world state. S160 (active) is already
-  hardening HTN honesty, so the FND-20 guard reinforces in-flight work.
+  `RuntimeBeliefView`, not authoritative world state. The now-archived
+  `archive/specs/S160-htn-authority-honesty.md` hardened HTN honesty, so the
+  FND-20 guard reinforces that landed work.
 - **Coverage asymmetry.** `docs/generated/golden-coverage-matrix.md`: FND-12 = 6
   scenarios, FND-13 = 2, vs FND-14 = 50, FND-20 = 24, FND-31 = 10. Compression and
   boundary processes are genuinely under-stressed — but **no offscreen sim,
