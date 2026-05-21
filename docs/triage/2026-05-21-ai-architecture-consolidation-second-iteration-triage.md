@@ -19,9 +19,9 @@ narrowed form, with the audit's `Sourced<T>`/per-field-snapshot static-typing
   contention reads). `can_control` / `believed_rights` value-backing was
   deliberately deferred after S155/S158 reassessment. FND-7/14/14A/19. Completed.
 - **S159 — Candidate-Generation Schema-Owned Extractor Authority** —
-  `specs/S159-candidate-generation-schema-owned-extractor-authority.md`.
+  `archive/specs/S159-candidate-generation-schema-owned-extractor-authority.md`.
   `LEGACY_EXTRACTOR_ORDER` fossil + out-of-band blocked-self-care emitter confirmed.
-  FND-28. Behavior-preserving cleanup.
+  FND-28. Behavior-preserving cleanup. Completed.
 - **S160 — HTN Authority Honesty** —
   `specs/S160-htn-authority-honesty.md`. Confirmed: subgoals are unenforced stage
   hints, `fulfill_bounty_group_hunt` fakes coordination (no recruit leaf, solo

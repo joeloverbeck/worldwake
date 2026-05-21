@@ -187,6 +187,7 @@ pub(crate) struct CandidateGenerationDiagnostics {
     pub ask_witness_gate_rejections: Vec<AskWitnessGateRejection>,
     pub evidence: BTreeMap<OpportunityKey, CandidateEvidenceTrace>,
     pub sources: BTreeMap<OpportunityKey, CandidateSource>,
+    pub extractor_sources: BTreeMap<OpportunityKey, CandidateExtractorId>,
     pub fully_blocked_desires: Vec<DesireFullyBlocked>,
     pub places_reachable: u32,
     pub places_after_belief_filter: u32,
@@ -259,6 +260,7 @@ pub(crate) struct ExtractorContext<'a, 'b> {
     pub generation: &'a GenerationContext<'a>,
     pub diagnostics: &'a mut CandidateGenerationDiagnostics,
     pub prior_candidates: &'a [GoalOffer],
+    pub fully_blocked_desires: &'a [DesireFullyBlocked],
     pub pending_discrepancies: &'a mut Vec<PendingDiscrepancyRecord>,
     pub pending_violations: &'a mut Vec<PendingViolationRecord>,
     pub pending_source_reliability_failures: &'a mut Vec<OpportunityExpectationFailureIncident>,
@@ -436,6 +438,21 @@ extractor!(
     }
 );
 
+extractor!(
+    BlockedSelfCareExplorationExtractor,
+    BlockedSelfCareExploration,
+    |ctx, candidates| {
+        let needs = ctx.generation.view.homeostatic_needs(ctx.generation.agent);
+        emit_exploration_candidates_for_blocked_self_care(
+            &mut candidates,
+            ctx.diagnostics,
+            ctx.generation,
+            needs,
+            ctx.fully_blocked_desires,
+        );
+    }
+);
+
 static NEED_EXTRACTOR: NeedExtractor = NeedExtractor;
 static PRODUCTION_EXTRACTOR: ProductionExtractor = ProductionExtractor;
 static ENTERPRISE_EXTRACTOR: EnterpriseExtractor = EnterpriseExtractor;
@@ -458,6 +475,8 @@ static PROACTIVE_EXPLORATION_EXTRACTOR: ProactiveExplorationExtractor =
 static EXPECTATION_VIOLATION_EXTRACTOR: ExpectationViolationExtractor =
     ExpectationViolationExtractor;
 static OPPORTUNITY_COMPILER_EXTRACTOR: OpportunityCompilerExtractor = OpportunityCompilerExtractor;
+static BLOCKED_SELF_CARE_EXPLORATION_EXTRACTOR: BlockedSelfCareExplorationExtractor =
+    BlockedSelfCareExplorationExtractor;
 
 pub(crate) fn extractor_for(id: CandidateExtractorId) -> &'static dyn CandidateExtractor {
     match id {
@@ -481,6 +500,9 @@ pub(crate) fn extractor_for(id: CandidateExtractorId) -> &'static dyn CandidateE
         CandidateExtractorId::ProactiveExploration => &PROACTIVE_EXPLORATION_EXTRACTOR,
         CandidateExtractorId::ExpectationViolation => &EXPECTATION_VIOLATION_EXTRACTOR,
         CandidateExtractorId::OpportunityCompiler => &OPPORTUNITY_COMPILER_EXTRACTOR,
+        CandidateExtractorId::BlockedSelfCareExploration => {
+            &BLOCKED_SELF_CARE_EXPLORATION_EXTRACTOR
+        }
     }
 }
 
@@ -492,7 +514,11 @@ pub(crate) fn build_extractor_registry()
         .collect()
 }
 
-const LEGACY_EXTRACTOR_ORDER: [CandidateExtractorId; 20] = [
+/// Single declared top-level execution order for candidate extractors.
+///
+/// Membership must match the schema-declared extractor set; the completeness
+/// test below asserts there are no missing or orphan extractors.
+const CANDIDATE_EXTRACTOR_ORDER: [CandidateExtractorId; 21] = [
     CandidateExtractorId::Need,
     CandidateExtractorId::Production,
     CandidateExtractorId::Enterprise,
@@ -513,7 +539,42 @@ const LEGACY_EXTRACTOR_ORDER: [CandidateExtractorId; 20] = [
     CandidateExtractorId::ProactiveExploration,
     CandidateExtractorId::ExpectationViolation,
     CandidateExtractorId::OpportunityCompiler,
+    CandidateExtractorId::BlockedSelfCareExploration,
 ];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CandidateExtractorPhase {
+    PreSuppression,
+    PostSuppression,
+}
+
+fn candidate_extractor_phase(id: CandidateExtractorId) -> CandidateExtractorPhase {
+    match id {
+        CandidateExtractorId::BlockedSelfCareExploration => {
+            CandidateExtractorPhase::PostSuppression
+        }
+        CandidateExtractorId::Need
+        | CandidateExtractorId::Production
+        | CandidateExtractorId::Enterprise
+        | CandidateExtractorId::Disposal
+        | CandidateExtractorId::Bounty
+        | CandidateExtractorId::ArtifactPosting
+        | CandidateExtractorId::Combat
+        | CandidateExtractorId::Crime
+        | CandidateExtractorId::Social
+        | CandidateExtractorId::AskWitness
+        | CandidateExtractorId::Patrol
+        | CandidateExtractorId::Political
+        | CandidateExtractorId::RecordedViolation
+        | CandidateExtractorId::Search
+        | CandidateExtractorId::ReportFound
+        | CandidateExtractorId::Escort
+        | CandidateExtractorId::Exploration
+        | CandidateExtractorId::ProactiveExploration
+        | CandidateExtractorId::ExpectationViolation
+        | CandidateExtractorId::OpportunityCompiler => CandidateExtractorPhase::PreSuppression,
+    }
+}
 
 pub(crate) fn ordered_candidate_extractors_from_goal_schemas() -> Vec<CandidateExtractorId> {
     let schema_extractors: BTreeSet<CandidateExtractorId> = GoalDispatchKey::ALL
@@ -521,9 +582,18 @@ pub(crate) fn ordered_candidate_extractors_from_goal_schemas() -> Vec<CandidateE
         .flat_map(|key| key.declaration().candidate_extractors.iter().copied())
         .collect();
 
-    LEGACY_EXTRACTOR_ORDER
+    CANDIDATE_EXTRACTOR_ORDER
         .into_iter()
         .filter(|id| schema_extractors.contains(id))
+        .collect()
+}
+
+fn ordered_candidate_extractors_for_phase(
+    phase: CandidateExtractorPhase,
+) -> Vec<CandidateExtractorId> {
+    ordered_candidate_extractors_from_goal_schemas()
+        .into_iter()
+        .filter(|id| candidate_extractor_phase(*id) == phase)
         .collect()
 }
 
@@ -765,7 +835,9 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
         .unwrap_or(&default_schema_context_profile);
     let extractor_registry = build_extractor_registry();
     let mut candidates: Vec<GoalOffer> = Vec::new();
-    for extractor_id in ordered_candidate_extractors_from_goal_schemas() {
+    for extractor_id in
+        ordered_candidate_extractors_for_phase(CandidateExtractorPhase::PreSuppression)
+    {
         let extractor = extractor_registry
             .get(&extractor_id)
             .expect("extractor registry covers CandidateExtractorId::ALL");
@@ -776,13 +848,16 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
             generation: &ctx,
             diagnostics: &mut diagnostics,
             prior_candidates: &candidates,
+            fully_blocked_desires: &[],
             pending_discrepancies: &mut pending_discrepancies,
             pending_violations: &mut pending_violations,
             pending_source_reliability_failures: &mut pending_source_reliability_failures,
             pending_acquisition_exhaustion_resets: &mut pending_acquisition_exhaustion_resets,
             _marker: std::marker::PhantomData,
         };
-        candidates.extend(extractor.extract(&mut extractor_ctx));
+        let extracted = extractor.extract(&mut extractor_ctx);
+        record_extractor_sources(&mut diagnostics, extractor_id, &extracted);
+        candidates.extend(extracted);
     }
 
     let mut candidates = filter_suppressed_candidates(
@@ -794,26 +869,64 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
     );
     let fully_blocked_desires = diagnostics.fully_blocked_desires.clone();
     let mut blocked_fallback_candidates = Vec::new();
-    let needs = view.homeostatic_needs(agent);
-    emit_exploration_candidates_for_blocked_self_care(
-        &mut blocked_fallback_candidates,
-        &mut diagnostics,
-        &ctx,
-        needs,
-        &fully_blocked_desires,
-    );
+    let mut blocked_fallback_extractor_sources = BTreeMap::new();
+    for extractor_id in
+        ordered_candidate_extractors_for_phase(CandidateExtractorPhase::PostSuppression)
+    {
+        let extractor = extractor_registry
+            .get(&extractor_id)
+            .expect("extractor registry covers CandidateExtractorId::ALL");
+        if !extractor.is_enabled_for(profile) {
+            continue;
+        }
+        let mut extractor_ctx = ExtractorContext {
+            generation: &ctx,
+            diagnostics: &mut diagnostics,
+            prior_candidates: &blocked_fallback_candidates,
+            fully_blocked_desires: &fully_blocked_desires,
+            pending_discrepancies: &mut pending_discrepancies,
+            pending_violations: &mut pending_violations,
+            pending_source_reliability_failures: &mut pending_source_reliability_failures,
+            pending_acquisition_exhaustion_resets: &mut pending_acquisition_exhaustion_resets,
+            _marker: std::marker::PhantomData,
+        };
+        let extracted = extractor.extract(&mut extractor_ctx);
+        for candidate in &extracted {
+            blocked_fallback_extractor_sources.insert(
+                OpportunityKey {
+                    goal_key: candidate.key,
+                    anchor: candidate.anchor,
+                },
+                extractor_id,
+            );
+        }
+        blocked_fallback_candidates.extend(extracted);
+    }
     let mut fallback_diagnostics = CandidateGenerationDiagnostics::default();
-    candidates.extend(filter_suppressed_candidates(
+    let filtered_fallback_candidates = filter_suppressed_candidates(
         blocked_fallback_candidates,
         blocked,
         discrepancies,
         current_tick,
         &mut fallback_diagnostics,
-    ));
+    );
+    let surviving_fallback_opportunities: BTreeSet<OpportunityKey> = filtered_fallback_candidates
+        .iter()
+        .map(|candidate| OpportunityKey {
+            goal_key: candidate.key,
+            anchor: candidate.anchor,
+        })
+        .collect();
+    blocked_fallback_extractor_sources
+        .retain(|opportunity, _source| surviving_fallback_opportunities.contains(opportunity));
+    candidates.extend(filtered_fallback_candidates);
     diagnostics
         .suppressed
         .extend(fallback_diagnostics.suppressed);
     diagnostics.sources.extend(fallback_diagnostics.sources);
+    diagnostics
+        .extractor_sources
+        .extend(blocked_fallback_extractor_sources);
     remove_redundant_opportunity_compiler_candidates(&mut candidates, &mut diagnostics);
 
     CandidateGenerationResult {
@@ -829,6 +942,22 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
 fn empty_testimony_reliability() -> &'static TestimonyReliability {
     static EMPTY: OnceLock<TestimonyReliability> = OnceLock::new();
     EMPTY.get_or_init(TestimonyReliability::default)
+}
+
+fn record_extractor_sources(
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    extractor_id: CandidateExtractorId,
+    candidates: &[GoalOffer],
+) {
+    for candidate in candidates {
+        diagnostics.extractor_sources.insert(
+            OpportunityKey {
+                goal_key: candidate.key,
+                anchor: candidate.anchor,
+            },
+            extractor_id,
+        );
+    }
 }
 
 fn extract_opportunity_compiler_candidates(
@@ -942,6 +1071,9 @@ fn remove_redundant_opportunity_compiler_candidates(
     diagnostics
         .offers
         .retain(|offer| !removed_opportunities.contains(&offer.opportunity));
+    diagnostics
+        .extractor_sources
+        .retain(|opportunity, _source| !removed_opportunities.contains(opportunity));
 }
 
 fn utility_profile_for_goal_generation(ctx: &GenerationContext<'_>) -> UtilityProfile {
@@ -990,6 +1122,7 @@ fn filter_suppressed_candidates(
                 },
                 testimony_trust_context: Vec::new(),
             });
+            diagnostics.extractor_sources.remove(&opportunity);
             blocked_by_goal.entry(candidate.key).or_default().push((
                 opportunity,
                 match suppression {
@@ -11836,6 +11969,242 @@ mod tests {
     }
 
     #[test]
+    fn blocked_self_care_fallback_survives_unrelated_post_suppression_candidate() {
+        let agent = entity(1);
+        let corpse = entity(2);
+        let grave_plot = entity(3);
+        let home = entity(10);
+        let orchard = entity(11);
+        let frontier = entity(12);
+        let seller = entity(20);
+        let blocked_goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        };
+        let blocked_key = GoalKey::from(blocked_goal);
+        let mut view = TestBeliefView {
+            current_tick: Tick(500),
+            ..TestBeliefView::default()
+        };
+        view.alive.extend([agent, seller]);
+        view.dead.insert(corpse);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(corpse, EntityKind::Agent);
+        view.entity_kinds.insert(grave_plot, EntityKind::Facility);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(corpse, home);
+        view.effective_places.insert(grave_plot, home);
+        view.effective_places.insert(seller, orchard);
+        view.entities_at
+            .insert(home, vec![agent, corpse, grave_plot]);
+        view.corpses_at.insert(home, vec![corpse]);
+        view.workstations
+            .insert((home, WorkstationTag::GravePlot), vec![grave_plot]);
+        view.homeostatic_needs.insert(agent, hunger(500));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.exploration_profiles.insert(
+            agent,
+            ExplorationProfile {
+                curiosity_weight: Permille::new(500).unwrap(),
+                need_activation_threshold: Permille::new(400).unwrap(),
+                frontier_depth: 2,
+                visit_lookback_ticks: 50,
+                ..ExplorationProfile::default()
+            },
+        );
+        view.adjacent_places.insert(home, vec![orchard]);
+        view.adjacent_places.insert(orchard, vec![home, frontier]);
+        view.adjacent_places.insert(frontier, vec![orchard]);
+        view.beliefs.insert(
+            agent,
+            vec![
+                known_entity(orchard, orchard),
+                known_entity(frontier, frontier),
+            ],
+        );
+        view.sync_belief_store(agent);
+        view.register_seller(orchard, CommodityKind::Bread, seller);
+
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
+            scope: BlockerKey {
+                goal_key: blocked_key,
+                place: Some(orchard),
+                target: None,
+                action_def: None,
+            }
+            .into(),
+            blocking_fact: BlockingFact::NoKnownSeller,
+            diagnostic_context: None,
+            observed_tick: Tick(490),
+            expires_tick: Tick(600),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
+        });
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(500),
+            6,
+            false,
+        );
+
+        assert!(
+            contains_goal(
+                &result.candidates,
+                GoalKind::BuryCorpse {
+                    corpse,
+                    burial_site: grave_plot,
+                },
+            ),
+            "the setup should include an unrelated surviving non-self-care candidate"
+        );
+        assert!(
+            goals_for(&result.candidates, &blocked_goal).is_empty(),
+            "blocked bread acquisition should not survive as a candidate"
+        );
+        assert!(
+            result.candidates.iter().any(|candidate| {
+                matches!(
+                    candidate.key.kind,
+                    GoalKind::ExploreLocation {
+                        motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                            HomeostaticNeedId::Hunger,
+                        ),
+                        ..
+                    }
+                )
+            }),
+            "phase-local blocked-self-care fallback should emit despite unrelated survivor: {:?}",
+            result.candidates
+        );
+    }
+
+    #[test]
+    fn blocked_self_care_phase_is_registry_gated_after_suppression() {
+        let agent = entity(1);
+        let home = entity(10);
+        let orchard = entity(11);
+        let frontier = entity(12);
+        let seller = entity(2);
+        let goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        };
+        let key = GoalKey::from(goal);
+        let mut view = TestBeliefView {
+            current_tick: Tick(500),
+            ..TestBeliefView::default()
+        };
+        view.alive.extend([agent, seller]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(seller, orchard);
+        view.entities_at.insert(home, vec![agent]);
+        view.homeostatic_needs.insert(agent, hunger(500));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.exploration_profiles.insert(
+            agent,
+            ExplorationProfile {
+                curiosity_weight: Permille::new(500).unwrap(),
+                need_activation_threshold: Permille::new(400).unwrap(),
+                frontier_depth: 2,
+                visit_lookback_ticks: 50,
+                ..ExplorationProfile::default()
+            },
+        );
+        view.agent_schema_context_profiles.insert(
+            agent,
+            AgentSchemaContextProfile {
+                disabled_extractors: BTreeSet::from([
+                    CandidateExtractorId::BlockedSelfCareExploration,
+                ]),
+                ..AgentSchemaContextProfile::default()
+            },
+        );
+        view.adjacent_places.insert(home, vec![orchard]);
+        view.adjacent_places.insert(orchard, vec![home, frontier]);
+        view.adjacent_places.insert(frontier, vec![orchard]);
+        view.beliefs.insert(
+            agent,
+            vec![
+                (
+                    orchard,
+                    BelievedEntityState {
+                        believed_kind: Some(EntityKind::Place),
+                        last_known_place: None,
+                        ..believed_state(1, PerceptionSource::DirectObservation)
+                    },
+                ),
+                (
+                    frontier,
+                    BelievedEntityState {
+                        believed_kind: Some(EntityKind::Place),
+                        last_known_place: None,
+                        ..believed_state(1, PerceptionSource::DirectObservation)
+                    },
+                ),
+            ],
+        );
+        view.sync_belief_store(agent);
+        view.register_seller(orchard, CommodityKind::Bread, seller);
+
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
+            scope: BlockerKey {
+                goal_key: key,
+                place: Some(orchard),
+                target: None,
+                action_def: None,
+            }
+            .into(),
+            blocking_fact: BlockingFact::NoKnownSeller,
+            diagnostic_context: None,
+            observed_tick: Tick(490),
+            expires_tick: Tick(600),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
+        });
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(500),
+            6,
+            false,
+        );
+
+        assert_eq!(result.diagnostics.fully_blocked_desires.len(), 1);
+        assert!(
+            !result.candidates.iter().any(|candidate| {
+                matches!(
+                    candidate.key.kind,
+                    GoalKind::ExploreLocation {
+                        motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                            HomeostaticNeedId::Hunger,
+                        ),
+                        ..
+                    }
+                )
+            }),
+            "disabling the declared post-suppression extractor should suppress the fallback"
+        );
+    }
+
+    #[test]
     fn diagnostics_omit_desire_fully_blocked_when_one_opportunity_survives() {
         let agent = entity(1);
         let home = entity(10);
@@ -17905,25 +18274,130 @@ mod tests {
     }
 
     #[test]
-    fn schema_derived_extractor_order_covers_every_registered_extractor_once() {
+    fn canonical_extractor_order_covers_every_registered_extractor_once() {
         let registry = super::build_extractor_registry();
         let ordered = super::ordered_candidate_extractors_from_goal_schemas();
-        let expected = CandidateExtractorId::ALL.to_vec();
+        let expected = super::CANDIDATE_EXTRACTOR_ORDER.to_vec();
 
         assert_eq!(
             registry.keys().copied().collect::<Vec<_>>(),
-            expected,
+            CandidateExtractorId::ALL.to_vec(),
             "extractor registry should cover every CandidateExtractorId"
         );
         assert_eq!(
+            expected,
+            CandidateExtractorId::ALL.to_vec(),
+            "canonical extractor order should cover every CandidateExtractorId"
+        );
+        assert_eq!(
             ordered, expected,
-            "schema-derived dispatch should preserve the legacy top-level extractor order"
+            "schema-derived dispatch should preserve the canonical top-level extractor order"
         );
         assert_eq!(
             ordered.iter().copied().collect::<BTreeSet<_>>().len(),
             ordered.len(),
             "schema-derived dispatch should dedupe extractor IDs shared across goal schemas"
         );
+    }
+
+    #[test]
+    fn every_candidate_traces_to_a_declared_extractor() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let attacker = entity(3);
+        let place = entity(10);
+        let adjacent = entity(11);
+        let workstation = entity(12);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller, attacker]);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(seller, place);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.register_seller(place, CommodityKind::Bread, seller);
+        view.known_recipes.insert(agent, vec![RecipeId(0)]);
+        view.unique_item_counts
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
+        view.workstations
+            .insert((place, WorkstationTag::Mill), vec![workstation]);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Grain), Quantity(2));
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_facility: Some(place),
+            },
+        );
+        view.demand_memory.insert(
+            agent,
+            vec![DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(3),
+                place,
+                tick: Tick(2),
+                counterparty: Some(seller),
+                reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+            }],
+        );
+        view.hostiles.insert(agent, vec![attacker]);
+        view.attackers.insert(agent, vec![attacker]);
+        view.adjacent_places.insert(place, vec![adjacent]);
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(sample_recipe(
+            vec![(CommodityKind::Bread, Quantity(1))],
+            vec![(CommodityKind::Grain, Quantity(2))],
+            WorkstationTag::Mill,
+        ));
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &ViolationMemory::default(),
+            &recipes,
+            Tick(5),
+            6,
+            false,
+        );
+        let canonical_extractors = super::CANDIDATE_EXTRACTOR_ORDER
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let surviving_opportunities = result
+            .candidates
+            .iter()
+            .map(|candidate| OpportunityKey {
+                goal_key: candidate.key,
+                anchor: candidate.anchor,
+            })
+            .collect::<BTreeSet<_>>();
+
+        assert!(
+            !surviving_opportunities.is_empty(),
+            "fixture must emit candidates before it can prove provenance"
+        );
+        assert_eq!(
+            result.diagnostics.extractor_sources.len(),
+            surviving_opportunities.len(),
+            "extractor provenance should be aligned to surviving candidates"
+        );
+        for opportunity in surviving_opportunities {
+            let source = result
+                .diagnostics
+                .extractor_sources
+                .get(&opportunity)
+                .copied()
+                .unwrap_or_else(|| {
+                    panic!("candidate should have a recorded extractor: {opportunity:?}")
+                });
+            assert!(
+                canonical_extractors.contains(&source),
+                "candidate source should be declared in CANDIDATE_EXTRACTOR_ORDER: {source:?}"
+            );
+        }
     }
 
     #[test]

@@ -38,12 +38,11 @@ fossil seam, and the FND-20/29 HTN honesty gaps.
 
 ```
 S158 (belief-view remote-truth leak closure)        ── completed; extends S155
-S159 (candidate-gen schema-owned extractor authority) ── independent of S158/S160
+S159 (candidate-gen schema-owned extractor authority) ── completed; independent of S158/S160
 S160 (HTN authority honesty)                          ── extends S156; independent of S159
 ```
 
-S158 has landed and is archived. S159 and S160 are independent cleanups that may
-proceed in either order.
+S158 and S159 have landed and are archived. S160 remains an independent cleanup.
 
 ### Completed
 
@@ -57,14 +56,16 @@ proceed in either order.
   deferred per S155/S158 scope. Extends S155. **FND-7, FND-14, FND-14A, FND-16,
   FND-19, FND-27, FND-31.**
 
-### Active
-
 - **S159 — Candidate-Generation Schema-Owned Extractor Authority** —
-  `specs/S159-candidate-generation-schema-owned-extractor-authority.md` —
-  *Status: Draft.* Rename the `LEGACY_EXTRACTOR_ORDER` fossil to a canonical
-  schema-owned order; fold `emit_exploration_candidates_for_blocked_self_care`
-  into the declared extractor registry so no candidate is emitted out-of-band.
+  `archive/specs/S159-candidate-generation-schema-owned-extractor-authority.md`
+  — *Status: COMPLETED.* Replaced the extractor-order fossil name with
+  `CANDIDATE_EXTRACTOR_ORDER`, folded blocked-self-care fallback emission into
+  the declared `BlockedSelfCareExploration` post-suppression extractor, preserved
+  the phase-local fallback gate, and added transient `CandidateExtractorId`
+  provenance diagnostics to guard against out-of-band surviving candidates.
   Behavior-preserving. **FND-20, FND-28, FND-29.**
+
+### Active
 
 - **S160 — HTN Authority Honesty** —
   `specs/S160-htn-authority-honesty.md` — *Status: Draft.* Add

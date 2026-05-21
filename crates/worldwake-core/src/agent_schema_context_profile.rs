@@ -24,10 +24,11 @@ pub enum CandidateExtractorId {
     ProactiveExploration,
     ExpectationViolation,
     OpportunityCompiler,
+    BlockedSelfCareExploration,
 }
 
 impl CandidateExtractorId {
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 21] = [
         Self::Need,
         Self::Production,
         Self::Enterprise,
@@ -48,6 +49,7 @@ impl CandidateExtractorId {
         Self::ProactiveExploration,
         Self::ExpectationViolation,
         Self::OpportunityCompiler,
+        Self::BlockedSelfCareExploration,
     ];
 }
 
@@ -95,8 +97,9 @@ mod tests {
     fn candidate_extractor_id_all_covers_variant_set() {
         let all = BTreeSet::from(CandidateExtractorId::ALL);
 
-        assert_eq!(all.len(), 20);
+        assert_eq!(all.len(), 21);
         assert!(all.contains(&CandidateExtractorId::Need));
         assert!(all.contains(&CandidateExtractorId::OpportunityCompiler));
+        assert!(all.contains(&CandidateExtractorId::BlockedSelfCareExploration));
     }
 }
