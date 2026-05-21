@@ -1,54 +1,78 @@
 # Implementation Order
 
+**Status**: ACTIVE
+
 The former phase-gate dependency graph is retired at
-`archive/specs/IMPLEMENTATION-ORDER-2026-05-20.md`. This file tracks the **active** spec waves
-only. Core AI architecture is being stabilized first; gameplay specs `S60`–`S66` remain authored
-but are **intentionally excluded** from the active order until the AI architecture is solid.
+`archive/specs/IMPLEMENTATION-ORDER-2026-05-20.md`. The first AI-architecture
+consolidation wave (S155–S157) is retired at
+`archive/specs/IMPLEMENTATION-ORDER-2026-05-21.md`. This file tracks the **active**
+spec waves only. Core AI architecture is being stabilized first; gameplay specs
+`S60`–`S66` remain authored but are **intentionally excluded** from the active
+order until the AI architecture is solid.
 
-## Adjunct Wave: AI Architecture Consolidation
+## Adjunct Wave: AI Architecture Consolidation — Second Iteration
 
-**Source.** `reports/ai-architecture-consolidation-first-iteration.md` — a hostile AI-architecture
-audit (ChatGPT-Pro). Every load-bearing claim was re-verified against the codebase before
-acceptance. The audit's verdict ("keep the core, tighten authority boundaries"; recommended
-Option B — Moderate Reshaping) was accepted in narrowed form. Findings that did not survive
-verification were dismissed (see `docs/triage/2026-05-20-ai-architecture-consolidation-triage.md`):
-candidate-generation "concern-mixing" is already cleanly read/write-phased; ranking "magic
-numbers" are profile-driven and documented (not FND-2 violations); goal-semantics consolidation
-is a smell, not a correctness bug, and is the audit's own deferred Option C.
+**Source.** `reports/ai-architecture-consolidation-second-iteration.md` — the
+second hostile AI-architecture audit (ChatGPT-Pro), following the first iteration
+that produced S155–S157 (completed). Every load-bearing claim was re-verified
+against the codebase before acceptance. The audit's verdict ("keep the
+GOAP/action core; harden the belief boundary before adding behavior"; recommended
+Option B — Moderate Consolidation) was accepted in narrowed form. The audit's
+heavier proposals — `Sourced<T>`/`FieldSource` source-typed view APIs and
+per-field snapshot source tags (its own Option C) — were **rejected for now** as
+out-of-scope migration risk; the FND-14 safety win is achievable by gating the
+leaky view accessors, proven by golden tests.
 
-Accepted work is the genuine, FOUNDATIONS-aligned subset: the confirmed FND-14A belief-boundary
-leak, and the FND-28/FND-20/FND-29 HTN honesty cleanup.
+Findings that did not survive verification were **dismissed** (see
+`docs/triage/2026-05-21-ai-architecture-consolidation-second-iteration-triage.md`):
+the "container/possessor leak" is already fixed by S155; "per-field snapshot
+provenance is absent" is overstated (`build_snapshot_entity` already resolves
+fields belief-first); `LEGACY_EXTRACTOR_ORDER` is a naming/authority smell, not a
+behavioral leak; "candidate generation mixes emission with anomaly detection" is
+already cleanly read/write-phased and is a larger perception-architecture concern
+deferred out of this wave.
+
+Accepted work is the genuine, FOUNDATIONS-aligned subset: the confirmed FND-7/14
+belief-view remote-truth leaks (the priority), the FND-28 candidate-generation
+fossil seam, and the FND-20/29 HTN honesty gaps.
 
 ```
-S155 (belief-view boundary correctness)   ── COMPLETED
-S156 (HTN authority honesty)              ── COMPLETED
-S157 (snapshot admission provenance)      ── COMPLETED
+S158 (belief-view remote-truth leak closure)        ── priority; extends S155
+S159 (candidate-gen schema-owned extractor authority) ── independent of S158/S160
+S160 (HTN authority honesty)                          ── extends S156; independent of S159
 ```
 
-### Completed
+S158 is the priority and should land first (it gates adding new AI behavior).
+S159 and S160 are independent cleanups that may proceed in either order, before
+or after S158.
 
-- **S155 — Belief-View Boundary Correctness** —
-  `archive/specs/S155-belief-view-boundary-correctness.md` — *Status: COMPLETED.* Fixed the
-  confirmed FND-14A remote-truth leak in `PerAgentBeliefView::effective_place()` and the
-  un-gated belief-facing `can_control()` path, then landed belief-boundary golden coverage and
-  the planner-contract documentation.
+### Active
 
-- **S156 — HTN Authority Honesty** —
-  `archive/specs/S156-htn-authority-honesty.md` — *Status: COMPLETED.* Stripped the
-  `GoalSchema.methods` fossil (FND-28), the no-op `AgentRole` gate, the two dead
-  methods + unused `EntityCriterion` variants, and the three unenforced `MethodSchema` fields;
-  made strategic fallback explicit and traced; folded an HTN drafting checklist into
-  `docs/spec-drafting-rules.md`; and documented the method-trace fallback/rejection contract in
-  `docs/planner-contracts.md`.
+- **S158 — Belief-View Remote-Truth Leak Closure** —
+  `specs/S158-belief-view-remote-truth-leak-closure.md` — *Status: Draft.* Close
+  the seven confirmed `PerAgentBeliefView` accessors that return current
+  authoritative world state for remote entities (economic, production, load,
+  rights/control, contention), under one source-class rule; prove with a
+  failing-first golden adversarial leak suite incl. AI-vs-Human affordance
+  fingerprinting; codify the rule in `docs/planner-contracts.md` §2 and
+  `docs/spec-drafting-rules.md`. Extends S155. **FND-7, FND-14, FND-14A, FND-16,
+  FND-19, FND-27, FND-31.**
 
-- **S157 — Planner Snapshot Admission Provenance** —
-  `archive/specs/S157-planner-snapshot-admission-provenance.md` — *Status: COMPLETED.*
-  Landed bounded snapshot admission provenance: per-entity admission-source tagging,
-  source-restricted strategic scans, and opportunity-scoped snapshot-admission decision traces.
-  This remains a defense-in-depth/provenance slice, not the audit's heavier `PlannerVisible<T>` +
-  four-trait-split + "never pass `&World`" proposal.
+- **S159 — Candidate-Generation Schema-Owned Extractor Authority** —
+  `specs/S159-candidate-generation-schema-owned-extractor-authority.md` —
+  *Status: Draft.* Rename the `LEGACY_EXTRACTOR_ORDER` fossil to a canonical
+  schema-owned order; fold `emit_exploration_candidates_for_blocked_self_care`
+  into the declared extractor registry so no candidate is emitted out-of-band.
+  Behavior-preserving. **FND-20, FND-28, FND-29.**
+
+- **S160 — HTN Authority Honesty** —
+  `specs/S160-htn-authority-honesty.md` — *Status: Draft.* Add
+  `MethodSubgoalAuthority::{StageHint, RequiredActionLeaf}` and honest stage-hint
+  traces; resolve the fake `fulfill_bounty_group_hunt` method; remove the
+  `ActionDefId(u32::MAX)` escort sentinel. No goal becomes method-required.
+  Extends S156. **FND-20, FND-29, FND-31.**
 
 ## Excluded from the active order (by directive)
 
-- **S60–S66** (gameplay/world-dynamics specs) — authored, but held until core AI architecture is
-  stabilized. Do not schedule against this wave.
+- **S60–S66** (gameplay/world-dynamics specs) — authored, but held until core AI
+  architecture is stabilized. Do not schedule against this wave.

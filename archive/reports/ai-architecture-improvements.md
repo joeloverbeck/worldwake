@@ -1,3 +1,5 @@
+**Status**: COMPLETED
+
 I’m grounding this in **FOUNDATIONS.md** and the current **GOAP architecture report**. The short verdict: **do not replace the current GOAP stack**. It is already pointed in the right direction. The upgrade path should be a **BDI-shaped deliberation shell over your existing GOAP planner**, with **data-driven goal schemas**, **HTN-style decomposition as lawful search control**, **utility/portfolio triage for hundreds of motives**, **explicit coordination artifacts**, and **much stronger diagnostics and belief-boundary enforcement**. That preserves Worldwake’s causality-first standard while making agents more resilient, realistic, and scalable.
 
 ## **1. What the research says, translated for Worldwake**
@@ -1302,3 +1304,9 @@ BDI deliberation shell
 
 This architecture remains faithful to FOUNDATIONS because it does **not** author outcomes. It authors lawful motives, decomposition knowledge, social artifacts, and action schemas. Agents still act only through ordinary affordances, under local beliefs, with explicit costs, durations, contention, records, and aftermath. It also directly attacks the future scaling problem: hundreds of possible goals become cheap motive records, a bounded portfolio becomes the deliberation frontier, HTN methods keep long tasks tractable, and GOAP remains the grounded executor rather than the entire mind.
 
+## Outcome
+
+- Completion date: 2026-05-21.
+- What changed: Archived as exploited after the AI architecture improvement recommendations had been consumed by follow-on architecture work.
+- Deviations from original plan: No implementation changes were made as part of archival; the report remains historical advisory material.
+- Verification: Prepared for archival under `archive/reports/`.

@@ -1,6 +1,6 @@
 # Triage: AI Architecture Consolidation (2026-05-20)
 
-**Source.** `reports/ai-architecture-consolidation-first-iteration.md` — hostile AI-architecture
+**Source.** `archive/reports/ai-architecture-consolidation-first-iteration.md` — hostile AI-architecture
 audit by ChatGPT-Pro (verdict: keep core, tighten authority boundaries; recommended Option B).
 Every load-bearing code claim was re-verified against the codebase before acceptance. The audit
 was treated as a set of hypotheses, not facts.
