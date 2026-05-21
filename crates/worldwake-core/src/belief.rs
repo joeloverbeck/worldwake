@@ -1,11 +1,12 @@
 //! Authoritative belief and perception state for E14.
 
 use crate::{
-    ActionDomain, BeliefClaimKey, BelievedInstitutionalClaim, ClaimId, ClaimValue, CommodityKind,
-    Component, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EvidenceKind,
-    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    InstitutionalClaim, InstitutionalKnowledgeSource, Permille, Quantity, ResourceSource,
-    TheftFacts, Tick, WashBasinState, WorkstationTag, World, Wound,
+    ActionDomain, BeliefClaimKey, BelievedInstitutionalClaim, BelievedOfficeDataSnapshot,
+    BelievedRecordDataSnapshot, ClaimId, ClaimValue, CommodityKind, Component, EntityBeliefAspect,
+    EntityBeliefClaim, EntityId, EntityKind, EvidenceKind, HomeostaticNeedId, HomeostaticNeeds,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+    InstitutionalKnowledgeSource, Permille, Quantity, ResourceSource, TheftFacts, Tick,
+    WashBasinState, WorkstationTag, World, Wound,
     institutional::MissingPersonReportStatus,
     social_artifact::{
         ArtifactActionability, ArtifactCredibility, ArtifactExistence, ArtifactKind,
@@ -63,6 +64,10 @@ pub struct AgentBeliefStore {
     #[serde(default)]
     pub place_visits: BTreeMap<EntityId, PlaceVisitRecord>,
     pub institutional_beliefs: BTreeMap<InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>>,
+    #[serde(default)]
+    pub believed_record_data: BTreeMap<EntityId, BelievedRecordDataSnapshot>,
+    #[serde(default)]
+    pub believed_office_data: BTreeMap<EntityId, BelievedOfficeDataSnapshot>,
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -337,6 +342,44 @@ impl AgentBeliefStore {
     ) {
         self.institutional_beliefs.insert(key, vec![belief]);
         self.enforce_institutional_capacity(profile);
+    }
+
+    pub fn record_believed_record_data(
+        &mut self,
+        record: EntityId,
+        snapshot: BelievedRecordDataSnapshot,
+    ) {
+        if self
+            .believed_record_data
+            .get(&record)
+            .is_none_or(|existing| snapshot.learned_tick >= existing.learned_tick)
+        {
+            self.believed_record_data.insert(record, snapshot);
+        }
+    }
+
+    pub fn record_believed_office_data(
+        &mut self,
+        office: EntityId,
+        snapshot: BelievedOfficeDataSnapshot,
+    ) {
+        if self
+            .believed_office_data
+            .get(&office)
+            .is_none_or(|existing| snapshot.learned_tick >= existing.learned_tick)
+        {
+            self.believed_office_data.insert(office, snapshot);
+        }
+    }
+
+    #[must_use]
+    pub fn believed_record_data(&self, record: EntityId) -> Option<&BelievedRecordDataSnapshot> {
+        self.believed_record_data.get(&record)
+    }
+
+    #[must_use]
+    pub fn believed_office_data(&self, office: EntityId) -> Option<&BelievedOfficeDataSnapshot> {
+        self.believed_office_data.get(&office)
     }
 
     pub fn prune_decayed_beliefs(
@@ -1171,6 +1214,10 @@ pub struct BeliefStoreDiff {
     pub entity_claims_removed: Vec<EntityId>,
     pub institutional_beliefs_set: Vec<(InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>)>,
     pub institutional_beliefs_removed: Vec<InstitutionalBeliefKey>,
+    pub believed_record_data_set: Vec<(EntityId, BelievedRecordDataSnapshot)>,
+    pub believed_record_data_removed: Vec<EntityId>,
+    pub believed_office_data_set: Vec<(EntityId, BelievedOfficeDataSnapshot)>,
+    pub believed_office_data_removed: Vec<EntityId>,
 }
 
 impl BeliefStoreDiff {
@@ -1230,6 +1277,14 @@ impl BeliefStoreDiff {
             diff_btree_map_set(&before.institutional_beliefs, &after.institutional_beliefs);
         let institutional_beliefs_removed =
             diff_btree_map_removed(&before.institutional_beliefs, &after.institutional_beliefs);
+        let believed_record_data_set =
+            diff_btree_map_set(&before.believed_record_data, &after.believed_record_data);
+        let believed_record_data_removed =
+            diff_btree_map_removed(&before.believed_record_data, &after.believed_record_data);
+        let believed_office_data_set =
+            diff_btree_map_set(&before.believed_office_data, &after.believed_office_data);
+        let believed_office_data_removed =
+            diff_btree_map_removed(&before.believed_office_data, &after.believed_office_data);
 
         Self {
             next_claim_id,
@@ -1251,6 +1306,10 @@ impl BeliefStoreDiff {
             entity_claims_removed,
             institutional_beliefs_set,
             institutional_beliefs_removed,
+            believed_record_data_set,
+            believed_record_data_removed,
+            believed_office_data_set,
+            believed_office_data_removed,
         }
     }
 
@@ -1335,6 +1394,18 @@ impl BeliefStoreDiff {
         for (key, claims) in self.institutional_beliefs_set {
             result.institutional_beliefs.insert(key, claims);
         }
+        for record in &self.believed_record_data_removed {
+            result.believed_record_data.remove(record);
+        }
+        for (record, snapshot) in self.believed_record_data_set {
+            result.believed_record_data.insert(record, snapshot);
+        }
+        for office in &self.believed_office_data_removed {
+            result.believed_office_data.remove(office);
+        }
+        for (office, snapshot) in self.believed_office_data_set {
+            result.believed_office_data.insert(office, snapshot);
+        }
 
         result
     }
@@ -1361,6 +1432,10 @@ impl BeliefStoreDiff {
             && self.entity_claims_removed.is_empty()
             && self.institutional_beliefs_set.is_empty()
             && self.institutional_beliefs_removed.is_empty()
+            && self.believed_record_data_set.is_empty()
+            && self.believed_record_data_removed.is_empty()
+            && self.believed_office_data_set.is_empty()
+            && self.believed_office_data_removed.is_empty()
     }
 }
 
@@ -2886,14 +2961,15 @@ mod tests {
         BelievedInstitutionalClaim, BodyPart, ClaimId, ClaimValue, CommodityKind, ControlSource,
         DeadAt, DisturbanceKind, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind,
         EvidenceKind, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
-        Permille, Quantity, ResourceSource, SceneEvidence, TheftFacts, Tick, WashBasinState,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
+        InstitutionalSnapshotSource, NoticeTopic, OfficeData, Permille, Quantity, RecordData,
+        RecordKind, ResourceSource, SceneEvidence, SuccessionLaw, TheftFacts, Tick, WashBasinState,
         WorkstationTag, World, Wound, WoundCause, WoundId, WoundList, build_prototype_world,
         current_institutional_belief_topics, institutional_claim_same_memory_lane,
         traits::Component,
     };
     use serde::{Serialize, de::DeserializeOwned};
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -8225,6 +8301,55 @@ mod tests {
         let diff = BeliefStoreDiff::compute(&before, &after);
         assert_eq!(diff.institutional_beliefs_removed.len(), 1);
         assert_eq!(diff.institutional_beliefs_set.len(), 1);
+        assert_eq!(diff.apply(&before), after);
+    }
+
+    #[test]
+    fn belief_store_diff_roundtrip_believed_record_and_office_snapshots() {
+        let record = entity(1);
+        let office = entity(2);
+        let place = entity(3);
+        let mut before = AgentBeliefStore::new();
+        before.record_believed_record_data(
+            record,
+            crate::BelievedRecordDataSnapshot {
+                data: RecordData {
+                    record_kind: RecordKind::CrimeRegister,
+                    home_place: place,
+                    issuer: office,
+                    consultation_ticks: 4,
+                    max_entries_per_consult: 2,
+                    entries: Vec::new(),
+                    next_entry_id: 0,
+                },
+                source: InstitutionalSnapshotSource::RecordConsultation { record },
+                learned_tick: Tick(5),
+                learned_at: Some(place),
+            },
+        );
+
+        let mut after = AgentBeliefStore::new();
+        after.record_believed_office_data(
+            office,
+            crate::BelievedOfficeDataSnapshot {
+                data: OfficeData {
+                    title: "Steward".to_string(),
+                    seat: place,
+                    jurisdiction: BTreeSet::from([place]),
+                    succession_law: SuccessionLaw::Force,
+                    eligibility_rules: Vec::new(),
+                    succession_period_ticks: 8,
+                    vacancy_since: Some(Tick(4)),
+                },
+                source: InstitutionalSnapshotSource::RecordConsultation { record },
+                learned_tick: Tick(6),
+                learned_at: Some(place),
+            },
+        );
+
+        let diff = BeliefStoreDiff::compute(&before, &after);
+        assert_eq!(diff.believed_record_data_removed, vec![record]);
+        assert_eq!(diff.believed_office_data_set.len(), 1);
         assert_eq!(diff.apply(&before), after);
     }
 

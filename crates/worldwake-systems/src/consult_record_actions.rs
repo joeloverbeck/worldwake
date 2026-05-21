@@ -1,8 +1,9 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    ActionDefId, BelievedInstitutionalClaim, BodyCostPerTick, Discrepancy, EntityId, EntityKind,
-    EventTag, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-    VisibilitySpec, World, WorldTxn,
+    ActionDefId, BelievedInstitutionalClaim, BelievedOfficeDataSnapshot,
+    BelievedRecordDataSnapshot, BodyCostPerTick, Discrepancy, EntityId, EntityKind, EventTag,
+    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+    InstitutionalSnapshotSource, VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
@@ -346,6 +347,33 @@ fn apply_consult_record_commit(
         .ok_or_else(|| ActionError::InternalError(format!("record {record} lacks RecordData")))?;
     let learned_tick = txn.tick();
     let learned_at = txn.effective_place(instance.actor);
+    let snapshot_source = InstitutionalSnapshotSource::RecordConsultation { record };
+
+    txn.project_believed_record_data(
+        instance.actor,
+        record,
+        BelievedRecordDataSnapshot {
+            data: record_data.clone(),
+            source: snapshot_source,
+            learned_tick,
+            learned_at,
+        },
+    )
+    .map_err(|err| ActionError::InternalError(err.to_string()))?;
+
+    if let Some(office_data) = txn.get_component_office_data(record_data.issuer).cloned() {
+        txn.project_believed_office_data(
+            instance.actor,
+            record_data.issuer,
+            BelievedOfficeDataSnapshot {
+                data: office_data,
+                source: snapshot_source,
+                learned_tick,
+                learned_at,
+            },
+        )
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
 
     for entry in record_data
         .entries_newest_first()
@@ -386,11 +414,11 @@ fn abort_consult_record(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        BelievedInstitutionalClaim, CauseRef, ControlSource, EventLog, PerceptionSource,
-        RecordData, RecordEntryId, RecordKind, Seed, Tick, WitnessData,
-        build_believed_entity_state, institutional::MissingPersonReportStatus,
+        BelievedInstitutionalClaim, CauseRef, ControlSource, EventLog, OfficeData,
+        PerceptionSource, RecordData, RecordEntryId, RecordKind, Seed, SuccessionLaw, Tick,
+        WitnessData, build_believed_entity_state, institutional::MissingPersonReportStatus,
     };
     use worldwake_sim::{
         ActionExecutionAuthority, ActionInstance, ActionInstanceId, ActionPayload, ActionState,
@@ -836,9 +864,82 @@ mod tests {
         assert_eq!(support_beliefs[0].learned_tick, Tick(7));
         assert_eq!(support_beliefs[0].learned_at, world.effective_place(actor));
 
+        let record_snapshot = store.believed_record_data(record).unwrap();
+        assert_eq!(record_snapshot.data, before);
+        assert_eq!(
+            record_snapshot.source,
+            InstitutionalSnapshotSource::RecordConsultation { record }
+        );
+        assert_eq!(record_snapshot.learned_tick, Tick(7));
+        assert_eq!(record_snapshot.learned_at, world.effective_place(actor));
+
         let after = world.get_component_record_data(record).cloned().unwrap();
         assert_eq!(after, before);
         assert_ne!(office_entry, faction_entry);
+    }
+
+    #[test]
+    fn consult_record_commit_projects_issuer_office_snapshot() {
+        let mut world = World::new(worldwake_core::build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (actor, office, record, office_data) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            let office = txn.create_office("Ledger Hall").unwrap();
+            let office_data = OfficeData {
+                title: "Steward".to_string(),
+                seat: place,
+                jurisdiction: BTreeSet::from([place]),
+                succession_law: SuccessionLaw::Support,
+                eligibility_rules: Vec::new(),
+                succession_period_ticks: 8,
+                vacancy_since: Some(Tick(1)),
+            };
+            txn.set_component_office_data(office, office_data.clone())
+                .unwrap();
+            let record = txn
+                .create_record(RecordData {
+                    record_kind: RecordKind::CrimeRegister,
+                    home_place: place,
+                    issuer: office,
+                    consultation_ticks: 1,
+                    max_entries_per_consult: 1,
+                    entries: Vec::new(),
+                    next_entry_id: 0,
+                })
+                .unwrap();
+            commit_txn(txn);
+            (actor, office, record, office_data)
+        };
+        let (defs, handlers, _) = setup_registries();
+        let (instance_id, mut active_actions, mut log, mut rng) =
+            start_consult_action(&mut world, &defs, &handlers, actor, record);
+
+        let outcome = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(2)),
+        )
+        .unwrap();
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+
+        let store = world.get_component_agent_belief_store(actor).unwrap();
+        let office_snapshot = store.believed_office_data(office).unwrap();
+        assert_eq!(office_snapshot.data, office_data);
+        assert_eq!(
+            office_snapshot.source,
+            InstitutionalSnapshotSource::RecordConsultation { record }
+        );
+        assert_eq!(office_snapshot.learned_tick, Tick(2));
+        assert_eq!(office_snapshot.learned_at, Some(place));
     }
 
     #[test]

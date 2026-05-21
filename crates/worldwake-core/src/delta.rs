@@ -553,6 +553,8 @@ mod tests {
                         learned_at: Some(entity(23)),
                     }],
                 )]),
+                believed_record_data: BTreeMap::new(),
+                believed_office_data: BTreeMap::new(),
             }),
             ComponentValue::ExpectationStore(ExpectationStore {
                 records: BTreeMap::from([(

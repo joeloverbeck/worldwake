@@ -1655,13 +1655,15 @@ impl PoliticalBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn record_data(&self, record: EntityId) -> Option<worldwake_core::RecordData> {
-        let _ = record;
-        None
+        self.belief_store
+            .believed_record_data(record)
+            .map(|snapshot| snapshot.data.clone())
     }
 
     fn office_data(&self, office: EntityId) -> Option<OfficeData> {
-        let _ = office;
-        None
+        self.belief_store
+            .believed_office_data(office)
+            .map(|snapshot| snapshot.data.clone())
     }
 
     fn believed_force_controller(
@@ -4655,6 +4657,64 @@ mod tests {
     }
 
     #[test]
+    fn estimate_duration_uses_believed_record_snapshot() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, record, record_data) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_perception_profile(
+                agent,
+                PerceptionProfile {
+                    consultation_speed_factor: Permille::new(250).unwrap(),
+                    ..PerceptionProfile::default()
+                },
+            )
+            .unwrap();
+            let record_data = worldwake_core::RecordData {
+                record_kind: worldwake_core::RecordKind::OfficeRegister,
+                home_place: place,
+                issuer: agent,
+                consultation_ticks: 8,
+                max_entries_per_consult: 4,
+                entries: Vec::new(),
+                next_entry_id: 0,
+            };
+            let record = txn.create_record(record_data.clone()).unwrap();
+            commit_txn(txn);
+            (agent, record, record_data)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.record_believed_record_data(
+            record,
+            worldwake_core::BelievedRecordDataSnapshot {
+                data: record_data.clone(),
+                source: worldwake_core::InstitutionalSnapshotSource::RecordConsultation { record },
+                learned_tick: Tick(2),
+                learned_at: Some(place),
+            },
+        );
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            crate::PoliticalBeliefView::record_data(&view, record),
+            Some(record_data)
+        );
+        assert_eq!(
+            TemporalBeliefView::estimate_duration(
+                &view,
+                agent,
+                &DurationExpr::ConsultRecord { target_index: 0 },
+                &[record],
+                &ActionPayload::None,
+            ),
+            Some(ActionDuration::new(2))
+        );
+    }
+
+    #[test]
     #[allow(clippy::too_many_lines)]
     fn political_queries_use_belief_backed_institutional_reads_and_actor_private_relations() {
         let mut world = World::new(build_prototype_world()).unwrap();
@@ -4837,6 +4897,71 @@ mod tests {
             BelievedAuthorityView::believed_office_holder(&view, office),
             BeliefRead::Known(holder) | BeliefRead::Stale(holder) if holder.value.is_none()
         ));
+    }
+
+    #[test]
+    fn record_and_office_data_read_believed_snapshots_without_live_fallback() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, record, office, record_data, office_data) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let office = txn.create_office("Ledger Hall").unwrap();
+            let office_data = OfficeData {
+                title: "Steward".to_string(),
+                seat: place,
+                jurisdiction: BTreeSet::from([place]),
+                succession_law: SuccessionLaw::Support,
+                eligibility_rules: Vec::new(),
+                succession_period_ticks: 6,
+                vacancy_since: Some(Tick(2)),
+            };
+            txn.set_component_office_data(office, office_data.clone())
+                .unwrap();
+            let record_data = worldwake_core::RecordData {
+                record_kind: RecordKind::OfficeRegister,
+                home_place: place,
+                issuer: office,
+                consultation_ticks: 4,
+                max_entries_per_consult: 6,
+                entries: Vec::new(),
+                next_entry_id: 0,
+            };
+            let record = txn.create_record(record_data.clone()).unwrap();
+            commit_txn(txn);
+            (agent, record, office, record_data, office_data)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.record_believed_record_data(
+            record,
+            worldwake_core::BelievedRecordDataSnapshot {
+                data: record_data.clone(),
+                source: worldwake_core::InstitutionalSnapshotSource::RecordConsultation { record },
+                learned_tick: Tick(3),
+                learned_at: Some(place),
+            },
+        );
+        beliefs.record_believed_office_data(
+            office,
+            worldwake_core::BelievedOfficeDataSnapshot {
+                data: office_data.clone(),
+                source: worldwake_core::InstitutionalSnapshotSource::RecordConsultation { record },
+                learned_tick: Tick(3),
+                learned_at: Some(place),
+            },
+        );
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            crate::PoliticalBeliefView::record_data(&view, record),
+            Some(record_data)
+        );
+        assert_eq!(
+            crate::PoliticalBeliefView::office_data(&view, office),
+            Some(office_data)
+        );
     }
 
     #[test]

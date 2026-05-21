@@ -1525,6 +1525,15 @@ mod tests {
             .expect("fixture should provision the requested record")
     }
 
+    fn record_id_at_place(world: &World, place: EntityId, kind: RecordKind) -> EntityId {
+        world
+            .query_record_data()
+            .find_map(|(record_id, record)| {
+                (record.home_place == place && record.record_kind == kind).then_some(record_id)
+            })
+            .expect("fixture should provision the requested record")
+    }
+
     struct SocialFixture {
         world: World,
         place: EntityId,
@@ -1795,6 +1804,35 @@ mod tests {
         let _ = txn.commit(&mut log);
     }
 
+    fn seed_believed_office_data_from_world(
+        world: &mut World,
+        agent: EntityId,
+        office: EntityId,
+        record: EntityId,
+        tick: u64,
+    ) {
+        let office_data = world.get_component_office_data(office).cloned().unwrap();
+        let learned_at = world.effective_place(agent);
+        let mut beliefs = world
+            .get_component_agent_belief_store(agent)
+            .cloned()
+            .unwrap_or_else(AgentBeliefStore::new);
+        beliefs.record_believed_office_data(
+            office,
+            worldwake_core::BelievedOfficeDataSnapshot {
+                data: office_data,
+                source: worldwake_core::InstitutionalSnapshotSource::RecordConsultation { record },
+                learned_tick: Tick(tick),
+                learned_at,
+            },
+        );
+        let mut txn = new_txn(world, tick);
+        txn.set_component_agent_belief_store(agent, beliefs)
+            .unwrap();
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+    }
+
     fn run_perception(world: &mut World, event_log: &mut EventLog, tick: u64) {
         let mut rng = test_rng(0x44);
         let action_defs = ActionDefRegistry::new();
@@ -1903,6 +1941,14 @@ mod tests {
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
         }
+        let office_register = record_id_at_place(&fx.world, fx.place, RecordKind::OfficeRegister);
+        seed_believed_office_data_from_world(
+            &mut fx.world,
+            fx.actor,
+            fx.office,
+            office_register,
+            2,
+        );
 
         let payloads = affordance_payloads_for(&fx.world, fx.actor, &defs, &handlers, ids[3]);
 
@@ -1955,6 +2001,14 @@ mod tests {
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
         }
+        let office_register = record_id_at_place(&fx.world, fx.place, RecordKind::OfficeRegister);
+        seed_believed_office_data_from_world(
+            &mut fx.world,
+            fx.actor,
+            fx.office,
+            office_register,
+            2,
+        );
 
         let payloads = affordance_payloads_for(&fx.world, fx.actor, &defs, &handlers, ids[3]);
 
@@ -1981,6 +2035,14 @@ mod tests {
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
         }
+        let office_register = record_id_at_place(&fx.world, fx.place, RecordKind::OfficeRegister);
+        seed_believed_office_data_from_world(
+            &mut fx.world,
+            fx.actor,
+            fx.office,
+            office_register,
+            2,
+        );
         assert_eq!(
             affordance_payloads_for(&fx.world, fx.actor, &defs, &handlers, ids[3]).len(),
             1
@@ -2034,6 +2096,14 @@ mod tests {
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
         }
+        let office_register = record_id_at_place(&fx.world, fx.place, RecordKind::OfficeRegister);
+        seed_believed_office_data_from_world(
+            &mut fx.world,
+            fx.actor,
+            fx.office,
+            office_register,
+            2,
+        );
 
         let payloads = affordance_payloads_for(&fx.world, fx.actor, &defs, &handlers, ids[4]);
 

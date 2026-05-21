@@ -7796,6 +7796,8 @@ mod tests {
                     asked_witnesses: BTreeMap::new(),
                     place_visits: BTreeMap::new(),
                     institutional_beliefs,
+                    believed_record_data: BTreeMap::new(),
+                    believed_office_data: BTreeMap::new(),
                 },
             );
         }

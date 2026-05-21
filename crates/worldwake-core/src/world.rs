@@ -830,6 +830,8 @@ mod tests {
                     learned_at: Some(entity(5)),
                 }],
             )]),
+            believed_record_data: BTreeMap::new(),
+            believed_office_data: BTreeMap::new(),
         }
     }
 

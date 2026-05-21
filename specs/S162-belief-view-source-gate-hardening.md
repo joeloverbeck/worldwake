@@ -159,11 +159,11 @@ leaks; it was wrong):**
    cannot be fully reconstructed from them today. Because `record_data`/`office_data`
    return whole `Option<RecordData>`/`Option<OfficeData>` structs (not field-by-field),
    the accessor returns `None` (the whole `Option`) unless a believed snapshot covers
-   the read — it must never read current truth. Whether to introduce a
-   `BelievedOfficeData`/`BelievedRecordData` snapshot type that carries the believed
-   fields, versus returning `None` until consulted, is the decision flagged in
-   *Open Implementation Questions* below; the dependent candidate then depends on the
-   institutional belief or is correctly absent. Trace every call site first (see
+   the read — it must never read current truth. `archive/tickets/S162BELVIESOU-006.md`
+   landed that carrier as `BelievedOfficeDataSnapshot` /
+   `BelievedRecordDataSnapshot`, with `consult_record` as the first lawful
+   acquisition path. The dependent candidate then depends on the institutional
+   belief or is correctly absent. Trace every call site first (see
    checklist).
 
 3. **No-gate contention reads** — add the same `has_authoritative_local_visibility`
@@ -290,12 +290,12 @@ unit tests per accessor (remote vs. co-located vs. self), and a causal/decision
 trace audit showing the candidate's source belief. Existing `worldwake-ai` goldens
 serve as the regression/composition suite.
 
-## Open Implementation Questions (resolve at ticket time)
+## Remaining Implementation Questions
 
-- Whether a consulted-record belief substrate already stores enough for current
-  `record_data`/`office_data` consumers, or whether a believed-record snapshot type
-  must be introduced (its own follow-up if substantial — do not expand this spec
-  into a new institutional-belief system). `archive/tickets/S162BELVIESOU-003.md`
-  chose the fail-closed accessor fix and deferred the lawful whole-record/office
-  snapshot substrate to `tickets/S162BELVIESOU-006.md`.
 - The exact carrier of the snapshot-through-view invariant (Deliverable 6).
+
+## Resolved Implementation Questions
+
+- `archive/tickets/S162BELVIESOU-006.md` landed the lawful whole-record/office substrate as
+  `BelievedRecordDataSnapshot` / `BelievedOfficeDataSnapshot`, with
+  `consult_record` as the first lawful acquisition path.

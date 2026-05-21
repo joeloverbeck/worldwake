@@ -1,9 +1,10 @@
 use crate::{
-    ArchiveMutationSnapshot, BelievedInstitutionalClaim, CommodityKind, Container, ControlSource,
-    EntityId, EntityKind, EventId, InstitutionalBeliefKey, InstitutionalClaim, LoadUnits,
-    LotOperation, Permille, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
-    StockStoragePolicy, Tick, TickRange, UniqueItemKind, World, WorldError,
-    build_observed_entity_snapshot, component_schema::with_component_schema_entries,
+    ArchiveMutationSnapshot, BelievedInstitutionalClaim, BelievedOfficeDataSnapshot,
+    BelievedRecordDataSnapshot, CommodityKind, Container, ControlSource, EntityId, EntityKind,
+    EventId, InstitutionalBeliefKey, InstitutionalClaim, LoadUnits, LotOperation, Permille,
+    Quantity, RecordData, RecordEntryId, RecordKind, ReservationId, StockStoragePolicy, Tick,
+    TickRange, UniqueItemKind, World, WorldError, build_observed_entity_snapshot,
+    component_schema::with_component_schema_entries,
 };
 use crate::{ArtifactTransitionPayload, ContentionEventPayload};
 use crate::{
@@ -370,6 +371,40 @@ impl<'w> WorldTxn<'w> {
                 component_type: "AgentBeliefStore",
             })?;
         store.replace_institutional_belief(key, belief, &profile);
+        self.set_component_agent_belief_store(agent, store)
+    }
+
+    pub fn project_believed_record_data(
+        &mut self,
+        agent: EntityId,
+        record: EntityId,
+        snapshot: BelievedRecordDataSnapshot,
+    ) -> Result<(), WorldError> {
+        let mut store = self
+            .get_component_agent_belief_store(agent)
+            .cloned()
+            .ok_or(WorldError::ComponentNotFound {
+                entity: agent,
+                component_type: "AgentBeliefStore",
+            })?;
+        store.record_believed_record_data(record, snapshot);
+        self.set_component_agent_belief_store(agent, store)
+    }
+
+    pub fn project_believed_office_data(
+        &mut self,
+        agent: EntityId,
+        office: EntityId,
+        snapshot: BelievedOfficeDataSnapshot,
+    ) -> Result<(), WorldError> {
+        let mut store = self
+            .get_component_agent_belief_store(agent)
+            .cloned()
+            .ok_or(WorldError::ComponentNotFound {
+                entity: agent,
+                component_type: "AgentBeliefStore",
+            })?;
+        store.record_believed_office_data(office, snapshot);
         self.set_component_agent_belief_store(agent, store)
     }
 
