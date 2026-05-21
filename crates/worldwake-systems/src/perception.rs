@@ -1,14 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    AgentBeliefStore, BelievedActivity, BelievedInstitutionalClaim, CauseRef, CommodityKind,
-    ComponentDelta, ComponentKind, ComponentValue, EntityBeliefAspect, EntityBeliefClaim, EntityId,
-    EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceRef, GoalKind, HypothesisKind,
-    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, MismatchKind,
-    NoticeTopic, ObservationContext, ObservationOmission, OmissionReason, PendingEvent,
-    PerceptionSource, Permille, Quantity, RelationDelta, RelationValue, ReliabilityRecord,
-    SocialObservation, SocialObservationDetail, SocialObservationKind, SourceKey,
-    SourceReliability, StateDelta, SurveyRecord, TheftFacts, VisibilitySpec, WitnessData, World,
-    WorldTxn, build_believed_entity_state,
+    AgentBeliefStore, BelievedActivity, BelievedInstitutionalClaim, BelievedOfficeDataSnapshot,
+    BelievedRecordDataSnapshot, CauseRef, CommodityKind, ComponentDelta, ComponentKind,
+    ComponentValue, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EventLog,
+    EventPayload, EventTag, EventView, EvidenceRef, GoalKind, HypothesisKind,
+    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+    InstitutionalSnapshotSource, MismatchKind, NoticeTopic, ObservationContext,
+    ObservationOmission, OmissionReason, PendingEvent, PerceptionSource, Permille, Quantity,
+    RelationDelta, RelationValue, ReliabilityRecord, SocialObservation, SocialObservationDetail,
+    SocialObservationKind, SourceKey, SourceReliability, StateDelta, SurveyRecord, TheftFacts,
+    VisibilitySpec, WitnessData, World, WorldTxn, build_believed_entity_state,
 };
 use worldwake_core::{DecisionEventPayload, SurveyRecordedPayload};
 use worldwake_sim::{
@@ -26,6 +27,8 @@ struct DiscoveryContext {
 struct DirectLocalObservationBatch {
     place: EntityId,
     observed_snapshots: BTreeMap<EntityId, worldwake_core::BelievedEntityState>,
+    observed_record_snapshots: BTreeMap<EntityId, BelievedRecordDataSnapshot>,
+    observed_office_snapshots: BTreeMap<EntityId, BelievedOfficeDataSnapshot>,
     observed_holders: BTreeMap<EntityId, Option<EntityId>>,
     noticed_missing_subjects: BTreeSet<EntityId>,
     omitted_observations: Vec<ObservationOmission>,
@@ -658,6 +661,8 @@ fn collect_direct_local_observation_batch(
     profile: &worldwake_core::PerceptionProfile,
 ) -> Option<DirectLocalObservationBatch> {
     let mut observed_snapshots = BTreeMap::new();
+    let mut observed_record_snapshots = BTreeMap::new();
+    let mut observed_office_snapshots = BTreeMap::new();
     let mut observed_holders = BTreeMap::new();
     let mut prioritized_entities = colocated_entities
         .iter()
@@ -696,6 +701,36 @@ fn collect_direct_local_observation_batch(
         if let Some(snapshot) =
             build_believed_entity_state(world, entity, tick, PerceptionSource::DirectObservation)
         {
+            let learned_at = Some(place);
+            match world.entity_kind(entity) {
+                Some(EntityKind::Record) => {
+                    if let Some(data) = world.get_component_record_data(entity).cloned() {
+                        observed_record_snapshots.insert(
+                            entity,
+                            BelievedRecordDataSnapshot {
+                                data,
+                                source: InstitutionalSnapshotSource::DirectObservation,
+                                learned_tick: tick,
+                                learned_at,
+                            },
+                        );
+                    }
+                }
+                Some(EntityKind::Office) => {
+                    if let Some(data) = world.get_component_office_data(entity).cloned() {
+                        observed_office_snapshots.insert(
+                            entity,
+                            BelievedOfficeDataSnapshot {
+                                data,
+                                source: InstitutionalSnapshotSource::DirectObservation,
+                                learned_tick: tick,
+                                learned_at,
+                            },
+                        );
+                    }
+                }
+                _ => {}
+            }
             if matches!(
                 world.entity_kind(entity),
                 Some(EntityKind::ItemLot | EntityKind::UniqueItem | EntityKind::Container)
@@ -732,6 +767,8 @@ fn collect_direct_local_observation_batch(
     }
 
     if observed_snapshots.is_empty()
+        && observed_record_snapshots.is_empty()
+        && observed_office_snapshots.is_empty()
         && noticed_missing_subjects.is_empty()
         && omitted_observations.is_empty()
     {
@@ -741,6 +778,8 @@ fn collect_direct_local_observation_batch(
     Some(DirectLocalObservationBatch {
         place,
         observed_snapshots,
+        observed_record_snapshots,
+        observed_office_snapshots,
         observed_holders,
         noticed_missing_subjects,
         omitted_observations,
@@ -765,11 +804,11 @@ fn compute_observation_priority(
         Some(EntityKind::Agent) => 900,
         Some(EntityKind::Place) => 800,
         Some(EntityKind::Facility) => 700,
+        Some(EntityKind::Office | EntityKind::Record) => 850,
         Some(EntityKind::UniqueItem) => 600,
-        Some(EntityKind::Office) => 550,
         Some(EntityKind::Container) => 500,
         Some(EntityKind::Faction) => 450,
-        Some(EntityKind::Record | EntityKind::SocialArtifact) => 400,
+        Some(EntityKind::SocialArtifact) => 400,
         Some(EntityKind::ItemLot) => match world.get_component_item_lot(entity) {
             Some(lot) if lot.commodity == CommodityKind::Waste => 100,
             Some(_) => 300 + item_need_boost(),
@@ -809,6 +848,12 @@ fn apply_direct_local_observation_batch(
                 context.tick,
             );
         }
+    }
+    for (record, snapshot) in &batch.observed_record_snapshots {
+        store.record_believed_record_data(*record, snapshot.clone());
+    }
+    for (office, snapshot) in &batch.observed_office_snapshots {
+        store.record_believed_office_data(*office, snapshot.clone());
     }
 
     for subject in &batch.noticed_missing_subjects {
@@ -1542,17 +1587,18 @@ mod tests {
         DisturbanceKind, EntityBeliefAspect, EntityKind, EventLog, EventPayload, EventTag,
         EventView, EvidenceKind, EvidenceRef, ExplorationMotivation, FrameState, GoalKey, GoalKind,
         GroundComfortTag, HomeostaticNeeds, HypothesisKind, InstitutionalBeliefKey,
-        InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomain, IntentionFrame,
-        LoadUnits, MismatchKind, NoticeContent, NoticeTopic, ObservedEntitySnapshot,
-        OfficeForceState, OmissionReason, PendingEvent, PerceptionProfile, PerceptionSource,
-        Permille, PlaceVisibilityProfile, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
-        ProofRequirement, PrototypePlace, Quantity, RelationDelta, RelationKind, RelationValue,
+        InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalSnapshotSource,
+        IntentionDomain, IntentionFrame, LoadUnits, MismatchKind, NoticeContent, NoticeTopic,
+        ObservedEntitySnapshot, OfficeData, OfficeForceState, OmissionReason, PendingEvent,
+        PerceptionProfile, PerceptionSource, Permille, PlaceVisibilityProfile,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProofRequirement, PrototypePlace,
+        Quantity, RecordData, RecordKind, RelationDelta, RelationKind, RelationValue,
         ReliabilityRecord, ResourceSource, RewardSource, SaleListing, SceneEvidence, Seed,
         ShelterTag, SleepQualityProfile, SleepRecoveryModifier, SocialObservationDetail,
         SocialObservationKind, SourceKey, StateDelta, StockAssignment, StockAssignmentKind,
-        SurveyRecordedPayload, TheftFacts, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, build_observed_entity_snapshot, build_prototype_world,
-        prototype_place_entity,
+        SuccessionLaw, SurveyRecordedPayload, TheftFacts, Tick, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, build_observed_entity_snapshot,
+        build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
@@ -2337,6 +2383,91 @@ mod tests {
         assert_eq!(belief.believed_evidence, None);
         assert_eq!(belief.last_observed_tick(), Some(Tick(3)));
         assert_eq!(belief.source, PerceptionSource::DirectObservation);
+    }
+
+    #[test]
+    fn passive_perception_projects_local_record_and_office_snapshots() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let (observer, record, record_data, office, office_data) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+
+            let office = txn.create_office("Market Warden").unwrap();
+            txn.set_ground_location(office, place).unwrap();
+            let office_data = OfficeData {
+                title: "Market Warden".to_string(),
+                seat: place,
+                jurisdiction: BTreeSet::from([place]),
+                succession_law: SuccessionLaw::Force,
+                eligibility_rules: Vec::new(),
+                succession_period_ticks: 4,
+                vacancy_since: Some(Tick(0)),
+            };
+            txn.set_component_office_data(office, office_data.clone())
+                .unwrap();
+
+            let record_data = RecordData {
+                record_kind: RecordKind::OfficeRegister,
+                home_place: place,
+                issuer: office,
+                consultation_ticks: 4,
+                max_entries_per_consult: 6,
+                entries: Vec::new(),
+                next_entry_id: 0,
+            };
+            let record = txn.create_record(record_data.clone()).unwrap();
+            txn.set_ground_location(record, place).unwrap();
+
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, record, record_data, office, office_data)
+        };
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x25; 32]));
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &BTreeMap::new(),
+            action_defs: &ActionDefRegistry::new(),
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let store = world
+            .get_component_agent_belief_store(observer)
+            .expect("observer should have a belief store");
+        let believed_record = store
+            .believed_record_data(record)
+            .expect("local record observation should project RecordData");
+        assert_eq!(believed_record.data, record_data);
+        assert_eq!(
+            believed_record.source,
+            InstitutionalSnapshotSource::DirectObservation
+        );
+        assert_eq!(believed_record.learned_tick, Tick(3));
+        assert_eq!(believed_record.learned_at, Some(place));
+
+        let believed_office = store
+            .believed_office_data(office)
+            .expect("local office observation should project OfficeData");
+        assert_eq!(believed_office.data, office_data);
+        assert_eq!(
+            believed_office.source,
+            InstitutionalSnapshotSource::DirectObservation
+        );
+        assert_eq!(believed_office.learned_tick, Tick(3));
+        assert_eq!(believed_office.learned_at, Some(place));
     }
 
     #[test]
@@ -3603,6 +3734,114 @@ mod tests {
             retained_waste,
             waste_lots[..3].to_vec(),
             "remaining budget should admit only the lowest-EntityId waste lots"
+        );
+    }
+
+    #[test]
+    fn passive_local_observation_keeps_institutional_records_under_need_pressure() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let urgent_needs = HomeostaticNeeds::new(
+            Permille::new(1000).unwrap(),
+            Permille::ZERO,
+            Permille::ZERO,
+            Permille::ZERO,
+            Permille::ZERO,
+        );
+        let (observer, office, record, apple_lots) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_homeostatic_needs(observer, urgent_needs)
+                .unwrap();
+            let mut observer_profile = profile(1000);
+            observer_profile.observation_budget = 3;
+            observer_profile.need_salience_urgency_threshold = Permille::new(400).unwrap();
+            observer_profile.need_salience_boost = Permille::new(500).unwrap();
+            txn.set_component_perception_profile(observer, observer_profile)
+                .unwrap();
+
+            let office = txn.create_office("Market Warden").unwrap();
+            txn.set_ground_location(office, place).unwrap();
+            txn.set_component_office_data(
+                office,
+                OfficeData {
+                    title: "Market Warden".to_string(),
+                    seat: place,
+                    jurisdiction: BTreeSet::from([place]),
+                    succession_law: SuccessionLaw::Force,
+                    eligibility_rules: Vec::new(),
+                    succession_period_ticks: 4,
+                    vacancy_since: Some(Tick(0)),
+                },
+            )
+            .unwrap();
+
+            let record = txn
+                .create_record(RecordData {
+                    record_kind: RecordKind::CrimeRegister,
+                    home_place: place,
+                    issuer: office,
+                    consultation_ticks: 4,
+                    max_entries_per_consult: 6,
+                    entries: Vec::new(),
+                    next_entry_id: 0,
+                })
+                .unwrap();
+            txn.set_ground_location(record, place).unwrap();
+
+            let apple_lots = (0..6)
+                .map(|_| {
+                    let lot = txn
+                        .create_item_lot(CommodityKind::Apple, Quantity(1))
+                        .unwrap();
+                    txn.set_ground_location(lot, place).unwrap();
+                    lot
+                })
+                .collect::<Vec<_>>();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, office, record, apple_lots)
+        };
+
+        let observer_profile = world
+            .get_component_perception_profile(observer)
+            .copied()
+            .unwrap();
+        let base_store = world
+            .get_component_agent_belief_store(observer)
+            .cloned()
+            .unwrap_or_default();
+        let colocated_entities = world.entities_effectively_at(place);
+        let mut rng = DeterministicRng::new(Seed([0x64; 32]));
+
+        let batch = super::collect_direct_local_observation_batch(
+            &world,
+            observer,
+            place,
+            &colocated_entities,
+            Tick(2),
+            1000,
+            &mut rng,
+            &base_store,
+            urgent_needs,
+            &observer_profile,
+        )
+        .expect("urgent-need observation should produce a batch");
+
+        assert!(batch.observed_snapshots.contains_key(&office));
+        assert!(batch.observed_snapshots.contains_key(&record));
+        assert!(batch.observed_record_snapshots.contains_key(&record));
+        assert!(batch.observed_office_snapshots.contains_key(&office));
+        let retained_apples = apple_lots
+            .iter()
+            .filter(|lot| batch.observed_snapshots.contains_key(lot))
+            .count();
+        assert_eq!(
+            retained_apples, 1,
+            "record and office carriers should outrank need-boosted item lots"
         );
     }
 
