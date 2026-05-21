@@ -5,7 +5,7 @@
 `PerAgentBeliefView` that S158/S162's accessor sweep missed; removes the ungated
 faction-policy accessor footgun; adds confirming coverage for
 `facility_controller_at`). No new authoritative simulation state, system,
-component, action, or feedback loop. (Deliverable 2 may add a *belief-carrier*
+component, action, or feedback loop. (Deliverable 2 adds a *belief-carrier*
 field — observed kind on the last-seen memory record — which is belief/memory
 state, not authoritative world truth.)
 **Priority:** Medium. Sequence after `archive/specs/S163-cli-player-pov-boundary.md` in the
@@ -13,9 +13,12 @@ fourth-iteration belief-boundary wave. Independent of S163's CLI work — touche
 shared belief view, not the CLI — S163 has already landed as the prerequisite
 player-POV boundary.
 **Crates:** `worldwake-sim` (`per_agent_belief_view.rs` accessors + last-seen
-synthesis), possibly `worldwake-core` (`expectation.rs` `LastSeenRecord` if a kind
-field is added), `worldwake-ai` (adversarial goldens).
-**Foundations:** FND-7, FND-14, FND-14A, FND-15, FND-19, FND-27, FND-31
+synthesis), `worldwake-core` (`expectation.rs` `LastSeenRecord` gains
+`observed_kind`), `worldwake-systems` (last-seen construction/relay sites in
+`search_actions.rs`, `report_actions.rs`, `ask_about_person_actions.rs`),
+`worldwake-cli` (`LastSeenRecordDef` + scenario loader), `worldwake-ai`
+(adversarial goldens).
+**Foundations:** FND-7, FND-14, FND-14A, FND-14B, FND-15, FND-16, FND-19, FND-27, FND-31
 **Source:** `reports/ai-architecture-consolidation-fourth-iteration.md` (triage
 `docs/triage/2026-05-22-ai-architecture-consolidation-fourth-iteration-triage.md`).
 
@@ -105,34 +108,59 @@ perception, testimony, record, or memory carrier.
 ## Deliverables
 
 1. **`entity_kind` returns stored belief for non-co-located entities**
-   (`per_agent_belief_view.rs:604-609`) — keep the `Place` → public-topology branch
-   and the FND-14A co-located physical branch (an entity the actor can lawfully
-   observe this tick may have its current kind read). For a non-co-located,
-   non-place entity, return the **stored `believed_kind`** from the belief store /
-   last-seen synthesis, never `world.entity_kind`. A remote entity that changes kind
-   with no carrier must keep its last-known kind (or remain unknown).
+   (`per_agent_belief_view.rs:604-609`) — the current accessor has only two branches
+   (`Place` → public topology; otherwise a `knows_entity`-gated **live**
+   `world.entity_kind` read that fires for co-located *and* remote known entities
+   alike — there is no separate co-located branch today). Restructure it into three
+   explicit branches: (a) `Place` → `Place` (public topology); (b)
+   `has_authoritative_local_visibility(entity)` → live `world.entity_kind` (FND-14A:
+   an entity the actor is co-located with this tick may have its current kind read);
+   (c) otherwise (remote known) → the **stored kind** —
+   `believed_entity(entity).believed_kind` for belief-store entities, or the
+   last-seen record's `observed_kind` (Deliverable 2) for last-seen-only entities,
+   which `believed_entity` does not cover — else `None`. A remote entity that changes
+   kind with no carrier must keep its last-known kind (or remain unknown). Branch (c)
+   must never read `world.entity_kind`.
 
 2. **Last-seen kind synthesis must not read live world**
    (`per_agent_belief_view.rs:1293-1304`) — set `believed_kind` for a last-seen-only
-   entity from a belief-local source, never `self.world.entity_kind(*entity)`.
-   Ticket-time mechanism choice, with a hard constraint that no live world read is
-   introduced:
-   - **Preferred:** add an `observed_kind: Option<EntityKind>` field to
-     `LastSeenRecord` (`crates/worldwake-core/src/expectation.rs`) populated at
-     observation time, and the matching `LastSeenRecordDef` field in
-     `crates/worldwake-cli/src/scenario/types.rs`; the synthesis reads that.
-   - **Fallback:** synthesize `believed_kind: None` (kind unknown for last-seen-only
-     entities). Acceptable but loses kind-at-observation; choose only if the carrier
-     field proves disproportionate.
+   entity from a belief-local carrier, never `self.world.entity_kind(*entity)`. Use
+   the **observed-kind carrier** mechanism (preserves kind-at-observation, the FND-15
+   fidelity goal):
+   - Add `observed_kind: Option<EntityKind>` to `LastSeenRecord`
+     (`crates/worldwake-core/src/expectation.rs:126-132`). `EntityKind` already
+     derives `Copy, Serialize, Deserialize`, so the `Copy`-deriving record is
+     unaffected.
+   - Add the matching `observed_kind: Option<EntityKind>` to `LastSeenRecordDef`
+     (`crates/worldwake-cli/src/scenario/types.rs:402`) with `#[serde(default)]` —
+     the `Def` carries `#[serde(deny_unknown_fields)]` with all-required fields, so an
+     un-defaulted addition would force every existing scenario to author the field.
+     `EntityKind` is a plain enum, not an `EntityId` reference, so no `*Def` wrapper
+     is needed; `Option<EntityKind>` deserializes directly.
+   - Populate the field at every runtime construction site (5 of them; the compiler
+     enforces this for the literal-construction sites). The direct-observation
+     writers `search_actions.rs:436` and `:474` read the found entity's kind at
+     observation. The scenario loader `scenario/mod.rs:1724` maps it from the `Def`.
+     The two testimony relays `report_actions.rs:784` and
+     `ask_about_person_actions.rs:364` must **propagate** `observed_kind:
+     record.observed_kind` (no `..record` spread exists today), so kind travels with
+     the relayed memory through the hearsay chain (FND-15) rather than being dropped
+     to `None`. Save/load round-trips the field automatically via the serde derive.
+   - The synthesis at `:1296` then reads `record.observed_kind` instead of
+     `self.world.entity_kind(*entity)`.
    This is belief/memory carrier state (FND-7/FND-15), not authoritative world state.
 
 3. **Gate the bandit faction-policy accessors to lawfully known factions**
    (`per_agent_belief_view.rs:611-621`) — `bandit_flee_wound_threshold` and
-   `bandit_camp_establishment_ticks` must return `None` for a faction the actor does
-   not lawfully know (i.e., gate on the same belief/self path `bandit_factions_of`
-   already enforces — own/believed faction membership). Current call sites pass
-   `bandit_factions_of(actor)`, so lawful behavior is unchanged; the gate removes the
-   footgun of a future caller leaking an arbitrary faction's hidden policy.
+   `bandit_camp_establishment_ticks` must return `None` unless `faction` is among the
+   **observing agent's own/believed bandit factions** — i.e., gate on
+   `self.bandit_factions_of(self.agent).contains(&faction)` (the self/belief path
+   `factions_of` (`:1571`) already enforces this: world factions for self,
+   institutional-belief membership otherwise). A bandit lawfully knows their own
+   gang's policy, not an arbitrary faction's. Current call sites pass
+   `bandit_factions_of(actor)` with `actor == self.agent`, so lawful behavior is
+   unchanged; the gate removes the footgun of a future caller leaking an arbitrary
+   faction's hidden policy.
 
 4. **`facility_controller_at` confirming test** (`per_agent_belief_view.rs:385-401`) —
    add a focused test proving that a **remote** control change (a controller the
@@ -191,11 +219,12 @@ loop. Per `docs/spec-drafting-rules.md`, mandatory headers with applicability:
 - **Concrete dampeners:** Not applicable.
 - **Stored-state vs. derived read-model list:** `PerAgentBeliefView` is a derived
   read-model over `World` + belief stores; this spec narrows what it derives for
-  kind. If Deliverable 2 takes the preferred mechanism, `LastSeenRecord` gains an
-  `observed_kind: Option<EntityKind>` field — this is **belief/memory carrier state**
-  (FND-7/FND-15), recorded at observation time, never promoted to authoritative
-  world truth. The planning snapshot remains a transient derived read-model (FND-27),
-  still lawful by construction via the snapshot-through-view invariant.
+  kind. Deliverable 2 adds an `observed_kind: Option<EntityKind>` field to
+  `LastSeenRecord` — this is **belief/memory carrier state** (FND-7/FND-15), recorded
+  at observation time and propagated through testimony relay, never promoted to
+  authoritative world truth. The planning snapshot remains a transient derived
+  read-model (FND-27), still lawful by construction via the snapshot-through-view
+  invariant.
 - **Planner-formalism analysis:** Not applicable; no planner-formalism change. Plain
   GOAP/affordance search and the StageHint HTN layer simply receive a belief-sourced
   kind instead of a live one. No goal becomes method-required.
