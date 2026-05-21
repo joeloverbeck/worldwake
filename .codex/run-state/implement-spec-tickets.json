@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implement-S158-belief-view-remote-truth-leak-closure",
   "base_head": "36e18a648fab55593629753c2a25eb6275559d46",
-  "last_ticket": "archive/tickets/S158BELVIEWLEAK-002.md",
+  "last_ticket": "archive/tickets/S158BELVIEWLEAK-003.md",
   "last_result": "completed_archived",
-  "last_work_commit": "e127f024f7113fa7d49f29c57c618d7fee54ef7d",
+  "last_work_commit": "e32f1f02f70a5729e49b936e5ff3cabd406a5625",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S158BELVIEWLEAK-003.md",
+  "next_target": "tickets/S158BELVIEWLEAK-004.md",
   "queue": [
-    "tickets/S158BELVIEWLEAK-003.md",
     "tickets/S158BELVIEWLEAK-004.md"
   ],
   "implement_ticket_audit": "pending",
