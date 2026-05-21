@@ -31,7 +31,7 @@ candidate set.
    `ordered_candidate_extractors_from_goal_schemas` at L524). Workspace-wide grep
    confirms no other crate references the symbol — the rename blast radius is one
    file.
-2. The spec deliverable D1 (`specs/S159-candidate-generation-schema-owned-extractor-authority.md`)
+2. The spec deliverable D1 (`archive/specs/S159-candidate-generation-schema-owned-extractor-authority.md`)
    offers two shapes; this ticket implements the recommended option (a): a canonical
    `CANDIDATE_EXTRACTOR_ORDER` constant. The spec's option (b) caveat (per-key
    schema lists collapse to a membership `BTreeSet`, so a total order is not
@@ -89,7 +89,7 @@ assertion message with canonical-order wording.
 ## Landed Files
 
 - `crates/worldwake-ai/src/candidate_generation.rs`
-- `specs/S159-candidate-generation-schema-owned-extractor-authority.md`
+- `archive/specs/S159-candidate-generation-schema-owned-extractor-authority.md`
 - `specs/IMPLEMENTATION-ORDER.md`
 
 ## Out of Scope

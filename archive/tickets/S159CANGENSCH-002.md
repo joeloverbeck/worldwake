@@ -150,7 +150,7 @@ it and deserialize unchanged.
 - `crates/worldwake-core/src/agent_schema_context_profile.rs`
 - `crates/worldwake-ai/src/candidate_generation.rs`
 - `crates/worldwake-ai/src/goal_schema.rs`
-- `specs/S159-candidate-generation-schema-owned-extractor-authority.md`
+- `archive/specs/S159-candidate-generation-schema-owned-extractor-authority.md`
 - `archive/tickets/S159CANGENSCH-002.md`
 - `archive/tickets/S159CANGENSCH-004.md`
 

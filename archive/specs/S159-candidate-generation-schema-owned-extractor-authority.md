@@ -1,6 +1,6 @@
 # S159 — Candidate-Generation Schema-Owned Extractor Authority
 
-**Status:** Draft
+**Status**: COMPLETED
 **Type:** Pure refactor (behavior-preserving; removes a fossil seam and an
 out-of-band emitter)
 **Priority:** Medium — cleanup, not safety-critical. Sequence after archived S158.
@@ -253,3 +253,30 @@ existing static policy enum, not new authoritative world/belief state.)
   the schema-declared extractor set diverge (no orphan/missing extractor),
   including the blocked-self-care variant added by
   `archive/tickets/S159CANGENSCH-002.md`.
+
+## Outcome
+
+Completed: 2026-05-21.
+
+S159 landed as a behavior-preserving candidate-generation authority cleanup:
+`LEGACY_EXTRACTOR_ORDER` was renamed to the canonical
+`CANDIDATE_EXTRACTOR_ORDER`; blocked-self-care fallback emission moved from an
+out-of-band append into the declared `BlockedSelfCareExploration` post-suppression
+extractor; the phase-local fallback gate was preserved and covered by focused
+tests; and transient `CandidateExtractorId` provenance diagnostics now guard
+against surviving candidates emitted outside the declared extractor pipeline.
+
+Deviations from the initial draft were intentional and recorded in the archived
+tickets: ordering remains a canonical top-level order because the schema
+declarations provide membership, not a recoverable total order; candidate
+provenance remains transient diagnostics keyed by `CandidateExtractorId` rather
+than a new `GoalOffer` field; `EmitterTag` remains the authoritative persisted
+per-candidate event provenance; and anomaly/observation interpretation remains
+out of scope.
+
+Verification completed across the ticket family included focused candidate
+generation tests for canonical extractor coverage, blocked-self-care fallback
+gate behavior, and no untracked surviving candidates; the package AI test lane;
+the quiet workspace test lane; the quiet workspace clippy lane; the quiet
+all-targets clippy lane with `-D warnings`; and Markdown/diff hygiene checks
+recorded in the archived S159 tickets.
