@@ -4,16 +4,17 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — transient provenance capture in the candidate-generation result (AI; no authoritative state)
-**Deps**: S159CANGENSCH-002
+**Deps**: archive/tickets/S159CANGENSCH-002.md
 
 ## Problem
 
-After ticket 002 folds blocked-self-care into the declared extractor pipeline,
-every candidate originates from a registry-declared `CandidateExtractorId`. This
-ticket adds the guard that *proves* the invariant and keeps it from regressing: a
-test asserting that no candidate is emitted outside the declared extractor path
-(no untracked candidate) and that every contributing extractor is a member of the
-canonical order (no undeclared source). This is S159 Deliverable 3.
+After `archive/tickets/S159CANGENSCH-002.md` folded blocked-self-care into the
+declared extractor pipeline, every candidate should originate from a
+registry-declared `CandidateExtractorId`. This ticket adds the guard that
+*proves* the invariant and keeps it from regressing: a test asserting that no
+candidate is emitted outside the declared extractor path (no untracked
+candidate) and that every contributing extractor is a member of the canonical
+order (no undeclared source). This is S159 Deliverable 3.
 
 The guard keys on `CandidateExtractorId` — the registry authority — rather than
 adding a provenance field to `GoalOffer`. Per-candidate provenance is already
@@ -42,10 +43,10 @@ would be a parallel representation of the same fact (FND-27/FND-28).
    transient derived computations (FND-3) constructed within
    `generate_candidates_with_*`. The capture is added here, never promoted to
    authoritative world/belief state.
-4. This ticket depends on ticket 002 having removed the out-of-band call; the
-   guard's "no untracked candidate" assertion is only fully meaningful once every
-   candidate flows through the declared pipeline. If run before 002, the guard
-   would (correctly) fail on the blocked-self-care fallbacks.
+4. This ticket depends on `archive/tickets/S159CANGENSCH-002.md` having removed
+   the out-of-band call; the guard's "no untracked candidate" assertion is now
+   meaningful because blocked-self-care fallbacks flow through the declared
+   pipeline.
 5. Coverage-gap classification (precision rule 3): no existing test asserts the
    no-out-of-band-source invariant — verified by grepping the
    `candidate_generation.rs` `#[cfg(test)]` block for "provenance" / "untracked" /

@@ -736,6 +736,7 @@ static DECL_EXPLORE_LOCATION: GoalSchema = GoalSchema {
     candidate_extractors: &[
         CandidateExtractorId::Exploration,
         CandidateExtractorId::ProactiveExploration,
+        CandidateExtractorId::BlockedSelfCareExploration,
     ],
     planning_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
 };
@@ -1139,6 +1140,7 @@ mod tests {
             &[
                 CandidateExtractorId::Exploration,
                 CandidateExtractorId::ProactiveExploration,
+                CandidateExtractorId::BlockedSelfCareExploration,
             ]
         );
     }

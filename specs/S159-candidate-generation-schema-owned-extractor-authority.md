@@ -13,43 +13,46 @@ out-of-band emitter)
 Candidate generation in `crates/worldwake-ai/src/candidate_generation.rs` is the
 single place desires/opportunities become goal candidates. The goal-schema
 consolidation (`GoalSchema.candidate_extractors`) was meant to make the schema the
-authority for which extractors run. That consolidation only half-landed. Ticket
-`archive/tickets/S159CANGENSCH-001.md` has now removed the fossil ordering name;
-the remaining live out-of-band candidate source is still ticket
-`S159CANGENSCH-002` scope:
+authority for which extractors run. That consolidation has landed in two
+behavior-preserving slices: `archive/tickets/S159CANGENSCH-001.md` removed the
+fossil ordering name, and `archive/tickets/S159CANGENSCH-002.md` removed the
+out-of-band blocked-self-care emitter by moving it into a declared
+post-suppression extractor phase. Remaining active work is the provenance guard
+(`tickets/S159CANGENSCH-003.md`) and the explicit gate-semantics investigation
+(`tickets/S159CANGENSCH-004.md`):
 
 1. Before `archive/tickets/S159CANGENSCH-001.md`, a constant literally named
    **`LEGACY_EXTRACTOR_ORDER`** owned extractor *execution order*. That live
    fossil name has been replaced with `CANDIDATE_EXTRACTOR_ORDER`, documented as
    the single declared top-level execution order, while preserving behavior
    (FND-28).
-2. `emit_exploration_candidates_for_blocked_self_care` runs **out-of-band**,
-   after the main `for extractor_id in ordered_candidate_extractors_from_goal_schemas()`
-   loop and after suppression filtering. It is a hidden candidate source outside
-   the declared extractor registry (FND-28; FND-20 emergence-via-declared-paths).
+2. Before `archive/tickets/S159CANGENSCH-002.md`,
+   `emit_exploration_candidates_for_blocked_self_care` ran **out-of-band** after
+   the main `for extractor_id in ordered_candidate_extractors_from_goal_schemas()`
+   loop and after suppression filtering. That hidden candidate source is now the
+   declared `CandidateExtractorId::BlockedSelfCareExploration` post-suppression
+   extractor.
 
 ### Evidence (verified against code on 2026-05-21)
 
-- `CANDIDATE_EXTRACTOR_ORDER: [CandidateExtractorId; 20]` is the live canonical
+- `CANDIDATE_EXTRACTOR_ORDER: [CandidateExtractorId; 21]` is the live canonical
   order in `crates/worldwake-ai/src/candidate_generation.rs`. Its member set and
   order are identical to `CandidateExtractorId::ALL`
-  (`crates/worldwake-core/src/agent_schema_context_profile.rs`), so the
-  schema-membership filter below currently filters nothing — this is the
-  behavior-preserving state landed by `archive/tickets/S159CANGENSCH-001.md`.
+  (`crates/worldwake-core/src/agent_schema_context_profile.rs`) after
+  `archive/tickets/S159CANGENSCH-002.md` appended
+  `BlockedSelfCareExploration`.
 - `ordered_candidate_extractors_from_goal_schemas()` collects the schema-declared
   extractor set into a `BTreeSet` (membership only — per-key declaration order is
   discarded), then filters `CANDIDATE_EXTRACTOR_ORDER` by it. Used in the main
   extractor loop. The per-key schema lists are reached via
   `GoalDispatchKey::declaration().candidate_extractors`
   (`crates/worldwake-ai/src/goal_schema.rs`).
-- `emit_exploration_candidates_for_blocked_self_care(...)` is called at L798,
-  **after** the first `filter_suppressed_candidates` pass (L788). It consumes
-  `diagnostics.fully_blocked_desires` produced by that suppression pass (L795),
-  early-returns unless every surviving candidate is a self-care fallback
-  (L3786), and its output is run through a **second, separate**
-  `filter_suppressed_candidates` pass (L806) before being appended. This
-  post-suppression dependency is why the emitter cannot be naively folded into
-  the single pre-suppression extractor loop — see Deliverable 2.
+- `BlockedSelfCareExplorationExtractor` runs in the declared post-suppression
+  phase after the first `filter_suppressed_candidates` pass. It consumes
+  `diagnostics.fully_blocked_desires`, preserves the old phase-local fallback
+  gate, and runs its output through a second suppression pass before appending.
+  Whether that gate should inspect all surviving post-suppression candidates is
+  deliberately deferred to `tickets/S159CANGENSCH-004.md`.
 - `CandidateGenerationResult` (L222–239) also carries `pending_violations`,
   `pending_discrepancies`, `pending_source_reliability_failures`, and
   `pending_acquisition_exhaustion_resets`. **This is documented as
@@ -67,7 +70,7 @@ representations are **not** isomorphic — this shapes what Deliverable 3 can an
 cannot do:
 
 - **`CandidateExtractorId`** (`crates/worldwake-core/src/agent_schema_context_profile.rs:6`,
-  20 variants) — the **registry/dispatch identity**. It declares which extractors
+  21 variants) — the **registry/dispatch identity**. It declares which extractors
   exist, gates which run (`disabled_extractors`), and orders the loop. It is a
   static policy table, transient at runtime. This spec consolidates *this*
   surface as the emission authority.
@@ -137,10 +140,11 @@ here (see below).
    `CandidateExtractorId::ALL`.
 
 2. **Fold blocked-self-care into the registry as a declared second-phase
-   extractor.** `blocked-self-care exploration` must become a declared
-   `CandidateExtractorId` that runs inside the ordered extractor pipeline,
-   consuming `fully_blocked_desires` as a lawful input. No candidate may be
-   emitted outside the declared extractor path.
+   extractor — completed by `archive/tickets/S159CANGENSCH-002.md`.**
+   `blocked-self-care exploration` is now the declared
+   `CandidateExtractorId::BlockedSelfCareExploration` post-suppression extractor,
+   consuming `fully_blocked_desires` as a lawful input. No blocked-self-care
+   fallback candidate is emitted outside the declared extractor path.
 
    The fold is **not** trivially behavior-preserving, because the current emitter
    depends on state that does not exist during the pre-suppression loop. Preserve
@@ -152,10 +156,12 @@ here (see below).
      runs the pre-suppression phase, applies the first `filter_suppressed_candidates`
      pass, then runs the post-suppression phase over its declared extractor subset.
    - The blocked-self-care extractor is a post-suppression extractor. Its
-     `ExtractorContext` (or an equivalent declared input) must carry the
-     post-suppression `fully_blocked_desires`, and the pipeline must preserve:
-     (a) the all-surviving-candidates-are-self-care-fallback gate (current L3786),
-     and (b) the **separate** suppression filtering of its output (current L806).
+     `ExtractorContext` carries the post-suppression `fully_blocked_desires`, and
+     the pipeline preserves: (a) the old phase-local fallback-candidate gate
+     (vacuous for the sole live fallback emitter because the old call passed an
+     empty vector), and (b) the **separate** suppression filtering of its output.
+     Whether that gate should instead inspect all surviving post-suppression
+     candidates is a behavior question deferred to `tickets/S159CANGENSCH-004.md`.
    - Net effect: identical candidate set to today, but every candidate — including
      blocked-self-care fallbacks — now originates from a registry-declared
      extractor with an explicit ordering position. No out-of-band call remains.
@@ -207,7 +213,7 @@ here (see below).
 
 Pure refactor; introduces no new system, state, component, action, or feedback
 loop, and is required to be behavior-preserving. (One new `CandidateExtractorId`
-variant is added in Deliverable 2, but it is a registry-identity entry on an
+variant was added in Deliverable 2, but it is a registry-identity entry on an
 existing static policy enum, not new authoritative world/belief state.)
 
 - **Information-path analysis:** Not applicable. No information path changes;
@@ -240,4 +246,5 @@ existing static policy enum, not new authoritative world/belief state.)
   `canonical_extractor_order_covers_every_registered_extractor_once` and is
   re-pointed at `CANDIDATE_EXTRACTOR_ORDER` — it fails if the canonical order and
   the schema-declared extractor set diverge (no orphan/missing extractor),
-  including the later blocked-self-care variant once ticket 002 adds it.
+  including the blocked-self-care variant added by
+  `archive/tickets/S159CANGENSCH-002.md`.

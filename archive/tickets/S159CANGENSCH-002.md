@@ -1,6 +1,6 @@
 # S159CANGENSCH-002: Fold blocked-self-care into registry as a post-suppression phase
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `CandidateExtractorId` enum (core), candidate-generation pipeline and extractor registry (AI)
@@ -16,9 +16,10 @@ outside the declared extractor registry (FND-28; FND-20 emergence-via-declared-p
 This ticket folds it into the declared registry as a blocked-self-care
 `CandidateExtractorId` variant that runs inside the pipeline. Because the emitter
 depends on **post-suppression** state (it consumes `diagnostics.fully_blocked_desires`
-produced by the first `filter_suppressed_candidates` pass, gates on whether every
-surviving candidate is a self-care fallback, and is itself suppression-filtered
-in a separate pass), it must be modeled as a declared **post-suppression phase**
+produced by the first `filter_suppressed_candidates` pass, gated only over its
+phase-local fallback-candidate vector in the pre-refactor live call shape, and is
+itself suppression-filtered in a separate pass), it must be modeled as a declared
+**post-suppression phase**
 of the pipeline — not naively merged into the single pre-suppression loop, which
 would change behavior. The emitted candidate set must remain identical.
 
@@ -27,10 +28,12 @@ would change behavior. The emitted candidate set must remain identical.
 1. `emit_exploration_candidates_for_blocked_self_care` is defined at
    `crates/worldwake-ai/src/candidate_generation.rs:3779` and called at L798,
    after `filter_suppressed_candidates` (L788). It reads
-   `diagnostics.fully_blocked_desires` (L795), early-returns unless every surviving
-   candidate satisfies `goal_is_self_care_fallback` (L3786), and its output is run
-   through a second `filter_suppressed_candidates` pass (L806) before being
-   appended. The pre-suppression in-loop extractors (L768–786) read
+   `diagnostics.fully_blocked_desires` (L795), but the live call passes a fresh
+   empty `blocked_fallback_candidates` vector into the helper, so the helper's
+   `goal_is_self_care_fallback` check at L3786 is phase-local and currently
+   vacuous for the sole fallback emitter. Its output is run through a second
+   `filter_suppressed_candidates` pass (L806) before being appended. The
+   pre-suppression in-loop extractors (L768–786) read
    `prior_candidates: &candidates` (L778), which is the *unsuppressed*
    accumulation — confirming the fold cannot be a single-phase merge.
 2. `CandidateExtractorId` is defined in `crates/worldwake-core/src/agent_schema_context_profile.rs:6`
@@ -64,6 +67,11 @@ would change behavior. The emitted candidate set must remain identical.
 6. Adjacent-contradiction classification: the `EmitterTag` ↔ `CandidateExtractorId`
    non-isomorphism (separate provenance taxonomies) is a known smell explicitly
    deferred to a future spec per S159 Non-Goals; it is **not** in scope here.
+7. Reassessment correction: the drafted "every surviving candidate is a
+   self-care fallback" gate described a stronger behavior than live code proves.
+   For FOUNDATIONS alignment, this behavior-preserving ticket keeps the live
+   phase-local gate and creates a follow-up to investigate whether the stronger
+   surviving-candidate gate should become a deliberate behavior change.
 
 ## Architecture Check
 
@@ -81,7 +89,7 @@ would change behavior. The emitted candidate set must remain identical.
    extractor's `extract` body (relocated into the trait impl), but the out-of-band
    invocation in the pipeline is deleted.
 
-## Verification Layers
+## Verified Layers
 
 1. Identical emitted candidate set (incl. blocked-self-care fallbacks) ->
    existing `worldwake-ai` goldens + `fully_blocked_self_care_source_emits_exploration_fallback`.
@@ -95,60 +103,56 @@ would change behavior. The emitted candidate set must remain identical.
 4. Single authoritative-state change is the candidate set only; no action
    lifecycle or event-log ordering changes, so no action-trace layer applies.
 
-## What to Change
+## Landed Changes
 
-### 1. Add the blocked-self-care variant (core)
+### 1. Added the blocked-self-care variant (core)
 
-In `crates/worldwake-core/src/agent_schema_context_profile.rs`: append a new
-variant (e.g., `BlockedSelfCareExploration`) to `CandidateExtractorId` (after
-`OpportunityCompiler`) and to `ALL` (now `[Self; 21]`). Update
-`candidate_extractor_id_all_covers_variant_set` to assert `len() == 21`.
+Added `BlockedSelfCareExploration` after `OpportunityCompiler` in
+`CandidateExtractorId`, appended it to `CandidateExtractorId::ALL`, and updated
+`candidate_extractor_id_all_covers_variant_set` to assert the 21-member set.
 
-### 2. Introduce a post-suppression phase in the canonical order (AI)
+### 2. Introduced a post-suppression phase in the canonical order (AI)
 
-In `crates/worldwake-ai/src/candidate_generation.rs`: tag each entry in
-`CANDIDATE_EXTRACTOR_ORDER` with a phase (pre-suppression / post-suppression),
-or introduce a sibling `POST_SUPPRESSION_EXTRACTOR_ORDER` slice consumed after
-the first `filter_suppressed_candidates` pass. Keep the existing 20 extractors in
-the pre-suppression phase; the new variant is the sole post-suppression entry.
-Update `canonical_extractor_order_covers_every_registered_extractor_once` so the
-canonical order (across both phases) equals `CandidateExtractorId::ALL`.
+Added `CandidateExtractorPhase`, mapped the first 20 extractors to
+pre-suppression, mapped `BlockedSelfCareExploration` to post-suppression, and
+kept `CANDIDATE_EXTRACTOR_ORDER` as the single 21-entry canonical order checked
+against `CandidateExtractorId::ALL`.
 
-### 3. Register the phase-2 extractor
+### 3. Registered the phase-2 extractor
 
-Add the `extractor_for` match arm for the new variant and a corresponding
-`*_EXTRACTOR` static implementing `CandidateExtractor`, with its `extract` body
-relocated from `emit_exploration_candidates_for_blocked_self_care`. Ensure
-`build_extractor_registry` covers it (it iterates `CandidateExtractorId::ALL`, so
-coverage follows automatically once the match arm exists). The phase-2
-`ExtractorContext` (or an equivalent declared input) must carry the
-post-suppression `fully_blocked_desires`, and the pipeline must preserve the
-all-surviving-candidates-are-self-care-fallback gate and the separate suppression
-pass over the phase-2 output.
+Added `BlockedSelfCareExplorationExtractor`, its static registry entry, and the
+`extractor_for` match arm. `ExtractorContext` now carries
+`fully_blocked_desires`, with pre-suppression extractors receiving an empty slice
+and the post-suppression extractor receiving the cloned diagnostics from the
+first suppression pass. The post-suppression phase preserves the live
+phase-local fallback-candidate gate and the separate suppression pass over
+phase-2 output.
 
-### 4. Remove the out-of-band call
+### 4. Removed the out-of-band call
 
-Delete the out-of-band `emit_exploration_candidates_for_blocked_self_care(...)`
-invocation in the pipeline (current L798) once the phase-2 extractor produces the
-same candidates through the declared path.
+Deleted the direct out-of-band
+`emit_exploration_candidates_for_blocked_self_care(...)` pipeline invocation.
+Blocked-self-care fallback candidates now originate through the declared
+post-suppression extractor path.
 
-### 5. Add the schema declaration
+### 5. Added the schema declaration
 
-Add the new variant to the relevant `GoalDispatchKey` schema declaration's
-`candidate_extractors` (`crates/worldwake-ai/src/goal_schema.rs`) so the
-schema-membership filter admits it (matching the GoalDispatchKey whose family the
-blocked-self-care fallback serves).
+Added `BlockedSelfCareExploration` to `GoalDispatchKey::ExploreLocation`'s
+`candidate_extractors` declaration and updated the schema example test.
 
 Merge note: No `SAVE_FORMAT_VERSION` bump (currently 96). The new
 `CandidateExtractorId` variant is appended at the enum end, preserving bincode
 variant indices; pre-existing serialized `disabled_extractors` sets never contain
 it and deserialize unchanged.
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-core/src/agent_schema_context_profile.rs` (modify)
-- `crates/worldwake-ai/src/candidate_generation.rs` (modify)
-- `crates/worldwake-ai/src/goal_schema.rs` (modify)
+- `crates/worldwake-core/src/agent_schema_context_profile.rs`
+- `crates/worldwake-ai/src/candidate_generation.rs`
+- `crates/worldwake-ai/src/goal_schema.rs`
+- `specs/S159-candidate-generation-schema-owned-extractor-authority.md`
+- `archive/tickets/S159CANGENSCH-002.md`
+- `tickets/S159CANGENSCH-004.md`
 
 ## Out of Scope
 
@@ -157,43 +161,78 @@ it and deserialize unchanged.
 - Moving anomaly/observation interpretation out of candidate emission (S159 Non-Goal).
 - Any change to the emitted candidate set, ranking, or plans.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests
 
-1. `candidate_extractor_id_all_covers_variant_set` — asserts 21 variants.
-2. `canonical_extractor_order_covers_every_registered_extractor_once` — canonical
-   order across both phases equals `CandidateExtractorId::ALL` (21).
-3. `fully_blocked_self_care_source_emits_exploration_fallback` — still passes via
+1. `candidate_extractor_id_all_covers_variant_set` asserts 21 variants.
+2. `canonical_extractor_order_covers_every_registered_extractor_once` asserts the
+   canonical order across both phases equals `CandidateExtractorId::ALL`.
+3. `fully_blocked_self_care_source_emits_exploration_fallback` still passes via
    the declared phase-2 extractor.
-4. New focused test: phase-2 extractor consumes the post-suppression
-   `fully_blocked_desires` and reproduces the prior fallback candidates.
-5. Existing suite: `cargo test -p worldwake-ai`
+4. `blocked_self_care_phase_is_registry_gated_after_suppression` proves the
+   phase-2 fallback is controlled by the declared extractor registry after
+   `fully_blocked_desires` is produced.
+5. `cargo test -p worldwake-ai` passed.
 
 ### Invariants
 
-1. No candidate is emitted outside the declared extractor pipeline (the
-   out-of-band call is removed); enforced structurally and proven by ticket 003.
+1. No blocked-self-care candidate is emitted outside the declared extractor
+   pipeline (the out-of-band call is removed); full no-untracked-candidate guard
+   remains ticket S159CANGENSCH-003 scope.
 2. `CandidateExtractorId::ALL` and the canonical order remain in sync (no
    orphan/missing extractor).
 3. Bincode variant indices for pre-existing `CandidateExtractorId` variants are
    unchanged (new variant appended); save/load round-trips of prior data succeed.
 4. Emitted candidate set for every existing golden is unchanged.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Modified Tests
 
-1. `crates/worldwake-core/src/agent_schema_context_profile.rs` — update
+1. `crates/worldwake-core/src/agent_schema_context_profile.rs` — updated
    `candidate_extractor_id_all_covers_variant_set` to 21.
-2. `crates/worldwake-ai/src/candidate_generation.rs` — update the canonical-order
-   completeness test; keep `fully_blocked_self_care_source_emits_exploration_fallback`
-   green; add a focused test that the phase-2 extractor receives the
-   post-suppression desire set.
+2. `crates/worldwake-ai/src/candidate_generation.rs` — updated the
+   canonical-order completeness test, preserved
+   `fully_blocked_self_care_source_emits_exploration_fallback`, and added
+   `blocked_self_care_phase_is_registry_gated_after_suppression`.
 
-### Commands
+### Command Status
 
 1. `cargo test -p worldwake-ai fully_blocked_self_care_source_emits_exploration_fallback`
 2. `cargo test -p worldwake-core candidate_extractor_id_all_covers_variant_set`
 3. `cargo test -p worldwake-ai`
 4. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-05-21.
+
+- Added `CandidateExtractorId::BlockedSelfCareExploration` as the declared
+  registry identity for blocked-self-care fallback emission.
+- Split candidate extraction into pre-suppression and post-suppression phases,
+  with blocked-self-care as the sole post-suppression extractor.
+- Removed the out-of-band blocked-self-care fallback call from the candidate
+  pipeline while preserving the live phase-local gate and separate suppression
+  pass.
+- Added `tickets/S159CANGENSCH-004.md` to investigate whether the phase-local
+  gate should become a non-vacuous surviving-candidate gate as a deliberate
+  behavior change.
+
+## Deviations
+
+- The draft said the helper gated on every surviving candidate being self-care
+  fallback. Live reassessment showed the old call passed an empty fallback vector,
+  so this ticket preserved that phase-local gate for behavior preservation and
+  split the stronger gate question to `tickets/S159CANGENSCH-004.md`.
+- The no-untracked-candidate provenance guard remains out of scope for this
+  ticket and is still owned by `tickets/S159CANGENSCH-003.md`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core candidate_extractor_id_all_covers_variant_set`
+- Passed `cargo test -p worldwake-ai canonical_extractor_order_covers_every_registered_extractor_once`
+- Passed `cargo test -p worldwake-ai fully_blocked_self_care_source_emits_exploration_fallback`
+- Passed `cargo test -p worldwake-ai blocked_self_care_phase_is_registry_gated_after_suppression`
+- Passed `cargo test -p worldwake-ai`
+- Passed `./scripts/verify.sh`
