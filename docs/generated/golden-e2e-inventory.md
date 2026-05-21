@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden scenario source files: 58
 - Files contributing `golden_*` tests: 58
-- Total `golden_*` tests: 279
+- Total `golden_*` tests: 280
 
 ## Per-Scenario-File Inventory
 
@@ -16,7 +16,7 @@ Do not hand-edit it.
 | `activation_decay.rs` | 6 |
 | `ai_decisions.rs` | 15 |
 | `artifact_lifecycle.rs` | 5 |
-| `belief_wall_trap.rs` | 5 |
+| `belief_wall_trap.rs` | 6 |
 | `cognitive_archetypes.rs` | 7 |
 | `contention_inspectability.rs` | 5 |
 | `cross_goal_blocker_scoping.rs` | 8 |
@@ -113,6 +113,7 @@ Do not hand-edit it.
 - `golden_belief_wall_trap_replays_deterministically`
 - `explicit_owner_belief_is_the_theft_candidate_gate`
 - `golden_belief_wall_trap_remote_pursuit_uses_stale_location_not_live_truth`
+- `golden_belief_wall_trap_remote_sale_listing_does_not_leak_live_truth`
 - `golden_belief_wall_trap_control_source_swap_preserves_affordances`
 
 ### `cognitive_archetypes.rs`
@@ -222,7 +223,7 @@ Do not hand-edit it.
 
 - `staff_market_retains_displayed_listing_through_presence_cycle`
 - `buyer_trades_against_listed_lot`
-- `remote_branch_selection_reaches_local_trade_binding_before_merchant_departure`
+- `remote_listing_belief_does_not_select_trade_branch_before_local_observation`
 - `merchant_return_revives_pending_purchase_agenda_entry`
 - `seller_return_restores_displayed_listing_after_pending_revival`
 - `seller_return_completes_resumed_purchase_after_live_offer_refresh`

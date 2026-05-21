@@ -2092,6 +2092,10 @@ impl EconomicBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+        if self.world.effective_place(self.agent) != Some(place) {
+            return Vec::new();
+        }
+
         self.entities_at(place)
             .into_iter()
             .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::ItemLot))
@@ -2111,6 +2115,10 @@ impl EconomicBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
+        if !self.has_authoritative_local_visibility(lot) {
+            return None;
+        }
+
         if !self.world.has_component_sale_listing(lot) {
             return None;
         }
@@ -2123,7 +2131,7 @@ impl EconomicBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn has_sale_listing(&self, lot: EntityId) -> bool {
-        self.world.has_component_sale_listing(lot)
+        self.has_authoritative_local_visibility(lot) && self.world.has_component_sale_listing(lot)
     }
 
     fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
@@ -2795,7 +2803,7 @@ mod tests {
     }
 
     #[test]
-    fn remote_listed_sale_lot_stays_sale_visible_through_display_container() {
+    fn remote_listed_sale_lot_does_not_read_live_sale_listing() {
         use worldwake_core::{LoadUnits, StockAssignment, StockAssignmentKind};
 
         let mut world = World::new(build_prototype_world()).unwrap();
@@ -2844,12 +2852,13 @@ mod tests {
 
         assert_eq!(
             EconomicBeliefView::listed_sale_lots_at(&view, market, CommodityKind::Bread),
-            vec![listed_lot]
+            Vec::<EntityId>::new()
         );
         assert_eq!(
             EconomicBeliefView::seller_for_sale_lot(&view, listed_lot),
-            Some(merchant)
+            None
         );
+        assert!(!EconomicBeliefView::has_sale_listing(&view, listed_lot));
         assert_eq!(
             InventoryBeliefView::direct_container(&view, listed_lot),
             Some(display)

@@ -8,12 +8,13 @@ use worldwake_ai::{DecisionOutcome, GoalKey, PlannerOpKind, generate_candidates}
 use worldwake_core::{
     AgentBeliefStore, BlockerMemory, ClaimId, ClaimValue, CommodityKind, ControlSource, EntityId,
     EntityKind, GoalKind, HomeostaticNeeds, MetabolismProfile, PerceptionSource, Permille,
-    PursuitProfile, Quantity, Seed, SuccessionLaw, TheftDispositionProfile, Tick, UtilityProfile,
+    PursuitProfile, Quantity, SaleListing, Seed, StockAssignment, StockAssignmentKind,
+    SuccessionLaw, TheftDispositionProfile, Tick, UtilityProfile,
 };
 use worldwake_core::{EntityBeliefAspect, EntityBeliefClaim};
 use worldwake_sim::{
-    BeliefRead, BelievedAuthorityView, LocalPhysicalObservationView, SpatialBeliefView,
-    get_affordances,
+    BeliefRead, BelievedAuthorityView, EconomicBeliefView, LocalPhysicalObservationView,
+    PerAgentBeliefView, SpatialBeliefView, get_affordances,
 };
 
 struct BeliefWallFixture {
@@ -31,6 +32,14 @@ struct RemotePursuitFixture {
     target: EntityId,
     last_seen_place: EntityId,
     current_place: EntityId,
+}
+
+struct RemoteSaleFixture {
+    h: GoldenHarness,
+    actor: EntityId,
+    merchant: EntityId,
+    market: EntityId,
+    listed_lot: EntityId,
 }
 
 fn set_control_source(h: &mut GoldenHarness, agent: EntityId, control_source: ControlSource) {
@@ -198,6 +207,86 @@ fn build_remote_pursuit_fixture(seed: Seed) -> RemotePursuitFixture {
     }
 }
 
+fn build_remote_sale_fixture(seed: Seed) -> RemoteSaleFixture {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let actor = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Remote-Market Actor",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let merchant = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Remote Seller",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, merchant, ControlSource::Human);
+
+    let listed_lot = {
+        let mut txn = new_txn(&mut h.world, 0);
+        let (facility, _stock, display) = txn
+            .create_merchant_facility(
+                ORCHARD_FARM,
+                merchant,
+                worldwake_core::LoadUnits(200),
+                Some(worldwake_core::LoadUnits(100)),
+            )
+            .unwrap();
+        let display = display.expect("merchant facility should include a display container");
+        let listed_lot = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(5))
+            .unwrap();
+        txn.put_into_container(listed_lot, display).unwrap();
+        txn.set_component_stock_assignment(
+            listed_lot,
+            StockAssignment {
+                facility,
+                kind: StockAssignmentKind::Displayed,
+            },
+        )
+        .unwrap();
+        txn.set_component_sale_listing(listed_lot, SaleListing { listed_at: Tick(0) })
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+        listed_lot
+    };
+
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        actor,
+        merchant,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        actor,
+        listed_lot,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    RemoteSaleFixture {
+        h,
+        actor,
+        merchant,
+        market: ORCHARD_FARM,
+        listed_lot,
+    }
+}
+
 fn authority_view_for(fixture: &BeliefWallFixture) -> worldwake_sim::PerAgentBeliefView<'_> {
     let store = fixture
         .h
@@ -205,6 +294,10 @@ fn authority_view_for(fixture: &BeliefWallFixture) -> worldwake_sim::PerAgentBel
         .get_component_agent_belief_store(fixture.actor)
         .expect("fixture should seed actor belief store");
     worldwake_sim::PerAgentBeliefView::new_at_tick(fixture.actor, Tick(0), &fixture.h.world, store)
+}
+
+fn remote_sale_view_for(fixture: &RemoteSaleFixture) -> PerAgentBeliefView<'_> {
+    PerAgentBeliefView::from_world(fixture.actor, &fixture.h.world)
 }
 
 fn remote_pursuit_view_for(
@@ -351,6 +444,37 @@ fn assert_remote_pursuit_trace_never_targets_current_place(fixture: &RemotePursu
     assert!(
         saw_last_seen_evidence,
         "expected decision trace evidence for stale last-seen place; traces={traces:#?}"
+    );
+}
+
+fn assert_remote_sale_listing_does_not_use_live_truth(fixture: &RemoteSaleFixture) {
+    let view = remote_sale_view_for(fixture);
+    assert_eq!(
+        fixture.h.world.effective_place(fixture.actor),
+        Some(VILLAGE_SQUARE)
+    );
+    assert_eq!(
+        fixture.h.world.effective_place(fixture.listed_lot),
+        Some(fixture.market)
+    );
+    assert_eq!(
+        fixture.h.world.effective_place(fixture.merchant),
+        Some(fixture.market)
+    );
+
+    assert_eq!(
+        EconomicBeliefView::listed_sale_lots_at(&view, fixture.market, CommodityKind::Bread),
+        Vec::<EntityId>::new(),
+        "remote listed sale lots must not be enumerated from current world truth"
+    );
+    assert_eq!(
+        EconomicBeliefView::seller_for_sale_lot(&view, fixture.listed_lot),
+        None,
+        "remote seller identity must not be read through the live sale listing"
+    );
+    assert!(
+        !EconomicBeliefView::has_sale_listing(&view, fixture.listed_lot),
+        "remote sale-listing presence must not come from current world truth"
     );
 }
 
@@ -580,6 +704,31 @@ fn golden_belief_wall_trap_remote_pursuit_uses_stale_location_not_live_truth() {
     fixture.h.step_once();
 
     assert_remote_pursuit_trace_never_targets_current_place(&fixture);
+}
+
+// Scenario 456: Remote Sale Listing Does Not Leak Live Truth
+//
+// Systems: Perception, AI, Trade
+// ActionDomains: Trade
+// Places: VillageSquare, OrchardFarm
+// Principles: 7, 14, 14A, 16, 19
+//
+// Setup: An actor at Village Square has stale prior beliefs about a remote
+// seller and displayed bread lot at Orchard Farm. The authoritative world still
+// has a live sale listing, but no witness, record, testimony, or local
+// observation carries that current listing state back to the actor.
+//
+// Proves: The economic belief-view accessors do not enumerate remote sale
+// listings, seller identity, or listing presence from live world truth for a
+// known-but-remote lot.
+//
+// Chain: prior remote belief -> live remote sale listing remains authoritative
+// -> economic belief view -> no remote listing/seller/listing-presence leak.
+#[test]
+fn golden_belief_wall_trap_remote_sale_listing_does_not_leak_live_truth() {
+    let fixture = build_remote_sale_fixture(Seed([0x48; 32]));
+
+    assert_remote_sale_listing_does_not_use_live_truth(&fixture);
 }
 
 // Scenario 455: Control Source Swap Preserves Belief Affordances

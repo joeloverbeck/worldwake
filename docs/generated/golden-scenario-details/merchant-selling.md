@@ -31,22 +31,22 @@ Scenarios: 13
 
 **Proves**: buyer discovers and trades against concrete listed lot with conservation
 
-### Scenario 84: Remote Branch Selection Reaches Local Trade Binding
+### Scenario 84: Remote Listing Belief Does Not Select A Trade Branch
 
 - Source: `merchant_selling.rs:525`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity
-- ActionDomains: Travel, Trade
-- Principles: P1, P3, P4
-- Primary tests: `remote_branch_selection_reaches_local_trade_binding_before_merchant_departure`
+- ActionDomains: Trade
+- Principles: P1, P3, P4, P7, P14
+- Primary tests: `remote_listing_belief_does_not_select_trade_branch_before_local_observation`
 - Replay tests: None
-- All tests: `remote_branch_selection_reaches_local_trade_binding_before_merchant_departure`
+- All tests: `remote_listing_belief_does_not_select_trade_branch_before_local_observation`
 
-**Proves**: buyer first selects the remote seller-backed `Travel -> Trade` path and, after arrival, reaches a concrete local `trade` next step before seller departure. The mismatch event itself stays owned by the focused `agent_tick` execution proof.
+**Proves**: inferred remote seller and lot beliefs do not select a seller-backed trade branch from current remote sale-listing truth. A concrete trade binding now requires local observation or another explicit carrier.
 
 ### Scenario 85: Seller Return Revives Pending Purchase Agenda Entry
 
-- Source: `merchant_selling.rs:636`
+- Source: `merchant_selling.rs:601`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Trade
@@ -59,7 +59,7 @@ Scenarios: 13
 
 ### Scenario 86: Seller Return Restores Displayed Listing After Pending Revival
 
-- Source: `merchant_selling.rs:786`
+- Source: `merchant_selling.rs:752`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Trade
@@ -72,7 +72,7 @@ Scenarios: 13
 
 ### Scenario 87: Seller Return Completes Resumed Purchase After Live Three-Coin Offer
 
-- Source: `merchant_selling.rs:934`
+- Source: `merchant_selling.rs:901`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Trade
@@ -85,7 +85,7 @@ Scenarios: 13
 
 ### Scenario 77: Unlisted Stock Not Sellable
 
-- Source: `merchant_selling.rs:1080`
+- Source: `merchant_selling.rs:1048`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -98,7 +98,7 @@ Scenarios: 13
 
 ### Scenario 79b: Unstage Round Trip Preserves Storage Contract
 
-- Source: `merchant_selling.rs:1232`
+- Source: `merchant_selling.rs:1200`
 - Systems: Trade, AI
 - ActionDomains: Trade
 - Principles: P4, P24
@@ -110,7 +110,7 @@ Scenarios: 13
 
 ### Scenario 80: Buyer Discovers Listed Lots, Not Unlisted Stock
 
-- Source: `merchant_selling.rs:1246`
+- Source: `merchant_selling.rs:1214`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -123,7 +123,7 @@ Scenarios: 13
 
 ### Scenario 82: Seller Departure Invalidates Listing
 
-- Source: `merchant_selling.rs:1314`
+- Source: `merchant_selling.rs:1282`
 - Systems: Trade
 - Principles: P3, P7
 - Primary tests: `seller_departure_invalidates_listing`
@@ -134,7 +134,7 @@ Scenarios: 13
 
 ### Scenario 83: Dead Seller Invalidates Listing
 
-- Source: `merchant_selling.rs:1371`
+- Source: `merchant_selling.rs:1339`
 - Systems: Trade
 - Principles: P3, P4
 - Primary tests: `dead_seller_invalidates_listing`
@@ -145,7 +145,7 @@ Scenarios: 13
 
 ### Scenario 88: Demand Memory Raises Sell Ranking
 
-- Source: `merchant_selling.rs:1443`
+- Source: `merchant_selling.rs:1411`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - Principles: P1, P3, P20
@@ -157,7 +157,7 @@ Scenarios: 13
 
 ### Scenario 96: Hungry Merchant Eats Own Listed Sale Stock
 
-- Source: `merchant_selling.rs:1515`
+- Source: `merchant_selling.rs:1483`
 - Systems: Needs, Trade, AI
 - GoalKinds: ConsumeOwnedCommodity, SellCommodity
 - ActionDomains: Needs (eat), Trade (staff_market)

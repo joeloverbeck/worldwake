@@ -522,19 +522,18 @@ fn buyer_trades_against_listed_lot() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 84: Remote Branch Selection Reaches Local Trade Binding
+// Scenario 84: Remote Listing Belief Does Not Select A Trade Branch
 // Systems: Trade, AI, Needs
 // GoalKinds: AcquireCommodity
-// ActionDomains: Travel, Trade
-// Principles: P1, P3, P4
-// Proves: buyer first selects the remote seller-backed `Travel -> Trade` path
-//         and, after arrival, reaches a concrete local `trade` next step before
-//         seller departure. The mismatch event itself stays owned by the
-//         focused `agent_tick` execution proof.
+// ActionDomains: Trade
+// Principles: P1, P3, P4, P7, P14
+// Proves: inferred remote seller and lot beliefs do not select a seller-backed
+//         trade branch from current remote sale-listing truth. A concrete trade
+//         binding now requires local observation or another explicit carrier.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn remote_branch_selection_reaches_local_trade_binding_before_merchant_departure() {
+fn remote_listing_belief_does_not_select_trade_branch_before_local_observation() {
     let mut h = GoldenHarness::with_recipes(Seed([84; 32]), RecipeRegistry::new());
     h.driver.enable_tracing();
 
@@ -567,62 +566,28 @@ fn remote_branch_selection_reaches_local_trade_binding_before_merchant_departure
         worldwake_core::PerceptionSource::Inference,
     );
 
-    let mut saw_remote_trade_branch = false;
-    let mut saw_local_trade_binding = false;
-
-    for _ in 0..40 {
-        let tick = h.step_once().tick;
-        let Some(trace) = h
-            .driver
-            .trace_sink()
-            .and_then(|sink| sink.trace_at(buyer, tick))
-        else {
-            continue;
-        };
-        let DecisionOutcome::Planning(planning) = &trace.outcome else {
-            continue;
-        };
-        let Some(selected_plan) = planning.selection.selected_plan.as_ref() else {
-            continue;
-        };
-
-        if !saw_remote_trade_branch
-            && selected_plan
-                .next_step
-                .as_ref()
-                .is_some_and(|step| step.action_name == "travel")
-            && selected_plan
+    h.step_once();
+    let trace = h
+        .driver
+        .trace_sink()
+        .and_then(|sink| sink.traces_for(buyer).into_iter().next())
+        .expect("buyer should emit a planning trace");
+    let DecisionOutcome::Planning(planning) = &trace.outcome else {
+        panic!("expected planning trace, got {:?}", trace.outcome);
+    };
+    if let Some(selected_plan) = planning.selection.selected_plan.as_ref() {
+        assert!(
+            !selected_plan
                 .steps
                 .iter()
-                .any(|step| step.action_name == "trade" && step.targets.contains(&merchant))
-        {
-            saw_remote_trade_branch = true;
-        }
-
-        if h.world.effective_place(buyer) == Some(VILLAGE_SQUARE)
-            && h.agent_active_action_name(buyer).is_none()
-            && selected_plan
-                .next_step
-                .as_ref()
-                .is_some_and(|step| step.action_name == "trade" && step.targets.contains(&merchant))
-        {
-            saw_local_trade_binding = true;
-            break;
-        }
+                .any(|step| step.action_name == "trade" && step.targets.contains(&merchant)),
+            "remote live sale listing must not select a seller-backed trade branch"
+        );
     }
-
-    assert!(
-        saw_remote_trade_branch,
-        "buyer should first select a remote branch whose next step is travel and whose path retains a later trade step against the seller"
-    );
-    assert!(
-        saw_local_trade_binding,
-        "after arrival, buyer should reach a local trade next step bound to the seller before departure"
-    );
     assert_eq!(
         h.agent_commodity_qty(buyer, CommodityKind::Bread),
         Quantity(0),
-        "this golden stops at the local trade-step binding seam before any trade commits"
+        "remote listing leakage must not produce a purchase before local observation"
     );
     assert!(
         h.event_log
@@ -646,6 +611,7 @@ fn remote_branch_selection_reaches_local_trade_binding_before_merchant_departure
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "S158: requires a lawful remote sale/opportunity carrier after remote sale-listing truth leaks were closed"]
 fn merchant_return_revives_pending_purchase_agenda_entry() {
     let mut h = GoldenHarness::with_recipes(Seed([85; 32]), RecipeRegistry::new());
     h.driver.enable_tracing();
@@ -657,7 +623,7 @@ fn merchant_return_revives_pending_purchase_agenda_entry() {
         CommodityKind::Bread,
         Quantity(3),
     );
-    let buyer = seed_buyer(&mut h, "Buyer", ORCHARD_FARM, Quantity(3));
+    let buyer = seed_buyer(&mut h, "Buyer", VILLAGE_SQUARE, Quantity(3));
     let purchase_goal = worldwake_ai::GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Bread,
         purpose: worldwake_ai::CommodityPurpose::SelfConsume,
@@ -795,6 +761,7 @@ fn merchant_return_revives_pending_purchase_agenda_entry() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "S158: requires a lawful remote sale/opportunity carrier after remote sale-listing truth leaks were closed"]
 fn seller_return_restores_displayed_listing_after_pending_revival() {
     let mut h = GoldenHarness::with_recipes(Seed([86; 32]), RecipeRegistry::new());
     h.driver.enable_tracing();
@@ -806,7 +773,7 @@ fn seller_return_restores_displayed_listing_after_pending_revival() {
         CommodityKind::Bread,
         Quantity(3),
     );
-    let buyer = seed_buyer(&mut h, "Buyer", ORCHARD_FARM, Quantity(3));
+    let buyer = seed_buyer(&mut h, "Buyer", VILLAGE_SQUARE, Quantity(3));
     let purchase_goal = worldwake_ai::GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Bread,
         purpose: worldwake_ai::CommodityPurpose::SelfConsume,
@@ -944,6 +911,7 @@ fn seller_return_restores_displayed_listing_after_pending_revival() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "S158: requires a lawful remote sale/opportunity carrier after remote sale-listing truth leaks were closed"]
 fn seller_return_completes_resumed_purchase_after_live_offer_refresh() {
     let mut h = GoldenHarness::with_recipes(Seed([87; 32]), RecipeRegistry::new());
     h.driver.enable_tracing();
@@ -955,7 +923,7 @@ fn seller_return_completes_resumed_purchase_after_live_offer_refresh() {
         CommodityKind::Bread,
         Quantity(3),
     );
-    let buyer = seed_buyer(&mut h, "Buyer", ORCHARD_FARM, Quantity(3));
+    let buyer = seed_buyer(&mut h, "Buyer", VILLAGE_SQUARE, Quantity(3));
     let purchase_goal = worldwake_ai::GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Bread,
         purpose: worldwake_ai::CommodityPurpose::SelfConsume,
