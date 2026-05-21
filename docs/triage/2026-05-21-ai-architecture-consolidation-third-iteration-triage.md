@@ -25,7 +25,7 @@ by FND-14B. Three deliverables.
   `believed_rights`/`can_control` owner/possessor probes. Adds adversarial
   belief-wall goldens and a snapshot-through-view invariant test. Completes the
   social/control path S158 deferred.
-- **`specs/S163-cli-player-pov-boundary.md`** — FND-19: stops the player CLI path
+- **`archive/specs/S163-cli-player-pov-boundary.md`** — FND-19: stops the player CLI path
   (`actions.rs` omniscient target names; global `handle_cancel`) from leaking world
   truth; marks `display.rs`/`control.rs` observer/debug-only with an enforceable
   guard; adds a player/AI symmetry test.

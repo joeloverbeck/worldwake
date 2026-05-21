@@ -57,10 +57,8 @@ CAUSEVTHON-001 (ticket: explicit no-source-event) ── independent of S162/S16
   and locked the snapshot-through-view invariant. Completed the social/control path S158
   deferred. **FND-7, FND-14, FND-14A, FND-14B, FND-19, FND-27, FND-31.**
 
-### Pending
-
 - **S163 — CLI Player-POV Boundary** —
-  `specs/S163-cli-player-pov-boundary.md` — *Status: DRAFT.* FND-19: routes the
+  `archive/specs/S163-cli-player-pov-boundary.md` — *Status: COMPLETED.* FND-19: routes the
   player action-menu labels and `handle_cancel` through the lawful belief view,
   marks `display.rs`/`control.rs` observer/debug-only with an enforceable guard,
   and adds a player/AI symmetry test. Sequence after archived S162. **FND-14,
@@ -78,15 +76,15 @@ per-field `SnapshotFieldSource` typing — rejected across the second and third
 iterations; the `believed_rights`/`can_control` self/belief-gated live read —
 S162's deliberate design; `direct_container`/`direct_possessor` — S158-verified
 lawful; `merchandise_profile`/reward encumbrance — third-triage-verified gated) or
-already pending as S163 (the CLI player-menu leak).** Stripped of re-litigation, the
+landed as S163 (the CLI player-menu leak).** Stripped of re-litigation, the
 report surfaced **one genuinely new, confirmed leak** — `entity_kind` and the
 last-seen belief synthesis read live `world.entity_kind` for remote entities (S164)
 — plus two latent footguns closed alongside it. See
 `docs/triage/2026-05-22-ai-architecture-consolidation-fourth-iteration-triage.md`.
 
 ```
-S163 (CLI player-POV boundary)            ── pending from the third iteration; higher priority; land first
-S164 (belief-view kind source-gate)       ── sequence after S163; touches the shared belief view, independent of S163's CLI work
+S163 (CLI player-POV boundary)            ── completed from the third iteration
+S164 (belief-view kind source-gate)       ── sequence after archived S163; touches the shared belief view, independent of S163's CLI work
 ```
 
 ### Pending
@@ -99,7 +97,7 @@ S164 (belief-view kind source-gate)       ── sequence after S163; touches th
   faction-policy accessors to lawfully known factions; adds a `facility_controller_at`
   remote-control-change confirming test; extends the S162 belief-wall goldens with a
   remote-kind-change scenario. Correctness fix; no new authoritative state. Sequence
-  after S163. **FND-7, FND-14, FND-14A, FND-15, FND-19, FND-27, FND-31.**
+  after archived S163. **FND-7, FND-14, FND-14A, FND-15, FND-19, FND-27, FND-31.**
 
 ## Excluded from the active order (by directive)
 

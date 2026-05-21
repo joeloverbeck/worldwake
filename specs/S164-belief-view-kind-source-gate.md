@@ -8,10 +8,10 @@ faction-policy accessor footgun; adds confirming coverage for
 component, action, or feedback loop. (Deliverable 2 may add a *belief-carrier*
 field — observed kind on the last-seen memory record — which is belief/memory
 state, not authoritative world truth.)
-**Priority:** Medium. Sequence after `specs/S163-cli-player-pov-boundary.md` in the
+**Priority:** Medium. Sequence after `archive/specs/S163-cli-player-pov-boundary.md` in the
 fourth-iteration belief-boundary wave. Independent of S163's CLI work — touches the
-shared belief view, not the CLI — but S163 is the higher-priority pending item and
-should land first.
+shared belief view, not the CLI — S163 has already landed as the prerequisite
+player-POV boundary.
 **Crates:** `worldwake-sim` (`per_agent_belief_view.rs` accessors + last-seen
 synthesis), possibly `worldwake-core` (`expectation.rs` `LastSeenRecord` if a kind
 field is added), `worldwake-ai` (adversarial goldens).
@@ -29,7 +29,7 @@ documented reasoning** (the `&World`-holding view / capability-trait split; per-
 `SnapshotFieldSource` typing; the `believed_rights`/`can_control` live-read behind a
 belief gate; `direct_container`/`direct_possessor`; `merchandise_profile` and reward
 encumbrance). It also re-raised the CLI player-menu leak, which is already specced
-as pending **S163**. The triage dismisses all of those (see triage doc).
+as now-archived **S163**. The triage dismisses all of those (see triage doc).
 
 Stripped of re-litigation, the report surfaced **one genuinely new, confirmed leak**
 plus two latent footguns worth closing while the belief view is open:

@@ -32,7 +32,7 @@ dependency. This is S163 Deliverable 3.
    not depend on this." The "read-only" claim is true but orthogonal to the FND-19
    concern (read-only ≠ POV-safe).
 2. Spec contract: S163 Deliverable 3
-   (`specs/S163-cli-player-pov-boundary.md:133-146`) and Non-Goals (`:96-101`).
+   (`archive/specs/S163-cli-player-pov-boundary.md`) and Non-Goals.
    `dispatch_command` (`crates/worldwake-cli/src/handlers/mod.rs:32-71`) routes all
    these commands ungated.
 3. Shared boundary under audit: the play-surface vs. debug-console split. The play

@@ -1,6 +1,6 @@
 # S163 — CLI Player-POV Boundary
 
-**Status:** DRAFT
+**Status:** COMPLETED
 **Type:** Correctness fix (FND-19 agent symmetry: stop the player-facing CLI path
 from surfacing omniscient world facts; mark the omniscient observer/debug surfaces
 as such). No new authoritative simulation state, system, component, action, or
@@ -196,3 +196,33 @@ play-surface boundary guard (Deliverable 3), and focused tests on `handle_action
 labels and the `handle_cancel` scoping regression guard (Deliverable 2). Depends on
 archived `archive/specs/S162-belief-view-source-gate-hardening.md` (the belief view
 must be lawful for the symmetry test to be meaningful).
+
+## Outcome
+
+Completed on 2026-05-22.
+
+- Delivered POV-safe action-menu target labels through the existing
+  `PerAgentBeliefView` path without adding a new belief-view API.
+- Marked the omniscient CLI debug/observer surfaces as observer/debug/replay-only
+  and added a play-surface guard preventing `handle_actions`/`handle_do` from
+  regaining `entity_display_name`, `resolve_entity`, or `format_location`.
+- Added focused regression tests proving `handle_cancel` ignores other agents'
+  active actions and the action menu's stored affordance set matches the filtered
+  `get_affordances` result for the same controlled entity and belief state.
+- Archived the implementing tickets:
+  `archive/tickets/S163CLIPLAPOV-001.md`,
+  `archive/tickets/S163CLIPLAPOV-002.md`, and
+  `archive/tickets/S163CLIPLAPOV-003.md`.
+
+## Deviations
+
+- The landed label resolver stays local to `actions.rs`; the richer
+  `pov_display.rs` / `CharacterPovView` capability layer remained out of scope.
+- The debug/observer console commands remain omniscient by design and are marked,
+  not POV-gated.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli handlers::actions`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy -p worldwake-cli --all-targets -- -D warnings`

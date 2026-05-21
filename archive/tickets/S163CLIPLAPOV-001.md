@@ -33,7 +33,7 @@ supposed to be lawful. This was S163 Deliverable 1.
    `test_actions_stores_in_repl_state:425` assert only that `last_affordances` is
    non-empty; neither asserts label text, so this change does not break them.
 2. Spec contract: S163 Deliverable 1
-   (`specs/S163-cli-player-pov-boundary.md:111-123`). The label source must match
+   (`archive/specs/S163-cli-player-pov-boundary.md`). The label source must match
    the lawfulness of the affordance that surfaced the target — FND-14A permits
    reading a co-located entity's directly-perceivable physical label (item-lot
    commodity/quantity, workstation tag, kind) and public topology (place names);

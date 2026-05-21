@@ -32,10 +32,10 @@ closed alongside it. One new spec; reaffirm the pending S163 as higher priority.
 
 ## Reaffirmed (no new spec)
 
-- **`specs/S163-cli-player-pov-boundary.md`** — the report's "Critical: CLI action
+- **`archive/specs/S163-cli-player-pov-boundary.md`** — the report's "Critical: CLI action
   menu inherits the leak" finding is exactly S163, drafted in the third iteration and
-  **still unimplemented**. It remains valid and is the higher-priority pending item;
-  land it before S164. No change to S163.
+  since implemented and archived. It remains the prerequisite boundary before S164;
+  no new fourth-iteration spec is needed for the same CLI finding.
 
 ## Dismissed (re-litigation or verified lawful)
 
