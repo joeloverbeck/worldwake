@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `CandidateExtractorId` enum (core), candidate-generation pipeline and extractor registry (AI)
-**Deps**: S159CANGENSCH-001
+**Deps**: archive/tickets/S159CANGENSCH-001.md
 
 ## Problem
 

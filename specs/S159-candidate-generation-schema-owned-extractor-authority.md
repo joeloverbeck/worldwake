@@ -13,13 +13,16 @@ out-of-band emitter)
 Candidate generation in `crates/worldwake-ai/src/candidate_generation.rs` is the
 single place desires/opportunities become goal candidates. The goal-schema
 consolidation (`GoalSchema.candidate_extractors`) was meant to make the schema the
-authority for which extractors run. That consolidation only half-landed:
+authority for which extractors run. That consolidation only half-landed. Ticket
+`archive/tickets/S159CANGENSCH-001.md` has now removed the fossil ordering name;
+the remaining live out-of-band candidate source is still ticket
+`S159CANGENSCH-002` scope:
 
-1. A constant literally named **`LEGACY_EXTRACTOR_ORDER`** still owns extractor
-   *execution order*. The schema is filtered through it, so a new schema
-   declaration does not actually own its place in the generation order — it only
-   gets to run if `LEGACY_EXTRACTOR_ORDER` already lists it. This is a fossil
-   authority name in a live path (FND-28).
+1. Before `archive/tickets/S159CANGENSCH-001.md`, a constant literally named
+   **`LEGACY_EXTRACTOR_ORDER`** owned extractor *execution order*. That live
+   fossil name has been replaced with `CANDIDATE_EXTRACTOR_ORDER`, documented as
+   the single declared top-level execution order, while preserving behavior
+   (FND-28).
 2. `emit_exploration_candidates_for_blocked_self_care` runs **out-of-band**,
    after the main `for extractor_id in ordered_candidate_extractors_from_goal_schemas()`
    loop and after suppression filtering. It is a hidden candidate source outside
@@ -27,18 +30,18 @@ authority for which extractors run. That consolidation only half-landed:
 
 ### Evidence (verified against code on 2026-05-21)
 
-- `LEGACY_EXTRACTOR_ORDER: [CandidateExtractorId; 20]` defined at L495–516. Its
-  member set and order are currently identical to `CandidateExtractorId::ALL`
-  (`crates/worldwake-core/src/agent_schema_context_profile.rs:30`), so the
-  schema-membership filter below currently filters nothing — the only live role
-  the constant plays is owning the *order*.
-- `ordered_candidate_extractors_from_goal_schemas()` (L518–528) collects the
-  schema-declared extractor set into a `BTreeSet` (membership only — per-key
-  declaration order is discarded), then **filters `LEGACY_EXTRACTOR_ORDER` by
-  it** — the legacy const is the ordering authority, the schema only the
-  membership filter. Used in the main loop at L768. The per-key schema lists are
-  reached via `GoalDispatchKey::declaration().candidate_extractors`
-  (`crates/worldwake-ai/src/goal_schema.rs:76`, `:796`).
+- `CANDIDATE_EXTRACTOR_ORDER: [CandidateExtractorId; 20]` is the live canonical
+  order in `crates/worldwake-ai/src/candidate_generation.rs`. Its member set and
+  order are identical to `CandidateExtractorId::ALL`
+  (`crates/worldwake-core/src/agent_schema_context_profile.rs`), so the
+  schema-membership filter below currently filters nothing — this is the
+  behavior-preserving state landed by `archive/tickets/S159CANGENSCH-001.md`.
+- `ordered_candidate_extractors_from_goal_schemas()` collects the schema-declared
+  extractor set into a `BTreeSet` (membership only — per-key declaration order is
+  discarded), then filters `CANDIDATE_EXTRACTOR_ORDER` by it. Used in the main
+  extractor loop. The per-key schema lists are reached via
+  `GoalDispatchKey::declaration().candidate_extractors`
+  (`crates/worldwake-ai/src/goal_schema.rs`).
 - `emit_exploration_candidates_for_blocked_self_care(...)` is called at L798,
   **after** the first `filter_suppressed_candidates` pass (L788). It consumes
   `diagnostics.fully_blocked_desires` produced by that suppression pass (L795),
@@ -105,15 +108,14 @@ here (see below).
 
 ## Deliverables
 
-1. **Rename the ordering authority.** Replace `LEGACY_EXTRACTOR_ORDER` with a
-   canonical, non-"legacy" schema-owned ordering. Two acceptable shapes (decide
-   at ticket time):
-   - a) **(recommended, lower-risk)** A canonical `CANDIDATE_EXTRACTOR_ORDER`
-     constant documented as the single declared execution order, with a test
-     asserting it is exactly the set the `GoalSchema` declarations require (no
-     orphan members, no missing members). This shape **updates the existing
-     completeness test** rather than adding a new one — see the completeness-test
-     note below.
+1. **Rename the ordering authority — completed by
+   `archive/tickets/S159CANGENSCH-001.md`.** The accepted shape is a canonical
+   `CANDIDATE_EXTRACTOR_ORDER` constant documented as the single declared
+   execution order, with a test asserting it is exactly the set the `GoalSchema`
+   declarations require (no orphan members, no missing members). This shape
+   **updated the existing completeness test** rather than adding a new one — see
+   the completeness-test note below.
+   - a) **Accepted, lower-risk.** `CANDIDATE_EXTRACTOR_ORDER`.
    - b) Move ordering onto the schema declarations themselves, eliminating the
      standalone constant entirely. **Caveat:** the current schema surface cannot
      supply a total order. `candidate_extractors` is a `&'static [CandidateExtractorId]`
@@ -125,18 +127,14 @@ here (see below).
      merely "moving" data that already exists. Weigh this added state against the
      simplicity of (a).
 
-   Whichever shape, the result must make the schema the authority and remove the
-   "legacy" fossil name from the live path (FND-28).
+   The accepted shape removes the "legacy" fossil name from the live Rust path
+   (FND-28) without adding a new ordering state model.
 
    **Completeness test (update, not new).** The ordering-completeness invariant
-   already exists as `schema_derived_extractor_order_covers_every_registered_extractor_once`
-   (`crates/worldwake-ai/src/candidate_generation.rs:17908`), which asserts
-   `ordered_candidate_extractors_from_goal_schemas() == CandidateExtractorId::ALL.to_vec()`
-   and `build_extractor_registry().keys() == ALL`. Its assertion message even reads
-   *"preserve the legacy top-level extractor order"* — another live "legacy"
-   fossil reference. This deliverable must **rename that test, drop the "legacy"
-   wording, and re-point it at the renamed canonical constant**, rather than
-   introducing a parallel test.
+   is now `canonical_extractor_order_covers_every_registered_extractor_once`,
+   which asserts `ordered_candidate_extractors_from_goal_schemas()` equals
+   `CANDIDATE_EXTRACTOR_ORDER`, and that the registry and canonical order cover
+   `CandidateExtractorId::ALL`.
 
 2. **Fold blocked-self-care into the registry as a declared second-phase
    extractor.** `blocked-self-care exploration` must become a declared
@@ -238,9 +236,8 @@ existing static policy enum, not new authoritative world/belief state.)
 - New: candidate-provenance guard test (Deliverable 3) — fails if any candidate is
   emitted outside the declared extractor pipeline (untracked candidate) or from an
   extractor absent from the canonical order.
-- Updated: the existing ordering-completeness test
-  (`schema_derived_extractor_order_covers_every_registered_extractor_once`,
-  `candidate_generation.rs:17908`) is renamed and re-pointed at the canonical
-  constant — it fails if the canonical order and the schema-declared extractor set
-  diverge (no orphan/missing extractor), including the newly-added blocked-self-care
-  variant.
+- Updated: the existing ordering-completeness test is now
+  `canonical_extractor_order_covers_every_registered_extractor_once` and is
+  re-pointed at `CANDIDATE_EXTRACTOR_ORDER` — it fails if the canonical order and
+  the schema-declared extractor set diverge (no orphan/missing extractor),
+  including the later blocked-self-care variant once ticket 002 adds it.

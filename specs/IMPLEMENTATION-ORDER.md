@@ -61,9 +61,10 @@ proceed in either order.
 
 - **S159 — Candidate-Generation Schema-Owned Extractor Authority** —
   `specs/S159-candidate-generation-schema-owned-extractor-authority.md` —
-  *Status: Draft.* Rename the `LEGACY_EXTRACTOR_ORDER` fossil to a canonical
-  schema-owned order; fold `emit_exploration_candidates_for_blocked_self_care`
-  into the declared extractor registry so no candidate is emitted out-of-band.
+  *Status: Draft.* The extractor order fossil name has been replaced with
+  `CANDIDATE_EXTRACTOR_ORDER`; remaining work folds
+  `emit_exploration_candidates_for_blocked_self_care` into the declared
+  extractor registry so no candidate is emitted out-of-band.
   Behavior-preserving. **FND-20, FND-28, FND-29.**
 
 - **S160 — HTN Authority Honesty** —

@@ -492,7 +492,11 @@ pub(crate) fn build_extractor_registry()
         .collect()
 }
 
-const LEGACY_EXTRACTOR_ORDER: [CandidateExtractorId; 20] = [
+/// Single declared top-level execution order for candidate extractors.
+///
+/// Membership must match the schema-declared extractor set; the completeness
+/// test below asserts there are no missing or orphan extractors.
+const CANDIDATE_EXTRACTOR_ORDER: [CandidateExtractorId; 20] = [
     CandidateExtractorId::Need,
     CandidateExtractorId::Production,
     CandidateExtractorId::Enterprise,
@@ -521,7 +525,7 @@ pub(crate) fn ordered_candidate_extractors_from_goal_schemas() -> Vec<CandidateE
         .flat_map(|key| key.declaration().candidate_extractors.iter().copied())
         .collect();
 
-    LEGACY_EXTRACTOR_ORDER
+    CANDIDATE_EXTRACTOR_ORDER
         .into_iter()
         .filter(|id| schema_extractors.contains(id))
         .collect()
@@ -17905,19 +17909,24 @@ mod tests {
     }
 
     #[test]
-    fn schema_derived_extractor_order_covers_every_registered_extractor_once() {
+    fn canonical_extractor_order_covers_every_registered_extractor_once() {
         let registry = super::build_extractor_registry();
         let ordered = super::ordered_candidate_extractors_from_goal_schemas();
-        let expected = CandidateExtractorId::ALL.to_vec();
+        let expected = super::CANDIDATE_EXTRACTOR_ORDER.to_vec();
 
         assert_eq!(
             registry.keys().copied().collect::<Vec<_>>(),
-            expected,
+            CandidateExtractorId::ALL.to_vec(),
             "extractor registry should cover every CandidateExtractorId"
         );
         assert_eq!(
+            expected,
+            CandidateExtractorId::ALL.to_vec(),
+            "canonical extractor order should cover every CandidateExtractorId"
+        );
+        assert_eq!(
             ordered, expected,
-            "schema-derived dispatch should preserve the legacy top-level extractor order"
+            "schema-derived dispatch should preserve the canonical top-level extractor order"
         );
         assert_eq!(
             ordered.iter().copied().collect::<BTreeSet<_>>().len(),
