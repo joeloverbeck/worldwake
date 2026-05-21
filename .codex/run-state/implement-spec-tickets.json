@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implement-S163-cli-player-pov-boundary",
   "base_head": "ff71d0942dded4d97d817ae53955e264991bc6aa",
-  "last_ticket": "archive/tickets/S163CLIPLAPOV-001.md",
+  "last_ticket": "archive/tickets/S163CLIPLAPOV-002.md",
   "last_result": "completed_archived",
-  "last_work_commit": "06dc7ee0d69b7f143b170d672ff8213392206195",
+  "last_work_commit": "6aec509db43975f255530fffc5208fb5f807cd43",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S163CLIPLAPOV-002.md",
+  "next_target": "tickets/S163CLIPLAPOV-003.md",
   "queue": [
-    "tickets/S163CLIPLAPOV-002.md",
     "tickets/S163CLIPLAPOV-003.md"
   ],
   "implement_ticket_audit": "pending",
