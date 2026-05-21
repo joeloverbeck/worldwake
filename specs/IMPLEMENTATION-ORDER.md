@@ -39,10 +39,10 @@ fossil seam, and the FND-20/29 HTN honesty gaps.
 ```
 S158 (belief-view remote-truth leak closure)        ── completed; extends S155
 S159 (candidate-gen schema-owned extractor authority) ── completed; independent of S158/S160
-S160 (HTN authority honesty)                          ── extends S156; independent of S159
+S160 (HTN authority honesty)                          ── completed; extends S156; independent of S159
 ```
 
-S158 and S159 have landed and are archived. S160 remains an independent cleanup.
+S158, S159, and S160 have landed and are archived.
 
 ### Completed
 
@@ -65,14 +65,13 @@ S158 and S159 have landed and are archived. S160 remains an independent cleanup.
   provenance diagnostics to guard against out-of-band surviving candidates.
   Behavior-preserving. **FND-20, FND-28, FND-29.**
 
-### Active
-
 - **S160 — HTN Authority Honesty** —
-  `specs/S160-htn-authority-honesty.md` — *Status: Draft.* Add
+  `archive/specs/S160-htn-authority-honesty.md` — *Status: COMPLETED.* Added
   `MethodSubgoalAuthority::{StageHint, RequiredActionLeaf}` and honest stage-hint
-  traces; resolve the fake `fulfill_bounty_group_hunt` method; remove the
-  `ActionDefId(u32::MAX)` escort sentinel. No goal becomes method-required.
-  Extends S156. **FND-20, FND-29, FND-31.**
+  traces; completed the support-declared direct bounty method rename; removed the
+  `ActionDefId(u32::MAX)` escort sentinel with an `Option<ActionDefId>` payload
+  migration and save-format bump. No goal became method-required. Extends S156.
+  **FND-20, FND-28, FND-29, FND-31.**
 
 ## Adjunct Wave: FOUNDATIONS Constitutional Hardening — Gap Audit 2026-05
 

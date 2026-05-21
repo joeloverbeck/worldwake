@@ -313,6 +313,12 @@ The contract is:
   failed `MethodPrecondition`.
 - `MethodPlanAttemptTrace.method_id` records the selected method when method
   decomposition produced strategic stages.
+- Each `SubgoalAttemptResult` records the selected method subgoal's
+  `MethodSubgoalAuthority`, so trace readers can distinguish `StageHint`
+  subgoals, which contribute strategic destinations, prerequisite commodities,
+  or trace context, from `RequiredActionLeaf` subgoals, which a future
+  method-required contract must prove as selected, skipped, or failed ordinary
+  `ActionDef` leaves.
 - `MethodPlanAttemptTrace.rejected_methods` records contrastive "why not?"
   data for considered methods that failed preconditions.
 - `MethodPlanAttemptTrace.fallback_reason` records explicit flat-GOAP fallback:
@@ -320,6 +326,9 @@ The contract is:
   `MethodProducedNoStages` when a selected method produced no strategic stages.
 - Fallback remains legal unless a future method-required schema contract proves
   that flat fallback would satisfy the wrong semantic condition.
+- All current methods declare only `StageHint` subgoals. A
+  `RequiredActionLeaf` label is not sufficient by itself; it becomes lawful for
+  a method only when the corresponding search check and trace proof are added.
 
 Do not infer fallback from `method_trace: None`. For HTN-capable goal kinds, use
 the trace's selected method, rejected methods, and fallback reason together.

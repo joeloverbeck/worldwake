@@ -25,7 +25,7 @@ fn every_subgoal_action_op_resolves() {
 
     for method in registry.all_methods() {
         for subgoal in &method.subgoals {
-            if let SubgoalTemplate::PerformAction(op, _) = subgoal {
+            if let SubgoalTemplate::PerformAction(op, _) = &subgoal.template {
                 assert!(
                     planner_op_is_known(*op),
                     "method {:?} references unknown planner op {:?}",
@@ -77,7 +77,7 @@ fn every_method_has_at_least_one_action_or_non_action_subgoal() {
 
 fn assert_payload_templates_are_constructed(method: &MethodSchema) {
     for subgoal in &method.subgoals {
-        if let SubgoalTemplate::PerformAction(_, payload) = subgoal {
+        if let SubgoalTemplate::PerformAction(_, payload) = &subgoal.template {
             match payload {
                 PayloadTemplate::FromContext | PayloadTemplate::Explicit(_) => {}
             }

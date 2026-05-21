@@ -53,7 +53,7 @@ pub fn build_method_registry() -> MethodRegistry {
     let mut registry = MethodRegistry::default();
     registry.insert(methods::fulfill_bounty_direct());
     registry.insert(methods::fulfill_bounty_investigation());
-    registry.insert(methods::fulfill_bounty_group_hunt());
+    registry.insert(methods::fulfill_bounty_support_declared_direct());
     registry.insert(methods::produce_from_owned_stock());
     registry.insert(methods::produce_with_gather());
     registry.insert(methods::produce_with_purchase());
@@ -68,6 +68,7 @@ pub fn build_method_registry() -> MethodRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::htn::MethodSubgoalAuthority;
 
     #[test]
     fn registry_builds_with_11_methods_without_dead_method_ids() {
@@ -87,6 +88,39 @@ mod tests {
             registry.methods_for(GoalKindDiscriminant::FulfillBounty),
             &[MethodSchemaId(1), MethodSchemaId(2), MethodSchemaId(3)]
         );
+    }
+
+    #[test]
+    fn all_current_subgoals_are_stage_hints() {
+        let registry = build_method_registry();
+
+        for method in registry.all_methods() {
+            for subgoal in &method.subgoals {
+                assert_eq!(
+                    subgoal.authority,
+                    MethodSubgoalAuthority::StageHint,
+                    "unexpected subgoal authority in method {:?}: {:?}",
+                    method.id,
+                    subgoal.template
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn no_method_declares_required_action_leaf_at_landing() {
+        let registry = build_method_registry();
+
+        for method in registry.all_methods() {
+            assert!(
+                method
+                    .subgoals
+                    .iter()
+                    .all(|subgoal| subgoal.authority != MethodSubgoalAuthority::RequiredActionLeaf),
+                "method {:?} declared a required action leaf before strategic-search enforcement exists",
+                method.id
+            );
+        }
     }
 
     #[test]

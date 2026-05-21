@@ -382,9 +382,9 @@ fn build_stages(
         let stages = method
             .subgoals
             .iter()
-            .flat_map(|template| {
+            .flat_map(|subgoal| {
                 template_to_stages(
-                    template,
+                    &subgoal.template,
                     state,
                     snapshot,
                     goal,
@@ -474,9 +474,10 @@ fn method_trace(
             .subgoals
             .iter()
             .enumerate()
-            .map(|(template_index, template)| SubgoalAttemptResult {
+            .map(|(template_index, subgoal)| SubgoalAttemptResult {
                 template_index,
-                kind: template.into(),
+                authority: subgoal.authority,
+                kind: (&subgoal.template).into(),
                 outcome: SubgoalAttemptOutcome::Pending,
             })
             .collect(),
@@ -503,9 +504,10 @@ fn fallback_method_trace(
                 .subgoals
                 .iter()
                 .enumerate()
-                .map(|(template_index, template)| SubgoalAttemptResult {
+                .map(|(template_index, subgoal)| SubgoalAttemptResult {
                     template_index,
-                    kind: template.into(),
+                    authority: subgoal.authority,
+                    kind: (&subgoal.template).into(),
                     outcome: SubgoalAttemptOutcome::Pending,
                 })
                 .collect()
@@ -2165,15 +2167,20 @@ mod tests {
             goal_kind: worldwake_core::GoalKindDiscriminant::ProduceCommodity,
             preconditions: Vec::new(),
             subgoals: vec![
-                crate::htn::SubgoalTemplate::AcquireCommodity {
-                    commodity: crate::htn::CommodityTemplate::Fixed(CommodityKind::Grain),
-                    min_quantity: Quantity(1),
-                },
-                crate::htn::SubgoalTemplate::TravelTo(
-                    crate::htn::LocationTemplate::KnownWorkstationFor {
-                        recipe: crate::htn::RecipeTemplate::GoalRecipe,
+                crate::htn::MethodSubgoal::stage_hint(
+                    crate::htn::SubgoalTemplate::AcquireCommodity {
+                        commodity: crate::htn::CommodityTemplate::Fixed(CommodityKind::Grain),
+                        min_quantity: Quantity(1),
                     },
                 ),
+                crate::htn::MethodSubgoal {
+                    template: crate::htn::SubgoalTemplate::TravelTo(
+                        crate::htn::LocationTemplate::KnownWorkstationFor {
+                            recipe: crate::htn::RecipeTemplate::GoalRecipe,
+                        },
+                    ),
+                    authority: crate::htn::MethodSubgoalAuthority::RequiredActionLeaf,
+                },
             ],
             explanation_template: crate::htn::ExplanationTemplateId(99),
             motive_bias: Vec::new(),
@@ -2216,6 +2223,20 @@ mod tests {
                 .as_ref()
                 .map(|trace| trace.method_id),
             Some(Some(worldwake_core::MethodSchemaId(99)))
+        );
+        assert_eq!(
+            stage_build.method_trace.as_ref().map(|trace| {
+                trace
+                    .subgoals_attempted
+                    .iter()
+                    .map(|subgoal| subgoal.authority)
+                    .collect::<Vec<_>>()
+            }),
+            Some(vec![
+                crate::htn::MethodSubgoalAuthority::StageHint,
+                crate::htn::MethodSubgoalAuthority::RequiredActionLeaf,
+            ]),
+            "method trace should preserve the selected method's per-subgoal authority labels"
         );
     }
 

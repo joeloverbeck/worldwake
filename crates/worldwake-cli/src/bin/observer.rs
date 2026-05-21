@@ -6061,7 +6061,9 @@ mod tests {
         StrategicFallbackReason, SubgoalAttemptKind, SubgoalAttemptOutcome, SubgoalAttemptResult,
         TargetBeliefPresence,
     };
-    use worldwake_ai::htn::{BeliefPredicate, MethodFailureMode, MethodPrecondition};
+    use worldwake_ai::htn::{
+        BeliefPredicate, MethodFailureMode, MethodPrecondition, MethodSubgoalAuthority,
+    };
     use worldwake_ai::opportunity_compiler::{
         BelievedLegalStatus, ClaimTopic, EffectFactKey, Opportunity, RiskFact, SocialExposureBand,
     };
@@ -7409,11 +7411,13 @@ mod tests {
                 subgoals_attempted: vec![
                     SubgoalAttemptResult {
                         template_index: 0,
+                        authority: MethodSubgoalAuthority::StageHint,
                         kind: SubgoalAttemptKind::AcquireCommodity,
                         outcome: SubgoalAttemptOutcome::Succeeded,
                     },
                     SubgoalAttemptResult {
                         template_index: 1,
+                        authority: MethodSubgoalAuthority::StageHint,
                         kind: SubgoalAttemptKind::TravelTo,
                         outcome: SubgoalAttemptOutcome::Pending,
                     },
@@ -7474,6 +7478,7 @@ mod tests {
                 fallback_reason: None,
                 subgoals_attempted: vec![SubgoalAttemptResult {
                     template_index: 0,
+                    authority: MethodSubgoalAuthority::StageHint,
                     kind: SubgoalAttemptKind::AcquireCommodity,
                     outcome: SubgoalAttemptOutcome::Failed,
                 }],

@@ -6,8 +6,8 @@ pub mod selector;
 pub use method_schema::{
     ArtifactTemplate, BeliefPredicate, ClaimRequirement, CommodityTemplate, EntityCriterion,
     EntityTemplate, ExplanationTemplateId, LocationTemplate, MethodFailureMode, MethodPrecondition,
-    MethodSchema, MotiveBias, PayloadTemplate, PayloadValueTemplate, RecipeTemplate,
-    SubgoalTemplate, TopicTemplate,
+    MethodSchema, MethodSubgoal, MethodSubgoalAuthority, MotiveBias, PayloadTemplate,
+    PayloadValueTemplate, RecipeTemplate, SubgoalTemplate, TopicTemplate,
 };
 pub use registry::{MethodRegistry, build_method_registry};
 pub use selector::{

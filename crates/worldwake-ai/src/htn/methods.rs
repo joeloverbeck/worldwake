@@ -37,7 +37,11 @@ fn schema(parts: MethodParts) -> MethodSchema {
         id: MethodSchemaId(parts.id),
         goal_kind: parts.goal_kind,
         preconditions: parts.preconditions,
-        subgoals: parts.subgoals,
+        subgoals: parts
+            .subgoals
+            .into_iter()
+            .map(crate::htn::MethodSubgoal::stage_hint)
+            .collect(),
         explanation_template: ExplanationTemplateId(parts.explanation_template),
         motive_bias: parts.motive_bias,
         planning_budget_hint: parts.planning_budget_hint,
@@ -135,7 +139,7 @@ pub fn fulfill_bounty_investigation() -> MethodSchema {
     )
 }
 
-pub fn fulfill_bounty_group_hunt() -> MethodSchema {
+pub fn fulfill_bounty_support_declared_direct() -> MethodSchema {
     method_schema!(
         3,
         GoalKindDiscriminant::FulfillBounty,
@@ -146,8 +150,8 @@ pub fn fulfill_bounty_group_hunt() -> MethodSchema {
             MethodPrecondition::BeliefHolds(BeliefPredicate::AllyOrBountyOfficeAvailable),
         ],
         vec![
-            // Existing planner ops have no RecruitAlly leaf. DeclareSupport is
-            // the first-ship social signal for assembling a lawful group hunt.
+            // DeclareSupport is a real social signal; current execution then
+            // pursues the target directly without enforced group coordination.
             SubgoalTemplate::PerformAction(
                 PlannerOpKind::DeclareSupport,
                 PayloadTemplate::FromContext,
