@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — `worldwake-cli` doc comments + a boundary test
-**Deps**: S163CLIPLAPOV-001 (the play-surface guard passes only after D1 removes the omniscient label call from `actions.rs`)
+**Deps**: `archive/tickets/S163CLIPLAPOV-001.md` (the play-surface guard passes only after D1 removes the omniscient label call from `actions.rs`)
 
 ## Problem
 
@@ -47,7 +47,7 @@ dependency. This is S163 Deliverable 3.
    `control.rs`, `world_overview.rs`, `inspect.rs`, `events.rs`) are wholly debug
    and take module-level markers.
 5. Play-surface guard mechanism (ticket-time choice per spec): after
-   S163CLIPLAPOV-001, `actions.rs` no longer imports or calls
+   archived `archive/tickets/S163CLIPLAPOV-001.md`, `actions.rs` no longer imports or calls
    `entity_display_name`/`resolve_entity`/`format_location`. The enforceable guard
    asserts this stays true — either (a) a unit test that reads the `actions.rs`
    source and asserts none of the three forbidden symbols appear in the
@@ -68,7 +68,7 @@ dependency. This is S163 Deliverable 3.
    lawful `handle_status` play path rather than over-marking the module.
 2. No backward-compatibility shim and no behavioral change: only doc comments and a
    test are added. The guard enforces the play-surface boundary established by
-   S163CLIPLAPOV-001 rather than introducing a parallel path.
+   archived `archive/tickets/S163CLIPLAPOV-001.md` rather than introducing a parallel path.
 
 ## Verification Layers
 
@@ -121,7 +121,7 @@ in the play path.
 
 ## Out of Scope
 
-- POV-safe label resolution itself (D1) — S163CLIPLAPOV-001.
+- POV-safe label resolution itself (D1) — archived `archive/tickets/S163CLIPLAPOV-001.md`.
 - The `handle_cancel` regression guard (D2) and FND-19 symmetry test (D4) —
   S163CLIPLAPOV-003.
 - POV-gating any console command (`world`/`inspect`/`events`/`switch`/`observe`/
@@ -134,7 +134,7 @@ in the play path.
 
 1. Boundary guard fails if `handle_actions`/`handle_do` reference
    `entity_display_name`/`resolve_entity`/`format_location` for player-visible
-   output; passes against the post-S163CLIPLAPOV-001 code.
+   output; passes against the post-`archive/tickets/S163CLIPLAPOV-001.md` code.
 2. Existing suite: `cargo test -p worldwake-cli`.
 
 ### Invariants

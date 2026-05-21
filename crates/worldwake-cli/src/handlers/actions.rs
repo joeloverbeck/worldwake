@@ -1,13 +1,14 @@
 //! Action command handlers: actions, do, cancel.
 
+use worldwake_core::{EntityId, EntityKind, World};
 use worldwake_sim::{
-    ActionRequestMode, InputKind, PerAgentBeliefRuntime, PerAgentBeliefView, SimulationState,
-    get_affordances,
+    ActionRequestMode, GoalBeliefView, InputKind, PerAgentBeliefRuntime, PerAgentBeliefView,
+    SimulationState, get_affordances,
 };
 use worldwake_systems::ActionRegistries;
 
 use crate::commands::{CommandError, CommandOutcome, CommandResult};
-use crate::display::entity_display_name;
+use crate::display::format_quantity;
 use crate::repl::ReplState;
 
 /// Action names filtered from the human action menu. Includes internal
@@ -78,7 +79,7 @@ pub fn handle_actions(
             let names: Vec<String> = affordance
                 .bound_targets
                 .iter()
-                .map(|t| entity_display_name(sim.world(), *t))
+                .map(|t| pov_target_label(&view, sim.world(), entity, *t))
                 .collect();
             format!(" ({})", names.join(", "))
         };
@@ -94,6 +95,90 @@ pub fn handle_actions(
 
     repl_state.last_affordances = affordances;
     Ok(CommandOutcome::Continue)
+}
+
+fn pov_target_label(
+    view: &PerAgentBeliefView<'_>,
+    world: &World,
+    actor: EntityId,
+    target: EntityId,
+) -> String {
+    if let Some(place) = world.topology().place(target) {
+        return place.name.clone();
+    }
+
+    if world.effective_place(actor).is_some()
+        && world.effective_place(actor) == world.effective_place(target)
+    {
+        return directly_observed_physical_label(world, target)
+            .unwrap_or_else(|| observed_kind_label(world.entity_kind(target)));
+    }
+
+    if let Some((_, belief)) = view
+        .known_entity_beliefs(actor)
+        .into_iter()
+        .find(|(entity, _)| *entity == target)
+    {
+        return believed_target_label(world, &belief);
+    }
+
+    if let Some(place) = view.effective_place(target)
+        && let Some(place_name) = world
+            .topology()
+            .place(place)
+            .map(|place| place.name.as_str())
+    {
+        return match view.entity_kind(target) {
+            Some(kind) => format!("{kind:?} last seen at {place_name}"),
+            None => format!("last seen at {place_name}"),
+        };
+    }
+
+    "unknown".to_string()
+}
+
+fn directly_observed_physical_label(world: &World, target: EntityId) -> Option<String> {
+    world
+        .get_component_item_lot(target)
+        .map(|lot| format_quantity(lot.commodity, lot.quantity))
+        .or_else(|| {
+            world
+                .get_component_workstation_marker(target)
+                .map(|marker| format!("{:?}", marker.0))
+        })
+        .or_else(|| {
+            world
+                .get_component_resource_source(target)
+                .map(|source| format!("{:?} source", source.commodity))
+        })
+}
+
+fn believed_target_label(world: &World, belief: &worldwake_core::BelievedEntityState) -> String {
+    if let Some(tag) = belief.workstation_tag {
+        return format!("{tag:?}");
+    }
+
+    if let Some(source) = &belief.resource_source {
+        return format!("{:?} source", source.commodity);
+    }
+
+    if let Some(place) = belief.last_known_place
+        && let Some(place_name) = world
+            .topology()
+            .place(place)
+            .map(|place| place.name.as_str())
+    {
+        return match belief.believed_kind {
+            Some(kind) => format!("{kind:?} last seen at {place_name}"),
+            None => format!("last seen at {place_name}"),
+        };
+    }
+
+    observed_kind_label(belief.believed_kind)
+}
+
+fn observed_kind_label(kind: Option<EntityKind>) -> String {
+    kind.map_or_else(|| "unknown".to_string(), |kind| format!("{kind:?}"))
 }
 
 /// Execute an action by menu number from the last `actions` output.
@@ -404,6 +489,215 @@ mod tests {
             archetype_assignment_policy: None,
         };
         spawn_scenario(&def).unwrap()
+    }
+
+    fn two_place_pov_scenario(last_seen: bool) -> (SpawnedSimulation, EntityId, EntityId) {
+        let def = ScenarioDef {
+            seed: 42,
+            places: vec![
+                PlaceDef {
+                    name: "Village".into(),
+                    tags: vec![PlaceTag::Village],
+                    visibility_profile: None,
+                    sleep_quality: None,
+                    place_dirtiness: None,
+                    latrine_fullness: None,
+                },
+                PlaceDef {
+                    name: "Market".into(),
+                    tags: vec![PlaceTag::Store],
+                    visibility_profile: None,
+                    sleep_quality: None,
+                    place_dirtiness: None,
+                    latrine_fullness: None,
+                },
+            ],
+            edges: vec![EdgeDef {
+                from: "Village".into(),
+                to: "Market".into(),
+                travel_ticks: 1,
+                bidirectional: true,
+            }],
+            agents: vec![
+                AgentDef {
+                    name: "Bram".into(),
+                    location: "Market".into(),
+                    control: ControlSource::Ai,
+                    needs: None,
+                    combat_profile: None,
+                    utility_profile: None,
+                    artifact_posting_profile: None,
+                    merchandise_profile: None,
+                    trade_disposition: None,
+                    perception_profile: None,
+                    tell_profile: None,
+                    cognitive_profile: None,
+                    portfolio_weights_profile: None,
+                    agent_schema_context_profile: None,
+                    risk_weight_profile: None,
+                    law_abiding_profile: None,
+                    agenda_profile: None,
+                    execution_budget: None,
+                    epistemic_disposition: None,
+                    intention_disposition: None,
+                    communication_profile: None,
+                    preference_profile: None,
+                    expectation_store: None,
+                    last_seen_memory: None,
+                    social_observations: None,
+                    obligation_satiation_profile: None,
+                    drive_thresholds: None,
+                    drive_escalation_profile: None,
+                    metabolism_profile: None,
+                    disposal_profile: None,
+                    exploration_profile: None,
+                    diversification_profile: None,
+                    carry_capacity: None,
+                    theft_disposition: None,
+                    justice_disposition: None,
+                    violation_disposition: None,
+                    patrol_profile: None,
+                    patrol_route: None,
+                    pursuit_profile: None,
+                    contention_disposition: None,
+                    commodity_valuation: None,
+                    substitute_preferences: None,
+                    testimony_trust_profile: None,
+                    route_preference_profile: None,
+                    archetype: None,
+                    known_recipes: None,
+                },
+                AgentDef {
+                    name: "Aster".into(),
+                    location: "Village".into(),
+                    control: ControlSource::Human,
+                    needs: None,
+                    combat_profile: None,
+                    utility_profile: None,
+                    artifact_posting_profile: None,
+                    merchandise_profile: None,
+                    trade_disposition: None,
+                    perception_profile: None,
+                    tell_profile: None,
+                    cognitive_profile: None,
+                    portfolio_weights_profile: None,
+                    agent_schema_context_profile: None,
+                    risk_weight_profile: None,
+                    law_abiding_profile: None,
+                    agenda_profile: None,
+                    execution_budget: None,
+                    epistemic_disposition: None,
+                    intention_disposition: None,
+                    communication_profile: None,
+                    preference_profile: None,
+                    expectation_store: None,
+                    last_seen_memory: last_seen.then(|| LastSeenMemoryDef {
+                        records: vec![LastSeenRecordDef {
+                            subject: "Bram".into(),
+                            place: "Market".into(),
+                            observed_tick: 3,
+                            source: "Bram".into(),
+                            provenance: LastSeenProvenanceDef::DirectObservation,
+                        }],
+                        capacity: 20,
+                    }),
+                    social_observations: None,
+                    obligation_satiation_profile: None,
+                    drive_thresholds: None,
+                    drive_escalation_profile: None,
+                    metabolism_profile: None,
+                    disposal_profile: None,
+                    exploration_profile: None,
+                    diversification_profile: None,
+                    carry_capacity: None,
+                    theft_disposition: None,
+                    justice_disposition: None,
+                    violation_disposition: None,
+                    patrol_profile: None,
+                    patrol_route: None,
+                    pursuit_profile: None,
+                    contention_disposition: None,
+                    commodity_valuation: None,
+                    substitute_preferences: None,
+                    testimony_trust_profile: None,
+                    route_preference_profile: None,
+                    archetype: None,
+                    known_recipes: None,
+                },
+            ],
+            bandit_camps: Vec::new(),
+            offices: vec![],
+            artifacts: vec![],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+            hostilities: vec![],
+
+            commodity_decay: None,
+            survival_health_contract: None,
+            compaction_interval: 0,
+            scenario_lint_overrides: std::collections::BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
+            archetype_assignment_policy: None,
+        };
+        let spawned = spawn_scenario(&def).unwrap();
+        let (actor, remote) = {
+            let named = spawned
+                .state
+                .world()
+                .query_name()
+                .map(|(entity, name)| (name.0.as_str(), entity))
+                .collect::<std::collections::BTreeMap<_, _>>();
+            (*named.get("Aster").unwrap(), *named.get("Bram").unwrap())
+        };
+        (spawned, actor, remote)
+    }
+
+    fn view_for(spawned: &SpawnedSimulation, actor: EntityId) -> PerAgentBeliefView<'_> {
+        let runtime = PerAgentBeliefRuntime::new(
+            spawned.state.scheduler().active_actions(),
+            &spawned.action_registries.defs,
+        );
+        PerAgentBeliefView::with_runtime_from_world(actor, spawned.state.world(), runtime)
+    }
+
+    #[test]
+    fn pov_target_label_uses_local_physical_item_label() {
+        let (spawned, actor) = human_with_food_scenario();
+        let item = spawned
+            .state
+            .world()
+            .entities_of_kind(EntityKind::ItemLot)
+            .next()
+            .unwrap();
+        let view = view_for(&spawned, actor);
+
+        assert_eq!(
+            pov_target_label(&view, spawned.state.world(), actor, item),
+            "5× Apple"
+        );
+    }
+
+    #[test]
+    fn pov_target_label_uses_last_seen_label_without_remote_name() {
+        let (spawned, actor, remote) = two_place_pov_scenario(true);
+        let view = view_for(&spawned, actor);
+
+        let label = pov_target_label(&view, spawned.state.world(), actor, remote);
+
+        assert_eq!(label, "Agent last seen at Market");
+        assert!(!label.contains("Bram"));
+    }
+
+    #[test]
+    fn pov_target_label_hides_unknown_remote_name() {
+        let (spawned, actor, remote) = two_place_pov_scenario(false);
+        let view = view_for(&spawned, actor);
+
+        let label = pov_target_label(&view, spawned.state.world(), actor, remote);
+
+        assert_eq!(label, "unknown");
+        assert!(!label.contains("Bram"));
     }
 
     #[test]

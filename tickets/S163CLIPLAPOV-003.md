@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — `worldwake-cli` tests only
-**Deps**: S163CLIPLAPOV-001 (the symmetry test asserts label lawfulness, which holds only after D1's POV resolver lands)
+**Deps**: `archive/tickets/S163CLIPLAPOV-001.md` (the symmetry test asserts label lawfulness, which holds only after D1's POV resolver lands)
 
 ## Problem
 
@@ -58,7 +58,7 @@ This ticket adds both as focused tests. This is S163 Deliverables 2 and 4.
    label (item-lot/workstation) is lawful even without a stored belief entry, so the
    assertion is "no label exposes a fact the actor could not lawfully perceive
    (FND-14A) or recall (belief)", not "every label is in the belief store". This
-   matches the resolver delivered by S163CLIPLAPOV-001.
+   matches the resolver delivered by archived `archive/tickets/S163CLIPLAPOV-001.md`.
 
 ## Architecture Check
 
@@ -67,7 +67,7 @@ This ticket adds both as focused tests. This is S163 Deliverables 2 and 4.
    on), D4 at the affordance/belief-view layer (the single lawful source). Neither
    reaches for a downstream golden as a proxy.
 2. No production change and no shim: D2 locks already-correct scoping; D4 composes
-   over the lawful affordance path and S163CLIPLAPOV-001's resolver.
+   over the lawful affordance path and archived `archive/tickets/S163CLIPLAPOV-001.md`'s resolver.
 
 ## Verification Layers
 
@@ -79,7 +79,7 @@ This ticket adds both as focused tests. This is S163 Deliverables 2 and 4.
    affordance set equals the `get_affordances` set over the same
    `PerAgentBeliefView` for the same controlled entity and belief state.
 3. Label lawfulness → focused CLI test asserting the menu labels (via the
-   S163CLIPLAPOV-001 resolver) expose no fact the actor could not lawfully perceive
+   archived `archive/tickets/S163CLIPLAPOV-001.md` resolver) expose no fact the actor could not lawfully perceive
    (FND-14A) or recall (belief).
 4. Single-layer (tests-only) ticket: no decision trace / action trace / event-log
    delta applies because no production code or authoritative state changes; the
@@ -113,7 +113,7 @@ target resolves to a believed label or the "unknown" token, never the authoritat
 
 ## Out of Scope
 
-- The POV resolver implementation (D1) — S163CLIPLAPOV-001.
+- The POV resolver implementation (D1) — archived `archive/tickets/S163CLIPLAPOV-001.md`.
 - The debug-only markers and play-surface boundary guard (D3) — S163CLIPLAPOV-002.
 - Any production behavior change to `handle_cancel` (it is already correctly
   scoped) or `handle_actions`.

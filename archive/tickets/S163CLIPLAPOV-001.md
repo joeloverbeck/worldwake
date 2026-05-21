@@ -1,6 +1,6 @@
 # S163CLIPLAPOV-001: POV-safe action-menu target labels
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — `worldwake-cli` presentation only
@@ -15,10 +15,10 @@ its candidate list through the lawful affordance path
 bound target's label with the omniscient `entity_display_name(sim.world(), *t)`
 (`actions.rs:81`), which reads authoritative `World` truth (names, topology, item
 lots, kinds, transit) for the target regardless of what the controlled agent
-lawfully knows. For a remote bound target (e.g. an escort/travel destination known
-only via belief) this surfaces world truth the player should not see — an FND-19
-omniscient side channel in the one surface that is supposed to be lawful. This is
-S163 Deliverable 1.
+lawfully knows. Before this ticket, a remote bound target (e.g. an escort/travel
+destination known only via belief) could surface world truth the player could not
+lawfully know — an FND-19 omniscient side channel in the one surface that is
+supposed to be lawful. This was S163 Deliverable 1.
 
 ## Assumption Reassessment (2026-05-22)
 
@@ -68,7 +68,7 @@ S163 Deliverable 1.
    `pov_display.rs` / `CharacterPovView` is explicitly a Non-Goal (S163), so the
    resolver stays a small local helper, not a new module.
 
-## Verification Layers
+## Verified Layers
 
 1. Label lawfulness for a co-located physical target (item lot / workstation) →
    focused unit test on the resolver asserting the FND-14A physical label is
@@ -81,36 +81,36 @@ S163 Deliverable 1.
    no planner input). The proof surface is focused CLI unit tests over the resolver
    and `handle_actions`.
 
-## What to Change
+## Landed Changes
 
-### 1. Add a POV-safe target-label resolver
+### 1. Added a POV-safe target-label resolver
 
-In `crates/worldwake-cli/src/handlers/actions.rs` (or a small sibling helper in the
-play-surface module), add a function that resolves a bound target's display label
-from the controlled agent's POV, given the already-built `PerAgentBeliefView` and
-the target `EntityId`:
+In `crates/worldwake-cli/src/handlers/actions.rs`, this ticket added
+`pov_target_label`, a local helper that resolves a bound target's display label
+from the controlled agent's POV using the already-built `PerAgentBeliefView`, the
+controlled actor, and the target `EntityId`:
 
 - If the target is at the controlled agent's effective place (co-located),
-  return the FND-14A directly-perceivable physical label — item-lot
-  commodity/quantity, workstation tag, or kind — and public topology place names.
-- Else, if the target is in the agent's belief (`believed_entity` /
-  `last_seen_memory`), return the believed/last-seen label.
-- Else, return a generic `"unknown"` token. Never read the authoritative `World`
-  `Name` for an entity that is neither co-located nor believed.
+  it returns the FND-14A directly-perceivable physical label: item-lot
+  commodity/quantity, workstation tag, resource-source commodity, or entity kind.
+- If the target is a place, it returns the public topology place name.
+- If the target is known through belief or last-seen memory, it returns a
+  belief-backed / last-seen label such as `Agent last seen at Market`.
+- Otherwise, it returns the generic `"unknown"` token. It does not read the
+  authoritative `Name` for an entity that is neither co-located nor remembered.
 
-Mechanism choice (a free helper in `actions.rs` vs. a tiny `pov` submodule) is at
-implementer discretion; keep it minimal per the Non-Goal against a `pov_display.rs`
-build-out.
+The implementation stayed as a free helper in `actions.rs`, not a new
+`pov_display.rs` module or cross-crate belief-view API.
 
-### 2. Route the menu labels through the resolver
+### 2. Routed the menu labels through the resolver
 
-Replace the `entity_display_name(sim.world(), *t)` map at `actions.rs:78-83` with a
-map over the new resolver, passing the `view` constructed at `actions.rs:44`. Remove
-the now-unused `use crate::display::entity_display_name;` import at `actions.rs:10`.
+The `handle_actions` target-label map now calls `pov_target_label(&view,
+sim.world(), entity, *t)`. The old `entity_display_name` import and call were
+removed from the play-surface action menu.
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-cli/src/handlers/actions.rs` (modify)
+- `crates/worldwake-cli/src/handlers/actions.rs` (modified)
 
 ## Out of Scope
 
@@ -123,39 +123,68 @@ the now-unused `use crate::display::entity_display_name;` import at `actions.rs:
   CLI-side and reads the existing view surface only.
 - POV-gating any REPL command other than the action menu (S163 Non-Goals).
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Passed Criteria
 
-1. Resolver returns the FND-14A physical label for a co-located item-lot /
-   workstation target without reading the authoritative `Name`.
-2. Resolver returns a believed/last-seen label for a believed-but-not-co-located
-   target, and the generic `"unknown"` token for a target neither co-located nor
-   believed — never the authoritative `World` name in the latter case.
-3. `handle_actions` still produces a non-empty menu for the existing food scenario
-   (`test_actions_lists_affordances`, `test_actions_stores_in_repl_state` continue
-   to pass).
-4. Existing suite: `cargo test -p worldwake-cli`.
+1. `pov_target_label_uses_local_physical_item_label` proves the resolver returns
+   the FND-14A physical item-lot label for a co-located target without using the
+   target's authoritative `Name`.
+2. `pov_target_label_uses_last_seen_label_without_remote_name` and
+   `pov_target_label_hides_unknown_remote_name` prove remembered remote targets
+   use a last-seen label while unknown remote targets render `"unknown"` and do
+   not expose the authoritative remote name.
+3. `test_actions_lists_affordances` and `test_actions_stores_in_repl_state`
+   continue to pass with the menu routed through the POV resolver.
+4. Existing suite passed: `cargo test -p worldwake-cli`.
 
-### Invariants
+### Preserved Invariants
 
 1. The play surface (`handle_actions`) never reads the authoritative `World` `Name`
-   of a target the controlled agent does not lawfully perceive (FND-14A) or recall
-   (belief). (FND-14, FND-14A, FND-19.)
-2. No new authoritative state and no agent decision logic change: this ticket
-   alters only how menu labels are derived.
+   of a target the controlled agent does not lawfully perceive (FND-14A) or
+   remember (belief / last-seen memory). (FND-14, FND-14A, FND-19.)
+2. No authoritative state and no agent decision logic changed; this ticket altered
+   only how menu labels are derived.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
-1. `crates/worldwake-cli/src/handlers/actions.rs` (inline `#[cfg(test)]`) — add
-   focused tests for the resolver covering the co-located-physical, believed, and
-   unknown cases, using the existing `human_with_food_scenario` /`observer_scenario`
-   helpers plus a two-place scenario for the remote/unknown case.
+1. `crates/worldwake-cli/src/handlers/actions.rs` (inline `#[cfg(test)]`) — added
+   focused resolver tests covering co-located physical labels, remembered remote
+   labels, and unknown remote labels.
 
-### Commands
+### Commands Run
 
 1. `cargo test -p worldwake-cli handlers::actions`
-2. `cargo clippy -p worldwake-cli --all-targets -- -D warnings`
-3. `scripts/verify.sh` (before PR push)
+2. `cargo test -p worldwake-cli`
+3. `cargo clippy -p worldwake-cli --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-22.
+
+- Replaced the play-surface action-menu target label path with a local
+  POV-safe resolver over `PerAgentBeliefView`.
+- Preserved lawful public topology names and same-tick local physical labels,
+  while rendering remembered remote targets from belief/last-seen memory and
+  unknown remote targets as `"unknown"`.
+- Added focused regression tests proving local physical labels, last-seen labels,
+  and unknown remote targets do not expose remote authoritative names.
+
+## Deviations
+
+- The landed believed/last-seen label is intentionally descriptive
+  (`Agent last seen at Market`) rather than a personal name. The live belief
+  surface does not store a display-name field for remembered entities, and this
+  ticket did not add a new belief-view API.
+- `scripts/verify.sh` was not run for this first ticket iteration; the ticket
+  surface was verified with the focused handler tests, full `worldwake-cli` crate
+  tests, and the ticket's CI-shaped `worldwake-cli` clippy gate. The harness will
+  run `./scripts/verify.sh` before final branch push if the full S163 family lands.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli handlers::actions`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy -p worldwake-cli --all-targets -- -D warnings`
