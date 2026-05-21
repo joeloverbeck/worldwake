@@ -15,11 +15,11 @@ single place desires/opportunities become goal candidates. The goal-schema
 consolidation (`GoalSchema.candidate_extractors`) was meant to make the schema the
 authority for which extractors run. That consolidation has landed in two
 behavior-preserving slices: `archive/tickets/S159CANGENSCH-001.md` removed the
-fossil ordering name, and `archive/tickets/S159CANGENSCH-002.md` removed the
+fossil ordering name, `archive/tickets/S159CANGENSCH-002.md` removed the
 out-of-band blocked-self-care emitter by moving it into a declared
-post-suppression extractor phase. Remaining active work is the provenance guard
-(`tickets/S159CANGENSCH-003.md`) and the explicit gate-semantics investigation
-(`tickets/S159CANGENSCH-004.md`):
+post-suppression extractor phase, and `archive/tickets/S159CANGENSCH-004.md`
+proved the retained phase-local blocked-self-care gate semantics. Remaining
+active work is the provenance guard (`tickets/S159CANGENSCH-003.md`):
 
 1. Before `archive/tickets/S159CANGENSCH-001.md`, a constant literally named
    **`LEGACY_EXTRACTOR_ORDER`** owned extractor *execution order*. That live
@@ -51,8 +51,9 @@ post-suppression extractor phase. Remaining active work is the provenance guard
   phase after the first `filter_suppressed_candidates` pass. It consumes
   `diagnostics.fully_blocked_desires`, preserves the old phase-local fallback
   gate, and runs its output through a second suppression pass before appending.
-  Whether that gate should inspect all surviving post-suppression candidates is
-  deliberately deferred to `tickets/S159CANGENSCH-004.md`.
+  `archive/tickets/S159CANGENSCH-004.md` added focused proof that unrelated
+  surviving candidates do not suppress a need-driven exploration fallback for a
+  still-blocked self-care desire.
 - `CandidateGenerationResult` (L222–239) also carries `pending_violations`,
   `pending_discrepancies`, `pending_source_reliability_failures`, and
   `pending_acquisition_exhaustion_resets`. **This is documented as
@@ -160,8 +161,9 @@ here (see below).
      the pipeline preserves: (a) the old phase-local fallback-candidate gate
      (vacuous for the sole live fallback emitter because the old call passed an
      empty vector), and (b) the **separate** suppression filtering of its output.
-     Whether that gate should instead inspect all surviving post-suppression
-     candidates is a behavior question deferred to `tickets/S159CANGENSCH-004.md`.
+     `archive/tickets/S159CANGENSCH-004.md` resolved the gate question by
+     retaining the phase-local contract: unrelated surviving candidates do not
+     suppress the fallback for a still-blocked self-care desire.
    - Net effect: identical candidate set to today, but every candidate — including
      blocked-self-care fallbacks — now originates from a registry-declared
      extractor with an explicit ordering position. No out-of-band call remains.

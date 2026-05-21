@@ -152,7 +152,7 @@ it and deserialize unchanged.
 - `crates/worldwake-ai/src/goal_schema.rs`
 - `specs/S159-candidate-generation-schema-owned-extractor-authority.md`
 - `archive/tickets/S159CANGENSCH-002.md`
-- `tickets/S159CANGENSCH-004.md`
+- `archive/tickets/S159CANGENSCH-004.md`
 
 ## Out of Scope
 
@@ -215,16 +215,16 @@ Completed on 2026-05-21.
 - Removed the out-of-band blocked-self-care fallback call from the candidate
   pipeline while preserving the live phase-local gate and separate suppression
   pass.
-- Added `tickets/S159CANGENSCH-004.md` to investigate whether the phase-local
-  gate should become a non-vacuous surviving-candidate gate as a deliberate
-  behavior change.
+- Added the now-archived `archive/tickets/S159CANGENSCH-004.md` to investigate
+  whether the phase-local gate should become a non-vacuous surviving-candidate
+  gate as a deliberate behavior change.
 
 ## Deviations
 
 - The draft said the helper gated on every surviving candidate being self-care
   fallback. Live reassessment showed the old call passed an empty fallback vector,
   so this ticket preserved that phase-local gate for behavior preservation and
-  split the stronger gate question to `tickets/S159CANGENSCH-004.md`.
+  split the stronger gate question to `archive/tickets/S159CANGENSCH-004.md`.
 - The no-untracked-candidate provenance guard remains out of scope for this
   ticket and is still owned by `tickets/S159CANGENSCH-003.md`.
 

@@ -11922,6 +11922,125 @@ mod tests {
     }
 
     #[test]
+    fn blocked_self_care_fallback_survives_unrelated_post_suppression_candidate() {
+        let agent = entity(1);
+        let corpse = entity(2);
+        let grave_plot = entity(3);
+        let home = entity(10);
+        let orchard = entity(11);
+        let frontier = entity(12);
+        let seller = entity(20);
+        let blocked_goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        };
+        let blocked_key = GoalKey::from(blocked_goal);
+        let mut view = TestBeliefView {
+            current_tick: Tick(500),
+            ..TestBeliefView::default()
+        };
+        view.alive.extend([agent, seller]);
+        view.dead.insert(corpse);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(corpse, EntityKind::Agent);
+        view.entity_kinds.insert(grave_plot, EntityKind::Facility);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(corpse, home);
+        view.effective_places.insert(grave_plot, home);
+        view.effective_places.insert(seller, orchard);
+        view.entities_at
+            .insert(home, vec![agent, corpse, grave_plot]);
+        view.corpses_at.insert(home, vec![corpse]);
+        view.workstations
+            .insert((home, WorkstationTag::GravePlot), vec![grave_plot]);
+        view.homeostatic_needs.insert(agent, hunger(500));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.exploration_profiles.insert(
+            agent,
+            ExplorationProfile {
+                curiosity_weight: Permille::new(500).unwrap(),
+                need_activation_threshold: Permille::new(400).unwrap(),
+                frontier_depth: 2,
+                visit_lookback_ticks: 50,
+                ..ExplorationProfile::default()
+            },
+        );
+        view.adjacent_places.insert(home, vec![orchard]);
+        view.adjacent_places.insert(orchard, vec![home, frontier]);
+        view.adjacent_places.insert(frontier, vec![orchard]);
+        view.beliefs.insert(
+            agent,
+            vec![
+                known_entity(orchard, orchard),
+                known_entity(frontier, frontier),
+            ],
+        );
+        view.sync_belief_store(agent);
+        view.register_seller(orchard, CommodityKind::Bread, seller);
+
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
+            scope: BlockerKey {
+                goal_key: blocked_key,
+                place: Some(orchard),
+                target: None,
+                action_def: None,
+            }
+            .into(),
+            blocking_fact: BlockingFact::NoKnownSeller,
+            diagnostic_context: None,
+            observed_tick: Tick(490),
+            expires_tick: Tick(600),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+            source_event: worldwake_core::EventId(0),
+        });
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(500),
+            6,
+            false,
+        );
+
+        assert!(
+            contains_goal(
+                &result.candidates,
+                GoalKind::BuryCorpse {
+                    corpse,
+                    burial_site: grave_plot,
+                },
+            ),
+            "the setup should include an unrelated surviving non-self-care candidate"
+        );
+        assert!(
+            goals_for(&result.candidates, &blocked_goal).is_empty(),
+            "blocked bread acquisition should not survive as a candidate"
+        );
+        assert!(
+            result.candidates.iter().any(|candidate| {
+                matches!(
+                    candidate.key.kind,
+                    GoalKind::ExploreLocation {
+                        motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                            HomeostaticNeedId::Hunger,
+                        ),
+                        ..
+                    }
+                )
+            }),
+            "phase-local blocked-self-care fallback should emit despite unrelated survivor: {:?}",
+            result.candidates
+        );
+    }
+
+    #[test]
     fn blocked_self_care_phase_is_registry_gated_after_suppression() {
         let agent = entity(1);
         let home = entity(10);
