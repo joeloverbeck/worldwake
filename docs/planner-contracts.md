@@ -101,6 +101,10 @@ Entity admission does not make every current authoritative field on that entity
 planner-visible. Every planner- or player-facing belief-view accessor must name
 which source class makes its value lawful:
 
+This is the application of FND-14B to belief-view accessors: planner-visible
+inputs must be belief-backed, same-tick local physical observations, or another
+lawful source class rather than raw remote world truth.
+
 - Self: facts about the observing actor.
 - Same-tick local physical observation: directly perceivable physical facts about
   entities at the actor's effective place, such as kind, item-lot
