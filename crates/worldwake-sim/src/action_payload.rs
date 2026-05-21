@@ -393,7 +393,7 @@ pub struct ReportFoundActionPayload {
 pub struct EscortToSafetyActionPayload {
     pub subject: EntityId,
     pub destination: EntityId,
-    pub intended_heal_action: ActionDefId,
+    pub intended_heal_action: Option<ActionDefId>,
     pub route_places: Vec<EntityId>,
     pub route_edges: Vec<TravelEdgeId>,
 }
@@ -693,7 +693,7 @@ mod tests {
                 slot: 49,
                 generation: 0,
             },
-            intended_heal_action: ActionDefId(27),
+            intended_heal_action: Some(ActionDefId(27)),
             route_places: vec![
                 EntityId {
                     slot: 47,

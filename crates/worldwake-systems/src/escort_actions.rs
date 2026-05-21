@@ -162,15 +162,11 @@ fn reachable_destinations(view: &dyn RuntimeBeliefView, origin: EntityId) -> Vec
     places
 }
 
-fn build_escort_payload(
-    subject: EntityId,
-    destination: EntityId,
-    intended_heal_action: ActionDefId,
-) -> ActionPayload {
+fn build_escort_payload(subject: EntityId, destination: EntityId) -> ActionPayload {
     ActionPayload::EscortToSafety(EscortToSafetyActionPayload {
         subject,
         destination,
-        intended_heal_action,
+        intended_heal_action: None,
         route_places: Vec::new(),
         route_edges: Vec::new(),
     })
@@ -207,7 +203,7 @@ fn enumerate_escort_payloads(
     reachable_destinations(view, origin)
         .into_iter()
         .filter(|destination| view.route_exists(origin, *destination))
-        .map(|destination| build_escort_payload(subject, destination, ActionDefId(u32::MAX)))
+        .map(|destination| build_escort_payload(subject, destination))
         .collect()
 }
 
@@ -398,7 +394,7 @@ fn start_escort_to_safety(
     }
     {
         let payload = escort_payload_mut(&mut instance.payload)?;
-        payload.intended_heal_action = heal_action_id(context.action_defs)?;
+        payload.intended_heal_action = Some(heal_action_id(context.action_defs)?);
         payload.route_places.clone_from(&route.places);
         payload.route_edges.clone_from(&route.edges);
     }
@@ -597,7 +593,13 @@ impl EffectSink for EscortEffectSink<'_, '_, '_, '_> {
             .get_component_contention_queue(subject)
             .is_some_and(|queue| queue.has_actor(actor));
         if !already_queued_for_care {
-            enqueue_for_contention(self.txn, actor, subject, payload.intended_heal_action)
+            let intended_heal_action = payload.intended_heal_action.ok_or_else(|| {
+                self.record_error(ActionError::InternalError(
+                    "escort_to_safety reached care contention before resolving heal action"
+                        .to_string(),
+                ))
+            })?;
+            enqueue_for_contention(self.txn, actor, subject, intended_heal_action)
                 .map_err(|err| self.record_error(err))?;
         }
         Ok(())
@@ -959,6 +961,7 @@ mod tests {
         assert_eq!(affordance.bound_targets, vec![subject]);
         assert_eq!(payload.subject, subject);
         assert_eq!(payload.destination, destination);
+        assert_eq!(payload.intended_heal_action, None);
     }
 
     #[test]
@@ -1037,6 +1040,13 @@ mod tests {
             &handlers,
             &affordance,
         );
+        let payload = active_actions
+            .get(&instance_id)
+            .expect("escort action should be active after start")
+            .payload
+            .as_escort_to_safety()
+            .expect("escort action should retain escort payload after start");
+        assert_eq!(payload.intended_heal_action, Some(heal_id));
 
         for tick in 2..=5 {
             let outcome = tick_escort(
@@ -1128,12 +1138,12 @@ mod tests {
     #[test]
     fn escort_to_safety_rejects_current_place_as_destination() {
         let (mut world, actor, subject, origin, _waypoint, _destination) = setup_world();
-        let (defs, handlers, heal_id, escort_id) = setup_registries();
+        let (defs, handlers, _heal_id, escort_id) = setup_registries();
         let affordance = Affordance {
             def_id: escort_id,
             actor,
             bound_targets: vec![subject],
-            payload_override: Some(build_escort_payload(subject, origin, heal_id)),
+            payload_override: Some(build_escort_payload(subject, origin)),
             explanation: None,
             contention_status: ContentionStatus::Available,
         };

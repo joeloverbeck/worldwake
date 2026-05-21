@@ -1,6 +1,6 @@
 # S160HTNAUTHHON-004: Remove escort u32::MAX sentinel
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — escort action payload (`worldwake-sim`), escort affordance/runtime (`worldwake-systems`), planner payload-override (`worldwake-ai`), save format (`worldwake-sim`)
@@ -67,53 +67,55 @@ existing resolve-at-start flow.
    than carrying a compatibility decoder (FND-28: compatibility only at boundaries,
    normalized into the current model).
 
-## Verification Layers
+## Verification Result
 
-1. No plan, action trace, or dispatch observes a placeholder/sentinel action id ->
-   focused test asserting the pre-resolution payload is `None` (there is no sentinel
-   `ActionDefId` to observe).
-2. Resolution at action start sets `Some(heal_action_id(...))` -> action-trace /
-   focused authoritative runtime test over the escort start handler
-   (`escort_actions.rs:401`); the contention enqueue read (`:600`) treats `None` at
-   that point as an internal error, not a silent skip.
-3. Payload revalidation accepts the escort step -> focused runtime
-   request-resolution coverage: both construction sites produce `None`, so
-   `requested_affordance_matches` / `with_payload_override_validator` sees `None ==
-   None` and does not reject the step.
-4. Save/replay round-trips the new shape -> save_load focused test at the bumped
-   `SAVE_FORMAT_VERSION` (97).
+1. Passed `cargo test -p worldwake-systems escort` — six escort tests ran. The
+   affordance enumeration test asserts pre-resolution `intended_heal_action: None`;
+   the commit/handoff test asserts action start resolves it to `Some(heal_id)` and
+   the care contention queue receives that real action id.
+2. Passed `cargo test -p worldwake-sim -p worldwake-ai` — sim save/load, action
+   payload bincode, and AI planner/golden package tests passed against the migrated
+   payload shape. This first run also exposed an unused `ActionDefId` import after
+   sentinel removal.
+3. Passed `cargo test -p worldwake-ai` after the import cleanup — refreshed the AI
+   package proof for the final planner override source state.
+4. Passed `./scripts/verify.sh` — fmt check, workspace tests, cleanup scripts,
+   workspace clippy, all-target clippy with `-D warnings`, and scenario coverage
+   all exited cleanly.
 
-## What to Change
+## Landed Changes
 
-### 1. Change the field type (sim)
+### 1. Changed the field type (sim)
 
-`action_payload.rs:396` — `pub intended_heal_action: Option<ActionDefId>`. Update the
-test sample at `:696` to `Some(ActionDefId(27))`.
+`action_payload.rs` now stores
+`EscortToSafetyActionPayload.intended_heal_action: Option<ActionDefId>`. The action
+payload sample uses `Some(ActionDefId(27))`, preserving the bincode/trait proof for
+the resolved shape.
 
 ### 2. Construction sites set `None` (ai + systems)
 
-- `goal_model.rs:962` (planner payload-override) — `intended_heal_action: None`.
-- `escort_actions.rs:210` / `build_escort_payload` (`:165–177`) — change the
-  `intended_heal_action` parameter/literal so enumeration produces `None`.
+- `goal_model.rs` planner payload override now emits `intended_heal_action: None`.
+- `escort_actions.rs::build_escort_payload` no longer accepts a heal action id and
+  affordance enumeration now emits `None`.
 
 ### 3. Runtime resolution and read (systems)
 
-- `escort_actions.rs:401` — `payload.intended_heal_action = Some(heal_action_id(context.action_defs)?);`
-- `escort_actions.rs:600` (`enqueue_for_contention`) — handle `Option`; resolution
-  precedes enqueue, so treat a `None` here as an internal error
-  (`ActionError::InternalError`), not a silent skip.
+`start_escort_to_safety` resolves the real heal action id and stores
+`Some(heal_action_id(...))`. The care contention handoff unwraps the resolved id and
+records an internal error if that stage is reached while the value is still `None`.
 
-### 4. Bump the save format (sim)
+### 4. Bumped the save format (sim)
 
-`save_load.rs:7` — `SAVE_FORMAT_VERSION` 96 → 97. Update the version-assert tests at
-`save_load.rs:1369` and `:1380` to 97.
+`SAVE_FORMAT_VERSION` is now 97, with version assertion tests updated to the S160
+escort sentinel removal.
 
-### 5. Add the sentinel-absence test
+### 5. Added sentinel-absence and resolution assertions
 
-Assert that no constructed escort payload (enumeration or planner override) carries
-a placeholder action id — the pre-resolution value is `None`.
+`escort_affordance_enumerates_non_adjacent_reachable_destination` asserts
+pre-resolution `None`; `escort_to_safety_commit_moves_both_entities_and_queues_care_handoff`
+asserts action start resolves `Some(heal_id)` before the final care queue handoff.
 
-## Files to Touch
+## Files Touched
 
 - `crates/worldwake-sim/src/action_payload.rs` (modify — field type + test sample)
 - `crates/worldwake-ai/src/goal_model.rs` (modify — planner payload-override → None)
@@ -130,13 +132,12 @@ a placeholder action id — the pre-resolution value is `None`.
 
 ## Acceptance Criteria
 
-### Tests That Must Pass
+### Tests Passed
 
-1. New focused test: pre-resolution escort payloads carry `None` (no sentinel id).
-2. New/updated runtime test: action start resolves `intended_heal_action` to
-   `Some(heal_action_id(...))`; the escort step survives payload revalidation.
-3. Updated save_load version-assert tests pass at `SAVE_FORMAT_VERSION` 97.
-4. Existing suite: `cargo test -p worldwake-sim -p worldwake-systems -p worldwake-ai`
+1. Passed `cargo test -p worldwake-systems escort`.
+2. Passed `cargo test -p worldwake-sim -p worldwake-ai`.
+3. Passed `cargo test -p worldwake-ai` after final import cleanup.
+4. Passed `./scripts/verify.sh`.
 
 ### Invariants
 
@@ -147,9 +148,9 @@ a placeholder action id — the pre-resolution value is `None`.
 3. Two live authoritative representations of the same fact do not coexist (FND-28):
    the sentinel path is removed, not aliased.
 
-## Test Plan
+## Test Evidence
 
-### New/Modified Tests
+### Test Surfaces Updated
 
 1. `crates/worldwake-systems/src/escort_actions.rs` (test module) — sentinel-absence
    on enumeration + resolution-to-`Some` at start + contention read handling.
@@ -157,10 +158,29 @@ a placeholder action id — the pre-resolution value is `None`.
    and the trait assertion to the `Option` shape.
 3. `crates/worldwake-sim/src/save_load.rs` — version-assert tests updated to 97.
 
-### Commands
+### Commands Run
 
-1. `cargo test -p worldwake-systems escort`
-2. `cargo test -p worldwake-sim -p worldwake-ai`
-3. `./scripts/verify.sh`
+1. Passed `cargo test -p worldwake-systems escort`.
+2. Passed `cargo test -p worldwake-sim -p worldwake-ai`.
+3. Passed `cargo test -p worldwake-ai`.
+4. Passed `./scripts/verify.sh`.
 
 Merge note: Ticket 004 bumps SAVE_FORMAT_VERSION 96→97 (changing the serialized `EscortToSafetyActionPayload.intended_heal_action` shape); no sibling ticket touches serialized state, so this is the only bump.
+
+## Outcome
+
+Completion date: 2026-05-21
+
+The escort payload sentinel is removed. Planning and affordance construction now
+represent the unresolved heal-action reference as `None`, action start resolves it
+to `Some(heal_id)`, and the final care contention handoff treats unresolved `None`
+as an internal error rather than a silent skip. The serialized action payload shape
+changed, so the save format version bumped from 96 to 97.
+
+Deviation from original plan: no separate new test function was needed; the existing
+escort-focused tests were the stronger local proof seam and now assert both
+pre-resolution absence and start-time resolution. The `worldwake-ai` package proof
+surfaced a now-unused import, which was removed as verification hygiene.
+
+Verification: focused, affected-package, and final wrapper gates passed as recorded
+above.

@@ -13,11 +13,11 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
-    AcquisitionQuantity, ActionDefId, ArtifactActionability, ArtifactKind, BountyTarget,
-    CommodityKind, CommodityPurpose, EntityId, EpistemicDispositionProfile, EpistemicSubject,
-    ExecutionBudget, GoalKey, GoalKind, InstitutionalBeliefRead, LoadUnits, MultiplierPermille,
-    OUTDOOR_RELIEF_TAGS, PerceptionSource, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw,
-    TellTopic, Tick, WorkstationTag, belief_confidence,
+    AcquisitionQuantity, ArtifactActionability, ArtifactKind, BountyTarget, CommodityKind,
+    CommodityPurpose, EntityId, EpistemicDispositionProfile, EpistemicSubject, ExecutionBudget,
+    GoalKey, GoalKind, InstitutionalBeliefRead, LoadUnits, MultiplierPermille, OUTDOOR_RELIEF_TAGS,
+    PerceptionSource, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw, TellTopic, Tick,
+    WorkstationTag, belief_confidence,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload,
@@ -959,7 +959,7 @@ impl GoalKindPlannerExt for GoalKind {
                         EscortToSafetyActionPayload {
                             subject: *subject,
                             destination: *destination,
-                            intended_heal_action: ActionDefId(u32::MAX),
+                            intended_heal_action: None,
                             route_places: Vec::new(),
                             route_edges: Vec::new(),
                         },
