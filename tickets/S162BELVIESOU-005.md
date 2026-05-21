@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: None (golden/E2E tests only) — `worldwake-ai`
-**Deps**: `archive/tickets/S162BELVIESOU-001.md`, S162BELVIESOU-002, S162BELVIESOU-003 (the gates must land first), Spec `specs/S162-belief-view-source-gate-hardening.md` (D7)
+**Deps**: `archive/tickets/S162BELVIESOU-001.md`, `archive/tickets/S162BELVIESOU-002.md`, S162BELVIESOU-003 (the gates must land first), Spec `specs/S162-belief-view-source-gate-hardening.md` (D7)
 
 ## Problem
 

@@ -123,7 +123,7 @@ Add tests for remote-invisible and believed-surfaced cases per accessor.
 
 - A new `BelievedOfficeData`/`BelievedRecordData` snapshot type and any consulted-record
   perception write that populates it — deferred follow-up (Assumption Reassessment 13).
-- Contention gates (S162BELVIESOU-001), control/rights gates (S162BELVIESOU-002).
+- Contention gates (S162BELVIESOU-001), control/rights gates (`archive/tickets/S162BELVIESOU-002.md`).
 - Adversarial end-to-end goldens (S162BELVIESOU-005).
 
 ## Acceptance Criteria

@@ -1,6 +1,6 @@
 # S162BELVIESOU-002: Control & rights belief gates
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-sim` belief-view control/rights accessors (`per_agent_belief_view.rs`)
@@ -33,7 +33,8 @@ observation (FND-14A). This ticket gates all three to self/belief sources.
    `believed_rights_returns_empty_for_unknown_entity` (`:5504`),
    `can_control_returns_false_for_belief_inaccessible_authoritatively_controlled_entity`
    (`:5527`), `can_control_returns_true_for_belief_accessible_controlled_entity`
-   (`:5573`), `can_control_returns_true_for_colocated_unowned_item_without_belief`
+   (`:5573`), the pre-implementation
+   `can_control_returns_true_for_colocated_unowned_item_without_belief` leak test
    (`:5603`); and `affordance_query.rs::per_agent_belief_view_none_control_only_changes_actor_has_control_actions`
    (`:2323`). Spec D1/D5 and `docs/spec-drafting-rules.md` (social/relational facts are
    belief-gated even when co-located) govern the corrected contract.
@@ -59,13 +60,12 @@ observation (FND-14A). This ticket gates all three to self/belief sources.
     actions change with control source — confirm it switches the *actor's own* control
     (self), which remains lawful; if it asserts visibility of another entity's control
     source, the test encodes the leak and must be revised to the gated contract.
-13. Adjacent contradictions (classified): `can_control_returns_true_for_colocated_unowned_item_without_belief`
-    (`:5603`) asserts the exact unlawful behavior D5 removes — this is a **required
-    consequence** of the ticket (a spec-driven contract change, not adapting a test to
-    a bug). Revise it to assert that an unowned item requires a belief (or a lawful
-    physical-observation expression) rather than a bare ownership-absence read. The
-    `:5527`/`:5573` tests gate on `believed_entity` and should survive; re-verify after
-    removing the owner/possessor probes.
+13. Adjacent contradictions (classified): the old
+    `can_control_returns_true_for_colocated_unowned_item_without_belief` assertion
+    encoded the exact unlawful behavior D5 removed — this was a **required consequence**
+    of the ticket (a spec-driven contract change, not adapting a test to a bug). It was
+    replaced by `can_control_returns_false_for_colocated_unowned_item_without_belief`.
+    The `:5527`/`:5573` tests stayed green after removing the owner/possessor probes.
 
 ## Architecture Check
 
@@ -78,47 +78,45 @@ observation (FND-14A). This ticket gates all three to self/belief sources.
 2. No backwards-compatibility shim: the unlawful probes are deleted (FND-28), not
    wrapped; tests encoding the old contract are revised, not duplicated.
 
-## Verification Layers
+## Verified Layers
 
 1. Remote ownership/control change invisible (no carrier) -> focused unit test:
-   actor believes old state, world changes remotely, `believed_rights`/`can_control`
-   unchanged.
+   actor has no belief carrier for the remote subject, world ownership changes remotely,
+   `believed_rights`/`can_control` stay unchanged.
 2. `has_control` returns `false` for a non-self, un-believed entity regardless of its
    live control source -> focused unit test.
 3. Self/believed accessibility still grants lawful reads -> revised `:5527`/`:5573`
    tests plus a self-control case.
 4. Planner/affordance consequence (no new control/rights affordance from a remote
-   change) -> deferred to S162BELVIESOU-005 goldens; this ticket's proof is the
-   focused accessor tests (strongest lower layer for the gate).
+   change) -> deferred to S162BELVIESOU-005 goldens; this ticket proved the strongest
+   lower-layer accessor gates.
 
-## What to Change
+## Landed Changes
 
 ### 1. `has_control` (`:461`)
 
-Gate to self-authoritative for `entity == self.agent`; for other entities, return
-`false` unless an explicit institutional control belief exists for the subject. Do
-not read `AgentData.control_source` for non-self entities.
+`has_control` is self-authoritative only. For `entity != self.agent`, it returns
+`false` without reading `AgentData.control_source`.
 
 ### 2. `believed_rights` (`:428`) / `can_control` (`:441`)
 
-Remove the `world.possessor_of(entity) == Some(self.agent)` and
-`world.owner_of(entity) == Some(self.agent)` accessibility probes (`:433-434`,
-`:453-454`); keep `entity == self.agent || self.believed_entity(entity).is_some()`.
-Replace `can_control`'s unowned-item branch (`:442-449`) so the unownedness it relies
-on comes from belief (or a lawful FND-14A physical observation expressed as such),
-not `world.owner_of(..).is_none()`. The authoritative `effective_rights`/
-`can_exercise_control` calls remain only behind the lawful self/belief gate.
+Removed the `world.possessor_of(entity) == Some(self.agent)` and
+`world.owner_of(entity) == Some(self.agent)` accessibility probes. Both accessors now
+use `entity == self.agent || self.believed_entity(entity).is_some()`. Removed
+`can_control`'s co-located unowned-item shortcut, so a bare live ownership-absence
+read no longer grants control.
 
 ### 3. Revise leak-encoding tests
 
-Update `can_control_returns_true_for_colocated_unowned_item_without_belief` (`:5603`)
-to the gated contract; re-verify `:5527`/`:5573` and `affordance_query.rs:2323`
-against the corrected behavior per Assumption Reassessment 11/13.
+Replaced the leak-encoding colocated-unowned assertion with the gated contract, added
+non-self `has_control` coverage, and added a remote no-carrier control/rights
+invisibility regression. Re-verified the existing belief-accessible control tests and
+`affordance_query.rs` control-filter coverage.
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-sim/src/per_agent_belief_view.rs` (modify — three accessors + revised `#[cfg(test)]` tests)
-- `crates/worldwake-sim/src/affordance_query.rs` (modify — re-verify/adjust `per_agent_belief_view_none_control_only_changes_actor_has_control_actions` if it asserted non-self control visibility)
+- `crates/worldwake-sim/src/per_agent_belief_view.rs` (modified — three accessors + focused `#[cfg(test)]` tests)
+- `crates/worldwake-sim/src/affordance_query.rs` (checked; no source change required because the live test covers self-control only)
 
 ## Out of Scope
 
@@ -126,29 +124,38 @@ against the corrected behavior per Assumption Reassessment 11/13.
 - Authoritative `can_exercise_control` / dispatch-time validation — unchanged.
 - Adversarial end-to-end goldens (S162BELVIESOU-005).
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests Passed
 
-1. New: `has_control` returns `false` for a non-self entity with a live non-`None` control source the actor has no belief about.
-2. Revised: `can_control` requires belief (or lawful physical observation) for a co-located unowned item — no bare ownership-absence read.
-3. New: remote ownership/control change with no carrier leaves `believed_rights`/`can_control` unchanged.
-4. Existing suite: `cargo test -p worldwake-sim`
+1. Added: `has_control_returns_false_for_non_self_live_control_source_without_belief`.
+2. Revised: `can_control_returns_false_for_colocated_unowned_item_without_belief`.
+3. Added: `remote_control_and_rights_changes_without_carrier_stay_invisible`.
+4. Passed existing suite: `cargo test -p worldwake-sim`.
 
 ### Invariants
 
 1. No belief-facing control/rights accessor reads `world.*` ownership/control/possession state outside a self or belief gate.
 2. Authoritative dispatch enforcement (`can_exercise_control`) is unchanged.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
-1. `crates/worldwake-sim/src/per_agent_belief_view.rs` (`#[cfg(test)]`) — new has_control non-self gate test, new remote-change-invisible test, revised `:5603` unowned-item test; rationale: prove the gated contract and the removed leak.
-2. `crates/worldwake-sim/src/affordance_query.rs` (`#[cfg(test)]`) — re-verify `:2323` reflects self-control, not non-self control-source visibility.
+1. `crates/worldwake-sim/src/per_agent_belief_view.rs` (`#[cfg(test)]`) — added the non-self `has_control` gate test, added the remote-change-invisible test, and revised the unowned-item test to prove the gated contract and removed leak.
+2. `crates/worldwake-sim/src/affordance_query.rs` (`#[cfg(test)]`) — re-verified the existing self-control test without source changes.
 
-### Commands
+## Outcome
 
-1. `cargo test -p worldwake-sim per_agent_belief_view`
-2. `cargo test -p worldwake-sim affordance_query`
-3. `./scripts/verify.sh` (before PR)
+Completed on 2026-05-21.
+
+- `PerAgentBeliefView::has_control` no longer reads live control source for non-self entities.
+- `believed_rights` and `can_control` no longer use live owner/possessor relations as access gates.
+- `can_control` no longer treats co-located unowned items as controllable based on a live ownership-absence read.
+- No `affordance_query.rs` source change was needed; the cited test already covers the actor's own control source.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-sim per_agent_belief_view`
+- Passed `cargo test -p worldwake-sim affordance_query`
+- Passed `cargo test -p worldwake-sim`
