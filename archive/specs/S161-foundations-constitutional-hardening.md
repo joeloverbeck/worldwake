@@ -1,6 +1,6 @@
 # S161 — FOUNDATIONS Constitutional Hardening (Gap Audit 2026-05)
 
-**Status:** Draft
+**Status:** COMPLETED
 **Type:** Constitutional amendment (`docs/FOUNDATIONS.md` edits + downstream-doc
 anchoring; no new simulation state, components, actions, systems, or feedback
 loops)
@@ -368,3 +368,29 @@ consistency and the absence of contradiction with shipped code:
 - Scenarios **J** and the **I** HTN-rejection variant are the eventual behavioral
   proofs for scenario classes I/J; they are deferred to golden-coverage work
   (Deliverable 7).
+
+## Outcome
+
+Completed on 2026-05-21.
+
+Implemented the S161 constitutional hardening as a documentation-only change:
+
+- `archive/tickets/S161FNDHARD-001.md` updated `docs/FOUNDATIONS.md` with the
+  revised FND-12 causal-equivalence contract, new FND-14B planner-visible-input
+  source rule, FND-20 HTN anti-script guard, revised FND-31 validation doctrine,
+  and canonical scenarios I-L.
+- `archive/tickets/S161FNDHARD-002.md` anchored downstream docs by adding the
+  FND-14B source-class reference to `docs/planner-contracts.md`, adding
+  causal-equivalence and systemic-validation checklist items to
+  `docs/spec-drafting-rules.md`, and adding the illegal planner-input absence proof
+  pattern to `docs/golden-e2e-testing.md`.
+
+Deviations from original plan: none. Deferred items remain deferred exactly as
+specified: `docs/causal-equivalence-contracts.md`, scenarios K/L goldens,
+`docs/scenario-roadmap.md` rows for I-L, scenario J golden coverage, and the
+scenario I HTN-rejection variant.
+
+Verification:
+
+- S161FNDHARD-001: `grep -n "### 14B\\.\\|### I\\.\\|### J\\.\\|### K\\.\\|### L\\.\\|HTN methods are not scripts" docs/FOUNDATIONS.md` found the new FND-14B heading, HTN guard, and scenarios I-L; removed stale FND-12/FND-31 phrases returned zero matches; `cargo test --workspace` passed.
+- S161FNDHARD-002: `grep -c "FND-14B" docs/planner-contracts.md` returned `1`; `grep -in "causal-equivalence\\|systemic-validation\\|illegal planner-input" docs/spec-drafting-rules.md docs/golden-e2e-testing.md` found the downstream anchors; `cargo test --workspace` passed.

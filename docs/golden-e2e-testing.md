@@ -67,7 +67,7 @@ This keeps the scenario author as the single source of truth for what "healthy" 
 
 ## Scenario-Backed Golden Validity
 
-Scenario-backed goldens have a stricter contract than ordinary end-to-end smoke tests. A scenario golden is only valid when it proves both:
+Scenario-backed goldens have a stricter FND-31 contract than ordinary end-to-end smoke tests. A scenario golden passes constitutionally only when it proves both:
 
 - the scenario-authored outcome contract happened
 - the scenario passed for the authored causal reason, not merely by an accidental or rival lawful branch
@@ -78,6 +78,7 @@ This matters most for long-run survival scenarios. A 1440-tick pass can hide arc
 - the system survives through an unrelated fallback path
 - one bug masks another and still lands in an acceptable final state
 - the test asserts only survival/end-state and never proves the motivating contradiction, suppression, planner branch, or recovery mechanism
+- an illegal planner-visible input could have produced the same branch, but the test never proves that forbidden input path was absent
 
 When writing or revising a scenario-backed golden, the owning ticket/spec must name all of the following:
 
@@ -86,6 +87,7 @@ When writing or revising a scenario-backed golden, the owning ticket/spec must n
 3. the lawful competing branches the live architecture currently allows
 4. which competing branches are intentionally removed from setup, and why
 5. if multiple branches remain lawful and acceptable, which ones the golden accepts and how it distinguishes them from invalid passes
+6. when the invariant depends on belief-bounded planning, the illegal planner-input absence proof: which remote world-truth, stale-cache, or social-fact shortcut would be forbidden, and which decision-trace or candidate-generation assertion proves it was not used
 
 For scenario-backed survival goldens, "all agents survived" is necessary but not sufficient. The golden should usually prove at least one scenario-specific causal contract in addition to the survival-health contract, such as:
 
@@ -95,6 +97,13 @@ For scenario-backed survival goldens, "all agents survived" is necessary but not
 - a feature-specific coordination or contention path actually occurred rather than being bypassed
 
 Prefer trace assertions at the earliest boundary that proves the scenario's claimed reason for success. If the scenario promises a planner, suppression, contradiction, or ranking behavior, do not treat eventual survival or eventual commodity movement as sufficient evidence on its own.
+
+For illegal planner-input absence, prefer explicit negative candidate assertions
+over later missing actions. The `belief_wall_trap` goldens are the current
+exemplar: `assert_no_steal_candidate_from_generation` and
+`assert_no_steal_candidate_in_decision_trace` prove the forbidden planner input
+did not enter candidate generation or the decision trace, instead of inferring
+that absence from the lack of a later committed action.
 
 ## Survival Critical-Window Forensics
 

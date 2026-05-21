@@ -1,10 +1,10 @@
 # S161FNDHARD-002: Downstream-doc anchoring of new principles
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: S161FNDHARD-001 (the constitutional anchors must exist before downstream docs reference them)
+**Deps**: `archive/tickets/S161FNDHARD-001.md` (the constitutional anchors must exist before downstream docs reference them)
 
 ## Problem
 
@@ -56,43 +56,43 @@ Deliverable 6):
    additive sections; the planner-contracts edit adds a citation to existing rule
    text without forking it.
 
-## Verification Layers
+## Verified Layers
 
 1. FND-14B referenced in `planner-contracts.md` §2 -> grep for "FND-14B" returns ≥1.
 2. Causal-equivalence and systemic-validation checklist items present in
-   `spec-drafting-rules.md` -> grep for the two new section headings returns matches.
+   `spec-drafting-rules.md` -> grep for both section headings returns matches.
 3. Single-layer documentation ticket: no runtime/trace surface is touched. The
    "illegal planner-input absence" proof pattern added to `golden-e2e-testing.md`
    names an *existing* test pattern (the `belief_wall_trap` negative assertions); no
-   new test is authored here.
+   test was authored here.
 
-## What to Change
+## Landed Changes
 
-### 1. planner-contracts.md — anchor FND-14B (Deliverable 6a)
+### 1. planner-contracts.md — anchored FND-14B (Deliverable 6a)
 
-In §2 ("Planner-visible fields are source-scoped"), add an explicit FND-14B
+In §2 ("Planner-visible fields are source-scoped"), added an explicit FND-14B
 reference stating that the source-class rule is the application of FND-14B to
-belief-view accessors. Do not rewrite the existing rule body.
+belief-view accessors. The existing rule body was not rewritten.
 
-### 2. spec-drafting-rules.md — two new checklist items (Deliverable 6b)
+### 2. spec-drafting-rules.md — added two checklist items (Deliverable 6b)
 
-Add a **causal-equivalence contract** checklist item (cite revised FND-12; require
+Added a **causal-equivalence contract** checklist item (cites revised FND-12; requires
 the five named contract elements: explicit referent, preserved causal variables,
 admitted error bounds, materialization/decompression boundary, comparison
 tests/audits) for specs introducing offscreen sim, boundary compression, sleeping
-entities, region summaries, population approximations, prehistory, or new
-cache/save-load surfaces. Add a **systemic-validation** checklist item (cite revised
-FND-31; require declaring negative illegal-path cases and naming which feature-scoped
+entities, region summaries, population approximations, prehistory, or cache/save-load
+surfaces. Added a **systemic-validation** checklist item (cites revised FND-31;
+requires declaring negative illegal-path cases and naming which feature-scoped
 systemic checks apply) for cross-system features.
 
-### 3. golden-e2e-testing.md — terminology + illegal-input-absence pattern (Deliverable 6c)
+### 3. golden-e2e-testing.md — aligned terminology and added illegal-input-absence pattern (Deliverable 6c)
 
-Align terminology with the revised FND-31 and add an explicit "illegal planner-input
+Aligned terminology with the revised FND-31 and added an explicit "illegal planner-input
 absence" proof pattern, citing the existing `belief_wall_trap` negative-candidate
 assertions (`assert_no_steal_candidate_from_generation` /
 `assert_no_steal_candidate_in_decision_trace`) as the exemplar.
 
-## Files to Touch
+## Landed Files
 
 - `docs/planner-contracts.md` (modify)
 - `docs/spec-drafting-rules.md` (modify)
@@ -107,19 +107,18 @@ assertions (`assert_no_steal_candidate_from_generation` /
   this ticket only adds the *checklist item* that will require such a contract.
 - Any code or test change. Documentation only.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Verified Criteria
 
-1. `docs/planner-contracts.md` references "FND-14B" at least once within §2.
+1. `docs/planner-contracts.md` references "FND-14B" within §2.
 2. `docs/spec-drafting-rules.md` contains a causal-equivalence-contract checklist
    item naming the five required contract elements.
 3. `docs/spec-drafting-rules.md` contains a systemic-validation checklist item
    requiring negative illegal-path cases.
 4. `docs/golden-e2e-testing.md` contains an "illegal planner-input absence" proof
    pattern citing the `belief_wall_trap` negative assertions.
-5. Existing suite unaffected: `cargo test --workspace` (sanity — no compiled surface
-   changed).
+5. Existing suite unaffected: `cargo test --workspace` passed.
 
 ### Invariants
 
@@ -127,14 +126,31 @@ assertions (`assert_no_steal_candidate_from_generation` /
    their full doctrine (no double-truth between constitution and downstream docs).
 2. No new authoritative state, component, action, or test is introduced.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
 1. `None — documentation-only ticket; verification is command-based and existing runtime coverage is named in Assumption Reassessment.`
 
-### Commands
+### Passed Commands
 
-1. `grep -c "FND-14B" docs/planner-contracts.md` (expect ≥1)
-2. `grep -in "causal-equivalence\|systemic-validation\|illegal planner-input" docs/spec-drafting-rules.md docs/golden-e2e-testing.md`
-3. `cargo test --workspace` (sanity — no compiled surface changed)
+1. Passed `grep -c "FND-14B" docs/planner-contracts.md` (returned `1`).
+2. Passed `grep -in "causal-equivalence\|systemic-validation\|illegal planner-input" docs/spec-drafting-rules.md docs/golden-e2e-testing.md`.
+3. Passed `cargo test --workspace`.
+
+## Outcome
+
+Completed on 2026-05-21.
+
+- Anchored the existing planner source-class rule in FND-14B from `docs/planner-contracts.md`.
+- Added the S161 causal-equivalence and systemic-validation drafting checklist items to `docs/spec-drafting-rules.md`.
+- Aligned scenario-backed golden validity guidance with FND-31 and added the illegal planner-input absence proof pattern in `docs/golden-e2e-testing.md`.
+
+Deviations from original plan: none. No code, tests, components, actions, systems,
+or generated docs changed.
+
+## Verification Result
+
+- Passed `grep -c "FND-14B" docs/planner-contracts.md` (returned `1`).
+- Passed `grep -in "causal-equivalence\|systemic-validation\|illegal planner-input" docs/spec-drafting-rules.md docs/golden-e2e-testing.md`.
+- Passed `cargo test --workspace`.
