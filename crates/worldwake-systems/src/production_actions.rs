@@ -1020,6 +1020,8 @@ fn apply_harvest_resource(
         .create_item_lot_with_owner(payload.output_commodity, Quantity(actual), place, owner)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_target(lot);
+    txn.project_self_produced_lot_belief(actor, lot, owner)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
 
     let mut trace = txn
         .get_component_last_harvest_trace(workstation)
@@ -1109,6 +1111,8 @@ fn apply_finish_craft(
             .create_item_lot_with_owner(*commodity, *quantity, place, owner)
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
         txn.add_target(lot);
+        txn.project_self_produced_lot_belief(actor, lot, owner)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
     }
     Ok(())
 }

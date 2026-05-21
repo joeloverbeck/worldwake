@@ -597,7 +597,7 @@ mod tests {
             expires_tick: expires,
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         }
     }
 

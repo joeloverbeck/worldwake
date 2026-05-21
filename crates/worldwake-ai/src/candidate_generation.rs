@@ -7796,6 +7796,8 @@ mod tests {
                     asked_witnesses: BTreeMap::new(),
                     place_visits: BTreeMap::new(),
                     institutional_beliefs,
+                    believed_record_data: BTreeMap::new(),
+                    believed_office_data: BTreeMap::new(),
                 },
             );
         }
@@ -11508,7 +11510,7 @@ mod tests {
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
 
         let candidates =
@@ -11566,7 +11568,7 @@ mod tests {
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
 
         let candidates =
@@ -11630,7 +11632,7 @@ mod tests {
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
 
         let candidates =
@@ -11691,7 +11693,7 @@ mod tests {
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
 
         let candidates =
@@ -11750,7 +11752,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
 
         let candidates =
@@ -11819,7 +11821,7 @@ mod tests {
                 expires_tick: Tick(10),
                 clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
                 baseline_snapshot: None,
-                source_event: worldwake_core::EventId(0),
+                source_event: None,
             });
         }
 
@@ -11933,7 +11935,7 @@ mod tests {
             expires_tick: Tick(600),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
 
         let result = generate_candidates_with_travel_horizon(
@@ -12042,7 +12044,7 @@ mod tests {
             expires_tick: Tick(600),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
 
         let result = generate_candidates_with_travel_horizon(
@@ -12173,7 +12175,7 @@ mod tests {
             expires_tick: Tick(600),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
 
         let result = generate_candidates_with_travel_horizon(
@@ -12247,7 +12249,7 @@ mod tests {
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
 
         let result = generate_candidates_with_travel_horizon(
@@ -12308,7 +12310,7 @@ mod tests {
             expires_tick: Tick(8),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
 
         let result = generate_candidates_with_travel_horizon(
@@ -12416,7 +12418,7 @@ mod tests {
             discrepancy: Discrepancy::BeliefContradicted,
             observed_tick: Tick(1),
             expires_tick: Tick(20),
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
             clearing_condition: worldwake_core::DiscrepancyClearing::CommodityAvailabilityChanged {
                 commodity: CommodityKind::Water,
                 place: orchard,
@@ -13422,7 +13424,7 @@ mod tests {
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
 
         let candidates =
@@ -17405,7 +17407,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
 
         let blocked_candidates =
@@ -20209,7 +20211,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
 
         let result = generate_candidates_with_travel_horizon(
@@ -21118,7 +21120,7 @@ mod tests {
             expires_tick: Tick(100),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
 
         let vm = ViolationMemory::default();
@@ -21495,7 +21497,7 @@ mod tests {
             expires_tick: Tick(200),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
 
         let candidates = generate_candidates_with_travel_horizon(
@@ -22018,7 +22020,7 @@ mod tests {
             expires_tick: Tick(100),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
 
         let candidates =

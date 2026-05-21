@@ -97,7 +97,7 @@ Do not hand-edit it.
 - `golden_trace_enabled_scenario`
 - `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`
 - `golden_loot_refuses_substitute_corpse_after_remote_travel_commitment`
-- `golden_consume_pipeline_rebinds_pick_up_after_remote_lot_change`
+- `golden_consume_pipeline_records_start_failure_after_remote_lot_change`
 
 ### `artifact_lifecycle.rs`
 

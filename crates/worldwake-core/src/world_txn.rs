@@ -1,9 +1,11 @@
 use crate::{
-    ArchiveMutationSnapshot, BelievedInstitutionalClaim, CommodityKind, Container, ControlSource,
-    EntityId, EntityKind, EventId, InstitutionalBeliefKey, InstitutionalClaim, LoadUnits,
-    LotOperation, Permille, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
-    StockStoragePolicy, Tick, TickRange, UniqueItemKind, World, WorldError,
-    build_observed_entity_snapshot, component_schema::with_component_schema_entries,
+    ArchiveMutationSnapshot, BelievedInstitutionalClaim, BelievedOfficeDataSnapshot,
+    BelievedRecordDataSnapshot, ClaimValue, CommodityKind, Container, ControlSource,
+    EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EventId, InstitutionalBeliefKey,
+    InstitutionalClaim, LoadUnits, LotOperation, PerceptionSource, Permille, Quantity, RecordData,
+    RecordEntryId, RecordKind, ReservationId, StockStoragePolicy, Tick, TickRange, UniqueItemKind,
+    World, WorldError, build_believed_entity_state, build_observed_entity_snapshot,
+    component_schema::with_component_schema_entries,
 };
 use crate::{ArtifactTransitionPayload, ContentionEventPayload};
 use crate::{
@@ -371,6 +373,83 @@ impl<'w> WorldTxn<'w> {
             })?;
         store.replace_institutional_belief(key, belief, &profile);
         self.set_component_agent_belief_store(agent, store)
+    }
+
+    pub fn project_believed_record_data(
+        &mut self,
+        agent: EntityId,
+        record: EntityId,
+        snapshot: BelievedRecordDataSnapshot,
+    ) -> Result<(), WorldError> {
+        let mut store = self
+            .get_component_agent_belief_store(agent)
+            .cloned()
+            .ok_or(WorldError::ComponentNotFound {
+                entity: agent,
+                component_type: "AgentBeliefStore",
+            })?;
+        store.record_believed_record_data(record, snapshot);
+        self.set_component_agent_belief_store(agent, store)
+    }
+
+    pub fn project_believed_office_data(
+        &mut self,
+        agent: EntityId,
+        office: EntityId,
+        snapshot: BelievedOfficeDataSnapshot,
+    ) -> Result<(), WorldError> {
+        let mut store = self
+            .get_component_agent_belief_store(agent)
+            .cloned()
+            .ok_or(WorldError::ComponentNotFound {
+                entity: agent,
+                component_type: "AgentBeliefStore",
+            })?;
+        store.record_believed_office_data(office, snapshot);
+        self.set_component_agent_belief_store(agent, store)
+    }
+
+    /// Records the producing actor's belief in a lot it just created.
+    ///
+    /// An agent that crafts or harvests a lot witnesses its creation (FND-7):
+    /// it lawfully knows the lot's physical state (kind, commodity, quantity,
+    /// place) and the ownership the production action just established. This is
+    /// the lawful belief carrier that lets the producer subsequently control or
+    /// consume its own output without depending on a remote/authoritative
+    /// `owner_of`/`possessor_of` read (closed by S162) or on perception, whose
+    /// per-tick observation budget can be exhausted by a large local inventory.
+    ///
+    /// No-op when the actor has no belief store (e.g. non-perceiving producer).
+    pub fn project_self_produced_lot_belief(
+        &mut self,
+        actor: EntityId,
+        lot: EntityId,
+        owner: Option<EntityId>,
+    ) -> Result<(), WorldError> {
+        let Some(state) = build_believed_entity_state(
+            &self.staged_world,
+            lot,
+            self.tick,
+            PerceptionSource::DirectObservation,
+        ) else {
+            return Ok(());
+        };
+        let Some(mut store) = self.get_component_agent_belief_store(actor).cloned() else {
+            return Ok(());
+        };
+        store.update_entity(lot, state);
+        store.record_entity_claim(EntityBeliefClaim {
+            claim_id: store.next_claim_id,
+            subject: lot,
+            aspect: EntityBeliefAspect::Owner,
+            value: ClaimValue::Entity(owner),
+            source: PerceptionSource::DirectObservation,
+            acquired_tick: self.tick,
+            claimed_event_tick: Some(self.tick),
+            confidence: Permille::new(1000).expect("1000 permille is valid"),
+            refuted_at_tick: None,
+        });
+        self.set_component_agent_belief_store(actor, store)
     }
 
     pub fn create_item_lot(

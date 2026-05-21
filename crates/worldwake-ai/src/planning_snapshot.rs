@@ -1308,6 +1308,8 @@ pub fn build_planning_snapshot(
     evidence_places: &BTreeSet<EntityId>,
     travel_horizon: u8,
 ) -> PlanningSnapshot {
+    // Snapshot construction must stay behind RuntimeBeliefView so planner-visible
+    // fields preserve the belief-view source classification.
     PlanningSnapshot::build(
         view,
         actor,
@@ -1577,6 +1579,30 @@ mod tests {
 
     type SupportDeclarationBeliefs =
         BTreeMap<EntityId, Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)>>;
+
+    fn production_source(source: &str) -> &str {
+        source
+            .split_once("\n#[cfg(test)]\nmod tests")
+            .map_or(source, |(production, _)| production)
+    }
+
+    fn direct_world_read_lines(source: &str) -> Vec<(usize, &str)> {
+        production_source(source)
+            .lines()
+            .enumerate()
+            .filter_map(|(index, line)| line.contains("world.").then_some((index + 1, line)))
+            .collect()
+    }
+
+    #[test]
+    fn planning_snapshot_construction_has_no_direct_world_reads() {
+        let direct_reads = direct_world_read_lines(include_str!("planning_snapshot.rs"));
+
+        assert!(
+            direct_reads.is_empty(),
+            "planning snapshot construction must read through RuntimeBeliefView, found direct world reads: {direct_reads:?}"
+        );
+    }
 
     struct StubBeliefView {
         current_tick: Tick,

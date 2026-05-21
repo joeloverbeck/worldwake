@@ -1206,6 +1206,27 @@ mod tests {
         commit_txn(txn);
     }
 
+    fn seed_believed_record_data(world: &mut World, actor: EntityId, record: EntityId, tick: u64) {
+        let record_data = world.get_component_record_data(record).cloned().unwrap();
+        let learned_at = world.effective_place(actor);
+        let mut txn = new_txn(world, tick);
+        let mut store = txn
+            .get_component_agent_belief_store(actor)
+            .cloned()
+            .unwrap_or_default();
+        store.record_believed_record_data(
+            record,
+            worldwake_core::BelievedRecordDataSnapshot {
+                data: record_data,
+                source: worldwake_core::InstitutionalSnapshotSource::RecordConsultation { record },
+                learned_tick: Tick(tick),
+                learned_at,
+            },
+        );
+        txn.set_component_agent_belief_store(actor, store).unwrap();
+        commit_txn(txn);
+    }
+
     fn create_record(
         world: &mut World,
         place: EntityId,
@@ -1562,6 +1583,7 @@ mod tests {
         let office_register =
             create_record(&mut world, place, actor, RecordKind::OfficeRegister, 2);
         seed_entity_belief(&mut world, actor, office_register, 3);
+        seed_believed_record_data(&mut world, actor, office_register, 3);
         let expectation_id = seed_expectation(
             &mut world,
             actor,

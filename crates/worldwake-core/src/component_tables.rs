@@ -276,6 +276,8 @@ mod tests {
                     learned_at: Some(entity(27)),
                 }],
             )]),
+            believed_record_data: BTreeMap::new(),
+            believed_office_data: BTreeMap::new(),
         }
     }
 

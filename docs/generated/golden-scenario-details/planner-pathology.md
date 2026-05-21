@@ -25,7 +25,7 @@ Scenarios: 2
 - Replay tests: None
 - All tests: `obligation_satiation_allows_survival_needs_to_override_posting`
 
-**Setup**: A guard remembers a hostile, starts at Hearthstone Inn with local Bread and Water, critical needs, and high notice-posting weight.
+**Setup**: A guard remembers a hostile, starts at Hearthstone Inn with possessed Bread and Water, critical needs, and high notice-posting weight.
 
 **Proves**: Repeated PostNotice still happens, but eat and drink commits recover and notice posting does not dominate indefinitely.
 

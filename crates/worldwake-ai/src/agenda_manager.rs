@@ -2510,7 +2510,7 @@ mod tests {
             discrepancy: worldwake_core::Discrepancy::BeliefStale,
             observed_tick: Tick(1),
             expires_tick: Tick(20),
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
             clearing_condition: worldwake_core::DiscrepancyClearing::TtlExpiry,
         });
 

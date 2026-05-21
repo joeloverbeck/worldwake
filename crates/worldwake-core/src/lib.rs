@@ -246,9 +246,10 @@ pub use goal_dispatch_key::GoalDispatchKey;
 pub use goal_planning_budget::GoalPlanningBudget;
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
 pub use institutional::{
-    BelievedInstitutionalClaim, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
-    InstitutionalRecordError, RecordData, RecordEntryId, RecordKind,
+    BelievedInstitutionalClaim, BelievedOfficeDataSnapshot, BelievedRecordDataSnapshot,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+    InstitutionalKnowledgeSource, InstitutionalRecordEntry, InstitutionalRecordError,
+    InstitutionalSnapshotSource, RecordData, RecordEntryId, RecordKind,
 };
 pub use intention_condition::{
     IntentionAbandonCondition, IntentionAbandonConditionDiscriminant, IntentionResumeCondition,

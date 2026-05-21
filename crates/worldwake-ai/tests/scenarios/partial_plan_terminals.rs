@@ -406,6 +406,6 @@ fn golden_s149_coordination_barrier_records_blocker_memory_not_discrepancy() {
         worldwake_core::BlockerClearingCondition::ContentionChanged { facility: actual }
             if actual == facility
     ));
-    assert_eq!(blocker.source_event, EventId(89));
+    assert_eq!(blocker.source_event, Some(EventId(89)));
     assert!(blocker.expires_tick > Tick(40));
 }

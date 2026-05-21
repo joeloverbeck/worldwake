@@ -160,7 +160,11 @@ All assertions are adaptations of the scattered golden test with tighter toleran
 
 ## Files to Update
 
-- `specs/IMPLEMENTATION-ORDER.md` — add a short note under "Adjunct Wave: Proactive Diversification" (or a sibling wave) that the third survival scenario landed and that Phase 7 gameplay-feature specs inherit a three-scenario survival floor.
+- Former implementation-order artifact (now archived at
+  `archive/specs/IMPLEMENTATION-ORDER-final-2026-05-21.md`) — add a short note
+  under "Adjunct Wave: Proactive Diversification" (or a sibling wave) that the
+  third survival scenario landed and that Phase 7 gameplay-feature specs inherit
+  a three-scenario survival floor.
 
 ## Verification Plan
 

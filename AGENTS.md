@@ -132,7 +132,7 @@ For debugging AI decisions or action execution, see `docs/debugging-traces.md` (
 ## Delivery Planning
 
 - Gameplay-related specs may remain in `specs/` while core AI architecture work is prioritized first.
-- The former implementation-order authority has been retired and archived at `archive/specs/IMPLEMENTATION-ORDER-2026-05-21.md`.
+- The final implementation-order authority has been retired and archived at `archive/specs/IMPLEMENTATION-ORDER-final-2026-05-21.md`.
 - Do not infer active phase gates from retired implementation-order material; use the current user request and live specs/tickets as the source of work scope.
 
 ## Dependencies

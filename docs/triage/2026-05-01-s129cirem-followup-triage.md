@@ -77,6 +77,7 @@ producing one-off CIREM-style fixes if not addressed.
 ## Placement
 
 Added as `### Adjunct Wave: S129 Post-Remediation Architectural Audit`
-under `## Phase 10: Survival Mechanic Depth` in
-`specs/IMPLEMENTATION-ORDER.md`. Phase 10 is the home of S128/S129;
-this wave is the follow-up to that work.
+under `## Phase 10: Survival Mechanic Depth` in the former implementation-order
+artifact, now archived at
+`archive/specs/IMPLEMENTATION-ORDER-final-2026-05-21.md`. Phase 10 was the home
+of S128/S129; this wave is the follow-up to that work.

@@ -139,7 +139,7 @@ fn golden_route_preference_and_route_segment_blocker_compose_independently() {
         expires_tick: Tick(50),
         clearing_condition: BlockerClearingCondition::RouteRetraversedSafely(direct_segment()),
         baseline_snapshot: None,
-        source_event: EventId(90),
+        source_event: Some(EventId(90)),
     });
 
     assert!(entry.preference(&profile(), Tick(6)) > Permille::new_unchecked(500));

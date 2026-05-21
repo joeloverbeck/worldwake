@@ -430,7 +430,7 @@ fn apply_pending_discrepancies(
                     .saturating_add(u64::from(structural_block_ticks)),
             ),
             clearing_condition: pending.clearing_condition,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
     }
 }
@@ -650,7 +650,7 @@ pub(super) fn handle_facility_queue_transitions(
                                 worldwake_core::BlockerClearingCondition::TtlOnly,
                             ),
                         baseline_snapshot: None,
-                        source_event: worldwake_core::EventId(0),
+                        source_event: None,
                     });
                     changed = true;
                 }

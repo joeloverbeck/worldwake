@@ -584,16 +584,18 @@ fn run_obligation_satiation_allows_survival(
         commit_txn(txn, &mut h.event_log);
     }
 
-    place_ground_commodity(
+    let _bread = give_commodity(
         &mut h.world,
         &mut h.event_log,
+        guard,
         HEARTHSTONE_INN,
         CommodityKind::Bread,
         Quantity(12),
     );
-    place_ground_commodity(
+    let _water = give_commodity(
         &mut h.world,
         &mut h.event_log,
+        guard,
         HEARTHSTONE_INN,
         CommodityKind::Water,
         Quantity(12),
@@ -654,11 +656,19 @@ fn run_obligation_satiation_allows_survival(
     );
     assert!(
         eat_commits > 0,
-        "guard should commit eat despite repeated notice pressure"
+        "guard should commit eat despite repeated notice pressure; actions={:?}",
+        committed_events
+            .iter()
+            .map(|event| event.summary())
+            .collect::<Vec<_>>()
     );
     assert!(
         drink_commits > 0,
-        "guard should commit drink despite repeated notice pressure"
+        "guard should commit drink despite repeated notice pressure; actions={:?}",
+        committed_events
+            .iter()
+            .map(|event| event.summary())
+            .collect::<Vec<_>>()
     );
     assert!(
         first_notice_commit.is_some(),
@@ -958,7 +968,7 @@ pub fn assert_degenerate_zero_step_loop_blocks_actionable_goals() {
 // Principles: 3, 7, 11, 22, 26
 //
 // Setup: A guard first directly observes a hostile at Dusty Trail, then starts
-//   the scenario window at Hearthstone Inn with local Bread and Water, critical
+//   the scenario window at Hearthstone Inn with possessed Bread and Water, critical
 //   hunger/thirst, `notice_posting_weight=900`, and the default obligation
 //   satiation profile. The remembered combat belief keeps a remote
 //   `ThreatWarning` notice branch lawful without reintroducing co-located combat

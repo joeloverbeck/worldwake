@@ -1,4 +1,4 @@
-use crate::{Component, EntityId, PunishmentKind, TheftFacts, Tick, ViolationId};
+use crate::{Component, EntityId, OfficeData, PunishmentKind, TheftFacts, Tick, ViolationId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fmt;
@@ -246,6 +246,30 @@ pub enum InstitutionalKnowledgeSource {
         entry_id: RecordEntryId,
     },
     SelfDeclaration,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub enum InstitutionalSnapshotSource {
+    DirectObservation,
+    RecordConsultation { record: EntityId },
+    Report { from: EntityId, chain_len: u8 },
+    InstitutionalBelief,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BelievedRecordDataSnapshot {
+    pub data: RecordData,
+    pub source: InstitutionalSnapshotSource,
+    pub learned_tick: Tick,
+    pub learned_at: Option<EntityId>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BelievedOfficeDataSnapshot {
+    pub data: OfficeData,
+    pub source: InstitutionalSnapshotSource,
+    pub learned_tick: Tick,
+    pub learned_at: Option<EntityId>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
