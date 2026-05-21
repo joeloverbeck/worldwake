@@ -476,6 +476,7 @@ fn method_trace(
             .enumerate()
             .map(|(template_index, subgoal)| SubgoalAttemptResult {
                 template_index,
+                authority: subgoal.authority,
                 kind: (&subgoal.template).into(),
                 outcome: SubgoalAttemptOutcome::Pending,
             })
@@ -505,6 +506,7 @@ fn fallback_method_trace(
                 .enumerate()
                 .map(|(template_index, subgoal)| SubgoalAttemptResult {
                     template_index,
+                    authority: subgoal.authority,
                     kind: (&subgoal.template).into(),
                     outcome: SubgoalAttemptOutcome::Pending,
                 })
@@ -2171,11 +2173,14 @@ mod tests {
                         min_quantity: Quantity(1),
                     },
                 ),
-                crate::htn::MethodSubgoal::stage_hint(crate::htn::SubgoalTemplate::TravelTo(
-                    crate::htn::LocationTemplate::KnownWorkstationFor {
-                        recipe: crate::htn::RecipeTemplate::GoalRecipe,
-                    },
-                )),
+                crate::htn::MethodSubgoal {
+                    template: crate::htn::SubgoalTemplate::TravelTo(
+                        crate::htn::LocationTemplate::KnownWorkstationFor {
+                            recipe: crate::htn::RecipeTemplate::GoalRecipe,
+                        },
+                    ),
+                    authority: crate::htn::MethodSubgoalAuthority::RequiredActionLeaf,
+                },
             ],
             explanation_template: crate::htn::ExplanationTemplateId(99),
             motive_bias: Vec::new(),
@@ -2218,6 +2223,20 @@ mod tests {
                 .as_ref()
                 .map(|trace| trace.method_id),
             Some(Some(worldwake_core::MethodSchemaId(99)))
+        );
+        assert_eq!(
+            stage_build.method_trace.as_ref().map(|trace| {
+                trace
+                    .subgoals_attempted
+                    .iter()
+                    .map(|subgoal| subgoal.authority)
+                    .collect::<Vec<_>>()
+            }),
+            Some(vec![
+                crate::htn::MethodSubgoalAuthority::StageHint,
+                crate::htn::MethodSubgoalAuthority::RequiredActionLeaf,
+            ]),
+            "method trace should preserve the selected method's per-subgoal authority labels"
         );
     }
 

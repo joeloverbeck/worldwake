@@ -26,7 +26,7 @@ use crate::agent_tick::portfolio::{FeasibilityVerdict, SlotKind};
 use crate::feasibility::FeasibilityHint;
 use crate::goal_model::{GoalPriorityClass, RankedGoalProvenance};
 use crate::goal_switching::GoalSwitchKind;
-use crate::htn::{MethodFailureMode, MethodPrecondition, SubgoalTemplate};
+use crate::htn::{MethodFailureMode, MethodPrecondition, MethodSubgoalAuthority, SubgoalTemplate};
 use crate::interrupts::InterruptDecision;
 use crate::knowledge_path::{
     BeliefAspect, BeliefProvenance, InstitutionalBeliefProvenance, KnowledgePath,
@@ -1269,6 +1269,7 @@ pub enum StrategicFallbackReason {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SubgoalAttemptResult {
     pub template_index: usize,
+    pub authority: MethodSubgoalAuthority,
     pub kind: SubgoalAttemptKind,
     pub outcome: SubgoalAttemptOutcome,
 }
@@ -5441,6 +5442,7 @@ mod tests {
             fallback_reason: None,
             subgoals_attempted: vec![SubgoalAttemptResult {
                 template_index: 0,
+                authority: MethodSubgoalAuthority::StageHint,
                 kind: SubgoalAttemptKind::AcquireCommodity,
                 outcome: SubgoalAttemptOutcome::Pending,
             }],
