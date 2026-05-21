@@ -35,7 +35,7 @@ symmetry (FND-19). S158 D1 (economic), proven by S158 D4 economic goldens.
    leaky `has_sale_listing` / `seller_for_sale_lot` accessors. This ticket does
    NOT add a believed-sale-listing surface; it gates these accessors to
    co-located lots only. The merchant-return lifecycle coverage gap exposed by
-   removing the leak is now owned by `tickets/S158BELVIEWLEAK-005.md`.
+   removing the leak was later closed by `archive/tickets/S158BELVIEWLEAK-005.md`.
 3. Shared boundary under audit: the `MarketBeliefView` / economic accessor surface
    of `PerAgentBeliefView` consumed by `affordance_query.rs` and trade candidate
    generation. The gate predicate is co-location of the lot with the observing
@@ -108,8 +108,8 @@ Implemented proof as:
 
 Three merchant-return lifecycle goldens were marked ignored with an explicit
 S158 reason because their original setup depended on the remote sale-listing leak
-to create a seller-backed purchase branch. `tickets/S158BELVIEWLEAK-005.md` now
-owns restoring that coverage through a lawful carrier or truthful rebind.
+to create a seller-backed purchase branch. `archive/tickets/S158BELVIEWLEAK-005.md`
+later restored that coverage through a lawful local-observation rebind.
 
 ## Files to Touch
 
@@ -121,7 +121,7 @@ owns restoring that coverage through a lawful carrier or truthful rebind.
 - `crates/worldwake-ai/tests/scenarios/merchant_selling.rs` (modified
   same-domain fallout and follow-up handoff)
 - `docs/generated/*golden*` (regenerated golden inventory/docs)
-- `tickets/S158BELVIEWLEAK-005.md` (new follow-up)
+- `archive/tickets/S158BELVIEWLEAK-005.md` (completed follow-up)
 
 ## Out of Scope
 
@@ -177,8 +177,9 @@ What changed:
 - Replaced the old merchant-selling remote branch expectation with an active
   S158 no-leak assertion.
 - Marked three merchant-return lifecycle goldens ignored with an explicit S158
-  reason and created `tickets/S158BELVIEWLEAK-005.md` to restore that coverage
-  through a lawful carrier.
+  reason and created `archive/tickets/S158BELVIEWLEAK-005.md` to restore that
+  coverage through a lawful carrier. Outcome amended: 2026-05-21 — the follow-up
+  later restored the coverage through a lawful local-observation rebind.
 
 Deviation from the original plan:
 - The final proof is not split into separate delist/restock goldens. The landed

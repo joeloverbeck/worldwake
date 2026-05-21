@@ -78,6 +78,16 @@ fn request_simple_action(
     );
 }
 
+fn runtime_has_trade_plan(h: &GoldenHarness, actor: worldwake_core::EntityId) -> bool {
+    h.driver.runtime(actor).is_some_and(|runtime| {
+        runtime.current_plan.as_ref().is_some_and(|plan| {
+            plan.steps
+                .iter()
+                .any(|step| step.op_kind == worldwake_ai::PlannerOpKind::Trade)
+        })
+    })
+}
+
 /// Seed a merchant at `place` with `MerchandiseProfile`, trade disposition,
 /// perception, AI control, enterprise utility, a facility with display
 /// container, and stock of `commodity` staged in the display container
@@ -611,7 +621,6 @@ fn remote_listing_belief_does_not_select_trade_branch_before_local_observation()
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "S158: requires a lawful remote sale/opportunity carrier after remote sale-listing truth leaks were closed"]
 fn merchant_return_revives_pending_purchase_agenda_entry() {
     let mut h = GoldenHarness::with_recipes(Seed([85; 32]), RecipeRegistry::new());
     h.driver.enable_tracing();
@@ -657,6 +666,7 @@ fn merchant_return_revives_pending_purchase_agenda_entry() {
         };
         if h.world.effective_place(buyer) == Some(VILLAGE_SQUARE)
             && h.agent_active_action_name(buyer).is_none()
+            && runtime_has_trade_plan(&h, buyer)
             && selected_plan
                 .next_step
                 .as_ref()
@@ -761,7 +771,6 @@ fn merchant_return_revives_pending_purchase_agenda_entry() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "S158: requires a lawful remote sale/opportunity carrier after remote sale-listing truth leaks were closed"]
 fn seller_return_restores_displayed_listing_after_pending_revival() {
     let mut h = GoldenHarness::with_recipes(Seed([86; 32]), RecipeRegistry::new());
     h.driver.enable_tracing();
@@ -807,6 +816,7 @@ fn seller_return_restores_displayed_listing_after_pending_revival() {
         };
         if h.world.effective_place(buyer) == Some(VILLAGE_SQUARE)
             && h.agent_active_action_name(buyer).is_none()
+            && runtime_has_trade_plan(&h, buyer)
             && selected_plan
                 .next_step
                 .as_ref()
@@ -911,7 +921,6 @@ fn seller_return_restores_displayed_listing_after_pending_revival() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "S158: requires a lawful remote sale/opportunity carrier after remote sale-listing truth leaks were closed"]
 fn seller_return_completes_resumed_purchase_after_live_offer_refresh() {
     let mut h = GoldenHarness::with_recipes(Seed([87; 32]), RecipeRegistry::new());
     h.driver.enable_tracing();
@@ -957,6 +966,7 @@ fn seller_return_completes_resumed_purchase_after_live_offer_refresh() {
         };
         if h.world.effective_place(buyer) == Some(VILLAGE_SQUARE)
             && h.agent_active_action_name(buyer).is_none()
+            && runtime_has_trade_plan(&h, buyer)
             && selected_plan
                 .next_step
                 .as_ref()

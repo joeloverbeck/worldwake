@@ -7,7 +7,7 @@ Scenarios: 13
 
 ### Scenario 75: Displayed Lot Retains SaleListing Through Presence Cycle
 
-- Source: `merchant_selling.rs:353`
+- Source: `merchant_selling.rs:363`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - ActionDomains: Trade
@@ -20,7 +20,7 @@ Scenarios: 13
 
 ### Scenario 76: Buyer Trades Against Listed Lot
 
-- Source: `merchant_selling.rs:423`
+- Source: `merchant_selling.rs:433`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity, SellCommodity
 - ActionDomains: Trade
@@ -33,7 +33,7 @@ Scenarios: 13
 
 ### Scenario 84: Remote Listing Belief Does Not Select A Trade Branch
 
-- Source: `merchant_selling.rs:525`
+- Source: `merchant_selling.rs:535`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -46,7 +46,7 @@ Scenarios: 13
 
 ### Scenario 85: Seller Return Revives Pending Purchase Agenda Entry
 
-- Source: `merchant_selling.rs:601`
+- Source: `merchant_selling.rs:611`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Trade
@@ -59,7 +59,7 @@ Scenarios: 13
 
 ### Scenario 86: Seller Return Restores Displayed Listing After Pending Revival
 
-- Source: `merchant_selling.rs:752`
+- Source: `merchant_selling.rs:762`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Trade
@@ -72,7 +72,7 @@ Scenarios: 13
 
 ### Scenario 87: Seller Return Completes Resumed Purchase After Live Three-Coin Offer
 
-- Source: `merchant_selling.rs:901`
+- Source: `merchant_selling.rs:911`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Trade
@@ -85,7 +85,7 @@ Scenarios: 13
 
 ### Scenario 77: Unlisted Stock Not Sellable
 
-- Source: `merchant_selling.rs:1048`
+- Source: `merchant_selling.rs:1058`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -98,7 +98,7 @@ Scenarios: 13
 
 ### Scenario 79b: Unstage Round Trip Preserves Storage Contract
 
-- Source: `merchant_selling.rs:1200`
+- Source: `merchant_selling.rs:1210`
 - Systems: Trade, AI
 - ActionDomains: Trade
 - Principles: P4, P24
@@ -110,7 +110,7 @@ Scenarios: 13
 
 ### Scenario 80: Buyer Discovers Listed Lots, Not Unlisted Stock
 
-- Source: `merchant_selling.rs:1214`
+- Source: `merchant_selling.rs:1224`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -123,7 +123,7 @@ Scenarios: 13
 
 ### Scenario 82: Seller Departure Invalidates Listing
 
-- Source: `merchant_selling.rs:1282`
+- Source: `merchant_selling.rs:1292`
 - Systems: Trade
 - Principles: P3, P7
 - Primary tests: `seller_departure_invalidates_listing`
@@ -134,7 +134,7 @@ Scenarios: 13
 
 ### Scenario 83: Dead Seller Invalidates Listing
 
-- Source: `merchant_selling.rs:1339`
+- Source: `merchant_selling.rs:1349`
 - Systems: Trade
 - Principles: P3, P4
 - Primary tests: `dead_seller_invalidates_listing`
@@ -145,7 +145,7 @@ Scenarios: 13
 
 ### Scenario 88: Demand Memory Raises Sell Ranking
 
-- Source: `merchant_selling.rs:1411`
+- Source: `merchant_selling.rs:1421`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - Principles: P1, P3, P20
@@ -157,7 +157,7 @@ Scenarios: 13
 
 ### Scenario 96: Hungry Merchant Eats Own Listed Sale Stock
 
-- Source: `merchant_selling.rs:1483`
+- Source: `merchant_selling.rs:1493`
 - Systems: Needs, Trade, AI
 - GoalKinds: ConsumeOwnedCommodity, SellCommodity
 - ActionDomains: Needs (eat), Trade (staff_market)
