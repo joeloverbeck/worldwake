@@ -1,0 +1,827 @@
+# **Fourth-Iteration Hostile AI Architecture Audit — Worldwake**
+
+I treated the uploaded mission as the governing audit spec. I did not clone the repository, create tickets, edit files, or broadly read archive material.
+
+## **1. Executive Verdict**
+
+**Verdict:** Worldwake’s AI architecture is meaningfully cleaner than the older danger profile, but it is **not yet structurally safe enough to leave consolidation**. The current code has fixed several obvious truth leaks: candidate generation, ranking, `PlanningState`, and most HTN logic now operate through belief/planner views rather than direct `World` reads. But the central safety claim still fails: **AI, planner, and player-facing action surfaces can still reach authoritative world truth indirectly through `PerAgentBeliefView`.**
+
+The largest problem is not “the planner has direct `World` calls.” The larger problem is subtler and more dangerous: `PerAgentBeliefView` itself holds `&World`, implements broad AI/player-visible traits, and still exposes live social/relational state—especially rights/control—behind names that sound belief-safe. `PlanningSnapshot` and `PlanningState` then make those leaked values look planner-local.
+
+### **Severity summary**
+
+| Severity | Finding |
+| ----- | ----- |
+| **Critical** | `PerAgentBeliefView<'w>` stores `world: &'w World` while implementing AI/player-facing `RuntimeBeliefView` traits; this prevents near-mechanical proof. |
+| **Critical** | `ControlBeliefView::believed_rights` and `can_control` read authoritative `world.effective_rights` / `world.can_exercise_control` for any merely “known” entity. That violates FND-14/FND-14A because rights/control are social/relational facts, not same-tick physical facts. |
+| **Critical** | Normal CLI human action lists use the same `PerAgentBeliefView` + `get_affordances` path as AI, so the rights/control leak is already a player-facing action-menu leak, not just a hypothetical future UI risk. |
+| **High** | `PlanningSnapshot` uses entity-level `AdmissionSource`, not per-field source admission. Fields with different source legality—kind, control, seller, stock policy, possessor/container, queue state—can be admitted under the same entity umbrella. |
+| **High** | Strategic search treats `BeliefLastSeen` admission as exposing “physical fields,” then uses those entities for seller/resource/workstation-style stage generation. That is too coarse. |
+| **High** | Remote known-entity helpers still leak live kind, container/possessor, merchandise profile, stock policy, seller/controller, contention policy/capacity, and bandit faction policy in places where explicit belief/source should be required. |
+| **Medium** | HTN is now honestly bounded as method-guided strategic search, but method traces do not yet prove subgoal execution because all current subgoals are `StageHint`, not enforced leaves. This is acceptable only if kept narrow. |
+| **Medium** | Diagnostics are better than decorative, but they do not yet prove per-field source lawfulness. Snapshot admission traces are entity/opportunity-level, not field-source proofs. |
+| **Low** | Several comments/spec names imply more authority than live enforcement provides, especially around snapshot political metadata and HTN method semantics. |
+
+**Bottom line:** This should remain in consolidation. The recommended path is **moderate consolidation with aggressive belief-boundary hardening**: keep the current GOAP/ranking/HTN shape, but split capability views, remove live rights/control from AI-facing traits, introduce per-field source admission, and add compile/lint gates that make future `World` leaks hard to reintroduce.
+
+---
+
+## **2. Repository Discovery Log**
+
+### **Active docs/contracts inspected**
+
+| File | Role in audit |
+| ----- | ----- |
+| `docs/FOUNDATIONS.md` | Treated as the non-negotiable constitution. It explicitly requires local causality, concrete state, belief/world separation, first-class stale/false belief, carrier-based knowledge, player/AI symmetry, no fossil authority paths, and append-only causal/debug history. |
+| `docs/planner-contracts.md` | Active planner authority contract. It already states the right target: planner-visible inputs must be source-scoped; entity-level admission is insufficient; dispatch may use authoritative control but planning/UI must not. |
+| `docs/spec-drafting-rules.md` | Active spec discipline. It requires every planner/player-visible accessor to declare source class and says social/relational facts require explicit belief. |
+| `AGENTS.md` | Active repository guidance. It confirms crate responsibilities, belief-only planning, no global world queries on behalf of agents, `ControlSource` symmetry, and no backward compatibility fossils. |
+| `.claude/skills/goap-architecture-report/SKILL.md` | Active audit/rubric context for GOAP architecture reports. Used as process context, not as proof of code behavior. |
+
+### **Active reports inspected**
+
+| File | Use |
+| ----- | ----- |
+| `reports/ai-architecture-consolidation-third-iteration.md` | Used only as historical suspicion categories. I did not treat it as current proof. Its warnings about `PerAgentBeliefView`, snapshot admission, rights/control, and source typing were rechecked against current code. |
+
+### **Active code files inspected**
+
+| Area | Files |
+| ----- | ----- |
+| Belief API and per-agent view | `crates/worldwake-sim/src/belief_view.rs`, `crates/worldwake-sim/src/per_agent_belief_view.rs` |
+| Planning snapshot/state | `crates/worldwake-ai/src/planning_snapshot.rs`, `crates/worldwake-ai/src/planning_state.rs` |
+| Candidate/ranking/portfolio | `crates/worldwake-ai/src/candidate_generation.rs`, `crates/worldwake-ai/src/ranking.rs`, `crates/worldwake-ai/src/agent_tick/portfolio.rs` |
+| HTN/strategic search | `crates/worldwake-ai/src/htn/method_schema.rs`, `htn/registry.rs`, `htn/methods.rs`, `htn/selector.rs`, `search/strategic.rs` |
+| Agent tick, intentions, repair/replan | `crates/worldwake-ai/src/agent_tick/mod.rs`, `agent_tick/planning.rs` |
+| Action definitions/affordances | `crates/worldwake-sim/src/action_def.rs`, `crates/worldwake-sim/src/affordance_query.rs` |
+| CLI/player-control | `crates/worldwake-cli/src/main.rs`, `crates/worldwake-cli/src/repl.rs`, `crates/worldwake-cli/src/handlers/actions.rs` |
+| Visualizer/debug | `crates/worldwake-visualizer/src/main.rs`, `app.rs`, `snapshot.rs` |
+| Workspace | `Cargo.toml` confirms active crates include core, sim, systems, AI, CLI, and visualizer. |
+
+### **Tests/golden surfaces inspected**
+
+I inspected embedded tests in the active files above, including:
+
+| Test area | Evidence |
+| ----- | ----- |
+| `planning_snapshot_construction_has_no_direct_world_reads` | Good narrow test: proves `planning_snapshot.rs` itself does not contain production `world.` reads, but does not prove helper calls are source-safe. |
+| HTN registry tests | Strong: all current subgoals are `StageHint`, and `RequiredActionLeaf` is forbidden until enforcement exists. |
+| Ranking compile-fail / ordering authority tests | Good ownership test for ranking authority. |
+| ActionDef field tests | Good FND-8 alignment: actions have explicit constraints, preconditions, reservations, duration, cost, visibility, handler, guard, expectation, effect schema. |
+| CLI action tests | Useful smoke tests for action menu/request behavior, but they do not prove belief-boundary safety. |
+| Visualizer smoke/trace tests | Useful for diagnostic UX, but visualizer is omniscient by design and must remain debug-only. |
+
+I did **not** run the test suite; the mission constrained this to repository forensics via Git/code search and targeted file fetches.
+
+### **Archived files read**
+
+**None.** Archive hits appeared in search results, but I did not open or use any archived file.
+
+### **Newly central surfaces discovered**
+
+The most central live surfaces are:
+
+| Surface | Why central |
+| ----- | ----- |
+| `PerAgentBeliefView` | Single largest authority boundary problem; it is both belief façade and holder of `&World`. |
+| `ControlBeliefView` impl for `PerAgentBeliefView` | Critical rights/control leak. |
+| CLI `actions` / `do` | Confirms human action surface already depends on same belief view and affordance query as AI. |
+| `PlanningSnapshot` | Turns belief-view outputs into planner-local facts; lacks per-field provenance. |
+| `search/strategic.rs` | Uses snapshot admission classes to admit physical/economic stage fields. |
+
+### **Important areas not inspected sufficiently**
+
+I inspected enough to support the central verdict. Still incomplete:
+
+| Area | Why incomplete |
+| ----- | ----- |
+| Full `worldwake-systems` action handlers | I inspected action definitions and affordance queries, not every commit-time handler. |
+| Full scenario/golden suite | I inspected embedded tests and active surfaces, but not every golden scenario. |
+| Full visualizer modal/detail tabs | I inspected app/snapshot; not every tab/detail panel. |
+| Full failure-handling modules | I inspected agent tick integration and planning path; not every failure classifier. |
+| Performance empirics | No run/benchmark; scaling assessment is structural. |
+
+---
+
+## **3. Current Architecture Map**
+
+| Layer | Current files/types | Reads | Writes | Authority owned | Risk |
+| ----- | ----- | ----- | ----- | ----- | ----- |
+| Foundations/contracts | `docs/FOUNDATIONS.md`, `docs/planner-contracts.md`, `docs/spec-drafting-rules.md`, `AGENTS.md` | N/A | N/A | Design authority | Strong and clear; implementation does not fully meet it. |
+| Authoritative world/systems | `World`, systems/action handlers, scheduler | Ground truth | Ground truth, event log, components | Live world truth | Lawful only in dispatch/commit/systems/debug; dangerous if exposed to planner/UI. |
+| Per-agent belief façade | `PerAgentBeliefView<'w>` | `&World`, belief store, scheduler runtime, recipes | None directly | Claims to own AI/player-visible belief reads | **Critical:** broad AI-facing view has ambient `&World`. |
+| Belief API traits | `RuntimeBeliefView`, `GoalBeliefView`, many subtraits | Trait methods | None | Planner/action visible API | Too broad; method names sound safe but hide source variation. |
+| Local physical observation | `LocalPhysicalObservationView`, helper gates in `PerAgentBeliefView` | Same-tick local physical world state | None | Lawful local observation | Mostly clean; must not admit social/rights/control facts. |
+| Belief/memory storage | `AgentBeliefStore`, last-seen, testimony, institutional beliefs | Stored beliefs/claims | World components via events/systems | Lawful carriers | Good direction; some accessors bypass it. |
+| Planning snapshot | `PlanningSnapshot`, `SnapshotEntity`, `AdmissionSource` | `RuntimeBeliefView`, evidence sets, memories, topology | Snapshot-local structs/caches | Planner-visible derived state | High: no per-field source proof; entity-level admission. |
+| Planning state | `PlanningState<'_>` | `PlanningSnapshot` only | Planner-local overrides/caches | Hypothetical planner-local state | Mostly clean if snapshot safe; no direct `World`. |
+| Candidate generation | `candidate_generation.rs`, extractors | `GoalBeliefView`, memories, opportunities, recipes | Candidate list, diagnostics, pending memory writes | Goal discovery | Structurally good; inherits belief-view leaks. |
+| Ranking | `ranking.rs` | `GoalBeliefView`, utility, repair/learned memory | Ranked candidates/diagnostics | Single preference order | Good single authority; risk of score soup if expanded without rules. |
+| Portfolio/slot triage | `agent_tick/portfolio.rs` | Ranked candidates, weights, feasibility probe | Portfolio slots | Budget/diagnostic triage | Currently clean because search order remains ranking-based; do not let it become second ranking authority. |
+| HTN method registry/selector | `htn/*` | `RuntimeBeliefView`, method schemas, motives, recipes | Selected/rejected method trace | Strategic stage guidance | Honest StageHint layer; not enforced HTN leaves. |
+| Strategic search | `search/strategic.rs` | `PlanningSnapshot`, `PlanningState`, method selection | Strategic plan/stages/traces | Method-guided GOAP staging | High source risk from coarse admission and snapshot fields. |
+| Action affordance enumeration | `affordance_query.rs`, `ActionDef` | `RuntimeBeliefView`, action defs, handlers | Affordances | AI/player action visibility | Good concrete action model; leaks through view.control/known fields. |
+| Agent tick/intention runtime | `agent_tick/mod.rs`, `agent_tick/planning.rs` | World memory components, frames, scheduler, belief view, plans | Runtime state, frames, events, expectations | Decision lifecycle orchestration | Mostly right ownership, but complex and inherits view leaks. |
+| Human CLI action surface | `repl.rs`, `handlers/actions.rs` | `PerAgentBeliefView`, `get_affordances`, world display names | Input queue | Human-controlled character action requests | Same leak as AI; not merely future risk. |
+| Visualizer/debug | `worldwake-visualizer` | `World`, scheduler, traces, driver runtime | UI state only | Debug/observer view | Omniscient and fine if debug-only; unsafe as normal player POV. |
+
+---
+
+## **4. Belief-Backed Simulation Verdict**
+
+Worldwake does **not currently enforce** `docs/FOUNDATIONS.md` belief/world separation strongly enough.
+
+The enforcement is:
+
+| Enforcement kind | Current status |
+| ----- | ----- |
+| Type-level | Weak. AI/planner-facing code can still receive a `RuntimeBeliefView` implemented by `PerAgentBeliefView`, which contains `&World`. |
+| Architecture-level | Partial. `PlanningState`, candidate generation, ranking, and HTN selector avoid direct `World` reads. |
+| Test-level | Partial. There are useful tests, but some prove only direct-file absence of `world.` rather than helper-source lawfulness. |
+| Convention/review | Still too high. Risky helpers are kept safe only by local gates inside a type that already has full world access. |
+
+### **What is actually clean**
+
+| Surface | Verdict |
+| ----- | ----- |
+| `PlanningState` | Clean as a planner-local state machine; it reads snapshot fields, not `World`. |
+| Candidate generation | Clean in shape; side-effect-free and view-based. |
+| Ranking | Clean ownership; file-private ordering authority. |
+| Record/office data reads | Largely belief-backed now, not raw office truth. |
+| HTN current enforcement honesty | Clean: all current subgoals are StageHint and tests forbid RequiredActionLeaf until enforcement exists. |
+| DebugWorldView boundary | Better than before: debug/test-gated and not part of `RuntimeBeliefView`. |
+
+### **What remains dangerous**
+
+| Surface | Why dangerous |
+| ----- | ----- |
+| `PerAgentBeliefView` | It is both “belief view” and holder of authoritative `World`. Compiler cannot prove AI code sees only lawful belief. |
+| Rights/control | Current code uses live `world.effective_rights` and `world.can_exercise_control` behind AI/player-visible methods. |
+| CLI action surface | Human action menu uses `PerAgentBeliefView` and `get_affordances`; this is already a player-facing leak surface. |
+| Snapshot admission | Entity admission is treated as if it can authorize field reads; FND-14 needs per-field source. |
+| Strategic physical-field admission | `BeliefLastSeen` is treated as exposing physical fields. That is false when fields are dynamic or social/economic. |
+
+### **Belief View Source Table**
+
+| Method / Surface | Source class it should use | Current source in code | Lawful? | Risk | Required change/test |
+| ----- | ----- | ----- | ----- | ----- | ----- |
+| `effective_place(agent/self)` | Self-authoritative/current embodied state | Self/current world path | Yes | Low | Preserve. |
+| `effective_place(non-self)` | Local same-tick physical; direct possession; explicit last-seen/belief | Mostly local/possessed live, else belief/last-seen | Mostly yes | Medium | Test stale/false last-seen does not auto-correct when target moves. |
+| `entities_at(place)` | Local physical if actor is at place; otherwise known/believed entities only | Local live else `known_entities` from belief store | Yes | Low | Preserve; add remote-place ignorance test. |
+| `entity_kind(entity)` | Self/local physical, public topology for places, or `believed_kind` | For any “known” entity, can read current `world.entity_kind` | Not fully | Medium/High | Use stored `believed_kind`; add remote entity kind-change test. |
+| `known_entity_beliefs` last-seen synthesis | Stored belief/last-seen fields only | Synthesizes `believed_kind` from current `world.entity_kind` for last-seen-only entities | Not fully | Medium | Do not fill last-seen kind from live world. |
+| `believed_owner_of`, `believed_holder_of` | Belief claims/institutional records/testimony | Uses belief claims/institutional beliefs | Yes | Low | Preserve. |
+| `believed_rights(actor, entity)` | Explicit believed rights/control claim; self-state where appropriate | Reads authoritative `world.effective_rights` after weak known-entity gate | **No** | **Critical** | Replace with believed-rights claims only; dispatch keeps authoritative control. |
+| `can_control(actor, entity)` | Believed control/access for planning/UI; authoritative only at dispatch | Reads `world.can_exercise_control` after weak known-entity gate | **No** | **Critical** | Split `BelievedControlView` from dispatch `AuthorityControlView`; stale/false-control tests. |
+| `facility_controller_at` / seller identity | Local observed staff/listing record, explicit belief/testimony/record | Derives candidate controller by calling live `world.can_exercise_control` | No | High | Add seller/controller belief records; remote seller identity must be unknown absent source. |
+| `direct_container`, `direct_possessor` | Local physical, direct possession, or explicit belief claim | For any known entity, can read current world containment/possession | No | High | Use belief aspects for remote custody; test stolen/moved item remains stale. |
+| `commodity_quantity` | Self inventory, direct possession, local physical, or explicit stock belief | Mostly follows that pattern | Mostly yes | Low/Medium | Add false stock belief test; ensure no remote stock truth through helper families. |
+| `listed_sale_lots_at` | Local observed listing or known listing record | Local actor-place listing | Mostly yes | Medium | Seller identity and stock policy still leak downstream. |
+| `merchandise_profile` | Self profile or explicit observed/testified merchant profile | Returns current component for self or believed entity | No | High | Source-tag merchant profile; no remote profile truth. |
+| `stock_storage_policy` | Explicit facility record/observed local policy | Returns current policy for known facility | No | Medium/High | Require facility record/local observation. |
+| `resource_source`, `workstation_tag`, `has_production_job` | Local physical or belief-backed source | Mostly local/belief-backed | Mostly yes | Medium | Add remote source/job false-belief tests. |
+| `has_contention_policy`, `contention_queue_is_full` | Local observed queue/grant or known queue record | Reads current policy/capacity in some paths | Ambiguous/unsafe | Medium | Treat queue capacity/policy as field-source; add stale queue tests. |
+| `facility_grant`, queue position | Own/local contention record | Mostly local/belief runtime | Mostly yes | Low/Medium | Ensure remote grants hidden absent record. |
+| `record_data`, `office_data` | Believed record/office data | Belief-backed | Yes | Low | Preserve; fix misleading snapshot comment. |
+| `factions_of`, `office`, `support`, `loyalty` | Self state where appropriate; institutional belief otherwise | Mixed: many belief-backed, but bandit policy and some office/faction policy reads are live | Mixed | Medium | Source-class faction policy and institutional capacity. |
+| `bandit_factions_of`, bandit policy thresholds | Observed/testified faction classification or public record | Reads current `bandit_faction_policy` for known faction | Not fully | Medium | Add faction-policy belief/record carrier. |
+| route/topology/travel cost | Public topology plus route experience/preference/threat belief | Mostly public topology + belief/experience | Mostly yes | Low/Medium | Add stale route-danger test. |
+| local physical observation helpers | Same-tick co-located physical only | Explicit local visibility gate | Mostly yes | Low | Preserve; ensure no social/rights/control extension. |
+| belief confidence/stale/contradiction/testimony | Belief store/testimony/records | Belief store | Yes | Low | Preserve; add integration traces proving use. |
+
+### **Planning Snapshot Source Table**
+
+| Snapshot field | Source class required | Current admission/source handling | Lawful? | Risk | Required change/test |
+| ----- | ----- | ----- | ----- | ----- | ----- |
+| Entity admission | Not sufficient by itself; must be per-field | `AdmissionSource` is entity-level | No as proof | High | Add `FieldSource` per field; fail if dynamic field lacks source. |
+| `entity.kind` | Believed kind, local physical, public topology for places | `belief_backed.believed_kind.or_else( |  | view.entity_kind(entity))` | Mixed |
+| `spatial.effective_place` | Self/local/possessed or belief/last-seen | Belief-backed then view | Mostly | Medium | Preserve but source-tag field. |
+| `inventory.direct_container`, `direct_possessor` | Local/possession or explicit belief | Mixed belief/view fallback | No | High | Store source; remote custody from belief only. |
+| `control.controllable_by_actor` | Believed control/access, not dispatch authority | `view.can_control` | **No** | **Critical** | Remove from snapshot or source via believed control claim only. |
+| `political.owner` | Belief claim/institutional record | `view.believed_owner_of` | Yes | Low | Preserve. |
+| `political.record_data`, `office_data` | Record/office belief | Via view methods that are belief-backed | Yes | Low | Preserve; fix comment saying “authoritative office metadata.” |
+| `economic.merchandise_profile` | Local observed or explicit merchant belief/record | `view.merchandise_profile` | No | High | Require field source. |
+| `economic.has_sale_listing`, `seller` | Local listing/record/testimony | Via view; seller can derive from live control | Mixed/No | High | Seller identity must be explicit source. |
+| `facility.resource_source`, `workstation_tag` | Local physical or belief-backed source | Mostly view/source gated | Mostly | Medium | Per-field source tests. |
+| `facility.stock_storage_policy` | Local observed policy or facility record | `view.stock_storage_policy` | No | Medium/High | Field source required. |
+| `facility.has_production_job` | Local observed or known record | Via view | Mixed | Medium | Source-tag production jobs. |
+| `temporal.reservation_ranges`, queue/grant | Local contention observation or queue record | Via view; not field-source tagged | Ambiguous | Medium | Add queue/grant source tests. |
+| `known_entity_beliefs` in snapshot | Stored belief only | May inherit live-kind synthesis | Mixed | Medium | Do not synthesize current fields into beliefs. |
+| `BeliefLastSeen` admitted physical fields | Only last-seen location/kind fields actually observed | Strategic search treats it as physical-field admission | No | High | Replace `admission_exposes_physical_fields` with per-field source check. |
+| Route matrices/costs | Public topology + perceived route/threat | Snapshot-local matrix/cache | Mostly yes | Low/Medium | Trace route source and scale cost. |
+
+### **Player/UI Truth-Leak Table**
+
+| Surface | Reads through | Normal play or debug? | Could leak truth? | Required separation/test |
+| ----- | ----- | ----- | ----- | ----- |
+| CLI `actions` command | `PerAgentBeliefView::with_runtime_from_world` + `get_affordances` | Normal human-control action menu | Yes: inherits all `RuntimeBeliefView` rights/control/seller/custody leaks | Add player/AI symmetry tests for stale/false rights, owner, stock, queue. |
+| CLI `do N` auto-population | Same as `actions` | Normal play | Yes | Same test; ensure hidden actions are not a substitute for source safety. |
+| CLI prompt | `world.effective_place` and names | Normal UX | Mild: prompt reveals current controlled agent place truth; acceptable only if this is embodied self-state | Keep limited to controlled agent; no remote truth. |
+| `get_affordances` | `RuntimeBeliefView` | AI + human normal action visibility | Yes: `can_control`, `believed_rights`, containment, queue policy | Change to source-scoped/player-safe view. |
+| Visualizer snapshot | Direct `World`, scheduler, AI trace buffers | Debug/observer tool | Yes, by design | Must be typed/labeled `DebugOnly`; never feed normal player UI. |
+| Visualizer derived pressures | `PerAgentBeliefView` + direct world components | Debug/observer | Could mislead as POV-safe | Keep debug-only; do not reuse for player HUD. |
+| Decision traces | `DecisionTraceSink`, event payloads | Debug/diagnostic | Could leak hidden beliefs/world observations if shown to player | Filter by character POV; add trace/UI separation tests. |
+| Control switching | `ControlSource` / `ControllerState` | Normal future gameplay | Could leak if switching invokes omniscient UI | Same action surface as AI; no `World` read except self embodied state. |
+
+---
+
+## **5. Impossibility Strategy**
+
+### **What should be made impossible?**
+
+It should be impossible for AI/planner/player-POV code to:
+
+1. Import or receive authoritative `World` except through explicitly allowed dispatch/system/debug boundaries.  
+2. Determine action visibility or goal feasibility from authoritative rights/control/ownership/custody/stock/queue/social truth.  
+3. Admit a whole entity into planning and then read arbitrary fields without per-field source.  
+4. Use debug/visualizer/trace truth as normal player or AI input.  
+5. Treat same-tick local physical observation as covering social/relational facts.
+
+### **At what boundary should it become impossible?**
+
+The boundary should be between:
+
+Authoritative World / dispatch / systems / debug  
+       ↓ lawful observation, records, testimony, memory writes  
+Source-scoped belief and local-observation capabilities  
+       ↓ per-field source admission  
+Planner/player-visible snapshot and affordance view  
+       ↓  
+GOAP / HTN stage hints / ranking / action menu
+
+The current boundary is too late: `PerAgentBeliefView` already has `&World` and implements broad planner/player traits.
+
+### **Which files/modules/crates should lose access to authoritative `World`?**
+
+| Target | Required change |
+| ----- | ----- |
+| `crates/worldwake-ai/src/*` | No production `worldwake_core::World` imports except tightly allowlisted orchestration/debug/test modules. Planning/search/ranking/candidate/HTN must receive only source-scoped views/snapshots. |
+| `crates/worldwake-cli/src/handlers/actions.rs` | Should not construct `PerAgentBeliefView` directly from `World` for normal action menus. It should request a `PlayerPovActionView` / `CharacterPovView`. |
+| `crates/worldwake-sim/src/per_agent_belief_view.rs` | Should be split: local physical observation and self-state may see `World`; belief-facing methods must not read arbitrary world truth. |
+| `crates/worldwake-ai/src/planning_snapshot.rs` | Should not store bare dynamic facts without `FieldSource`. |
+| `crates/worldwake-visualizer/*` | May keep `World`, but must be branded/debug-only and never imported by normal player UI. |
+
+### **Which exceptions are lawful?**
+
+| Exception | Why lawful |
+| ----- | ----- |
+| Dispatch/action commit | Must validate actual world legality, reservations, contention, occupancy, duration, and effects. |
+| Systems/perception/event production | Must observe world and create lawful belief/memory/record/testimony events. |
+| Self-authoritative state | Own needs, wounds, fatigue, current embodied place, active action, internal profiles where modeled as self-state. |
+| Same-tick local physical observation | Physical facts co-located with actor, not social/relational/institutional facts. |
+| Public topology | Explicitly public map/route structure only, not hidden danger or remote dynamic occupancy. |
+| Debug/visualizer/test harness | Allowed if statically separated from normal AI/player surfaces. |
+
+### **Enforcement table**
+
+| Enforcement Target | Proposed Mechanism | Files/Crates Affected | Exceptions | Proof / CI Gate | Migration Risk |
+| ----- | ----- | ----- | ----- | ----- | ----- |
+| AI/planner cannot import `World` | Crate/module lint plus compile-fail test; production allowlist only | `worldwake-ai`, `worldwake-cli` normal action handlers | Agent tick orchestration during migration; tests | CI grep: forbid `worldwake_core::World` and `world.` in non-allowlisted AI modules | Medium |
+| Rights/control cannot leak authoritative truth | Split `BelievedControlView` from `DispatchControlAuthority`; remove `world.effective_rights` / `world.can_exercise_control` from AI-facing view | `per_agent_belief_view.rs`, `affordance_query.rs`, snapshot builders | Commit-time action validation | Stale/false rights tests; static ban in `PerAgentBeliefView` AI impl | High |
+| Snapshot fields require per-field source | Replace bare fields or add parallel `FieldSource` map; reject dynamic field without source | `planning_snapshot.rs`, `planning_state.rs`, traces | Self/local/public topology | Unit tests requiring source for each field; snapshot admission trace includes field | High |
+| `BeliefLastSeen` cannot admit arbitrary physical/economic fields | Replace `admission_exposes_physical_fields` with field-specific source checks | `search/strategic.rs` | Last-seen location/kind if recorded | Test: last-seen seller/source moved/changed does not generate remote plan | Medium |
+| Normal player UI cannot use debug truth | Type `DebugOnly<T>` or module boundary; normal UI crate path receives `CharacterPovView` only | CLI/future UI/visualizer | Visualizer, replay authoring | Compile-fail: normal action/menu module cannot call `World`/visualizer snapshot | Medium |
+| Local physical observation stays physical | Capability trait only exposes physical facts; social/rights/office excluded | `per_agent_belief_view.rs`, `belief_view.rs` | None for rights/control | Tests: co-located item can be seen, owner/right cannot unless belief exists | Medium |
+| Helper names cannot hide source | Rename/return `SourceValue<T>` / `BeliefRead<T>` for risky fields | sim + AI traits | Simple self-state booleans | API compile breaks if caller ignores source | Medium/High |
+| Trace proves lawfulness | Add `field_source_trace` and affordance legality trace | decision_trace, planning snapshot, CLI action tests | Debug-only extra detail | Golden trace assertions | Medium |
+
+### **What cannot be made impossible yet?**
+
+As long as `PerAgentBeliefView` is a single struct holding `&World`, local method discipline remains necessary. You can reduce risk with tests and bans, but the compiler cannot know whether a method’s `world` read is lawful local physical observation or unlawful remote truth. The migration target is to split the struct/capabilities so the compiler can distinguish those cases.
+
+### **Migration path**
+
+1. **Patch high-risk leaks first:** rights/control, seller/controller, remote container/possessor, merchandise/stock policy.  
+2. **Add CI bans:** forbid `world.can_exercise_control`, `world.effective_rights`, and broad `world.` reads in AI-facing view impls except allowlisted local-observation/dispatch files.  
+3. **Introduce `FieldSource`:** start with snapshot fields already known risky: control, kind, location, possessor/container, seller/listing, merchandise, stock, queue/grant, production, route danger.  
+4. **Split view traits:** `SelfStateView`, `LocalPhysicalObservationView`, `BeliefMemoryView`, `PublicTopologyView`, `PlannerVisibleView`, `DispatchAuthorityView`, `DebugWorldView`.  
+5. **Move CLI action menu to `CharacterPovView`:** same surface AI uses for affordance legality.  
+6. **Only then consider HTN RequiredActionLeaf.**
+
+---
+
+## **6. Hidden Authority Leak Inventory**
+
+| Leak | Symptom | Evidence | Type | Why it matters | FOUNDATIONS implicated | Failure mode | Severity | Confidence | Test |
+| ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| AI-facing view owns `&World` | `PerAgentBeliefView` stores `world: &'w World` |  | Direct architecture leak | Compiler cannot prove belief boundary | FND-14, FND-19, FND-28 | Future helper accidentally reads truth | Critical | High | Compile-fail/lint: AI/player-visible modules cannot access `World` except allowlist |
+| Live rights/control in belief view | `believed_rights` / `can_control` use authoritative world rights/control |  | Direct + affordance-mediated | Lets agents/players know true legal control of remote known entities | FND-14A, FND-19 | Agent plans/menus reveal control change without carrier | Critical | High | Remote locked chest/control right changes; action menu must not change until belief source arrives |
+| Human action menu inherits leak | CLI uses `PerAgentBeliefView` + `get_affordances` |  | UI-mediated | Not hypothetical future UI; current CLI normal play can leak | FND-19 | Player sees hidden legal/stock/ownership actions | Critical | High | Same stale-rights test for AI and CLI action list |
+| Snapshot `controllable_by_actor` | Snapshot stores `view.can_control` |  | Snapshot-mediated | Turns live authority into planner-local fact | FND-14B | Planner searches impossible/omniscient branches | Critical | High | Planning snapshot must source `controllable_by_actor` from believed control only |
+| Seller/controller derived from live control | `facility_controller_at` calls `world.can_exercise_control` |  | Indirect/economic | Reveals seller/staff/controller identity without observation/record | FND-15, FND-16 | Agent buys/trades with unknown true controller | High | High | Remote market controller changes; no seller action until listing/record/testimony |
+| Remote container/possessor truth | `direct_container` / `direct_possessor` read current world for known entity |  | Direct/inventory | Custody is dynamic; known item should not update magically | FND-14, FND-16 | Agent knows stolen/moved item location/custody | High | High | Last-seen item gets stolen remotely; planner still believes old custody |
+| Entity-level snapshot admission | `AdmissionSource` applies to whole entity |  | Snapshot-mediated | Different fields have different lawful sources | FND-14B | Belief-last-seen entity leaks current stock/control/kind | High | High | Snapshot rejects dynamic fields lacking `FieldSource` |
+| `BeliefLastSeen` exposes physical fields | Strategic search admits `BeliefLastSeen` as physical-field source |  | Search/source leak | Last-seen location does not imply current resource/seller/stock truth | FND-16 | Agent plans to depleted/moved source as if known current | High | High | Last-seen source depleted remotely; search must not know |
+| Remote live entity kind | `entity_kind` reads current world for known entity; snapshot does fallback |  | Indirect | Type/classification changes can become hidden information | FND-14 | Agent identifies corpse/agent/facility transformation remotely | Medium/High | High | Remote entity changes kind; belief remains stale |
+| Merchandise profile leak | `merchandise_profile` returns current component for believed entity |  | Economic leak | Seller capabilities are social/economic facts | FND-15 | Agent knows seller catalog remotely | High | High | Seller profile changes; no menu/goal change without record/testimony |
+| Stock storage policy leak | `stock_storage_policy` reads current policy for known facility |  | Facility/economic leak | Facility stock semantics become omniscient | FND-14 | Restock/production planning exploits unknown storage rules | Medium/High | High | Unknown warehouse policy absent until observed/recorded |
+| Contention policy/capacity leak | `has_contention_policy` / `contention_queue_is_full` can read policy/capacity |  | Contention leak | Remote queue capacity/fullness should require local or record source | FND-8, FND-14 | Agent avoids/chooses facility based on hidden queue state | Medium | Medium/High | Remote queue fills; action visibility unchanged until observed |
+| Bandit faction policy leak | Known faction filtered by live bandit policy |  | Social/faction leak | Faction type/danger policy is not necessarily physical | FND-15 | Agent knows hidden hostile classification | Medium | Medium | Faction secretly changes policy; danger ranking must not update |
+| Reward encumbrance leak | Visible reward encumbrance reads current office reward state |  | Institutional/economic leak | Treasury/reward state should be record/testimony/self-office source | FND-15 | Agent knows bounty/reward budget remotely | Medium | Medium | Office reward changes; only office holder/records know |
+| Planning snapshot direct-world test is insufficient | Test scans `planning_snapshot.rs` for `world.` |  | Test-mediated false security | Helper leaks pass test | FND-28, validation | Team believes planner proof exists when it does not | Medium | High | Add helper-source adversarial tests and CI ban around risky methods |
+| Visualizer omniscience could be reused | Visualizer snapshot uses direct `World` |  | Visualizer/debug leak | Fine for debug, fatal if reused for normal POV | FND-19 | Future UI accidentally uses omniscient snapshot | Medium | Medium | Compile/module gate: normal UI cannot import visualizer snapshot/debug view |
+
+---
+
+## **7. Hostile Failure Inventory**
+
+| Smell | Evidence | Why it matters | FOUNDATIONS implicated | Downstream failure | Severity | Status |
+| ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| Broad `RuntimeBeliefView` supertrait | Huge supertrait surface covers entity, spatial, control, social, economic, facility, combat, temporal, profile, institutional, local observation | Any helper leak becomes available everywhere | FND-14 | Candidate/ranking/search/UI inherit hidden truth | High | Real issue |
+| `PerAgentBeliefView` mixes authority and belief | Holds `&World` plus belief store | The object capability boundary is missing | FND-14B | No mechanical proof | Critical | Real issue |
+| Rights/control hidden authority | Uses authoritative control in belief view | Social/relational facts are explicitly excluded from FND-14A physical exception | FND-14A | Omniscient legality/action menus | Critical | Real issue |
+| Snapshot entity-level admission | `AdmissionSource` enum attached at entity level | Fields differ in source legality | FND-14B | Planner-local leaked truth | High | Real issue |
+| HTN schemas richer than enforcement | Method schemas include subgoals/action-like templates, but tests assert all StageHint | The layer can be misread as enforced HTN | FND-20 | Designers add method-required behavior without proof | Medium | Already-clean surface with documentation risk |
+| `StageHint` HTN honesty | Tests forbid `RequiredActionLeaf` | Prevents fake enforcement | FND-20 | Good guardrail | Low | Already-clean surface |
+| Candidate extractor sprawl | 21 extractors in fixed order | Risk of duplicate semantics and per-tick fan-out | FND-20 | Hundreds-agent scaling pain | Medium | Suspected issue |
+| Ranking single authority | File-private comparator and ordered view | Good consolidation | FND-20 | None if preserved | Low | Already-clean surface |
+| Portfolio could become second ranking system | Slot buckets and weights exist | It must remain budget/trace, not preference authority | FND-20 | Conflicting goal order | Medium | Already-clean currently |
+| Opportunity compiler duplicate candidates | Candidate generation includes opportunity compiler and dedup | May duplicate emitter semantics | FND-28 | Duplicate motive/goal paths | Medium | Suspected issue |
+| Repair/replan complexity | Agent tick manages frames, expectations, source failures, repair, dirty set | Probably necessary, but hard to audit | FND-21, FND-24 | Patches mask source confusion | Medium | Suspected issue |
+| Visualizer direct world reads | Visualizer snapshot uses `World` | Correct for debug, dangerous if reused | FND-19 | Omniscient UI | Medium | Real issue unless isolated |
+| Misleading snapshot comment | Snapshot political metadata comment says “authoritative office metadata” | Documentation can normalize illegal authority | FND-28 | Future code copies bad premise | Low | Real issue |
+| PlanningState caches | Snapshot-local caches only | Clean if snapshot clean | FND-14B | None | Low | False alarm |
+| Record/office data | Belief-backed in view and snapshot | Good fix | FND-15 | None | Low | Already-clean surface |
+
+---
+
+## **8. GOAP / HTN / BDI / Utility Responsibility Matrix**
+
+| Responsibility | Should be owned by | Current owner | Problem? | Recommendation |
+| ----- | ----- | ----- | ----- | ----- |
+| Motive discovery | Candidate generation + goal schemas | `candidate_generation.rs`, extractors | Mostly okay | Preserve; add source proof for each extractor family. |
+| Candidate generation | Extractor registry + `GoalBeliefView` | `candidate_generation.rs` | Shape is good; fan-out risk | Preserve, but require extractor source contracts and omission traces. |
+| Goal ranking | One ranking authority | `ranking.rs` | Clean | Preserve file-private comparator; forbid portfolio from re-ranking. |
+| Portfolio/slot triage | Budget/diagnostic layer only | `agent_tick/portfolio.rs` | Currently okay | Keep as budget guard and trace surface, not preference authority. |
+| Intention persistence | BDI/frame runtime | `agent_tick/frame`, agenda state, `IntentionFrame` | Complex but rightful | Consolidate docs/tests; do not rewrite until belief boundary fixed. |
+| Method selection | HTN selector | `htn/selector.rs` | Good, but inherits view leaks | Keep; source-test preconditions. |
+| Method decomposition | Strategic stage guidance | `search/strategic.rs` + HTN schemas | Honest StageHint; not enforced | Keep StageHint naming; no RequiredActionLeaf yet. |
+| Action-sequence planning | GOAP/search over `PlanningState` | `search/*`, `PlanningState` | Mostly clean | Preserve; fix snapshot source inputs. |
+| Fallback planning | Strategic GOAP fallback | `search/strategic.rs` | Legal while methods are StageHint | Preserve; trace fallback reason. |
+| Failure attribution | Failure handling + agent tick events | `agent_tick`, failure handling | Incomplete audit | Add tests that failure creates memory/discrepancy, not omniscient correction. |
+| Repair | Local repair + memories | Agent runtime, repair memory | Suspected patch complexity | Keep bounded; add repair-vs-replan contract tests. |
+| Contention handling | Dispatch/scheduler/system truth; belief view for known queue state | Scheduler, `TemporalBeliefView`, affordances | Policy/capacity leak | Source-tag queue/grant/capacity. |
+| Belief correction | Perception/testimony/records/memory systems | Core belief store + sim/system updates | Mostly okay | Ensure no candidate/search path mutates belief directly. |
+| Source/admission control | Belief view + snapshot | `PerAgentBeliefView`, `PlanningSnapshot` | **Broken as proof** | Split capabilities; per-field source. |
+| Player action visibility | Same POV-safe affordance surface as AI | CLI uses `PerAgentBeliefView` + `get_affordances` | Inherits leaks | Introduce `CharacterPovActionView`. |
+| Trace explanation | Decision traces, events, snapshot admissions | `decision_trace`, agent tick | Not field-proof | Add field-source and action-legality traces. |
+| Test/golden validation | Scenario/golden + focused boundary tests | Mixed embedded tests | Insufficient | Add adversarial source-boundary suite. |
+
+---
+
+## **9. HTN Verdict**
+
+The current HTN layer **earns a narrow place**, but only if it is described honestly:
+
+Current HTN is **method-guided strategic search**, not enforced hierarchical task execution.
+
+That is acceptable. It is not fake HTN because the code explicitly distinguishes `StageHint` from `RequiredActionLeaf`, and active tests assert that every current subgoal is only `StageHint` and no method declares `RequiredActionLeaf` before enforcement exists.
+
+### **Method family assessment**
+
+| Method / family | Classification | Live problem solved | Preconditions belief-local? | Leaves/subgoals status | Fallback legal? | Missing tests |
+| ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| `fulfill_bounty_direct` | HTN justified but boundary needs tightening | Guides bounty pursuit toward weapon/target/issuer stages | Depends on bounty/last-seen belief safety | Stage hints only | Yes | False/stale bounty target location; bounty record carrier test |
+| `fulfill_bounty_investigation` | HTN justified and should remain | Guides investigation through witness/evidence | Mostly belief/testimony if `known_entity_beliefs` safe | Stage hints only | Yes | Witness report source trace |
+| `fulfill_bounty_support_declared_direct` | HTN optional; boundary needs tightening | Adds social declaration/staging bias | Dangerous if “ally/office available” too broad | Stage hints only | Yes | Must not imply enforced group coordination |
+| `produce_from_owned_stock` | HTN justified | Narrows production using owned inputs/workstation | Input self-inventory is okay; workstation source needs test | Stage hint craft | Yes | Stale workstation/input tests |
+| `produce_with_gather` | HTN justified but source-sensitive | Adds prerequisite acquisition stage | Resource source knowledge must be source-proven | Stage hints | Yes | Remote source absent/depleted false-belief test |
+| `produce_with_purchase` | HTN justified but boundary needs tightening | Guides market purchase before craft | SellerKnown currently can inherit seller/merch leaks | Stage hints | Yes | Remote seller profile/listing source tests |
+| `restock_from_harvest` | HTN justified | Restock via known source | Resource source must be source-proven | Stage hint acquisition | Yes | Source-depleted remote test |
+| `restock_from_market` | HTN justified but boundary needs tightening | Restock via known seller | SellerKnown unsafe until fixed | Stage hints | Yes | Seller stock/listing stale-belief tests |
+| `investigate_by_witness` | HTN justified | Witness route for violations | Report source appears belief-backed | Stage hints | Yes | Witness known/unknown contrast trace |
+| `investigate_by_ledger` | HTN justified | Ledger/record route | Record data now belief-backed | Stage hints | Yes | Institutional record stale/false test |
+| `escort_to_home` | Insufficient evidence / optional | Guides escort destination | Location safety belief needs source proof | Stage hints | Yes | Escortee home/safety false-belief scenario |
+
+### **Required policy**
+
+Do **not** introduce method-required behavior yet.
+
+A method may become `RequiredActionLeaf` only when all of this exists:
+
+1. Schema maps each required leaf to an ordinary `ActionDef`.  
+2. Planner proves selected/skipped/failed status in trace.  
+3. Affordance legality is checked through the same source-scoped POV view as AI/player actions.  
+4. Flat GOAP fallback is forbidden only with a schema reason and golden tests.  
+5. Failure attribution records method failure as belief/memory/trace state, not silent fallback.
+
+---
+
+## **10. Player-POV and UI Symmetry Audit**
+
+The architecture has the right conceptual target: `ControlSource` distinguishes human and AI controllers without changing world laws, and the CLI action menu already uses the same affordance machinery shape as AI. That is good. But the current implementation also means **AI leaks become player leaks immediately**.
+
+### **Direct world-read risks**
+
+| Surface | Risk |
+| ----- | ----- |
+| CLI prompt | Reads controlled agent name/place from `World`. This is probably lawful embodied self-state, but should stay limited to the controlled character. |
+| CLI actions | Uses `PerAgentBeliefView::with_runtime_from_world` and `get_affordances`. Since `PerAgentBeliefView` leaks rights/control and other fields, the player action list can leak truth. |
+| Visualizer | Directly reads `World`, all agents, needs, positions, goals, traces. Fine as debug, fatal as normal POV. |
+
+### **Remote truth admission risks**
+
+Player action visibility inherits these AI risks:
+
+* Remote rights/control.  
+* Remote seller/controller.  
+* Remote stock policy/merchandise profile.  
+* Remote custody/possessor/container.  
+* Queue policy/fullness.  
+* Bandit/faction classification.
+
+### **Required protections**
+
+| Protection | Requirement |
+| ----- | ----- |
+| `CharacterPovView` | Normal AI and human action surfaces should use one source-scoped POV view. |
+| `DebugOnly<T>` / module boundary | Visualizer snapshots and hidden traces must not compile into normal UI action surfaces. |
+| Player/AI symmetry tests | For the same controlled entity, AI candidate affordance and CLI/player affordance should match under stale, false, ignorant, and contradictory beliefs. |
+| Action menu trace | Every shown/hidden action should be explainable by source-scoped facts: actor self-state, local physical observation, belief, record, testimony, or topology. |
+| Control switching test | Switching `ControlSource` must not change available actions except for external input ownership. |
+
+---
+
+## **11. Intentions, Repair, and Replanning Audit**
+
+The current intention architecture is not obviously broken. It is, however, complex enough that it can hide belief-boundary mistakes.
+
+### **Current commitment lifecycle**
+
+The agent tick path reads memory components, utility, current `IntentionFrame`, agenda state, facility intents, active actions, start failures, and current plan. It then reconciles in-flight state, processes overdue expectations, updates learned state, evaluates assumptions, refreshes candidates/ranking, builds plans, and persists frame/agenda/facility/memory updates.
+
+This is a real BDI-like lifecycle, not a simple per-tick script.
+
+### **What is clean**
+
+| Surface | Verdict |
+| ----- | ----- |
+| Intention frames | Provide persistence beyond one tick and track assumptions/progress. |
+| Switch margins | Reduce thrash; current planning traces summarize continuation/replacement. |
+| Revalidation | Next steps are revalidated against affordance/action handlers before continuation. |
+| Expectations | Plan-step expectations produce mismatch/discrepancy events rather than silent failure. |
+| Source failures | Source expectation failures can decrement reliability/invalidate committed source. |
+
+### **What is dangerous**
+
+| Risk | Explanation |
+| ----- | ----- |
+| Repair can mask source confusion | If a leaked source creates a plan, later repair may look like intelligent adaptation instead of exposing an illegal premise. |
+| Assumption evaluation inherits belief-view leaks | Frame assumptions are evaluated through `runtime_belief_view`, so rights/control/stock leaks can stabilize bad intentions. |
+| Facility intents may look like entitlement | Intentions must not silently reserve future access. The current system has queue/grant concepts, but queue policy source needs hardening. |
+| Complexity invites fossil patches | The lifecycle is large; without trace/source contracts, future fixes can add one-off repair paths. |
+
+### **Required tests**
+
+1. **False belief continuation:** agent continues a plan based on false belief until lawful contradiction arrives.  
+2. **Source invalidation:** source failure invalidates committed source and records memory; it does not magically select true remote source.  
+3. **Repair vs replan:** local alternate target can repair; remote unknown replacement requires replan/search through belief carriers.  
+4. **Queue entitlement:** queued intention does not grant future access unless scheduler grants it.  
+5. **Interruption:** high-priority threat interrupts without deleting old intention unless abandon conditions fire.
+
+---
+
+## **12. Candidate, Ranking, Portfolio, and Scaling Audit**
+
+### **Current shape**
+
+Candidate generation has a canonical extractor order with many extractors: needs, production, enterprise, disposal, bounty, artifacts, combat, crime, social, witness, patrol, political, recorded violations, search/report/escort/exploration, expectation violations, opportunity compiler, and blocked self-care fallback.
+
+Ranking has a single file-private total order, produces provenance, source reliability discounts, competition discounts, damped candidates, and zero-motive candidates.
+
+Portfolio selects slot winners after ranking and probes feasibility. The planning path explicitly says search order follows ranking, and the portfolio’s role is trace/diagnostic plus budget protection, not re-prioritization.
+
+### **Verdict**
+
+| Area | Verdict |
+| ----- | ----- |
+| Candidate generation | Good ownership, but emitter/extractor fan-out is already large. |
+| Ranking | Good single authority; risk of abstract score soup if expanded casually. |
+| Portfolio | Currently acceptable as budget/trace layer. |
+| Opportunity compiler | Suspected duplication seam; keep it constrained. |
+| Snapshot construction | Biggest scaling and correctness risk: per-candidate snapshots plus route/cache work. |
+| Trace volume | Useful now; could explode under hundreds of agents without aggregation. |
+
+### **Near-term consolidation path**
+
+1. Keep candidate cap/top-K planning.  
+2. Add extractor-level source contracts.  
+3. Add aggregate metrics: candidates emitted, candidates suppressed, snapshots built, fields admitted by source, route cache hits, search expansions, budget exhaustion.  
+4. Require every new extractor to declare:  
+   * source class,  
+   * fan-out bound,  
+   * duplicate semantics check,  
+   * omission trace.
+
+### **Long-term scaling path**
+
+| Problem | Long-term answer |
+| ----- | ----- |
+| Per-tick global candidate generation | Event/delta-driven candidate invalidation. |
+| Repeated route/path costs | Topology-epoch route cache plus actor-specific threat/preference overlay. |
+| Hundreds of agents/locations | Spatial indices for local observation and place contents. |
+| Memory growth | Source-indexed belief eviction policies and belief aging. |
+| Trace volume | Sampled/aggregated diagnostics plus per-agent deep trace on demand. |
+| Opportunity compiler duplication | Source-keyed opportunity index with canonical ownership. |
+
+---
+
+## **13. Diagnostics and Trace Sufficiency Audit**
+
+Worldwake has nontrivial diagnostics. It is not merely printing “why” strings. But it still cannot prove the most important thing: **that a field used for planning/action visibility had a lawful source.**
+
+### **Current strengths**
+
+| Trace/diagnostic | Strength |
+| ----- | ----- |
+| Candidate diagnostics | Offers, suppressions, omissions, extractor sources. |
+| Ranking diagnostics | Provenance, motive source contributions, reliability/competition discounts. |
+| Portfolio traces | Slot winners and feasibility. |
+| Strategic method traces | Selected/rejected methods and fallback reason. |
+| Snapshot admission traces | Existing trace entries per opportunity/snapshot. |
+| Replan/repair events | Plan invalidation, replan triggered, repair applied, source expectation failure. |
+| Visualizer traces | Tracing driver and trace buffers are exposed for debug. |
+
+### **Current insufficiencies**
+
+| Question | Current answer quality | Required improvement |
+| ----- | ----- | ----- |
+| Why was this field lawful? | Weak | Add per-field source trace. |
+| Why was this action visible to player? | Weak | Add affordance legality trace with sources per precondition. |
+| Why did this method win? | Medium | Existing selected/rejected method trace helps, but subgoal outcomes are pending StageHints. |
+| Why did fallback happen? | Medium | Fallback reason exists; should assert legal because method is StageHint. |
+| Why did candidate omit a target? | Mixed | Add omission traces per extractor. |
+| Why did agent use stale belief? | Weak/Medium | Need belief status/source included at decision point. |
+| Why did a source admission count as enough? | Weak | Entity-level admission is not enough. |
+| Why did player not see action? | Weak | Needs player-visible action denial trace. |
+| Why did contention resolve? | Outside inspected details | Add queue/grant/reservation event trace assertions. |
+| Why did debug guardrail not apply? | Weak | Add explicit DebugOnly/normal separation trace or compile gate. |
+
+### **Required new trace surfaces**
+
+1. `FieldSourceTrace { entity, field, source, confidence/status, admitted_by }`.  
+2. `AffordanceLegalityTrace { action_def, target, precondition, result, source }`.  
+3. `PlayerVisibilityTrace { surface, displayed/hidden, source }`.  
+4. `MethodSubgoalTrace` with selected/skipped/failed once RequiredActionLeaf exists.  
+5. `CandidateOmissionTrace` with extractor and missing source/information gap.  
+6. Aggregate soak trace: snapshots per tick, fields by source, illegal-source rejection count, budget exhaustion count.
+
+---
+
+## **14. Test Validity and Golden Coverage Audit**
+
+| Test / Area | Valid under FOUNDATIONS? | What it proves | What it fails to prove | Recommendation |
+| ----- | ----- | ----- | ----- | ----- |
+| `planning_snapshot_construction_has_no_direct_world_reads` | Yes, but narrow | `planning_snapshot.rs` production text does not directly use `world.` | Helper calls through `RuntimeBeliefView` are safe | Preserve, but add helper-source adversarial tests. |
+| HTN registry `all_current_subgoals_are_stage_hints` | Yes | Current HTN does not pretend leaves are enforced | Method preconditions/source lawfulness | Preserve. |
+| HTN `no_method_declares_required_action_leaf_at_landing` | Yes | Prevents fake HTN enforcement | Future method-required correctness | Preserve; require enforcement contract before change. |
+| Ranking compile-fail/order tests | Yes | Ranking authority is file-private/single order | Whether motive inputs are lawful | Preserve. |
+| ActionDef explicit field tests | Yes | Actions model preconditions, duration, cost, reservations, visibility, guards, expectations | Whether affordance sources are lawful | Preserve. |
+| CLI action tests | Partially | Human actions list/`do` enqueue works | Whether listed actions are POV-lawful | Expand with stale/false belief action-menu tests. |
+| Visualizer smoke/trace tests | Yes for debug | Visualizer can load, step, snapshot, trace | Normal UI safety | Preserve but brand debug-only. |
+| `PerAgentBeliefView` local observation tests | Likely partially | Some source gates | Rights/control, seller, custody leaks | Expand aggressively. |
+| Scenario-linked golden E2E tests | Conditionally | Cross-system integration | Field source proof | Preserve if they assert source path; otherwise they are decorative. |
+| Any test expecting remote stock/control to update immediately | No | Omniscient behavior | Lawful belief simulation | Rewrite/delete. |
+| Any test expecting player actions from true remote rights | No | Omniscient UI | Player POV symmetry | Rewrite/delete. |
+
+### **Missing focused tests**
+
+| Missing test | Purpose |
+| ----- | ----- |
+| Remote control right changes invisibly | Prove `can_control` does not use live authority before belief update. |
+| False ownership belief | Agent/player acts on false owner until contradiction. |
+| Remote item stolen/moved | Possessor/container remains stale until observed/testified. |
+| Seller profile changes remotely | Candidate/action menu does not update without listing/record/testimony. |
+| Source depleted remotely | Planner does not learn depletion without lawful observation/source failure. |
+| Queue fills remotely | Queue/fullness hidden unless local/recorded. |
+| Bandit faction policy unknown | Danger/faction classification requires belief/record. |
+| Player/AI same affordance surface | Human and AI action visibility match under same beliefs. |
+| Debug separation compile-fail | Normal UI cannot import visualizer snapshot/debug view. |
+| Snapshot field-source completeness | Every dynamic snapshot field has `FieldSource`. |
+| Search on `BeliefLastSeen` | Last-seen entity location does not admit current seller/resource/stock fields. |
+
+---
+
+## **15. Consolidation or Redesign Options**
+
+### **Option A — Conservative Hardening**
+
+Minimal structural change. Patch the known leaks in `PerAgentBeliefView`, add tests, and keep the broad `RuntimeBeliefView`.
+
+| Aspect | Assessment |
+| ----- | ----- |
+| Benefits | Fastest. Less churn. Preserves current tests and architecture. |
+| Risks | Still convention-heavy. Future helper can reintroduce world truth. No strong mechanical proof. |
+| Migration cost | Low/Medium. |
+| FOUNDATIONS alignment | Improves immediate FND-14 compliance but does not satisfy near-mechanical proof. |
+| Test impact | Add focused source-boundary tests; some existing omniscient tests may break. |
+| Choose when | Only if short-term stabilization is required before larger refactor. |
+
+### **Option B — Moderate Consolidation**
+
+Keep current GOAP/ranking/HTN/agent-tick architecture, but split authority boundaries and add per-field source admission.
+
+| Aspect | Assessment |
+| ----- | ----- |
+| Benefits | Fixes serious leaks while preserving most working architecture. Enables practical near-mechanical proof. |
+| Risks | Requires API churn across sim/AI/CLI. Snapshot structs grow more explicit. |
+| Migration cost | Medium/High. |
+| FOUNDATIONS alignment | Strong. Best balance of safety and churn. |
+| Test impact | Existing tests depending on omniscience will fail; that is good. |
+| Choose when | Recommended. |
+
+### **Option C — Aggressive Redesign**
+
+Make `worldwake-ai` unable to receive `World` at all. Sim/perception builds `PlannerVisibleSnapshot` and `CharacterPovActionView`; AI consumes only those.
+
+| Aspect | Assessment |
+| ----- | ----- |
+| Benefits | Strongest proof. Clean object-capability boundary. Future features cannot easily leak truth. |
+| Risks | Large refactor. May destabilize agent tick, repair, and tests. |
+| Migration cost | High. |
+| FOUNDATIONS alignment | Excellent. |
+| Test impact | Major rewrites; compile-fail gates become straightforward. |
+| Choose when | If Option B exposes too many hidden dependencies or consolidation remains unstable. |
+
+---
+
+## **16. Recommended Architecture**
+
+**Recommendation:** Option B now, with one aggressive rule: remove authoritative rights/control from AI/player-facing surfaces immediately.
+
+### **Preserve**
+
+* `PlanningState` as planner-local derived/hypothetical state.  
+* Candidate generation’s side-effect-free view-based shape.  
+* Ranking as single total-order authority.  
+* Portfolio as budget/trace layer, not ranking.  
+* HTN as StageHint method-guided strategic search.  
+* Concrete `ActionDef` model with preconditions, duration, cost, reservations, visibility, guards, and expectations.  
+* Visualizer as debug/observer tooling.
+
+### **Remove or consolidate**
+
+* Remove live `world.effective_rights` / `world.can_exercise_control` from `ControlBeliefView`.  
+* Remove remote known-entity live fallbacks for possessor/container/kind/merchandise/stock policy.  
+* Remove entity-level admission as a claim of field lawfulness.  
+* Consolidate seller/controller identity into explicit listing/record/testimony/local-observation carriers.  
+* Remove or rewrite comments implying authoritative planner metadata.
+
+### **Redesign**
+
+* `RuntimeBeliefView` should not be the normal AI/player supertrait. Replace with capability-scoped traits.  
+* `PlanningSnapshot` should store field provenance.  
+* CLI `actions` should consume the same `CharacterPovView` as AI affordance planning.  
+* Traces should prove field source, not just list admitted entities.
+
+### **Defer**
+
+* Required HTN action leaves.  
+* Method-required fallback bans.  
+* Full player UI implementation.  
+* Large ranking/portfolio feature expansion.
+
+### **Do not touch yet**
+
+* Do not rewrite `PlanningState`.  
+* Do not rewrite ranking from scratch.  
+* Do not discard HTN StageHint layer.  
+* Do not expand candidate emitters until source contracts exist.
+
+### **Target decision pipeline**
+
+Authoritative World / scheduler / systems  
+   ↓ lawful perception, self-state, local physical observation, records, testimony, memory  
+Source-scoped CharacterPovView  
+   ↓ per-field FieldSource admission  
+PlanningSnapshot<FieldSource>  
+   ↓  
+PlanningState planner-local search  
+   ↓  
+Candidate generation → ranking → portfolio budget gate  
+   ↓  
+HTN StageHint strategic guidance + GOAP/action search  
+   ↓  
+POV-safe affordance/action visibility  
+   ↓  
+Dispatch-time authoritative validation  
+   ↓  
+Event log + belief/memory/source updates  
+---
+
+## **17. File-by-File Proposal**
+
+| File / Module | Proposed change | Confidence | Reason | Acceptance criteria |
+| ----- | ----- | ----- | ----- | ----- |
+| `crates/worldwake-sim/src/per_agent_belief_view.rs` | Remove authoritative `world.effective_rights` and `world.can_exercise_control` from AI/player-facing `ControlBeliefView`. Replace with believed rights/control claims only. | High | Current code is a direct FND-14A violation. | Remote control changes do not affect AI/CLI affordances until belief/record/testimony arrives. |
+| `per_agent_belief_view.rs` | Rework `facility_controller_at` so seller/controller comes from local observation, explicit listing/record, or belief—not live control checks. | High | Current seller/controller identity leaks through authority control. | Remote market controller hidden absent lawful source. |
+| `per_agent_belief_view.rs` | Restrict `direct_container` / `direct_possessor` live reads to local physical/direct possession/self; otherwise use belief aspects or return unknown. | High | Current known-entity gate leaks remote custody. | Remote stolen/moved item remains stale until observed. |
+| `per_agent_belief_view.rs` | Stop synthesizing `believed_kind` from current `world.entity_kind` for last-seen/known remote entities. | High | Current kind fallback leaks remote entity changes. | Last-seen kind remains stored belief; no current fallback. |
+| `per_agent_belief_view.rs` | Source-gate `merchandise_profile`, `stock_storage_policy`, bandit policy, reward encumbrance, contention policy/capacity. | Medium/High | These are social/economic/institutional facts, not raw physical observation. | Each method names source class and returns unknown without source. |
+| `crates/worldwake-sim/src/belief_view.rs` | Split broad `RuntimeBeliefView` into capability traits: self-state, local physical, belief memory, public topology, planner-visible, dispatch authority, debug world. | Medium | Broad supertrait makes every helper leak global. | AI/ranking/candidate/search signatures use narrower traits. |
+| `crates/worldwake-ai/src/planning_snapshot.rs` | Add per-field source metadata; entity-level `AdmissionSource` may remain as coarse summary but cannot authorize fields. | High | Planner contracts already require source-scoped fields. | Tests fail if dynamic field has no `FieldSource`. |
+| `planning_snapshot.rs` | Fix misleading comment around “authoritative office metadata.” | High | Comment contradicts belief-backed requirement. | Comment says office data is belief/record-backed, never planner authority truth. |
+| `crates/worldwake-ai/src/search/strategic.rs` | Replace `admission_exposes_physical_fields` with per-field source checks; `BeliefLastSeen` cannot expose seller/resource/stock fields by default. | High | Current admission collapses source classes. | Last-seen entity only contributes fields actually observed/stored. |
+| `crates/worldwake-ai/src/planning_state.rs` | Preserve structure; adapt to read `FieldRead<T>` or source-checked snapshot values. | Medium | PlanningState is clean if inputs are clean. | No direct `World`; no bare dynamic field without source. |
+| `crates/worldwake-sim/src/affordance_query.rs` | Add affordance legality trace and consume a POV-safe control/source view, not broad `RuntimeBeliefView` for normal player/AI action visibility. | High | Current affordances inherit leaks. | Each shown action can cite lawful source for each precondition. |
+| `crates/worldwake-cli/src/handlers/actions.rs` | Replace direct construction of `PerAgentBeliefView` with `CharacterPovActionView` factory. | High | CLI action menu is normal player surface. | CLI/player and AI affordance tests match under same beliefs. |
+| `crates/worldwake-visualizer/src/*` | Keep direct `World` access, but brand as debug/observer; prevent future normal UI reuse. | Medium | Visualizer is omniscient by design. | Normal UI modules cannot import visualizer snapshot. |
+| `crates/worldwake-ai/src/htn/*` | Preserve StageHint-only guardrails; do not add RequiredActionLeaf until enforcement contract exists. | High | Current tests are good and honest. | Existing tests remain; any RequiredActionLeaf requires new enforcement tests. |
+| CI / scripts | Add static search gates for risky authority paths. | High | Current tests miss helper leaks. | CI bans `world.can_exercise_control`, `world.effective_rights`, and unauthorized `World` imports in AI/player-facing code. |
+| `docs/planner-contracts.md` | Strengthen wording: “Entity admission never admits fields; every dynamic field must carry source.” | Medium | Contract already says this but implementation needs sharper migration text. | Docs and tests use same `FieldSource` vocabulary. |
+
+### **Candidate replacement contract text**
+
+For `docs/planner-contracts.md` / `docs/spec-drafting-rules.md`:
+
+Entity admission is not field admission. A planner-visible entity may be known to exist while its current place, kind, owner, controller, seller, stock, queue state, production job, resource availability, or containment remains unknown. Every dynamic planner-visible field must either carry a lawful `FieldSource` or be absent. Same-tick local physical observation may source physical fields only; it must not source rights, control, ownership, jurisdiction, institutional claims, seller authority, or social obligations.
+
+I am confident in this replacement text because it directly matches the active foundation and planner-contract rules.
+
+---
+
+## **18. Golden Scenario and Evaluation Matrix**
+
+| Scenario / Metric | Purpose | Systems exercised | Required assertions | Failure smell |
+| ----- | ----- | ----- | ----- | ----- |
+| Hidden control-right revocation | Prove no live control truth leak | Belief view, affordance query, CLI, planner snapshot | AI/player action visibility unchanged until belief/record/testimony | `can_control` uses `World` |
+| False control belief | Prove agents can act on false belief and dispatch rejects | Belief store, planning, dispatch, discrepancy memory | Plan may attempt; commit fails; memory/discrepancy records contradiction | Planner secretly avoided false belief |
+| Remote seller changes controller | Prove seller identity carrier required | Economic belief, candidate generation, CLI actions | Seller action/candidate absent or stale until listing/testimony | Live controller inferred |
+| Remote item stolen | Prove custody stale belief | Inventory belief, snapshot, search | Possessor/container stays old/unknown until observation | Live `direct_possessor` leak |
+| Remote item kind/status changes | Prove kind not live-synthesized | Entity belief, snapshot | `believed_kind` unchanged or unknown | `world.entity_kind` fallback |
+| Remote source depleted | Prove source depletion not known | Resource source, strategic search, repair | Existing plan fails on arrival/source failure; no preemptive omniscience | Search avoids depleted source before carrier |
+| Remote queue fills | Prove queue/fullness source-bound | Facility contention, affordance query | Queue action visibility unchanged absent queue record/local observation | Live contention policy/fullness |
+| Bandit faction hidden policy | Prove faction danger requires belief | Political/combat belief, ranking | Danger/ranking uses belief/testimony only | Live bandit policy |
+| Route danger stale | Prove danger/travel uses perceived route state | Route threat, ranking, strategic search | Stale route danger can be used until updated | Live threat map |
+| Player/AI symmetry: stale stock | Prove same action affordance surface | CLI `actions`, AI affordances | Human and AI controlled same character see same lawful actions | Human UI has special truth |
+| Debug separation | Prove visualizer cannot feed normal UI | Visualizer, CLI, future UI boundary | Normal action surface cannot import visualizer snapshot | Debug omniscience reused |
+| Snapshot field source completeness | Prove per-field source | PlanningSnapshot, trace | Every dynamic field has source or absent | Entity admission accepted as field source |
+| `BeliefLastSeen` field limit | Prove last-seen only admits observed fields | Strategic search | Last-seen location may guide travel; no current stock/seller fields | `BeliefLastSeen` exposes all physical fields |
+| HTN selected/rejected methods | Prove method selection trace | HTN selector, strategic search | Trace lists selected method, rejected preconditions, fallback reason | Decorative HTN trace |
+| HTN fallback legal | Prove fallback only because StageHint | Strategic search | Fallback trace says StageHint/no required leaves | Silent method bypass |
+| RequiredActionLeaf guard | Prevent fake HTN | HTN registry/tests | Introducing RequiredActionLeaf fails without enforcement tests | Method schema outpaces live code |
+| Repair vs replan | Prove bounded repair | Agent tick, repair memory, revalidation | Local substitute repair allowed; source invalidation triggers replan | Repair masks illegal premise |
+| Interruption/no rails | Prove intentions revisable | Frame, active action, ranking | Higher critical goal interrupts; old goal can resume if still lawful | Rails or thrash |
+| Candidate omission trace | Prove ignorance is explainable | Candidate generation | Missing candidate explains missing source/info gap | Omitted silently |
+| Scalability soak: 100 agents / 100 places | Measure fan-out | Candidate, snapshot, search, traces | Candidate count, snapshots, route cache, trace volume stay bounded | Per-tick explosion |
+| Compile-fail: `World` in planner | Prevent regression | CI/static | Non-allowlisted AI/planner modules fail if importing `World` | Boundary convention-only |
+| Static gate: risky world calls | Prevent rights/control regression | CI/static | `world.can_exercise_control` / `effective_rights` banned in AI-facing view impl | Leak reintroduced |
+
+---
+
+## **19. Research-Backed Design Rules For Future AI Work**
+
+These are practical rules derived from the live code and active foundations/contracts, not generic AI folklore.
+
+| Topic | Rule |
+| ----- | ----- |
+| When a goal deserves HTN | Use HTN only when a reusable pursuit pattern narrows search using lawful belief-local stages. If it is just “do this story beat,” reject it. |
+| When flat GOAP is enough | Use flat GOAP for local, single-resource, or straightforward action-sequence goals where action definitions already encode legality. |
+| When method-required is justified | Only when flat search would be semantically invalid and the schema has enforced leaves, trace proof, and golden tests. Current code is not there. |
+| When a motive becomes an intention | After candidate emission, ranking, feasibility/planning, and frame assumptions. Do not let raw score alone become commitment. |
+| When a blocker is belief memory vs world state | If the agent observed or inferred a failure, store blocker/discrepancy as agent memory. Do not mutate world truth to “explain” planning failure. |
+| When repair is allowed | Repair is allowed for local substitutions or same-source alternatives that preserve lawful belief. Source invalidation, remote unknowns, and assumption collapse require replan. |
+| When a cache is legal | A cache is legal only if it is derived from source-scoped inputs and invalidated by source/input epoch. Planner-local caches are fine; truth caches are not. |
+| When a derived score is dangerous | A score is dangerous when it replaces concrete state: stock, ownership, danger, queue, rights, or distance must remain concrete/source-backed. |
+| When player-facing UI leaks omniscience | It leaks whenever it shows an action, target, danger, owner, seller, queue, stock, or route that the controlled character lacks a lawful source for. |
+| When a trace is sufficient | A trace is sufficient only if it names the source carrier and rejected alternatives. “Because score was high” is decorative. |
+| When a belief-view method is lawful | It is lawful only if it can name source class and returns unknown/empty/false when no lawful source exists. |
+| When a source/admission tag is too coarse | It is too coarse whenever different fields on the same entity can have different lawful sources. That is already true for almost every entity. |
+| When a test should be deleted | Delete or rewrite tests that expect remote truth to update action/candidate/planner behavior without observation, testimony, memory, record, or self-state. |
+| When authoritative `World` access is lawful | Dispatch, commit, systems, perception/event production, debug/visualizer, and tests. Not normal AI planning/action visibility. |
+| When authoritative `World` access must be impossible | In candidate generation, ranking, HTN selector, search, planning state, normal player action surface, and normal UI rendering. |
+
+---
+
+## **20. Open Questions and Uncertainties**
+
+| Uncertainty | Why it matters | Evidence needed |
+| ----- | ----- | ----- |
+| Full action handler commit semantics | Dispatch may be clean or may have additional authority paths | Inspect all `worldwake-systems` handlers and scheduler commit/revalidation paths. |
+| Exact intended public/private status of faction policy | Bandit/faction classification may be intended public in some scenarios | Define faction-policy carrier: public record, local observation, testimony, or hidden. |
+| Whether stock storage policy is meant as public facility metadata | If public, it needs explicit public record/topology-like source | Contract decision and tests. |
+| Reward encumbrance visibility | Office holder may lawfully know it; ordinary agents may not | Define office treasury/reward records and source paths. |
+| Full golden suite validity | Some tests may encode omniscience or already prove source safety | Inspect all scenario/golden tests by category. |
+| Visualizer detail tabs | Some tabs may blur debug/player POV | Inspect all modal/tab modules; brand as debug-only. |
+| Performance shape under hundreds of agents | Structural risks are visible, but no measurement | Add soak tests and aggregate telemetry. |
+| Whether `worldwake-ai` can fully lose `World` soon | Agent tick currently orchestrates world state and belief view construction | Migration spike: separate orchestration from planner-facing logic. |
+
+---
+
+## **21. Fifth-Iteration Prompt Suggestions**
+
+The fifth-iteration audit should not re-litigate all prior categories. It should focus on whether consolidation can end after the belief-boundary hardening lands.
+
+Suggested fifth-iteration focus:
+
+1. **Mechanical boundary proof:** Verify production `worldwake-ai` planner/search/ranking/candidate/HTN code cannot import or receive `World` except allowlisted orchestration/debug/test paths.  
+2. **Rights/control adversarial suite:** Audit stale/false/ignorant rights/control tests for AI and CLI/player action surfaces.  
+3. **Per-field snapshot proof:** Inspect `PlanningSnapshot` and traces to confirm every dynamic field has `FieldSource`, and entity admission is no longer treated as field admission.  
+4. **`BeliefLastSeen` regression audit:** Prove last-seen entities cannot expose current seller/resource/stock/control/custody fields.  
+5. **Player/AI symmetry:** Verify CLI/player affordance lists and AI affordance planning are sourced through the same character POV view.  
+6. **Debug separation:** Confirm visualizer/replay/trace surfaces are statically or module-level separated from normal UI.  
+7. **HTN containment:** Confirm HTN remains StageHint-only unless RequiredActionLeaf enforcement, trace proof, and tests were implemented.  
+8. **Repair/replan truth discipline:** Confirm repair/failure handling records belief/memory/discrepancy and does not correct remote truth magically.  
+9. **Scaling smoke:** Run aggregate soak metrics for candidate counts, snapshots, route cache, trace volume, and budget exhaustion.  
+10. **End-of-consolidation decision:** The fifth audit should explicitly answer whether remaining issues are architecture-improvement work rather than release-blocking belief-boundary consolidation.
+

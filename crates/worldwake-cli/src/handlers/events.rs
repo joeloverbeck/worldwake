@@ -1,6 +1,9 @@
 //! Event log command handlers: events, event, trace.
 //!
 //! All handlers are read-only — zero world mutation.
+//! These handlers read authoritative world truth and are for observer, debug,
+//! and replay tooling only. Normal player-facing UI must not depend on this
+//! module for POV-safe display.
 
 use worldwake_core::{
     cause::CauseRef, event_log::EventLog, event_record::EventView as _, ids::EventId,

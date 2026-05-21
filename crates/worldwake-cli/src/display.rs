@@ -1,6 +1,9 @@
 //! Display and formatting helpers for the CLI.
 //!
 //! All functions are pure read-only — no world mutation.
+//! These helpers read authoritative world truth and are for observer, debug, and
+//! replay tooling only. Normal player-facing UI must route display through a
+//! controlled-agent POV-safe surface instead.
 
 use worldwake_core::{
     Tick,
