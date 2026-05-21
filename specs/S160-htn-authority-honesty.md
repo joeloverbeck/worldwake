@@ -5,8 +5,8 @@
 escort action-payload field migration in `worldwake-sim`/`worldwake-systems`; no
 new authoritative simulation state, no method-required goals)
 **Priority:** Medium. Sequence after archived S158; independent of S159.
-**Crates:** `worldwake-ai` (schema enum, trace, group-hunt method, planner
-payload-override), `worldwake-sim` (`EscortToSafetyActionPayload` field type),
+**Crates:** `worldwake-ai` (schema enum, trace, support-declared direct bounty
+method, planner payload-override), `worldwake-sim` (`EscortToSafetyActionPayload` field type),
 `worldwake-systems` (escort affordance enumeration, runtime heal resolution,
 contention read).
 **Foundations:** FND-20, FND-27, FND-28, FND-29, FND-31
@@ -14,7 +14,8 @@ contention read).
 stripped the `GoalSchema.methods` fossil, dead methods, and unenforced schema
 fields, and made strategic fallback explicit/traced). This spec closes the
 remaining honesty gaps the second iteration found: subgoal-authority labeling,
-the still-fake group-hunt method, and the `u32::MAX` escort sentinel.
+the renamed support-declared direct bounty method, and the `u32::MAX` escort
+sentinel.
 
 ## Problem Statement
 
@@ -37,13 +38,14 @@ ID that can rot into a fossil (FND-28).
   `ProduceCommodity` (3), `RestockCommodity` (2), `InvestigateViolation` (2),
   `EscortToSafety` (1). Test `registry_builds_with_11_methods_without_dead_method_ids`
   (`registry.rs:73`) asserts the count.
-- `htn/methods.rs::fulfill_bounty_group_hunt` (`methods.rs:138`) declares subgoals
-  `[DeclareSupport (social signal), TravelTo(staging), Attack(target)]`. A code
-  comment (`methods.rs:149–150`) states *"Existing planner ops have no RecruitAlly
-  leaf. DeclareSupport is the first-ship social signal for assembling a lawful
-  group hunt."* There is **no recruit/coordination action leaf**; the actual
-  confrontation is a solo `Attack`. The method name promises group coordination
-  the world cannot enforce (FND-20, FND-31).
+- Before ticket S160HTNAUTHHON-003,
+  `htn/methods.rs::fulfill_bounty_group_hunt` declared subgoals
+  `[DeclareSupport (social signal), TravelTo(staging), Attack(target)]` while
+  naming group coordination the world could not enforce. Ticket
+  S160HTNAUTHHON-003 renamed it to
+  `fulfill_bounty_support_declared_direct` and rewrote the local comment; there
+  is still **no recruit/coordination action leaf**, and the actual confrontation
+  remains a solo `Attack` after the support signal.
 - `htn/method_schema.rs::SubgoalTemplate` has 8 variants (`AcquireCommodity`,
   `TravelTo`, `ObserveTarget`, `AskWitness`, `InspectArtifact`, `PerformAction`,
   `ResolveCoordination`, `ReturnTo`). `search/strategic.rs::template_to_stages`
@@ -116,21 +118,22 @@ ID that can rot into a fossil (FND-28).
    is built in `search/strategic.rs`. Extends the existing
    `MethodPlanAttemptTrace` contract documented in `docs/planner-contracts.md` §4
    — do not add a second trace subsystem.
-3. **Resolve the fake group-hunt method (rename, option b).** Rename
-   `fulfill_bounty_group_hunt` (`methods.rs:138`) to its honest behavior (e.g.
-   `fulfill_bounty_support_declared_direct`) reflecting "declare support, then
+3. **Resolved the fake group-hunt method (rename, option b).**
+   S160HTNAUTHHON-003 renamed `fulfill_bounty_group_hunt` to
+   `fulfill_bounty_support_declared_direct`, reflecting "declare support, then
    pursue directly" with no claim of enforced group coordination. This preserves
    the `DeclareSupport` social signal — a real world artifact (the
    `declare_support` action exists, `planner_ops.rs:44`/`131`) — while removing the
    misleading "group hunt" promise. Removal (option a) is rejected: the
    `DeclareSupport` stage is a lawful belief-backed step worth keeping.
 
-   Precise rename touch points (the registry **count** test is *unaffected* — a
+   Renamed touch points (the registry **count** test is *unaffected* — a
    rename keeps 11 methods):
-   - the method fn name (`methods.rs:138`);
-   - the registry insert (`registry.rs:56`);
-   - the selector test `canonical_group_hunt_selects_from_real_belief_preconditions`
-     and its `.expect(...)` assert message (`selector.rs:1222–1243`).
+   - the method fn name;
+   - the registry insert;
+   - the selector test, now
+     `support_declared_direct_selects_from_real_belief_preconditions`, and its
+     `.expect(...)` assert message.
 4. **Remove the `ActionDefId(u32::MAX)` escort sentinel (option A, cross-crate).**
    Change `EscortToSafetyActionPayload.intended_heal_action` from `ActionDefId` to
    `Option<ActionDefId>` (`None` until resolved at action start). This is the
@@ -213,8 +216,8 @@ authoritative simulation state, action, component, or feedback loop.
 
 ### HTN Method Drafting Checklist (per spec-drafting-rules)
 
-This spec **changes** the group-hunt method surface and adds authority labeling;
-it adds no new pursuit pattern.
+This spec changed the group-hunt method surface and adds authority labeling; it
+adds no new pursuit pattern.
 
 1. **Reusable pursuit pattern:** None added. Existing patterns (arm/travel/attack,
    acquire/craft/return, restock, witness/ledger investigation, escort) are
@@ -242,8 +245,8 @@ it adds no new pursuit pattern.
   a selected method with only stage hints is not reported as having enforced its
   subgoals.
 - Group-hunt resolution test: registry no longer exposes a method *named* group
-  hunt without a real coordination leaf (the renamed selector test
-  `canonical_group_hunt_selects_from_real_belief_preconditions` is updated; the
+  hunt without a real coordination leaf (the selector test was renamed to
+  `support_declared_direct_selects_from_real_belief_preconditions`; the
   11-method count test is unchanged because option (b) is a rename).
 - Sentinel test: no plan, action trace, or dispatch observes a placeholder action
   ID (pre-resolution state is `None`).

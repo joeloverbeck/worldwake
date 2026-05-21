@@ -130,7 +130,8 @@ registry validation test was updated for the wrapper shape.
 - The honest stage-hint *trace* surface (`SubgoalAttemptResult.authority`) — ticket 002.
 - Any strategic-search enforcement of `RequiredActionLeaf` — deferred to a future
   method-required spec; this ticket only declares the variant.
-- The group-hunt method rename — ticket 003.
+- The group-hunt method rename — now archived at
+  `archive/tickets/S160HTNAUTHHON-003.md`.
 - The escort sentinel removal — ticket 004.
 
 ## Acceptance Result

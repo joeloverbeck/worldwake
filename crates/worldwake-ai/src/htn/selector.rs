@@ -1219,7 +1219,7 @@ mod tests {
     }
 
     #[test]
-    fn canonical_group_hunt_selects_from_real_belief_preconditions() {
+    fn support_declared_direct_selects_from_real_belief_preconditions() {
         let actor = entity(1);
         let bounty = entity(30);
         let target = entity(40);
@@ -1240,7 +1240,9 @@ mod tests {
             &view,
             &[],
         )
-        .expect("canonical group hunt should select from dangerous-target and ally beliefs");
+        .expect(
+            "support-declared direct method should select from dangerous-target and ally beliefs",
+        );
 
         assert_eq!(selected.id, MethodSchemaId(3));
     }

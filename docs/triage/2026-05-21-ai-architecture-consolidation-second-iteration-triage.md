@@ -24,8 +24,9 @@ narrowed form, with the audit's `Sourced<T>`/per-field-snapshot static-typing
   FND-28. Behavior-preserving cleanup. Completed.
 - **S160 — HTN Authority Honesty** —
   `specs/S160-htn-authority-honesty.md`. Confirmed: subgoals are unenforced stage
-  hints, `fulfill_bounty_group_hunt` fakes coordination (no recruit leaf, solo
-  attack), `ActionDefId(u32::MAX)` escort sentinel. FND-20/29. No method-required.
+  hints, the now-renamed support-declared direct bounty method has no recruit
+  leaf and still attacks solo after the support signal, `ActionDefId(u32::MAX)`
+  escort sentinel. FND-20/29. No method-required.
 
 ## Dismissed (claim refuted or out of scope)
 

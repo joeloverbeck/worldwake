@@ -139,7 +139,7 @@ pub fn fulfill_bounty_investigation() -> MethodSchema {
     )
 }
 
-pub fn fulfill_bounty_group_hunt() -> MethodSchema {
+pub fn fulfill_bounty_support_declared_direct() -> MethodSchema {
     method_schema!(
         3,
         GoalKindDiscriminant::FulfillBounty,
@@ -150,8 +150,8 @@ pub fn fulfill_bounty_group_hunt() -> MethodSchema {
             MethodPrecondition::BeliefHolds(BeliefPredicate::AllyOrBountyOfficeAvailable),
         ],
         vec![
-            // Existing planner ops have no RecruitAlly leaf. DeclareSupport is
-            // the first-ship social signal for assembling a lawful group hunt.
+            // DeclareSupport is a real social signal; current execution then
+            // pursues the target directly without enforced group coordination.
             SubgoalTemplate::PerformAction(
                 PlannerOpKind::DeclareSupport,
                 PayloadTemplate::FromContext,

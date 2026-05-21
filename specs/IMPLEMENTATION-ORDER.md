@@ -70,7 +70,7 @@ S158 and S159 have landed and are archived. S160 remains an independent cleanup.
 - **S160 — HTN Authority Honesty** —
   `specs/S160-htn-authority-honesty.md` — *Status: Draft.* Add
   `MethodSubgoalAuthority::{StageHint, RequiredActionLeaf}` and honest stage-hint
-  traces; resolve the fake `fulfill_bounty_group_hunt` method; remove the
+  traces; complete the support-declared direct bounty method rename; remove the
   `ActionDefId(u32::MAX)` escort sentinel. No goal becomes method-required.
   Extends S156. **FND-20, FND-29, FND-31.**
 

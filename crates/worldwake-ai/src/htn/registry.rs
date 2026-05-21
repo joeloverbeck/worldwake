@@ -53,7 +53,7 @@ pub fn build_method_registry() -> MethodRegistry {
     let mut registry = MethodRegistry::default();
     registry.insert(methods::fulfill_bounty_direct());
     registry.insert(methods::fulfill_bounty_investigation());
-    registry.insert(methods::fulfill_bounty_group_hunt());
+    registry.insert(methods::fulfill_bounty_support_declared_direct());
     registry.insert(methods::produce_from_owned_stock());
     registry.insert(methods::produce_with_gather());
     registry.insert(methods::produce_with_purchase());
