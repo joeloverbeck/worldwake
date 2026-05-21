@@ -122,7 +122,7 @@ references `entity_display_name`, `resolve_entity`, or `format_location`.
 
 - POV-safe label resolution itself (D1) — archived `archive/tickets/S163CLIPLAPOV-001.md`.
 - The `handle_cancel` regression guard (D2) and FND-19 symmetry test (D4) —
-  S163CLIPLAPOV-003.
+  `archive/tickets/S163CLIPLAPOV-003.md`.
 - POV-gating any console command (`world`/`inspect`/`events`/`switch`/`observe`/
   `tick` trace) — explicit S163 Non-Goal; this ticket only marks them.
 - A `DebugWorldView`/`ObserverUi` capability layer — future spec (S163 Non-Goals).

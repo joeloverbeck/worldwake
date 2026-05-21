@@ -1,6 +1,6 @@
 # S163CLIPLAPOV-003: handle_cancel regression guard + FND-19 player/AI symmetry test
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — `worldwake-cli` tests only
@@ -8,7 +8,7 @@
 
 ## Problem
 
-Two FND-19 contracts on the play surface lack locking tests:
+Before this ticket, two FND-19 contracts on the play surface lacked locking tests:
 
 - **D2** — `handle_cancel` already scopes to the controlled entity
   (`.find(|(_, instance)| instance.actor == entity)`,
@@ -20,7 +20,7 @@ Two FND-19 contracts on the play surface lack locking tests:
   set for the same controlled entity and belief state, nor that the menu's labels
   expose no fact the actor could not lawfully perceive or recall.
 
-This ticket adds both as focused tests. This is S163 Deliverables 2 and 4.
+This ticket added both as focused tests. This is S163 Deliverables 2 and 4.
 
 ## Assumption Reassessment (2026-05-22)
 
@@ -69,7 +69,7 @@ This ticket adds both as focused tests. This is S163 Deliverables 2 and 4.
 2. No production change and no shim: D2 locks already-correct scoping; D4 composes
    over the lawful affordance path and archived `archive/tickets/S163CLIPLAPOV-001.md`'s resolver.
 
-## Verification Layers
+## Verified Layers
 
 1. `handle_cancel` scoping (player may not cancel another agent's action) → focused
    CLI test on the input queue: with another agent's action active and the
@@ -85,31 +85,30 @@ This ticket adds both as focused tests. This is S163 Deliverables 2 and 4.
    delta applies because no production code or authoritative state changes; the
    proof surfaces are focused CLI unit tests.
 
-## What to Change
+## Landed Changes
 
 ### 1. D2 — `handle_cancel` scoping regression guard
 
-Add a focused test: build a two-agent scenario where another agent (not the
-controlled one) has an active action and the controlled agent has none; call
-`handle_cancel` and assert it prints "no action to cancel", enqueues no
-`InputKind::CancelAction`, and never references the other agent's
-`action_instance_id`. The test fails if `handle_cancel` reverts to global
-enumeration.
+Added `test_cancel_ignores_other_agents_active_action`: it builds a two-agent
+scenario, inserts an active action for the non-controlled agent, calls
+`handle_cancel`, and asserts no `InputKind::CancelAction` is enqueued while the
+other agent's active action remains untouched. The test fails if
+`handle_cancel` reverts to global enumeration.
 
 ### 2. D4 — FND-19 player/AI symmetry test
 
-Add a focused test: for a controlled entity with a known belief state, build the
-`PerAgentBeliefView` exactly as `handle_actions` does, call `get_affordances`, apply
-the same filters `handle_actions` applies (self-target removal, `HIDDEN_ACTIONS`,
-dedup), and assert the resulting set equals the menu's stored `last_affordances`.
-Additionally assert that each rendered label exposes no fact the actor could not
-lawfully perceive (FND-14A) or recall (belief) — i.e., a remote/unknown bound
-target resolves to a believed label or the "unknown" token, never the authoritative
-`World` name. Note in the test that `switch`/`observe` are debug/meta and excluded.
+Added `action_menu_matches_ai_affordances_and_pov_labels`: it builds the same
+`PerAgentBeliefView` used by `handle_actions`, calls `get_affordances`, applies the
+same self-target, `HIDDEN_ACTIONS`, and dedup filters, and asserts the filtered set
+equals the menu's stored `last_affordances`. It also checks the POV label path,
+including the remote/unknown case, so the player menu does not expose Bram's
+authoritative name through the label resolver.
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-cli/src/handlers/actions.rs` (modify — add both inline `#[cfg(test)]` tests) OR `crates/worldwake-cli/tests/` (new test file), implementer's choice
+- `crates/worldwake-cli/src/handlers/actions.rs` (modified — added both inline
+  `#[cfg(test)]` tests and a small test-only helper mirroring the action-menu
+  affordance filters)
 
 ## Out of Scope
 
@@ -121,9 +120,9 @@ target resolves to a believed label or the "unknown" token, never the authoritat
 - POV-gating or testing the console commands (`world`/`inspect`/`events`/`switch`/
   `observe`) — S163 Non-Goals.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Passed Criteria
 
 1. D2 guard: with another agent's action active and the controlled agent idle,
    `handle_cancel` enqueues no `CancelAction` and references no other agent's action.
@@ -131,10 +130,10 @@ target resolves to a believed label or the "unknown" token, never the authoritat
    `get_affordances` set for the same controlled entity and belief state.
 3. D4 label lawfulness: a remote/unknown bound-target label resolves to a believed
    label or the "unknown" token, never the authoritative `World` name.
-4. Existing suite: `cargo test -p worldwake-cli` (including
+4. Existing suite passed: `cargo test -p worldwake-cli` (including
    `test_cancel_enqueues_input`, `test_cancel_no_controlled_agent`).
 
-### Invariants
+### Preserved Invariants
 
 1. A human at the play surface can neither enumerate nor cancel another agent's
    in-flight action. (FND-19.)
@@ -142,20 +141,44 @@ target resolves to a believed label or the "unknown" token, never the authoritat
    AI would see for the same belief state — no omniscient side channel beyond it.
    (FND-14, FND-14A, FND-19.)
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
 1. `crates/worldwake-cli/src/handlers/actions.rs` (inline `#[cfg(test)]`) — D2
-   negative-scoping regression guard, using a two-agent scenario derived from the
-   existing `human_with_food_scenario` helper plus a second AI agent with a started
-   action.
+   negative-scoping regression guard using the existing two-place scenario helper
+   plus an inserted active action for the non-controlled agent.
 2. `crates/worldwake-cli/src/handlers/actions.rs` (inline `#[cfg(test)]`) — D4
    menu==affordances symmetry test plus the label-lawfulness assertion, reusing the
    view-construction path from `handle_actions`.
 
-### Commands
+### Commands Run
 
 1. `cargo test -p worldwake-cli handlers::actions`
-2. `cargo clippy -p worldwake-cli --all-targets -- -D warnings`
-3. `scripts/verify.sh` (before PR push)
+2. `cargo test -p worldwake-cli`
+3. `cargo clippy -p worldwake-cli --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-22.
+
+- Added the D2 negative regression guard proving `handle_cancel` ignores active
+  actions owned by other agents and enqueues no cross-agent cancel request.
+- Added the D4 player/AI symmetry test proving the action menu stores exactly the
+  filtered affordance set returned by the same `PerAgentBeliefView` + `get_affordances`
+  path.
+- Reused the S163 D1 POV resolver in the D4 label-lawfulness assertion, including
+  the unknown remote target case, without changing production behavior.
+
+## Deviations
+
+- No standalone `crates/worldwake-cli/tests/` file was added; the landed proof is
+  inline in `actions.rs`, matching the existing handler-test style.
+- `scripts/verify.sh` was not run for this ticket iteration; it remains the
+  required harness pre-push gate after the S163 family is archived.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli handlers::actions`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy -p worldwake-cli --all-targets -- -D warnings`

@@ -118,7 +118,7 @@ removed from the play-surface action menu.
   `world_overview.rs`, `inspect.rs`, `events.rs`, `tick.rs`) debug-only and the
   play-surface boundary guard — `archive/tickets/S163CLIPLAPOV-002.md`.
 - The `handle_cancel` regression guard (D2) and the FND-19 symmetry test (D4) —
-  S163CLIPLAPOV-003.
+  `archive/tickets/S163CLIPLAPOV-003.md`.
 - Any belief-view trait/accessor change in `worldwake-sim`; the resolver is
   CLI-side and reads the existing view surface only.
 - POV-gating any REPL command other than the action menu (S163 Non-Goals).

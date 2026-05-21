@@ -302,6 +302,7 @@ mod tests {
     use crate::scenario::{SpawnedSimulation, spawn_scenario, types::*};
     use worldwake_ai::AgentTickDriver;
     use worldwake_core::{
+        ActionDefId, Tick,
         control::ControlSource,
         ids::EntityId,
         items::CommodityKind,
@@ -309,7 +310,10 @@ mod tests {
         numerics::{Permille, Quantity},
         topology::PlaceTag,
     };
-    use worldwake_sim::InputKind;
+    use worldwake_sim::{
+        ActionDuration, ActionInstance, ActionInstanceId, ActionPayload, ActionStatus, Affordance,
+        InputKind,
+    };
 
     fn pm(v: u16) -> Permille {
         Permille::new(v).unwrap()
@@ -661,6 +665,26 @@ mod tests {
         PerAgentBeliefView::with_runtime_from_world(actor, spawned.state.world(), runtime)
     }
 
+    fn filtered_menu_affordances(spawned: &SpawnedSimulation, actor: EntityId) -> Vec<Affordance> {
+        let view = view_for(spawned, actor);
+        let mut affordances = get_affordances(
+            &view,
+            actor,
+            &spawned.action_registries.defs,
+            &spawned.action_registries.handlers,
+        );
+        affordances.retain(|a| !a.bound_targets.contains(&actor));
+        affordances.retain(|a| {
+            spawned
+                .action_registries
+                .defs
+                .get(a.def_id)
+                .is_none_or(|def| !HIDDEN_ACTIONS.contains(&def.name.as_str()))
+        });
+        affordances.dedup_by(|a, b| a.def_id == b.def_id && a.bound_targets == b.bound_targets);
+        affordances
+    }
+
     fn source_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
         let start_index = source
             .find(start)
@@ -872,6 +896,97 @@ mod tests {
                 last.kind
             );
         }
+    }
+
+    #[test]
+    fn test_cancel_ignores_other_agents_active_action() {
+        let (spawned, actor, remote) = two_place_pov_scenario(false);
+        let mut sim = spawned.state;
+        let other_action_id = ActionInstanceId(99);
+        sim.scheduler_mut().insert_action(ActionInstance {
+            instance_id: other_action_id,
+            def_id: ActionDefId(0),
+            payload: ActionPayload::None,
+            actor: remote,
+            targets: Vec::new(),
+            start_tick: Tick(0),
+            remaining_duration: ActionDuration::new(3),
+            status: ActionStatus::Active,
+            reservation_ids: Vec::new(),
+            local_state: None,
+            body_cost_override: None,
+        });
+
+        assert_eq!(sim.controller_state().controlled_entity(), Some(actor));
+        assert!(
+            sim.scheduler()
+                .active_actions()
+                .contains_key(&other_action_id)
+        );
+        assert!(
+            sim.scheduler()
+                .active_actions()
+                .values()
+                .all(|instance| instance.actor != actor)
+        );
+
+        let queue_before = sim.scheduler().input_queue().len();
+        let result = handle_cancel(&mut sim);
+
+        assert_eq!(result.unwrap(), CommandOutcome::Continue);
+        assert_eq!(sim.scheduler().input_queue().len(), queue_before);
+        let tick = sim.scheduler().current_tick();
+        assert!(
+            sim.scheduler()
+                .input_queue()
+                .peek_tick(tick)
+                .iter()
+                .all(|event| !matches!(event.kind, InputKind::CancelAction { .. })),
+            "cancel must not enqueue a CancelAction for another agent"
+        );
+        assert!(
+            sim.scheduler()
+                .active_actions()
+                .contains_key(&other_action_id)
+        );
+    }
+
+    #[test]
+    fn action_menu_matches_ai_affordances_and_pov_labels() {
+        let (spawned, actor) = human_with_food_scenario();
+        let mut repl_state = ReplState::new();
+        let expected_affordances = filtered_menu_affordances(&spawned, actor);
+
+        let result = handle_actions(&spawned.state, &spawned.action_registries, &mut repl_state);
+
+        assert_eq!(result.unwrap(), CommandOutcome::Continue);
+        assert_eq!(repl_state.last_affordances, expected_affordances);
+
+        let runtime = PerAgentBeliefRuntime::new(
+            spawned.state.scheduler().active_actions(),
+            &spawned.action_registries.defs,
+        );
+        let view =
+            PerAgentBeliefView::with_runtime_from_world(actor, spawned.state.world(), runtime);
+        for target in repl_state
+            .last_affordances
+            .iter()
+            .flat_map(|affordance| affordance.bound_targets.iter().copied())
+        {
+            let label = pov_target_label(&view, spawned.state.world(), actor, target);
+            assert_ne!(label, "Bram");
+        }
+
+        let (remote_spawned, remote_actor, remote_target) = two_place_pov_scenario(false);
+        let remote_view = view_for(&remote_spawned, remote_actor);
+        let remote_label = pov_target_label(
+            &remote_view,
+            remote_spawned.state.world(),
+            remote_actor,
+            remote_target,
+        );
+        assert_eq!(remote_label, "unknown");
+        assert!(!remote_label.contains("Bram"));
     }
 
     #[test]
