@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implement-S162-belief-view-source-gate-hardening",
   "base_head": "6abb20ab8a3bfa98f782b2fef72e7e8127ef2159",
-  "last_ticket": "archive/tickets/S162BELVIESOU-006.md",
+  "last_ticket": "archive/tickets/S162BELVIESOU-004.md",
   "last_result": "completed_archived",
-  "last_work_commit": "a44b968b54821d844c7c142a53dee72d6b3adfe0",
+  "last_work_commit": "f5b30db6c16fd9686ed68bf578e5c5dd371c1973",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S162BELVIESOU-004.md",
+  "next_target": "tickets/S162BELVIESOU-005.md",
   "queue": [
-    "tickets/S162BELVIESOU-004.md",
     "tickets/S162BELVIESOU-005.md"
   ],
   "implement_ticket_audit": "pending",
