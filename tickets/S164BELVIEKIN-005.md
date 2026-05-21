@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None (golden test + scenario only)
-**Deps**: S164BELVIEKIN-001, S164BELVIEKIN-002
+**Deps**: archive/tickets/S164BELVIEKIN-001.md, S164BELVIEKIN-002
 
 ## Problem
 

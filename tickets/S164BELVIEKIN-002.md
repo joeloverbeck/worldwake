@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `EntityBeliefView::entity_kind` in the per-agent belief view (sim)
-**Deps**: S164BELVIEKIN-001
+**Deps**: archive/tickets/S164BELVIEKIN-001.md
 
 ## Problem
 

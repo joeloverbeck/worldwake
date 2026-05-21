@@ -8769,6 +8769,7 @@ mod tests {
         LastSeenRecord {
             subject,
             place,
+            observed_kind: Some(EntityKind::Agent),
             observed_tick: Tick(observed_tick),
             source: subject,
             provenance: LastSeenProvenance::DirectObservation,

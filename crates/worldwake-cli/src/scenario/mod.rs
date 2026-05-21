@@ -1724,6 +1724,7 @@ fn last_seen_memory_from_def(
             LastSeenRecord {
                 subject,
                 place: resolve_name(names, &record_def.place, "last_seen place")?,
+                observed_kind: record_def.observed_kind,
                 observed_tick: Tick(record_def.observed_tick),
                 source: resolve_name(names, &record_def.source, "last_seen source")?,
                 provenance: last_seen_provenance_from_def(&record_def.provenance, names)?,

@@ -436,6 +436,7 @@ fn apply_search_place_commit(
                 LastSeenRecord {
                     subject: entity,
                     place,
+                    observed_kind: txn.entity_kind(entity),
                     observed_tick: txn.tick(),
                     source: instance.actor,
                     provenance: LastSeenProvenance::DirectObservation,
@@ -474,6 +475,7 @@ fn apply_search_place_commit(
                 LastSeenRecord {
                     subject: entity,
                     place,
+                    observed_kind: txn.entity_kind(entity),
                     observed_tick: txn.tick(),
                     source: instance.actor,
                     provenance: LastSeenProvenance::DirectObservation,

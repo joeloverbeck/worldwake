@@ -599,6 +599,7 @@ mod tests {
                         records: vec![LastSeenRecordDef {
                             subject: "Bram".into(),
                             place: "Market".into(),
+                            observed_kind: Some(EntityKind::Agent),
                             observed_tick: 3,
                             source: "Bram".into(),
                             provenance: LastSeenProvenanceDef::DirectObservation,

@@ -1293,7 +1293,7 @@ impl SocialBeliefView for PerAgentBeliefView<'_> {
                 beliefs.push((
                     *entity,
                     BelievedEntityState {
-                        believed_kind: self.world.entity_kind(*entity),
+                        believed_kind: record.observed_kind,
                         last_known_place: Some(record.place),
                         alive: true,
                         ..BelievedEntityState::single_observation_defaults(
@@ -2560,6 +2560,7 @@ mod tests {
                         LastSeenRecord {
                             subject: other,
                             place,
+                            observed_kind: Some(EntityKind::Agent),
                             observed_tick: Tick(4),
                             source: agent,
                             provenance: LastSeenProvenance::DirectObservation,
@@ -2600,6 +2601,7 @@ mod tests {
             Some(&LastSeenRecord {
                 subject: other,
                 place,
+                observed_kind: Some(EntityKind::Agent),
                 observed_tick: Tick(4),
                 source: agent,
                 provenance: LastSeenProvenance::DirectObservation,
@@ -2965,6 +2967,7 @@ mod tests {
                         LastSeenRecord {
                             subject: other,
                             place: last_seen_place,
+                            observed_kind: Some(EntityKind::Agent),
                             observed_tick: Tick(1),
                             source: agent,
                             provenance: LastSeenProvenance::DirectObservation,
@@ -3052,6 +3055,49 @@ mod tests {
             crate::SocialBeliefView::known_entity_beliefs(&view, other).is_empty(),
             "belief enumeration should not expose another agent's store through this view"
         );
+    }
+
+    #[test]
+    fn known_entity_beliefs_synthesize_last_seen_kind_from_record_not_live_world() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let actor_place = places[0];
+        let last_seen_place = places[1];
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, actor_place).unwrap();
+            txn.set_ground_location(other, last_seen_place).unwrap();
+            txn.set_component_last_seen_memory(
+                agent,
+                LastSeenMemory {
+                    records: BTreeMap::from([(
+                        other,
+                        LastSeenRecord {
+                            subject: other,
+                            place: last_seen_place,
+                            observed_kind: Some(EntityKind::ItemLot),
+                            observed_tick: Tick(1),
+                            source: agent,
+                            provenance: LastSeenProvenance::DirectObservation,
+                        },
+                    )]),
+                    capacity: 8,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, other)
+        };
+
+        let view = PerAgentBeliefView::from_world(agent, &world);
+        let beliefs = crate::SocialBeliefView::known_entity_beliefs(&view, agent);
+
+        assert_eq!(world.entity_kind(other), Some(EntityKind::Agent));
+        assert_eq!(beliefs.len(), 1);
+        assert_eq!(beliefs[0].0, other);
+        assert_eq!(beliefs[0].1.believed_kind, Some(EntityKind::ItemLot));
     }
 
     #[test]
