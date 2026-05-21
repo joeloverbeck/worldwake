@@ -73,6 +73,46 @@ proceed in either order.
   `ActionDefId(u32::MAX)` escort sentinel. No goal becomes method-required.
   Extends S156. **FND-20, FND-29, FND-31.**
 
+## Adjunct Wave: FOUNDATIONS Constitutional Hardening — Gap Audit 2026-05
+
+**Source.** `reports/foundations-gap-audit.md` (ChatGPT-Pro) answered the standing
+question *"are the foundations complete?"* during the AI-architecture
+consolidation. Verdict: **mostly correct with four targeted strengthenings plus
+new canonical scenarios** — no rewrite, no renumbering. Every load-bearing claim
+was re-verified against the codebase before acceptance.
+
+The key correction: the audit's headline concern (remote authoritative truth
+leaking into planner-visible inputs) is **already closed** by the completed S158;
+the source-class rule is shipped in `docs/planner-contracts.md` §2 and
+`docs/spec-drafting-rules.md`. The accepted FND-14B addition is therefore
+**constitutional anchoring** for that shipped rule (regression-proofing future
+planner surfaces), not a leak fix. All five proposals were accepted in narrowed
+form; **none rejected**. Forward-looking material with no current backing system
+(the FND-12 strengthening, canonical scenarios K/L) is written into the
+constitution to set the bar early, while its artifacts
+(`docs/causal-equivalence-contracts.md`, K/L goldens) are **deferred** until the
+offscreen/boundary/prehistory systems reach the roadmap. The audit's heavier
+optional track — splitting FOUNDATIONS into five sub-constitutions — was
+**rejected** as churn for no philosophical gain.
+
+```
+S161 (FOUNDATIONS constitutional hardening) ── independent of S159/S160; sequence whenever
+```
+
+### Active
+
+- **S161 — FOUNDATIONS Constitutional Hardening (Gap Audit 2026-05)** —
+  `specs/S161-foundations-constitutional-hardening.md` — *Status: Draft.* Strengthen
+  FND-12 with explicit causal-equivalence-contract requirements; insert FND-14B
+  (planner-visible inputs must be belief-backed or lawful boundary artifacts,
+  anchoring the S158 source-class rule); insert an HTN anti-script guard into
+  FND-20; replace FND-31 with the systemic-validation doctrine already live in
+  `golden-e2e-testing.md` / `scenario-roadmap.md`; add canonical scenarios I–L.
+  Anchors planner-contracts/spec-drafting-rules/golden-e2e-testing downstream.
+  Doc-only constitutional edit; no new simulation state. K/L artifacts and the
+  J / remote-seller HTN-rejection goldens are explicitly deferred to golden-coverage
+  work. **FND-12, FND-14, FND-14A, FND-20, FND-27, FND-29A, FND-31.**
+
 ## Excluded from the active order (by directive)
 
 - **S60–S66** (gameplay/world-dynamics specs) — authored, but held until core AI

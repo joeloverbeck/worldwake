@@ -1,0 +1,698 @@
+# **FOUNDATIONS.md Definitive Gap Audit Proposal — 2026-05-21**
+
+## **1. Executive Verdict**
+
+`docs/FOUNDATIONS.md` is **mostly correct with targeted fixes**.
+
+It does **not** need a rewrite. Its core philosophy is already aligned with Worldwake’s intended identity: local causality, belief/truth separation, state-mediated systems, source/sink accounting, social artifacts, explicit information flow, inspectable provenance, and formalism-flexible practical reasoning. The active docs and code mostly reinforce that identity rather than contradict it.
+
+The gaps are narrower but important:
+
+1. **FND-12 says approximation must preserve causality, but does not define an explicit equivalence contract.** That is too weak for boundary compression, offscreen simulation, sleeping entities, prehistory, save/load, and long-run simulations.  
+2. **FND-14 and FND-14A correctly separate belief from truth, but the planner-facing input rule should be constitutional, not merely implied.** The current architecture has broad `RuntimeBeliefView`, `PlanningSnapshot`, `PlanningState`, HTN selector, seller-listing, and affordance surfaces where future code can accidentally admit remote authoritative truth.  
+3. **FND-20 already prevents “HTN as script” in spirit, but should explicitly bind HTN method selection and decomposition to belief-backed planner inputs and traceable rejection/fallback.**  
+4. **FND-31 is philosophically right, but should be sharpened to match the active golden-test doctrine: passing end states are not enough, structural activation is not causal proof, and systemic validation must include negative illegal-path checks.**  
+5. **Canonical scenarios A-H should remain, but add four scenario classes: planner belief barrier, HTN rejection/fallback, boundary-compressed shock materialization, and long prehistory with compacted provenance.**
+
+Final recommendation: **apply the minimal safe patch track only**. No full reorganization. No new architecture doctrine beyond these targeted constitutional clarifications.
+
+## **2. Current Core Identity To Preserve**
+
+Worldwake’s constitution is already very strong. The identity to preserve is:
+
+Worldwake is not a quest engine, drama manager, or story-trigger system. Designers author entities, laws, institutions, actions, processes, constraints, and initial/boundary conditions; outcomes arise from local causality. FND-1 rejects authored sequences, hidden quest logic, and story triggers; FND-2 rejects naked randomness; FND-3 says concrete state beats abstract scores; FND-4 requires persistent identity, object permanence, explicit transfer, and source/sink accounting.
+
+Agents do not act on omniscient truth. FND-14 says world state is not belief state; FND-14A allows same-tick local physical observation but explicitly excludes social facts such as ownership, rights, claims, and institutional state from mere co-location. FND-15 and FND-16 make information travel, provenance, staleness, contradiction, and wrong beliefs first-class.
+
+Institutions and records are not global singleton services. FND-18 treats memories, evidence, records, maps, signs, ledgers, rumors, and claims as world state; FND-23 through FND-25A require offices, social artifacts, roles, claims, authority, visibility, actionability, and artifact lifecycle to be explicit and contestable.
+
+Systems interact through state, not hidden cross-system calls. FND-26 and FND-27 say systems should emit state changes and derived summaries are caches, not truth. FND-29 and FND-29A require inspection of causal history and knowledge history separately, and make causal history append-only in meaning even when indexed or compacted.
+
+The AI formalism is deliberately tool-flexible. FND-20 permits GOAP, utility, BDI, HTN, or hybrids only if decisions are explainable as belief-bounded practical reasoning over lawful affordances. It already warns that formalism must not become plot progression, scene-specific rails, target-specific success paths, or hidden exceptions.
+
+The active planner contracts, spec drafting rules, golden testing rules, and generated golden docs broadly reflect this identity. `docs/planner-contracts.md` explicitly says `FOUNDATIONS.md` is the design authority and codifies planner snapshot completeness, belief-barrier rules, remote entity admission rules, and HTN fallback/rejection trace contracts. The spec drafting rules require future specs to name information paths, feedback loops, dampeners, stored state versus read models, and planner formalism analysis. The golden testing doc states that end states are insufficient unless the intended causal path is proven.
+
+## **3. Repository Evidence**
+
+### **Current FOUNDATIONS structure**
+
+`docs/FOUNDATIONS.md` already has the right constitutional backbone:
+
+* FND-1 to FND-4: local causality, no ungrounded triggers, concrete state, persistent identity, explicit transfer.  
+* FND-7 to FND-10: local motion, communication, action preconditions, scheduling, granular consequences.  
+* FND-12 and FND-13: compression must not cheat causality; boundaries and external inputs must be world processes.  
+* FND-14 to FND-18: belief/truth separation, same-tick local observation, information travel, wrong beliefs, records.  
+* FND-20 to FND-22A: resource-bounded practical reasoning, intentions, agent diversity, learning/habits.  
+* FND-23 to FND-25A: institutions, social artifacts, artifact lifecycle.  
+* FND-26 to FND-31: state-mediated systems, derived summaries as caches, no backward compatibility traps, debuggability, causal history, spec requirements, validation.  
+* Canonical scenarios A-H function as constitutional acceptance examples.
+
+The current wording is philosophically correct. The problem is that near-term architecture pressure now needs sharper constitutional edges.
+
+### **AI/planner architecture surfaces relevant to the audit**
+
+The GOAP architecture report skill file identifies the same critical surfaces this audit found: goal ranking, candidate generation, affordance queries through `RuntimeBeliefView`, `PlanningSnapshot`, plan search, revalidation, dispatch, cognitive parameters, and decision traces.
+
+`RuntimeBeliefView` is broad. It composes physical, spatial, inventory, economic, control, authority, social, political, combat, profile, temporal, recipe, and local-observation views. The code deliberately keeps `DebugWorldView` outside `RuntimeBeliefView`, which is good, but the breadth of the runtime belief surface means the constitution should clearly classify legal planner inputs.
+
+`PerAgentBeliefView` shows the right intent: non-self entity reads come from belief, same-tick co-location, possession, institutional claims, or last-seen memory; same-tick physical visibility is explicitly narrower than social/relational truth. But some economic and control paths still require careful source discipline, especially seller listings and control reads.
+
+`PlanningSnapshot` has an `AdmissionSource` enum with `SelfAuthoritative`, `LocalSameTickPhysical`, `GroundedEvidence`, `BeliefLastSeen`, `PossessionContainmentFrontier`, and `PublicTopology`. That is the right shape for FND-14B. The snapshot collector admits remote entities only through grounded evidence, belief/last-seen, or possession frontier rather than raw remote `entities_at(place)` truth.
+
+The risk is that `SnapshotEntity` includes economic fields such as `has_sale_listing` and `seller_for_sale_lot`, and those are populated through belief-view calls. That can be correct if the entity’s admission source is lawful and the listing itself is belief-backed, but the constitutional rule should force that proof rather than leaving it implicit.
+
+`PlanningState` reinforces the same pattern. Its header explicitly says caches are memoization only and must never become source of truth. But `EconomicBeliefView` over `PlanningState` exposes `listed_sale_lots_at`, `seller_for_sale_lot`, and `has_sale_listing` from snapshot economic fields. That makes seller/listing state a high-risk surface for remote authoritative leakage if snapshot construction ever regresses.
+
+The active HTN layer is real but not inherently scripted. `MethodSchema` stores goal kind, preconditions, subgoals, explanation templates, motive bias, and planning budget hints. Method preconditions are belief or location/motive based; subgoals decompose into ordinary planner operations such as acquisition, travel, observation, witness questioning, artifact inspection, action performance, coordination, and return. The selector returns selected and rejected methods, including failed preconditions; strategic planning records fallback reasons such as `NoViableMethod` and `MethodProducedNoStages`.
+
+Decision tracing is already strong. `AgentDecisionTrace` can record snapshot admissions, cache counters, repair attempts, causal link cap hits, affordances, candidate evidence, knowledge paths, pursuit diagnostics, root candidate outcomes, HTN method traces, rejected methods, fallback reasons, and selected plan provenance.
+
+`IntentionFrame` gives active evidence for BDI-style commitments without turning intent into entitlement: frames track domain, goal, disposition, patience, assumptions, causal links, claims, active/suspended/exhausted state, and falsifiable assumptions.
+
+### **Golden/scenario testing philosophy**
+
+`docs/golden-e2e-testing.md` already says passing a final state is insufficient: a scenario is valid only when it proves the authored behavior happened for the authored causal reason, or names accepted lawful alternatives. It also names the same failure mode the user is worried about: 1440-tick survival can pass because the branch never activated, fallback survived, bugs masked bugs, or only end-state assertions were checked.
+
+`docs/scenario-roadmap.md` distinguishes structural activation from behavioral proof and says a feature lands only when live detection activates it, a backing golden proves the authored behavior, and the golden proves the intended causal reason rather than a rival lawful branch.
+
+The generated golden index and coverage matrix show broad coverage of belief, perception, planning, event log, source reliability, travel, trade, needs, social artifacts, and FND principles. The coverage matrix shows FND-14, FND-14A, FND-20, and FND-31 have many scenarios, but FND-12/FND-13 boundary/compression coverage is thinner relative to the future target.
+
+The `belief-wall-trap` generated details are especially relevant: existing scenarios already test that theft is suppressed without authority belief, that explicit owner belief gates theft candidates, that stale remote pursuit uses last-seen rather than live truth, and that control source changes preserve lawful belief affordances.
+
+### **Active downstream consumers of FOUNDATIONS principles**
+
+The active consumers are:
+
+* `docs/planner-contracts.md`  
+* `docs/spec-drafting-rules.md`  
+* `docs/golden-e2e-testing.md`  
+* `docs/scenario-roadmap.md`  
+* generated golden docs and coverage matrix  
+* `crates/worldwake-ai/src/planning_snapshot.rs`  
+* `crates/worldwake-ai/src/planning_state.rs`  
+* `crates/worldwake-ai/src/search/strategic.rs`  
+* `crates/worldwake-ai/src/htn/*`  
+* `crates/worldwake-ai/src/decision_trace.rs`  
+* `crates/worldwake-sim/src/belief_view.rs`  
+* `crates/worldwake-sim/src/per_agent_belief_view.rs`  
+* `crates/worldwake-core/src/verification.rs`  
+* save/load and replay surfaces in `crates/worldwake-sim/src/save_load.rs`
+
+The event-log verification code already verifies event log completeness, dangling/future cause refs, explicit roots, and event coverage of world state. That supports stronger FND-12/FND-31 language around causal provenance and equivalence audits.
+
+### **Active-file search strategy**
+
+I searched active files for the requested concepts and excluded all `archive/*` hits from evidence. Search terms included: `FOUNDATIONS`, `FND-`, `Principle`, `World State Is Not Belief State`, `belief`, `RuntimeBeliefView`, `BelievedAuthorityView`, `ControlBeliefView`, `PlanningSnapshot`, `planner-contracts`, `HTN`, `method`, `GOAP`, `GoalKind`, `IntentionFrame`, `BlockedIntentMemory`, `source/sink`, `boundary`, `golden`, `scenario`, `survival_health_contract`, `decision_trace`, `event log`, `provenance`, `remote`, `seller`, `listing`, `artifact lifecycle`, `bounty`, `rumor`, and `test conventions`.
+
+Notable results:
+
+* `BlockedIntentMemory` had no active exact hit; search results were archive-only and were ignored. Active equivalents include blocker/discrepancy/exhaustion/frame traces rather than that exact name.  
+* FND-14/FND-14A exact phrase search hit `docs/FOUNDATIONS.md` and archive files; archive files were ignored. Active implementation surfaces were found through `RuntimeBeliefView`, `BelievedAuthorityView`, `ControlBeliefView`, `PlanningSnapshot`, and seller/listing searches.  
+* Seller/listing search found active surfaces in `belief_view.rs`, `planning_state.rs`, `planning_snapshot.rs`, `per_agent_belief_view.rs`, and `strategic.rs`. Archive hits were ignored.  
+* FND-20 exact search returned archive-heavy results; active HTN evidence was found through `.claude/skills`, `planner-contracts`, `spec-drafting-rules`, `htn/*`, `search/strategic.rs`, and `decision_trace.rs`.  
+* FND-31 exact search did not surface much beyond the constitution; the active doctrine is encoded mainly in `golden-e2e-testing.md`, `scenario-roadmap.md`, generated coverage, and golden scenario details.
+
+## **4. External Research Findings**
+
+### **ABM / large-scale simulation**
+
+Agent-based modeling supports Worldwake’s core direction: macro behavior emerges from many autonomous local actors, not from a global story director. ABM literature frames artificial societies as systems where local interactions produce global-level properties; EB-DEVS work explicitly studies emergence by relating local-level mechanisms to global-level behavior and detection.
+
+Research implication: Worldwake’s constitution is right to favor local causality and persistent entities. The research challenge is not “add a manager”; it is preserving local causal mechanisms under scale, approximation, and aggregation.
+
+### **BDI / HTN / GOAP / hybrid planning**
+
+BDI is useful here because it separates beliefs, desires, and intentions, and because beliefs are explicitly the agent’s informational state rather than guaranteed truth. BDI also distinguishes plan selection from plan execution, which matches Worldwake’s distinction between goal generation, planning, frames, commitments, and revalidation.
+
+HTN research supports reusable decomposition methods, but HTN methods are dangerous if treated as authored scripts. Hierarchical operational models and HTN-style acting/planning learn or select method instances in context, but that only helps Worldwake if methods remain domain-general and decomposed into lawful affordances.
+
+GOAP/STRIPS-style planning is useful for tactical leaves because it models actions through preconditions and effects; game implementations such as F.E.A.R.’s GOAP are known examples of STRIPS-like NPC planning. But classical planning often assumes far stronger world observability/control than Worldwake allows, so GOAP cannot be allowed to read remote truth just because it needs a state vector.
+
+Research implication: the constitution should stay formalism-flexible. The right rule is not “HTN-first” or “GOAP-first”; the right rule is **belief-bounded practical reasoning over lawful affordances, with HTN methods as reusable decomposition patterns and fallback/search as implementation tools**.
+
+### **Epistemic planning, partial observability, belief revision**
+
+POMDPs clarify the conceptual line: under partial observability, the agent maintains and updates a belief state from prior belief, action, and observation, and plans over that belief state rather than hidden truth. But POMDPs also expose why a full optimal formalism is usually too expensive for a large game simulation: belief spaces can be continuous and high-dimensional.
+
+Belief revision research similarly reinforces Worldwake’s FND-15/FND-16 stance: new observations/testimony should not magically overwrite truth; beliefs need provenance, contradiction handling, reliability, and revision semantics.
+
+Research implication: Worldwake should not adopt full POMDP machinery as a constitutional requirement. It should require that planner-visible state be belief-backed, source-aware, stale/contradiction-aware where applicable, and locally obtained.
+
+### **LOD / boundary compression / causal equivalence**
+
+The most important external finding for this audit is that aggregation can be valid or invalid depending on which causal variables are preserved. In an epidemic simulation comparing full dynamic contact data to two aggregated contact networks, a daily-duration aggregate approximated the full-resolution model, while a homogeneous topology aggregate failed to reproduce epidemic size. The lesson is exactly Worldwake’s risk: “plausible aggregate” is not enough; the approximation must preserve the variables that drive downstream causality.
+
+Research implication: FND-12’s current “equivalent to explicit model” wording is correct but underspecified. Worldwake needs explicit **causal-equivalence contracts** for offscreen simulation, boundary compression, region summaries, sleeping entities, prehistory, caches, and save/load/replay.
+
+### **Event sourcing and provenance**
+
+W3C PROV defines provenance as information about the entities, activities, and people involved in producing data or things, useful for assessing quality, reliability, or trustworthiness. That maps directly to Worldwake’s separate causal and knowledge histories.
+
+Event sourcing stores every application state change as a sequence of events and allows reconstruction of past states, which supports Worldwake’s FND-29A event-history direction and the active `EventLog` verification code.
+
+Research implication: compaction is compatible with Worldwake only if it preserves reconstruction/audit meaning. Debug traces alone are not enough.
+
+### **Deterministic discrete-event simulation**
+
+Discrete-event simulation research emphasizes that events are the sole mechanism for state change, so deterministic event ordering is crucial for reproducibility, especially when events are simultaneous.
+
+Research implication: FND-9 and FND-29A are correct. FND-12 should explicitly include save/load/replay equivalence and scheduling/batching equivalence under approximation contracts.
+
+### **ECS-based simulation architecture**
+
+ECS architecture supports Worldwake’s “systems interact through state” direction: entities are identifiers with components, and systems operate over matching components rather than object hierarchies. It also has a known debugging risk: values propagated through components can hide bugs.
+
+Research implication: Worldwake’s FND-26/FND-27 rule is correct, but systemic validation and causal trace audits must compensate for ECS-style cross-system opacity.
+
+### **Validation of complex simulations**
+
+Sargent’s simulation V&V work distinguishes conceptual model validity, computerized model verification, operational validity, and data validity, and says there is no universal test algorithm; each simulation project requires purpose-specific V&V.
+
+Metamorphic testing is useful when test oracles are hard; it derives new test cases from successful ones and can reveal errors that ordinary pass/fail cases miss. Property-based testing can automate metamorphic test generation and verification.
+
+Research implication: FND-31 should be sharpened. Golden end states are necessary but insufficient; Worldwake needs invariants, metamorphic/property tests, seed/sensitivity sweeps, long-run soak tests, adversarial scenario sampling, and negative checks for forbidden causal/knowledge paths.
+
+## **5. Gap Analysis**
+
+### **5.1 Two-tier approximation / equivalence contracts**
+
+Current coverage: FND-12 says optimization is allowed but cheating causality is not, and that offscreen simulation may batch/summarize/sleep/approximate only if causally relevant outcomes remain equivalent to the explicit model. FND-13 says boundary/external inputs must be world processes with source regions, delay, capacities, observables, and failure modes.
+
+Ambiguity: “equivalent” is not defined. It does not require a named explicit referent, preserved variables, materialization boundary, error bounds, or audit tests.
+
+Repo evidence: `PlanningState` already treats caches as pure memoization and says they must never become source of truth. That is the same principle at planner-search scale. Save/load and event-log verification exist, but FND-12 does not yet require approximation contracts for them.
+
+Research evidence: aggregation can preserve or destroy simulation behavior depending on whether it preserves the right temporal/contact variables.
+
+Decision: **FOUNDATIONS change warranted.** Replace FND-12 with explicit causal-equivalence contract language.
+
+### **5.2 Belief-backed planner-visible inputs**
+
+Current coverage: FND-14 and FND-14A are strong. `docs/planner-contracts.md` is even stronger: remote entities enter planning snapshots through beliefs or grounded evidence, not raw remote truth; social facts require belief; dispatch remains authoritative for legality.
+
+Ambiguity: FOUNDATIONS does not yet state a planner-facing rule covering every planner-visible input: goal emission, ranking, affordance enumeration, HTN preconditions, heuristic costs, duration estimates, fallback, and revalidation.
+
+Repo evidence: Active code shows exactly why this must be constitutional. `PlanningSnapshot` has admission sources, but economic listing fields cross into snapshots. `PlanningState` exposes seller listing accessors. HTN method preconditions call `listed_sale_lots_at` for seller knowledge. These can be lawful, but only if the source path is preserved and auditable.
+
+Research evidence: BDI and POMDP models both support reasoning over belief state rather than hidden truth under partial observability.
+
+Decision: **FOUNDATIONS change warranted.** Add FND-14B. Also update `docs/planner-contracts.md` later to mirror the constitutional rule.
+
+### **5.3 HTN method decomposition without scripting**
+
+Current coverage: FND-20 already says GOAP, utility, BDI, HTN, and hybrids are legal only as explainable practical reasoning, and forbids plot progression, scene-specific rails, target-specific success paths, and hidden exceptions. `docs/spec-drafting-rules.md` already has an HTN Method Drafting Checklist, including reusable pursuit pattern, belief-backed reads, fallback policy, and proof surface.
+
+Ambiguity: FND-20 does not explicitly bind HTN method preconditions/stage construction/rejection/fallback to the new planner-visible input law.
+
+Repo evidence: The active HTN schema and selector are structured and traceable, but seller/resource-source method preconditions use belief-view economic accessors. That is fine only if methods inherit the same FND-14B source law.
+
+Research evidence: HTN methods are useful for hierarchical decomposition, but if a method encodes the desired path rather than lawful affordance decomposition, it degenerates into a script.
+
+Decision: **Small FOUNDATIONS change warranted.** Insert one paragraph into FND-20. Do not add a large HTN section.
+
+### **5.4 Systemic validation beyond local goldens**
+
+Current coverage: FND-31 says plausible output is not evidence, canonical scenarios are necessary but insufficient, and adversarial sampling, sensitivity sweeps, causal trace inspection, and referent comparison are needed.
+
+Ambiguity: It does not explicitly name the repeated failure mode: local golden end states can pass for the wrong reason. It does not require negative tests for illegal planner reads or systemic checks proving absence of forbidden paths.
+
+Repo evidence: `golden-e2e-testing.md` and `scenario-roadmap.md` already encode stronger doctrine than FND-31. FOUNDATIONS should absorb the constitutional version so future specs and generated goldens align.
+
+Research evidence: Simulation validation is purpose-specific and cannot be reduced to one test; metamorphic/property-based testing is useful when direct oracles are hard.
+
+Decision: **FOUNDATIONS change warranted.** Replace FND-31 with sharper systemic validation language.
+
+### **5.5 World slice, boundary compression, and prehistory**
+
+Current coverage: FND-13 already states that region boundaries, imports, migrants, weather fronts, refugees, rumors, trade flows, and off-map activity must be modeled as boundary processes with provenance.
+
+Ambiguity: It does not explicitly cover multi-region fidelity tiers, materialization/decompression, long pre-simulation, or compacted prehistory provenance.
+
+Decision: **No standalone new principle required.** FND-12 replacement plus new scenarios K/L cover the gap without bloating the constitution.
+
+### **5.6 Agent-local abstraction vs authoritative abstraction**
+
+Current coverage: FND-3, FND-22A, and FND-27 already say abstract summaries are derived views/caches, not truth, and that learned preferences/habits are concrete agent state. FND-20 permits agent-local summaries derived from accessible belief state.
+
+Ambiguity: The distinction is conceptually present but not always operationally obvious for planner caches, risk scores, route safety, seller reliability, institution summaries, or boundary aggregates.
+
+Decision: **No standalone principle required.** FND-14B and the FND-12 replacement make the distinction sharp enough: agent-owned/institution-owned summaries can influence decisions as fallible belief state; global summaries may be caches or boundary artifacts, never local authoritative truth.
+
+### **5.7 Canonical regression scenario expansion**
+
+Current coverage: A-H are excellent but skew toward causality, information flow, social artifacts, and remote shock. They do not explicitly test planner input law, HTN rejection/fallback, compressed boundary materialization, or long prehistory.
+
+Repo evidence: Existing generated scenarios already cover belief-wall traps and stale remote pursuit, but not the specific remote seller/listing class or boundary-compression/prehistory scale target.
+
+Decision: **Add four canonical scenario classes I-L.** Do not add a generic “systemic golden pass hides wrong reason” world scenario; that belongs in FND-31 and test conventions.
+
+## **6. Minimal Safe Patch Track**
+
+### **Change FND-P1 — Replace FND-12 with causal-equivalence contract language**
+
+**Type:** replacement  
+ **Section:** `### 12. Performance May Compress Computation, Never Causality`  
+ **Change kind:** semantic strengthening
+
+**Exact current origin text to replace:**
+
+Optimization is allowed. Cheating causality is not.
+
+Offscreen simulation may batch, summarize, sleep, or approximate only if the causally relevant outcomes remain equivalent to the explicit model.
+
+Save/load, replay, migration between simulation regimes, and map-boundary handling may change representation, batching, or scheduling, but not world meaning.
+
+Test: An observer entering the situation must never find a state that cannot be explained by a legal sequence of world events.
+
+**Replacement text:**
+
+Optimization is allowed. Cheating causality is not.
+
+Offscreen simulation, sleeping entities, batching, region summaries, population-level approximations, pre-simulation, cache warmups, save/load, replay, migration between simulation regimes, and map-boundary handling may change representation, batching, or scheduling only under an explicit causal-equivalence contract.
+
+A causal-equivalence contract must name:
+
+- the explicit higher-fidelity referent it approximates;  
+- the causal variables, identities, quantities, obligations, beliefs, records, source/sink paths, timing bounds, and failure modes that must be preserved;  
+- the admitted error bounds or nondeterminism, if any;  
+- the materialization/decompression boundary where an aggregate becomes concrete entities, records, events, or resources;  
+- the tests or audits that compare compressed and explicit behavior.
+
+A compressed representation must never produce a local state, belief, transfer, social fact, or record that no lawful explicit simulation could have produced. Aggregates and summaries may guide scheduling or serve as declared boundary artifacts, but they are not authoritative local truth until they are materialized through an explicit world process.
+
+Save/load and replay equivalence are part of the same rule: changing encoding, batching, or cached summaries must not change world meaning, causal provenance, knowledge provenance, or downstream lawful affordances.
+
+Test: An observer entering the situation must never find a state that cannot be explained by a legal sequence of world events, and an audit must be able to name the approximation contract that preserved that explanation.
+
+**Rationale:** Current wording is correct but too implicit for boundary compression, offscreen simulation, prehistory, and save/load/replay. Research on aggregation shows that some summaries preserve behavior while others fail because they discard causal variables.
+
+**Active-file references depending on old wording:** `FOUNDATIONS.md`, `docs/spec-drafting-rules.md`, generated coverage rows for FND-12, save/load, event-log verification, planning-state cache invariants.
+
+**Downstream docs/specs/tests/code likely affected:** future boundary/offscreen/prehistory specs; `docs/spec-drafting-rules.md`; save/load/replay tests; generated scenario metadata; potential future boundary-process code.
+
+**Do downstream docs need updates?** Yes. `docs/spec-drafting-rules.md` should add an “approximation/equivalence contract” checklist item.
+
+**Tests/goldens needed?** Yes, when implementation begins: compressed-vs-explicit equivalence tests, save/load/replay equivalence, boundary materialization scenarios, and long-prehistory provenance audits.
+
+**Risk if not changed:** Future performance shortcuts can claim “equivalence” without naming what is preserved.
+
+**Risk if changed:** Slightly raises spec burden, but this is appropriate for causal compression.
+
+---
+
+### **Change FND-P2 — Insert new FND-14B planner-visible input law**
+
+**Type:** insertion  
+ **Exact insertion point:** after FND-14A, before FND-15  
+ **Text immediately before insertion point:**
+
+Test: A belief-view accessor that reads authoritative world state for a non-co-located, non-belief-backed entity violates Principle 14. A belief-view accessor that treats local co-location as permission to read ownership, rights, or institutional claims violates Principle 14A.
+
+**Proposed inserted text:**
+
+### 14B. Planner-Visible Inputs Must Be Belief-Backed or Lawful Boundary Artifacts
+
+Every planner-visible input — including goal emission, goal ranking, affordance enumeration, target enumeration, HTN method selection, method preconditions, tactical search, heuristic costs, duration estimates, revalidation, fallback, and decision traces — must be sourced from one of these surfaces:
+
+- the actor's self-authoritative state;  
+- same-tick local physical observation permitted by Principle 14A;  
+- the actor's belief, memory, testimony, record, known-plan, expectation, or institutional-belief state, with provenance/freshness where the system tracks it;  
+- public structural substrate that is not character knowledge, such as action definitions or declared topology, provided it does not reveal remote entity state or social fact;  
+- an explicit boundary artifact or boundary process declared under Principle 13.
+
+Remote entities, seller listings, stock, ownership, custody, rights, claims, offices, routes-as-known, threat estimates, public notices, rumors, institutional records, and social artifacts do not become planner inputs merely because they exist in authoritative world state. They enter planning only through a lawful source above. A planner cache, snapshot, read model, or heuristic must either preserve that source classification or be treated as illegal for agent decision-making.
+
+Debug views, omniscient test harnesses, generated coverage inventories, and authoritative commit checks may inspect world truth, but they must not feed agent planning except at an explicit world-process or dispatch-legality boundary.
+
+Test: Removing the actor's belief or local observation of a remote listing, owner, threat, office holder, or record must remove planner candidates that depend on it, even when the authoritative world truth remains unchanged.
+
+**Rationale:** FND-14/FND-14A and `planner-contracts.md` already imply this, but current architecture has broad planner-facing surfaces where implicit rules are too easy to violate.
+
+**Active-file references affected:** `belief_view.rs`, `per_agent_belief_view.rs`, `planning_snapshot.rs`, `planning_state.rs`, `htn/selector.rs`, `search/strategic.rs`, `decision_trace.rs`, `docs/planner-contracts.md`, generated belief-wall scenarios.
+
+**Downstream docs/specs/tests/code likely affected:** `docs/planner-contracts.md` needs explicit FND-14B alignment; future specs should cite it when adding planner inputs; tests should add negative illegal-read coverage.
+
+**Does this create new obligations for future specs?** Yes. Every planner-visible input added by a spec must declare its source category.
+
+**Tests/goldens needed?** Yes. Add a remote seller/listing belief-barrier scenario and trace assertions that snapshot admissions and candidate evidence prove the source.
+
+**Risk if not changed:** Omniscient planning bugs remain preventable only by convention and code review.
+
+**Risk if changed:** Some current planner code may need more explicit source labels. That is a feature, not a bug.
+
+---
+
+### **Change FND-P3 — Insert HTN anti-script guard into FND-20**
+
+**Type:** insertion  
+ **Section:** `### 20. Resource-Bounded Practical Reasoning Over Scripts`  
+ **Exact insertion point:** after the sentence:
+
+Turning such a goal into a method-required goal requires an explicit schema contract and tests showing that fallback would be semantically invalid.
+
+**Proposed inserted text:**
+
+HTN methods are not scripts. A method is lawful only when it is a reusable domain pursuit pattern that decomposes into ordinary lawful affordances or subgoals. Method selection, precondition evaluation, stage construction, rejection, fallback, and failure attribution must obey Principle 14B and must be traceable without referring to desired story beats, scenario rails, target-specific exceptions, or hidden success recipes.
+
+**Rationale:** Current FND-20 is strong, but the active HTN implementation is now concrete enough that the constitution should explicitly bind methods to belief-backed inputs and traceability.
+
+**Active-file references affected:** `docs/planner-contracts.md`, `docs/spec-drafting-rules.md`, `crates/worldwake-ai/src/htn/method_schema.rs`, `crates/worldwake-ai/src/htn/selector.rs`, `crates/worldwake-ai/src/search/strategic.rs`, and `crates/worldwake-ai/src/decision_trace.rs`.
+
+**Downstream docs/specs/tests/code likely affected:** planner contracts should cite FND-14B/FND-20 together; HTN method drafting checklist should remain but cite new wording.
+
+**Does this create new obligations for future specs?** Yes. New method specs must prove method reads are lawful and fallback/rejection is traceable.
+
+**Tests/goldens needed?** Yes. Add HTN method rejection/fallback scenario class.
+
+**Risk if not changed:** HTN could slowly become “scripts under a planner-shaped API.”
+
+**Risk if changed:** Low. It reinforces already-stated doctrine.
+
+---
+
+### **Change FND-P4 — Replace FND-31 with systemic validation doctrine**
+
+**Type:** replacement  
+ **Section:** `### 31. Validation and Falsification`  
+ **Change kind:** semantic strengthening
+
+**Exact current origin text to replace:**
+
+Interesting-looking output is not evidence by itself.
+
+Every subsystem and scenario class must declare:
+
+- multiple independent patterns it should generate,  
+- the path from local traces to aggregate behavior,  
+- the artifacts it must never produce,  
+- parameters that should destabilize it,  
+- traces that expose failure.
+
+Passing canonical scenarios is necessary but insufficient. The architecture must support adversarial scenario sampling, sensitivity sweeps, causal trace inspection, and comparison against simplified referents or prior implementations when available.
+
+Test: “Looked plausible in one run” is not enough. The system must produce inspectable evidence that it behaves for the right reasons and fails in explainable ways.
+
+**Replacement text:**
+
+Interesting-looking output is not evidence by itself. Passing a local golden end state is not evidence by itself.
+
+Every subsystem and scenario class must declare:
+
+- multiple independent patterns it should generate;  
+- the path from local traces to aggregate behavior;  
+- the artifacts it must never produce;  
+- parameters, seeds, timing, topology, population, and resource conditions that should destabilize it;  
+- traces that expose failure;  
+- negative cases that prove forbidden causal or knowledge paths are absent.
+
+Validation must include both canonical scenario goldens and systemic checks appropriate to the feature: invariants, property tests, metamorphic tests, cross-scenario composition tests, seed sweeps, sensitivity sweeps, long-run soak tests, adversarial scenario sampling, replay/save-load equivalence checks, and causal trace audits. The required mix depends on the feature's blast radius, but a feature with cross-system consequences cannot be validated only by a single local outcome.
+
+A golden passes constitutionally only if it proves the authored causal reason, or explicitly accepts a named alternative lawful branch. Structural activation is not causal proof. “Survived,” “looked plausible,” or “ended in the expected state” is insufficient when the same result could be produced by an illegal planner read, hidden abstraction, omitted contention, stale cache, fallback path, or unrelated bug.
+
+The architecture must support inspection of both causal history and knowledge history, including evidence that illegal planner-visible inputs were not used.
+
+Test: “Looked plausible in one run” is not enough. The system must produce inspectable evidence that it behaves for the right reasons, fails in explainable ways, and does not pass for prohibited reasons.
+
+**Rationale:** This brings FOUNDATIONS up to the stronger active testing doctrine already present in `golden-e2e-testing.md` and `scenario-roadmap.md`, and aligns with simulation V&V and metamorphic/property testing research.
+
+**Active-file references depending on old wording:** `FOUNDATIONS.md`, `docs/golden-e2e-testing.md`, `docs/scenario-roadmap.md`, generated coverage matrix, golden inventory workflow.
+
+**Downstream docs/specs/tests/code likely affected:** golden authoring conventions, scenario-roadmap priority rules, future golden metadata, trace extraction, illegal-read negative tests.
+
+**Do downstream docs need updates?** Yes, but mostly terminology alignment. `golden-e2e-testing.md` already contains most of the doctrine.
+
+**Tests/goldens needed?** Yes. Future systemic validation should include negative omniscience tests and metamorphic/property checks where local goldens are inadequate.
+
+**Risk if not changed:** The constitution remains weaker than the active testing doctrine and known failure mode.
+
+**Risk if changed:** It raises validation burden. That is necessary for cross-system simulation.
+
+---
+
+### **Change FND-P5 — Add canonical scenarios I-L**
+
+**Type:** insertion  
+ **Exact insertion point:** after Scenario H and before `## VII. Rule of Thumb`  
+ **Text immediately before insertion point:**
+
+### H. Remote Shock, Delayed Arrival, Local Shortage
+
+A caravan expected from a neighboring valley does not arrive.
+
+Local merchants reduce stock.
+
+Workers seek substitutes or leave.
+
+No global economy variable directly creates the shortage.
+
+**Proposed inserted text:**
+
+### I. Planner Belief Barrier Around Remote Affordances
+
+A seller has grain listed in a remote town, and an agent has a hunger-driven reason to acquire grain.
+
+Until the agent has a lawful belief, record, testimony, public notice, or local observation of that listing, the planner must not emit or rank a seller-dependent candidate for that remote listing.
+
+After a delayed rumor, ledger entry, messenger report, or direct visit creates the belief, the same candidate may appear with knowledge provenance.
+
+Updating the authoritative listing alone must not change the agent's remote plan.
+
+### J. HTN Method Rejection, Fallback, and Lawful Failure
+
+An agent pursues a goal whose reusable HTN method would be appropriate only if a belief-backed precondition holds.
+
+When the precondition is unknown, stale, contradicted, or false, the method is rejected with a traceable failed precondition.
+
+The planner may fall back to ordinary affordance search only when the goal schema permits it; otherwise it must fail or seek information.
+
+No method may force the desired story beat through a scenario-specific stage.
+
+### K. Boundary-Compressed Shock Materializes Into Local Carriers
+
+A neighboring region experiences a compressed drought, raid, migration wave, trade disruption, or epidemic pressure.
+
+The pressure crosses the boundary only through declared boundary processes: delayed travelers, refugees, trade records, missing caravans, price/stock changes, rumors, illness carriers, or other materialized entities and records.
+
+Agents inside the active slice react to those local carriers and may hold stale or contradictory beliefs about the outside region.
+
+The compressed aggregate never becomes authoritative local truth without materialization.
+
+### L. Long Prehistory With Inspectable Compacted Provenance
+
+The world is pre-simulated for months or years before the player arrives.
+
+Deaths, debts, offices, shortages, grudges, habits, records, relationships, and damaged places may be compacted, but the current state must remain explainable by lawful prior events.
+
+Agents may begin with stale or conflicting beliefs produced during that history.
+
+An audit can recover enough causal, knowledge, and source/sink provenance to explain why the playable state is as it is, even if not every low-level tick is retained.
+
+**Rationale:** These scenarios cover constitutional acceptance gaps not covered by A-H: remote planner inputs, HTN method legality, boundary materialization, and prehistory provenance.
+
+**Active-file references affected:** generated golden docs, scenario-roadmap, golden coverage matrix, belief-wall-trap scenario family, planner/HTN code.
+
+**Downstream docs/specs/tests/code likely affected:** new scenario metadata and generated docs when tests are later implemented.
+
+**Does this create new obligations for future specs?** Yes. Future boundary/prehistory/planner/HTN specs should eventually land corresponding goldens.
+
+**Tests/goldens needed?** Yes, but not immediately in this proposal. This mission is not implementation.
+
+**Risk if not changed:** Canonical scenarios will underrepresent the exact future risks: omniscient planner inputs, HTN scripts, invalid boundary compression, and impossible prehistory.
+
+**Risk if changed:** Slight expansion of constitutional examples. Low risk.
+
+## **7. Maximal Ideal Track**
+
+A maximal rewrite is **not warranted**.
+
+A possible reorganization would split `FOUNDATIONS.md` into:
+
+1. causal constitution,  
+2. epistemic/planner constitution,  
+3. approximation/boundary constitution,  
+4. validation constitution,  
+5. canonical scenario appendix.
+
+That would make the document cleaner, but it would introduce unnecessary churn: generated coverage refers to numbered principles, downstream docs cite FND numbers, and active architecture already maps cleanly onto the current structure. The current document is not overgrown; it is only underspecified at four pressure points.
+
+The only future larger addition I would consider is a separate active doc, not a FOUNDATIONS rewrite:
+
+docs/causal-equivalence-contracts.md
+
+That document could define templates for offscreen simulation, boundary compression, sleeping entities, population approximations, prehistory compaction, and save/load/replay equivalence. It should be created only when those systems begin implementation.
+
+## **8. Canonical Regression Scenario Recommendations**
+
+Scenarios A-H should remain as-is. They are still constitutionally valuable.
+
+Add I-L exactly as in Change FND-P5.
+
+Do **not** add a canonical world scenario for “systemic golden pass hides wrong causal reason.” That is not a world situation; it is a validation rule. It belongs in FND-31 and golden testing conventions.
+
+The new scenario set would then cover:
+
+* A-H: existing causality, belief, records, social artifacts, institutions, reports, and remote shock.  
+* I: illegal remote affordance/listing access.  
+* J: HTN method rejection/fallback without scripting.  
+* K: boundary compression materializing into lawful local carriers.  
+* L: long prehistory with compacted but inspectable causal/knowledge provenance.
+
+## **9. Downstream Update Map**
+
+| File path | Why affected | Follow-up needed | Timing |
+| ----- | ----- | ----- | ----- |
+| `docs/planner-contracts.md` | It is the planner-facing version of FND-14/FND-20 and already encodes belief barriers, remote entity admission, and HTN fallback. | Add explicit reference to FND-14B; require every planner-visible field to carry/admit a lawful source category; call out seller listings, ownership, threat estimates, records, and duration estimates. | Required soon after FOUNDATIONS edit. |
+| `docs/spec-drafting-rules.md` | It governs future specs and already requires information-path analysis, stored state vs read model, and HTN method drafting checks. | Add causal-equivalence contract checklist; update HTN checklist to cite FND-14B; add systemic validation checklist for property/metamorphic/seed/sensitivity/negative illegal-path tests. | Required soon after edit. |
+| `docs/golden-e2e-testing.md` | It already contains stronger doctrine than FND-31. | Align terminology with revised FND-31; add explicit “illegal planner input absence” proof pattern. | Required, but small. |
+| `docs/scenario-roadmap.md` | It distinguishes structural activation from behavioral proof and tracks scenario priorities. | Add scenario classes I-L as roadmap targets once implementation begins. | Future implementation phase. |
+| `docs/generated/golden-scenario-index.md` | Generated scenario inventory. | Do not hand-edit. Regenerate only after new test metadata exists. | Future. |
+| `docs/generated/golden-coverage-matrix.md` | Generated coverage matrix; currently shows broad FND coverage but weaker boundary/prehistory coverage. | Do not hand-edit. Regenerate after new scenarios. | Future. |
+| `scripts/golden_inventory.py` | Generates scenario docs. | No change expected unless new metadata schema is needed for equivalence contracts/systemic validation tags. | Probably not immediate. |
+| `.claude/skills/goap-architecture-report/SKILL.md` | Architecture-reading checklist. | Add FND-14B and causal-equivalence contract to future checklist if desired. | Optional. |
+| `crates/worldwake-sim/src/belief_view.rs` | Defines `RuntimeBeliefView`, `BelievedAuthorityView`, `LocalPhysicalObservationView`, and economic/control views. | Add comments or type/source tags for planner-visible legality if implementation proceeds. | Future implementation. |
+| `crates/worldwake-sim/src/per_agent_belief_view.rs` | Implements belief barriers, local physical observation, economic listings, and authority reads. | Audit seller/listing/control paths against FND-14B; ensure remote listings are belief-backed, not authoritative leakage. | Future implementation. |
+| `crates/worldwake-ai/src/planning_snapshot.rs` | Snapshot admission sources are already close to FND-14B. | Preserve source classification for economic/social/control fields, especially listings and ownership. | Future implementation. |
+| `crates/worldwake-ai/src/planning_state.rs` | Planner search state exposes seller listing and cache surfaces. | Ensure caches and economic fields remain source-preserving and not truth-promoting. | Future implementation. |
+| `crates/worldwake-ai/src/htn/*` | HTN selector/schema/method traces depend on FND-20. | Add test expectations for method precondition source legality, rejection, fallback, and no hidden recipes. | Future implementation. |
+| `crates/worldwake-ai/src/search/strategic.rs` | Translates HTN subgoals into stages and fallback plans. | Ensure stage construction never turns method templates into remote truth reads. | Future implementation. |
+| `crates/worldwake-ai/src/decision_trace.rs` | Already has rich trace surfaces. | Add trace-level assertions for FND-14B and FND-31 negative checks. | Future implementation. |
+| `crates/worldwake-core/src/verification.rs` | Event-log verification supports causal provenance. | Extend or complement for equivalence/prehistory audits when compression exists. | Future boundary/prehistory phase. |
+| `crates/worldwake-sim/src/save_load.rs` | Save/load/replay equivalence falls under revised FND-12. | Add equivalence tests where compressed/cached state is introduced. | Future implementation. |
+
+## **10. Final Recommended Edit Set**
+
+Apply these five edits and no broader rewrite.
+
+### **Edit 1 — Replace FND-12**
+
+Replace the current body of `### 12. Performance May Compress Computation, Never Causality` with:
+
+Optimization is allowed. Cheating causality is not.
+
+Offscreen simulation, sleeping entities, batching, region summaries, population-level approximations, pre-simulation, cache warmups, save/load, replay, migration between simulation regimes, and map-boundary handling may change representation, batching, or scheduling only under an explicit causal-equivalence contract.
+
+A causal-equivalence contract must name:
+
+- the explicit higher-fidelity referent it approximates;  
+- the causal variables, identities, quantities, obligations, beliefs, records, source/sink paths, timing bounds, and failure modes that must be preserved;  
+- the admitted error bounds or nondeterminism, if any;  
+- the materialization/decompression boundary where an aggregate becomes concrete entities, records, events, or resources;  
+- the tests or audits that compare compressed and explicit behavior.
+
+A compressed representation must never produce a local state, belief, transfer, social fact, or record that no lawful explicit simulation could have produced. Aggregates and summaries may guide scheduling or serve as declared boundary artifacts, but they are not authoritative local truth until they are materialized through an explicit world process.
+
+Save/load and replay equivalence are part of the same rule: changing encoding, batching, or cached summaries must not change world meaning, causal provenance, knowledge provenance, or downstream lawful affordances.
+
+Test: An observer entering the situation must never find a state that cannot be explained by a legal sequence of world events, and an audit must be able to name the approximation contract that preserved that explanation.
+
+### **Edit 2 — Insert FND-14B after FND-14A**
+
+### 14B. Planner-Visible Inputs Must Be Belief-Backed or Lawful Boundary Artifacts
+
+Every planner-visible input — including goal emission, goal ranking, affordance enumeration, target enumeration, HTN method selection, method preconditions, tactical search, heuristic costs, duration estimates, revalidation, fallback, and decision traces — must be sourced from one of these surfaces:
+
+- the actor's self-authoritative state;  
+- same-tick local physical observation permitted by Principle 14A;  
+- the actor's belief, memory, testimony, record, known-plan, expectation, or institutional-belief state, with provenance/freshness where the system tracks it;  
+- public structural substrate that is not character knowledge, such as action definitions or declared topology, provided it does not reveal remote entity state or social fact;  
+- an explicit boundary artifact or boundary process declared under Principle 13.
+
+Remote entities, seller listings, stock, ownership, custody, rights, claims, offices, routes-as-known, threat estimates, public notices, rumors, institutional records, and social artifacts do not become planner inputs merely because they exist in authoritative world state. They enter planning only through a lawful source above. A planner cache, snapshot, read model, or heuristic must either preserve that source classification or be treated as illegal for agent decision-making.
+
+Debug views, omniscient test harnesses, generated coverage inventories, and authoritative commit checks may inspect world truth, but they must not feed agent planning except at an explicit world-process or dispatch-legality boundary.
+
+Test: Removing the actor's belief or local observation of a remote listing, owner, threat, office holder, or record must remove planner candidates that depend on it, even when the authoritative world truth remains unchanged.
+
+### **Edit 3 — Insert HTN guard into FND-20**
+
+After:
+
+Turning such a goal into a method-required goal requires an explicit schema contract and tests showing that fallback would be semantically invalid.
+
+insert:
+
+HTN methods are not scripts. A method is lawful only when it is a reusable domain pursuit pattern that decomposes into ordinary lawful affordances or subgoals. Method selection, precondition evaluation, stage construction, rejection, fallback, and failure attribution must obey Principle 14B and must be traceable without referring to desired story beats, scenario rails, target-specific exceptions, or hidden success recipes.
+
+### **Edit 4 — Replace FND-31**
+
+Replace the current body of `### 31. Validation and Falsification` with:
+
+Interesting-looking output is not evidence by itself. Passing a local golden end state is not evidence by itself.
+
+Every subsystem and scenario class must declare:
+
+- multiple independent patterns it should generate;  
+- the path from local traces to aggregate behavior;  
+- the artifacts it must never produce;  
+- parameters, seeds, timing, topology, population, and resource conditions that should destabilize it;  
+- traces that expose failure;  
+- negative cases that prove forbidden causal or knowledge paths are absent.
+
+Validation must include both canonical scenario goldens and systemic checks appropriate to the feature: invariants, property tests, metamorphic tests, cross-scenario composition tests, seed sweeps, sensitivity sweeps, long-run soak tests, adversarial scenario sampling, replay/save-load equivalence checks, and causal trace audits. The required mix depends on the feature's blast radius, but a feature with cross-system consequences cannot be validated only by a single local outcome.
+
+A golden passes constitutionally only if it proves the authored causal reason, or explicitly accepts a named alternative lawful branch. Structural activation is not causal proof. “Survived,” “looked plausible,” or “ended in the expected state” is insufficient when the same result could be produced by an illegal planner read, hidden abstraction, omitted contention, stale cache, fallback path, or unrelated bug.
+
+The architecture must support inspection of both causal history and knowledge history, including evidence that illegal planner-visible inputs were not used.
+
+Test: “Looked plausible in one run” is not enough. The system must produce inspectable evidence that it behaves for the right reasons, fails in explainable ways, and does not pass for prohibited reasons.
+
+### **Edit 5 — Add canonical scenarios I-L after H**
+
+### I. Planner Belief Barrier Around Remote Affordances
+
+A seller has grain listed in a remote town, and an agent has a hunger-driven reason to acquire grain.
+
+Until the agent has a lawful belief, record, testimony, public notice, or local observation of that listing, the planner must not emit or rank a seller-dependent candidate for that remote listing.
+
+After a delayed rumor, ledger entry, messenger report, or direct visit creates the belief, the same candidate may appear with knowledge provenance.
+
+Updating the authoritative listing alone must not change the agent's remote plan.
+
+### J. HTN Method Rejection, Fallback, and Lawful Failure
+
+An agent pursues a goal whose reusable HTN method would be appropriate only if a belief-backed precondition holds.
+
+When the precondition is unknown, stale, contradicted, or false, the method is rejected with a traceable failed precondition.
+
+The planner may fall back to ordinary affordance search only when the goal schema permits it; otherwise it must fail or seek information.
+
+No method may force the desired story beat through a scenario-specific stage.
+
+### K. Boundary-Compressed Shock Materializes Into Local Carriers
+
+A neighboring region experiences a compressed drought, raid, migration wave, trade disruption, or epidemic pressure.
+
+The pressure crosses the boundary only through declared boundary processes: delayed travelers, refugees, trade records, missing caravans, price/stock changes, rumors, illness carriers, or other materialized entities and records.
+
+Agents inside the active slice react to those local carriers and may hold stale or contradictory beliefs about the outside region.
+
+The compressed aggregate never becomes authoritative local truth without materialization.
+
+### L. Long Prehistory With Inspectable Compacted Provenance
+
+The world is pre-simulated for months or years before the player arrives.
+
+Deaths, debts, offices, shortages, grudges, habits, records, relationships, and damaged places may be compacted, but the current state must remain explainable by lawful prior events.
+
+Agents may begin with stale or conflicting beliefs produced during that history.
+
+An audit can recover enough causal, knowledge, and source/sink provenance to explain why the playable state is as it is, even if not every low-level tick is retained.
+
+## **11. Rejected Changes**
+
+I reject replacing FOUNDATIONS wholesale. The current document is structurally sound; renumbering or reorganizing it would create churn across generated coverage, planner contracts, spec rules, and tests without solving a real philosophical defect.
+
+I reject making HTN the constitutional goal. HTN is useful for reusable decomposition, but the constitution should remain formalism-flexible. The target is belief-bounded, resourceful practical reasoning, not HTN-first purity.
+
+I reject allowing global managers, drama directors, hidden quest systems, invisible spawners, or omniscient institutional services. Those would directly violate FND-1, FND-2, FND-7, FND-14, and the project identity.
+
+I reject treating aggregate truth as local authoritative reality. Region summaries, danger scores, scarcity pressure, migration pressure, or market pressure can be caches, boundary artifacts, or agent/institution beliefs, but not direct local truth.
+
+I reject banning approximation entirely. That would make the scale target impossible. The correct rule is approximation behind causal-equivalence contracts.
+
+I reject full POMDP as a required architecture. POMDPs clarify the belief-state principle, but their exact solution model is too heavy for Worldwake-scale multi-agent simulation. The right constitutional rule is belief-backed bounded reasoning.
+
+I reject treating “passed one golden” as validation. Golden tests are necessary, but systemic behavior requires invariants, negative checks, seed/sensitivity sweeps, causal trace audits, and proof that the result happened for the right reason.
+
+I reject adding a canonical scenario for “systemic golden pass hiding wrong causal reason.” That is not a world scenario. It is a validation doctrine, now handled by the FND-31 replacement.
+
