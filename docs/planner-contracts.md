@@ -95,6 +95,42 @@ The contract is:
 
 When reassessing a planner ticket, state separately whether the issue is about place-topology inclusion, remote entity admission, or belief-backed field carriage. Do not collapse those into one generic "snapshot completeness" claim.
 
+### Planner-visible fields are source-scoped
+
+Entity admission does not make every current authoritative field on that entity
+planner-visible. Every planner- or player-facing belief-view accessor must name
+which source class makes its value lawful:
+
+- Self: facts about the observing actor.
+- Same-tick local physical observation: directly perceivable physical facts about
+  entities at the actor's effective place, such as kind, item-lot
+  commodity/quantity, workstation tags, resource-source availability, container
+  contents, encumbrance/load, carry capacity, displayed sale-listing existence,
+  and co-located workstation busy/idle state.
+- Direct possession: directly possessed entities whose physical load/capacity or
+  containment facts are observable through the actor's own inventory.
+- Belief or memory: remote or delayed facts that arrived through the actor's
+  belief, memory, testimony, report, record, or other explicit evidence carrier.
+- Public topology: place-graph facts that are intentionally broader than entity
+  visibility and do not imply knowledge of remote occupants or contents.
+
+For S158, this rule governs the economic accessors `has_sale_listing`,
+`seller_for_sale_lot`, and `listed_sale_lots_at`; the production accessor
+`has_production_job`; the physical accessors `carry_capacity` and
+`load_of_entity`; and the contention accessors `facility_queue_position`,
+`facility_grant`, `extraction_slot_queue_position`,
+`actor_holds_extraction_slot_grant`, and `contention_queue_is_full`.
+Remote values for those fields must come from an existing belief or memory
+carrier, such as `EntityBeliefAspect::Activity`,
+`EntityBeliefAspect::ContentionState`, or opportunity memory. If no such carrier
+exists, the accessor returns unknown, empty, or false; it must not fall back to
+current world state.
+
+The control and rights value path remains governed by the existing control
+language above. Stricter belief-backing for rights/control values requires a
+future believed-rights or jurisdiction aspect rather than a hidden fallback in
+the planner view.
+
 ### Current duration dependency inventory
 
 The live inventory is:

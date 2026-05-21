@@ -10,6 +10,32 @@ Every future system spec (E09+) MUST include the following analysis sections:
 
 See `specs/FND-01-phase1-foundations-alignment.md` Section H and `docs/FOUNDATIONS.md` Principles 3, 7, 8, and 20 for rationale.
 
+## Belief-View Accessor Source-Class Rule
+
+Any spec that adds or changes a planner- or player-visible belief-view accessor
+must declare the accessor's source class before implementation:
+
+1. **Self**: facts about the observing actor.
+2. **Same-tick local physical observation**: directly perceivable physical facts
+   about entities at the actor's effective place.
+3. **Direct possession**: observable facts about entities directly possessed by
+   the actor.
+4. **Belief-backed**: remote, delayed, social, relational, or inferred facts that
+   require a belief, memory, testimony, report, record, or other explicit
+   evidence carrier.
+5. **Public topology**: intentionally public place-graph facts that do not imply
+   remote entity, occupant, or content visibility.
+
+The spec must also state the stale or unknown behavior for each accessor. If no
+lawful source exists, the accessor must return `None`, empty, or `false` rather
+than read current authoritative world state on behalf of the agent.
+
+Social and relational facts, including ownership, rights, control,
+jurisdiction, seller/controller identity, testimony, source credibility, and
+institutional claims, are belief-gated even when the subject is co-located.
+Co-location alone exposes only directly perceivable physical facts under
+FND-14A.
+
 ## HTN Method Drafting Checklist
 
 Any spec that adds or materially changes an HTN method must include a checklist
