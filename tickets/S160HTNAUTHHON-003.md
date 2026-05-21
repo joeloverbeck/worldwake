@@ -94,7 +94,8 @@ accordingly.
 
 - Adding any real coordination/recruit artifacts — explicitly a future gameplay
   spec (the spec's stated non-goal).
-- The `MethodSubgoalAuthority` labeling — ticket 001.
+- The `MethodSubgoalAuthority` labeling —
+  `archive/tickets/S160HTNAUTHHON-001.md`.
 - Changing the method's preconditions, subgoals, or runtime behavior — rename only.
 
 ## Acceptance Criteria

@@ -9,7 +9,7 @@ pub struct MethodSchema {
     pub id: MethodSchemaId,
     pub goal_kind: GoalKindDiscriminant,
     pub preconditions: Vec<MethodPrecondition>,
-    pub subgoals: Vec<SubgoalTemplate>,
+    pub subgoals: Vec<MethodSubgoal>,
     pub explanation_template: ExplanationTemplateId,
     pub motive_bias: Vec<MotiveBias>,
     pub planning_budget_hint: Option<GoalPlanningBudget>,
@@ -35,6 +35,32 @@ pub enum SubgoalTemplate {
     PerformAction(PlannerOpKind, PayloadTemplate),
     ResolveCoordination(ClaimRequirement),
     ReturnTo(LocationTemplate),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MethodSubgoal {
+    pub template: SubgoalTemplate,
+    pub authority: MethodSubgoalAuthority,
+}
+
+impl MethodSubgoal {
+    #[must_use]
+    pub fn stage_hint(template: SubgoalTemplate) -> Self {
+        Self {
+            template,
+            authority: MethodSubgoalAuthority::StageHint,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MethodSubgoalAuthority {
+    /// Subgoal contributes strategic destinations, prerequisite commodities, or
+    /// trace context. It is not enforced as an ordinary `ActionDef` leaf.
+    StageHint,
+    /// Subgoal must correspond to at least one ordinary ActionDef-backed
+    /// planned step, with selected/skipped/failed status proven by trace.
+    RequiredActionLeaf,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -282,16 +308,16 @@ mod tests {
                 },
             )],
             subgoals: vec![
-                SubgoalTemplate::AcquireCommodity {
+                MethodSubgoal::stage_hint(SubgoalTemplate::AcquireCommodity {
                     commodity: CommodityTemplate::Fixed(CommodityKind::Grain),
                     min_quantity: Quantity(2),
-                },
-                SubgoalTemplate::PerformAction(
+                }),
+                MethodSubgoal::stage_hint(SubgoalTemplate::PerformAction(
                     PlannerOpKind::Craft,
                     PayloadTemplate::Explicit(PayloadValueTemplate::Craft {
                         recipe: RecipeTemplate::Fixed(1),
                     }),
-                ),
+                )),
             ],
             explanation_template: ExplanationTemplateId(3),
             motive_bias: vec![MotiveBias {

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — HTN method trace (`worldwake-ai`)
-**Deps**: S160HTNAUTHHON-001
+**Deps**: archive/tickets/S160HTNAUTHHON-001.md
 
 ## Problem
 
@@ -13,7 +13,8 @@
 A reader of the trace cannot distinguish "method selected" from "subgoal enforced,"
 which lets the trace decorate intended behavior rather than prove what the code
 actually constrained (FND-29: traces must prove what the code constrained). This
-ticket surfaces the `MethodSubgoalAuthority` label (from ticket 001) in the trace
+ticket surfaces the `MethodSubgoalAuthority` label (from archived
+`archive/tickets/S160HTNAUTHHON-001.md`) in the trace
 and documents the stage-hint-vs-required-leaf distinction in the canonical HTN trace
 contract.
 
@@ -32,9 +33,9 @@ contract.
    documented in `docs/planner-contracts.md` §4 (lines 295–326). Per that contract
    the trace is a transient debug read-model, not serialized save/replay state — so
    adding an authority field has no save-format impact.
-4. Depends on ticket 001's `MethodSubgoalAuthority` enum and per-subgoal labels
-   being present on `MethodSchema.subgoals`; without them there is nothing to copy
-   into the trace.
+4. Depends on `archive/tickets/S160HTNAUTHHON-001.md` having landed the
+   `MethodSubgoalAuthority` enum and per-subgoal labels on `MethodSchema.subgoals`;
+   without them there is nothing to copy into the trace.
 5. Existing tests touching the trace: `decision_trace.rs:5438` constructs a
    `MethodPlanAttemptTrace` in a unit test; observer (`observer.rs:7398/7443/7471`)
    and `scenario_diagnostics/aggregator.rs:991/1000` also construct it. Each
@@ -77,8 +78,8 @@ fields.
 
 In `search/strategic.rs` (the `subgoals_attempted` population at the trace-build
 sites near lines 468 and 492), read the authority from the selected method's
-subgoal (introduced in ticket 001) and copy it into each `SubgoalAttemptResult`
-alongside `kind`/`outcome`.
+   subgoal (introduced by `archive/tickets/S160HTNAUTHHON-001.md`) and copy it into
+   each `SubgoalAttemptResult` alongside `kind`/`outcome`.
 
 ### 3. Update all `SubgoalAttemptResult` / `MethodPlanAttemptTrace` construction sites
 
@@ -105,7 +106,8 @@ declare only `StageHint`.
 
 ## Out of Scope
 
-- Defining `MethodSubgoalAuthority` or labeling method subgoals — ticket 001.
+- Defining `MethodSubgoalAuthority` or labeling method subgoals —
+  `archive/tickets/S160HTNAUTHHON-001.md`.
 - Any strategic-search *enforcement* of `RequiredActionLeaf` — deferred to a future
   method-required spec; this ticket only surfaces the label in the trace.
 - Observer rendering format beyond supplying the new field at sample-construction

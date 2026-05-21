@@ -382,9 +382,9 @@ fn build_stages(
         let stages = method
             .subgoals
             .iter()
-            .flat_map(|template| {
+            .flat_map(|subgoal| {
                 template_to_stages(
-                    template,
+                    &subgoal.template,
                     state,
                     snapshot,
                     goal,
@@ -474,9 +474,9 @@ fn method_trace(
             .subgoals
             .iter()
             .enumerate()
-            .map(|(template_index, template)| SubgoalAttemptResult {
+            .map(|(template_index, subgoal)| SubgoalAttemptResult {
                 template_index,
-                kind: template.into(),
+                kind: (&subgoal.template).into(),
                 outcome: SubgoalAttemptOutcome::Pending,
             })
             .collect(),
@@ -503,9 +503,9 @@ fn fallback_method_trace(
                 .subgoals
                 .iter()
                 .enumerate()
-                .map(|(template_index, template)| SubgoalAttemptResult {
+                .map(|(template_index, subgoal)| SubgoalAttemptResult {
                     template_index,
-                    kind: template.into(),
+                    kind: (&subgoal.template).into(),
                     outcome: SubgoalAttemptOutcome::Pending,
                 })
                 .collect()
@@ -2165,15 +2165,17 @@ mod tests {
             goal_kind: worldwake_core::GoalKindDiscriminant::ProduceCommodity,
             preconditions: Vec::new(),
             subgoals: vec![
-                crate::htn::SubgoalTemplate::AcquireCommodity {
-                    commodity: crate::htn::CommodityTemplate::Fixed(CommodityKind::Grain),
-                    min_quantity: Quantity(1),
-                },
-                crate::htn::SubgoalTemplate::TravelTo(
+                crate::htn::MethodSubgoal::stage_hint(
+                    crate::htn::SubgoalTemplate::AcquireCommodity {
+                        commodity: crate::htn::CommodityTemplate::Fixed(CommodityKind::Grain),
+                        min_quantity: Quantity(1),
+                    },
+                ),
+                crate::htn::MethodSubgoal::stage_hint(crate::htn::SubgoalTemplate::TravelTo(
                     crate::htn::LocationTemplate::KnownWorkstationFor {
                         recipe: crate::htn::RecipeTemplate::GoalRecipe,
                     },
-                ),
+                )),
             ],
             explanation_template: crate::htn::ExplanationTemplateId(99),
             motive_bias: Vec::new(),

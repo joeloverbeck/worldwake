@@ -37,7 +37,11 @@ fn schema(parts: MethodParts) -> MethodSchema {
         id: MethodSchemaId(parts.id),
         goal_kind: parts.goal_kind,
         preconditions: parts.preconditions,
-        subgoals: parts.subgoals,
+        subgoals: parts
+            .subgoals
+            .into_iter()
+            .map(crate::htn::MethodSubgoal::stage_hint)
+            .collect(),
         explanation_template: ExplanationTemplateId(parts.explanation_template),
         motive_bias: parts.motive_bias,
         planning_budget_hint: parts.planning_budget_hint,
