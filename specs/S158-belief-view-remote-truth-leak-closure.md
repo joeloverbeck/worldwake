@@ -147,7 +147,8 @@ accessors is closed here.
    - Production (`has_production_job`): co-located workstation busy/idle is
      observable; remote requires belief backed by `EntityBeliefAspect::Activity`.
    - Physical (`carry_capacity`, `load_of_entity`): co-located or directly
-     possessed may read; remote requires belief.
+     possessed may read; remote returns unknown unless a future ticket adds an
+     explicit load/capacity belief aspect. This spec adds no such state.
    - Contention (`facility_queue_position`, `facility_grant`,
      `extraction_slot_queue_position`, `actor_holds_extraction_slot_grant`,
      `contention_queue_is_full`): gate at the method on co-location (the actor is

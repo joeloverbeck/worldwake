@@ -6,15 +6,16 @@ use std::num::NonZeroU32;
 use crate::golden_harness::*;
 use worldwake_ai::{DecisionOutcome, GoalKey, PlannerOpKind, generate_candidates};
 use worldwake_core::{
-    AgentBeliefStore, BlockerMemory, ClaimId, ClaimValue, CommodityKind, ControlSource, EntityId,
-    EntityKind, GoalKind, HomeostaticNeeds, MetabolismProfile, PerceptionSource, Permille,
-    PursuitProfile, Quantity, SaleListing, Seed, StockAssignment, StockAssignmentKind,
-    SuccessionLaw, TheftDispositionProfile, Tick, UtilityProfile,
+    ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BlockerMemory, CarryCapacity, ClaimId,
+    ClaimValue, CommodityKind, ControlSource, EntityId, EntityKind, GoalKind, HomeostaticNeeds,
+    LoadUnits, MetabolismProfile, PerceptionSource, Permille, ProductionJob, PursuitProfile,
+    Quantity, RecipeId, SaleListing, Seed, StockAssignment, StockAssignmentKind, SuccessionLaw,
+    TheftDispositionProfile, Tick, UtilityProfile, WorkstationMarker, WorkstationTag,
 };
 use worldwake_core::{EntityBeliefAspect, EntityBeliefClaim};
 use worldwake_sim::{
-    BeliefRead, BelievedAuthorityView, EconomicBeliefView, LocalPhysicalObservationView,
-    PerAgentBeliefView, SpatialBeliefView, get_affordances,
+    BeliefRead, BelievedAuthorityView, EconomicBeliefView, FacilityBeliefView, InventoryBeliefView,
+    LocalPhysicalObservationView, PerAgentBeliefView, SpatialBeliefView, get_affordances,
 };
 
 struct BeliefWallFixture {
@@ -40,6 +41,21 @@ struct RemoteSaleFixture {
     merchant: EntityId,
     market: EntityId,
     listed_lot: EntityId,
+}
+
+struct RemoteProductionFixture {
+    h: GoldenHarness,
+    actor: EntityId,
+    remote_workstation: EntityId,
+    local_workstation: EntityId,
+}
+
+struct RemoteLoadFixture {
+    h: GoldenHarness,
+    actor: EntityId,
+    remote_carrier: EntityId,
+    remote_lot: EntityId,
+    local_lot: EntityId,
 }
 
 fn set_control_source(h: &mut GoldenHarness, agent: EntityId, control_source: ControlSource) {
@@ -287,6 +303,166 @@ fn build_remote_sale_fixture(seed: Seed) -> RemoteSaleFixture {
     }
 }
 
+fn build_remote_production_fixture(seed: Seed) -> RemoteProductionFixture {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let actor = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Production-Wall Actor",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let worker = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Remote Worker",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, worker, ControlSource::Human);
+
+    let (remote_workstation, local_workstation) = {
+        let mut txn = new_txn(&mut h.world, 0);
+        let remote = txn.create_entity(EntityKind::Facility);
+        txn.set_ground_location(remote, ORCHARD_FARM).unwrap();
+        txn.set_component_workstation_marker(remote, WorkstationMarker(WorkstationTag::Mill))
+            .unwrap();
+        let local = txn.create_entity(EntityKind::Facility);
+        txn.set_ground_location(local, VILLAGE_SQUARE).unwrap();
+        txn.set_component_workstation_marker(local, WorkstationMarker(WorkstationTag::Mill))
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+        (remote, local)
+    };
+
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        actor,
+        remote_workstation,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        actor,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let mut txn = new_txn(&mut h.world, 1);
+    txn.set_component_production_job(
+        remote_workstation,
+        ProductionJob {
+            recipe_id: RecipeId(1),
+            worker,
+            staged_inputs_container: remote_workstation,
+            progress_ticks: 0,
+        },
+    )
+    .unwrap();
+    txn.set_component_production_job(
+        local_workstation,
+        ProductionJob {
+            recipe_id: RecipeId(1),
+            worker: actor,
+            staged_inputs_container: local_workstation,
+            progress_ticks: 0,
+        },
+    )
+    .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    RemoteProductionFixture {
+        h,
+        actor,
+        remote_workstation,
+        local_workstation,
+    }
+}
+
+fn build_remote_load_fixture(seed: Seed) -> RemoteLoadFixture {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let actor = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Load-Wall Actor",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let remote_carrier = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Remote Carrier",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, remote_carrier, ControlSource::Human);
+
+    let (remote_lot, local_lot) = {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_carry_capacity(remote_carrier, CarryCapacity(LoadUnits(77)))
+            .unwrap();
+        let remote_lot = txn
+            .create_item_lot(CommodityKind::Water, Quantity(3))
+            .unwrap();
+        txn.set_ground_location(remote_lot, ORCHARD_FARM).unwrap();
+        let local_lot = txn
+            .create_item_lot(CommodityKind::Water, Quantity(2))
+            .unwrap();
+        txn.set_ground_location(local_lot, VILLAGE_SQUARE).unwrap();
+        commit_txn(txn, &mut h.event_log);
+        (remote_lot, local_lot)
+    };
+
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        actor,
+        remote_carrier,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        actor,
+        remote_lot,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        actor,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    RemoteLoadFixture {
+        h,
+        actor,
+        remote_carrier,
+        remote_lot,
+        local_lot,
+    }
+}
+
 fn authority_view_for(fixture: &BeliefWallFixture) -> worldwake_sim::PerAgentBeliefView<'_> {
     let store = fixture
         .h
@@ -304,6 +480,14 @@ fn remote_pursuit_view_for(
     fixture: &RemotePursuitFixture,
 ) -> worldwake_sim::PerAgentBeliefView<'_> {
     worldwake_sim::PerAgentBeliefView::from_world(fixture.actor, &fixture.h.world)
+}
+
+fn remote_production_view_for(fixture: &RemoteProductionFixture) -> PerAgentBeliefView<'_> {
+    PerAgentBeliefView::from_world(fixture.actor, &fixture.h.world)
+}
+
+fn remote_load_view_for(fixture: &RemoteLoadFixture) -> PerAgentBeliefView<'_> {
+    PerAgentBeliefView::from_world(fixture.actor, &fixture.h.world)
 }
 
 fn assert_no_authority_beliefs(fixture: &BeliefWallFixture) {
@@ -475,6 +659,111 @@ fn assert_remote_sale_listing_does_not_use_live_truth(fixture: &RemoteSaleFixtur
     assert!(
         !EconomicBeliefView::has_sale_listing(&view, fixture.listed_lot),
         "remote sale-listing presence must not come from current world truth"
+    );
+}
+
+fn assert_remote_production_job_does_not_use_live_truth(fixture: &RemoteProductionFixture) {
+    let view = remote_production_view_for(fixture);
+    assert_eq!(
+        fixture.h.world.effective_place(fixture.actor),
+        Some(VILLAGE_SQUARE)
+    );
+    assert_eq!(
+        fixture.h.world.effective_place(fixture.remote_workstation),
+        Some(ORCHARD_FARM)
+    );
+    assert!(
+        fixture
+            .h
+            .world
+            .has_component_production_job(fixture.remote_workstation),
+        "fixture must contain a live remote production job to prove the leak is reachable"
+    );
+
+    assert!(
+        !FacilityBeliefView::has_production_job(&view, fixture.remote_workstation),
+        "remote production-job presence must not be read from current world truth"
+    );
+    assert!(
+        FacilityBeliefView::has_production_job(&view, fixture.local_workstation),
+        "co-located workstation busy/idle state remains directly observable"
+    );
+}
+
+fn assert_remote_production_activity_belief_is_used(fixture: &mut RemoteProductionFixture) {
+    let mut store = fixture
+        .h
+        .world
+        .get_component_agent_belief_store(fixture.actor)
+        .cloned()
+        .unwrap_or_else(AgentBeliefStore::new);
+    assert!(
+        store.update_believed_activity(
+            &fixture.remote_workstation,
+            Some(worldwake_core::BelievedActivity {
+                action_domain: ActionDomain::Production,
+                target: Some(fixture.remote_workstation),
+                observed_tick: Tick(0),
+            }),
+            Tick(1),
+            &BeliefConfidencePolicy::default(),
+        ),
+        "fixture should update the known remote workstation's activity belief"
+    );
+    let mut txn = new_txn(&mut fixture.h.world, 1);
+    txn.set_component_agent_belief_store(fixture.actor, store)
+        .unwrap();
+    commit_txn(txn, &mut fixture.h.event_log);
+
+    let view = remote_production_view_for(fixture);
+    assert!(
+        FacilityBeliefView::has_production_job(&view, fixture.remote_workstation),
+        "explicit remote activity belief should expose the believed production job"
+    );
+}
+
+fn assert_remote_load_and_capacity_do_not_use_live_truth(fixture: &RemoteLoadFixture) {
+    let view = remote_load_view_for(fixture);
+    assert_eq!(
+        fixture.h.world.effective_place(fixture.actor),
+        Some(VILLAGE_SQUARE)
+    );
+    assert_eq!(
+        fixture.h.world.effective_place(fixture.remote_carrier),
+        Some(ORCHARD_FARM)
+    );
+    assert_eq!(
+        fixture.h.world.effective_place(fixture.remote_lot),
+        Some(ORCHARD_FARM)
+    );
+    assert_eq!(
+        fixture
+            .h
+            .world
+            .get_component_carry_capacity(fixture.remote_carrier),
+        Some(&CarryCapacity(LoadUnits(77))),
+        "fixture must contain a live remote carry capacity to prove the leak is reachable"
+    );
+    assert_eq!(
+        worldwake_core::load_of_entity(&fixture.h.world, fixture.remote_lot).ok(),
+        Some(LoadUnits(6)),
+        "fixture must contain live remote load to prove the leak is reachable"
+    );
+
+    assert_eq!(
+        InventoryBeliefView::carry_capacity(&view, fixture.remote_carrier),
+        None,
+        "remote carry capacity must not be read from current world truth"
+    );
+    assert_eq!(
+        InventoryBeliefView::load_of_entity(&view, fixture.remote_lot),
+        None,
+        "remote load must not be read from current world truth"
+    );
+    assert_eq!(
+        InventoryBeliefView::load_of_entity(&view, fixture.local_lot),
+        Some(LoadUnits(4)),
+        "co-located load remains directly observable"
     );
 }
 
@@ -729,6 +1018,45 @@ fn golden_belief_wall_trap_remote_sale_listing_does_not_leak_live_truth() {
     let fixture = build_remote_sale_fixture(Seed([0x48; 32]));
 
     assert_remote_sale_listing_does_not_use_live_truth(&fixture);
+}
+
+// Scenario 457: Remote Production Job Does Not Leak Live Truth
+//
+// Systems: Perception, AI, Production
+// ActionDomains: Production
+// Places: VillageSquare, OrchardFarm
+// Principles: 7, 14, 14A, 16, 19
+//
+// Setup: An actor at Village Square has stale prior belief of a remote mill at Orchard Farm; the authoritative remote mill starts a production job without testimony, record, or local observation carrying that activity to the actor.
+//
+// Proves: `PerAgentBeliefView::has_production_job` does not expose live remote production-job state, while co-located busy/idle workstation state and an explicit `Activity` belief remain lawful sources.
+//
+// Chain: prior remote workstation belief -> hidden remote job start -> production belief view -> no remote busy/free leak -> explicit activity belief restores believed remote busy state.
+#[test]
+fn golden_belief_wall_trap_remote_production_job_unseen() {
+    let mut fixture = build_remote_production_fixture(Seed([0x49; 32]));
+
+    assert_remote_production_job_does_not_use_live_truth(&fixture);
+    assert_remote_production_activity_belief_is_used(&mut fixture);
+}
+
+// Scenario 458: Remote Load Change Does Not Leak Live Truth
+//
+// Systems: Perception, AI, Inventory
+// ActionDomains: Trade, Travel
+// Places: VillageSquare, OrchardFarm
+// Principles: 7, 14, 14A, 16, 19
+//
+// Setup: An actor at Village Square has stale prior beliefs about a remote carrier and remote water lot at Orchard Farm; the authoritative remote carry capacity and lot load exist, but no lawful carrier brings those physical facts back to the actor.
+//
+// Proves: `carry_capacity` and `load_of_entity` do not expose live remote physical state, while co-located load remains directly observable.
+//
+// Chain: prior remote entity belief -> live remote capacity/load remains authoritative -> inventory belief view -> no remote physical-state leak.
+#[test]
+fn golden_belief_wall_trap_remote_load_change_unseen() {
+    let fixture = build_remote_load_fixture(Seed([0x4a; 32]));
+
+    assert_remote_load_and_capacity_do_not_use_live_truth(&fixture);
 }
 
 // Scenario 455: Control Source Swap Preserves Belief Affordances

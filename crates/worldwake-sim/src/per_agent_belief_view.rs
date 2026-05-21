@@ -1848,13 +1848,25 @@ impl InventoryBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
-        self.world
-            .get_component_carry_capacity(entity)
-            .map(|CarryCapacity(capacity)| *capacity)
+        let observable = entity == self.agent
+            || self.has_authoritative_local_visibility(entity)
+            || self.world.possessor_of(entity) == Some(self.agent);
+        observable
+            .then(|| {
+                self.world
+                    .get_component_carry_capacity(entity)
+                    .map(|CarryCapacity(capacity)| *capacity)
+            })
+            .flatten()
     }
 
     fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
-        load_of_entity(self.world, entity).ok()
+        let observable = entity == self.agent
+            || self.has_authoritative_local_visibility(entity)
+            || self.world.possessor_of(entity) == Some(self.agent);
+        observable
+            .then(|| load_of_entity(self.world, entity).ok())
+            .flatten()
     }
 
     fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {
@@ -2213,7 +2225,12 @@ impl FacilityBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn has_production_job(&self, entity: EntityId) -> bool {
-        self.world.has_component_production_job(entity)
+        if entity == self.agent || self.has_authoritative_local_visibility(entity) {
+            return self.world.has_component_production_job(entity);
+        }
+        self.believed_activity_of(entity).is_some_and(|activity| {
+            activity.action_domain == worldwake_core::ActionDomain::Production
+        })
     }
 
     fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {

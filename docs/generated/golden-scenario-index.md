@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 213
+- Scenario blocks: 215
 - Contributing golden scenario source files: 53
-- Associated tests: 262
+- Associated tests: 264
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -219,7 +219,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 420: Belief Wall Trap Suppresses Theft
 
-- Source: `belief_wall_trap.rs:560`
+- Source: `belief_wall_trap.rs:849`
 - Systems: Perception, AI, Crime
 - ActionDomains: Crime
 - Places: VillageSquare, OrchardFarm
@@ -233,7 +233,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 454: Stale Remote Pursuit Uses Last-Seen Place
 
-- Source: `belief_wall_trap.rs:686`
+- Source: `belief_wall_trap.rs:975`
 - Systems: Perception, AI, Combat
 - ActionDomains: Combat, Travel
 - Places: VillageSquare, OrchardFarm, RulersHall
@@ -247,7 +247,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 456: Remote Sale Listing Does Not Leak Live Truth
 
-- Source: `belief_wall_trap.rs:709`
+- Source: `belief_wall_trap.rs:998`
 - Systems: Perception, AI, Trade
 - ActionDomains: Trade
 - Places: VillageSquare, OrchardFarm
@@ -259,9 +259,37 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: prior remote belief -> live remote sale listing remains authoritative
 
+### Scenario 457: Remote Production Job Does Not Leak Live Truth
+
+- Source: `belief_wall_trap.rs:1023`
+- Systems: Perception, AI, Production
+- ActionDomains: Production
+- Places: VillageSquare, OrchardFarm
+- Principles: 7, 14, 14A, 16, 19
+
+**Setup**: An actor at Village Square has stale prior belief of a remote mill at Orchard Farm; the authoritative remote mill starts a production job without testimony, record, or local observation carrying that activity to the actor.
+
+**Proves**: `PerAgentBeliefView::has_production_job` does not expose live remote production-job state, while co-located busy/idle workstation state and an explicit `Activity` belief remain lawful sources.
+
+**Cross-system chain**: prior remote workstation belief -> hidden remote job start -> production belief view -> no remote busy/free leak -> explicit activity belief restores believed remote busy state.
+
+### Scenario 458: Remote Load Change Does Not Leak Live Truth
+
+- Source: `belief_wall_trap.rs:1043`
+- Systems: Perception, AI, Inventory
+- ActionDomains: Trade, Travel
+- Places: VillageSquare, OrchardFarm
+- Principles: 7, 14, 14A, 16, 19
+
+**Setup**: An actor at Village Square has stale prior beliefs about a remote carrier and remote water lot at Orchard Farm; the authoritative remote carry capacity and lot load exist, but no lawful carrier brings those physical facts back to the actor.
+
+**Proves**: `carry_capacity` and `load_of_entity` do not expose live remote physical state, while co-located load remains directly observable.
+
+**Cross-system chain**: prior remote entity belief -> live remote capacity/load remains authoritative -> inventory belief view -> no remote physical-state leak.
+
 ### Scenario 455: Control Source Swap Preserves Belief Affordances
 
-- Source: `belief_wall_trap.rs:734`
+- Source: `belief_wall_trap.rs:1062`
 - Systems: Perception, AI
 - ActionDomains: Crime, Travel, Production
 - Places: VillageSquare, OrchardFarm
