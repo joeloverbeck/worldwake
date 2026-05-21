@@ -5,14 +5,14 @@
   "starting_branch": "main",
   "current_branch": "implement-S159-candidate-generation-schema",
   "base_head": "0d41324df0ef1d9bf1b87b72384beacf8d1b9275",
-  "last_ticket": "archive/tickets/S159CANGENSCH-001.md",
+  "last_ticket": "archive/tickets/S159CANGENSCH-002.md",
   "last_result": "completed_archived",
-  "last_work_commit": "0b4e451f5958f696897513588e949c2f4036f756",
+  "last_work_commit": "b4e01071c92ee12b3d0b92c3551f7462238e78c2",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S159CANGENSCH-002.md",
+  "next_target": "tickets/S159CANGENSCH-004.md",
   "queue": [
-    "tickets/S159CANGENSCH-002.md",
+    "tickets/S159CANGENSCH-004.md",
     "tickets/S159CANGENSCH-003.md"
   ],
   "implement_ticket_audit": "pending",
