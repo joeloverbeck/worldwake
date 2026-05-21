@@ -1,6 +1,6 @@
 # S161FNDHARD-001: FOUNDATIONS.md constitutional amendments
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None
@@ -162,3 +162,25 @@ before `## VII. Final Rule of Thumb` (L540).
 1. `grep -n "### 14B\.\|### I\.\|### J\.\|### K\.\|### L\.\|HTN methods are not scripts" docs/FOUNDATIONS.md`
 2. `grep -c "The rule is simple: performance may change" docs/FOUNDATIONS.md` (expect 0)
 3. `cargo test --workspace` (sanity — no compiled surface changed)
+
+## Outcome
+
+Completed: 2026-05-21
+
+Implemented the S161 constitutional amendments in `docs/FOUNDATIONS.md`:
+
+- Replaced FND-12 with the causal-equivalence-contract wording.
+- Inserted FND-14B immediately after FND-14A.
+- Added the FND-20 HTN anti-script guard immediately after the method-required-goal sentence.
+- Replaced FND-31 with the systemic-validation doctrine.
+- Added canonical scenarios I-L between Scenario H and `## VII. Final Rule of Thumb`.
+
+Deviations from original plan: none. No code, tests, components, actions, systems,
+or generated docs changed.
+
+Verification:
+
+- `grep -n "### 14B\\.\\|### I\\.\\|### J\\.\\|### K\\.\\|### L\\.\\|HTN methods are not scripts" docs/FOUNDATIONS.md` found the new FND-14B heading, HTN guard, and scenarios I-L.
+- `grep -c "The rule is simple: performance may change" docs/FOUNDATIONS.md` returned `0`.
+- `grep -c "Interesting-looking output is not evidence that the model is right" docs/FOUNDATIONS.md` returned `0`.
+- `cargo test --workspace` passed.

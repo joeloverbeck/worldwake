@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: S161FNDHARD-001 (the constitutional anchors must exist before downstream docs reference them)
+**Deps**: `archive/tickets/S161FNDHARD-001.md` (the constitutional anchors must exist before downstream docs reference them)
 
 ## Problem
 
