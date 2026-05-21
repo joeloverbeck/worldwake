@@ -1,6 +1,6 @@
 # S158 — Belief-View Remote-Truth Leak Closure
 
-**Status:** Draft
+**Status:** COMPLETED
 **Type:** Correctness fix (no new state, systems, components, or feedback loops)
 **Priority:** Highest — blocks adding new AI behavior until ignorance is durable.
 **Foundations:** FND-7, FND-14, FND-14A, FND-16, FND-19, FND-27, FND-31
@@ -230,3 +230,54 @@ fix. One scenario per in-scope leak class:
 Negative controls (must still pass): co-located observation of a displayed
 listing and a busy workstation still produces the correct affordance, proving the
 fix does not over-suppress lawful FND-14A reads.
+
+## Outcome
+
+Completed on 2026-05-21.
+
+What changed:
+- `archive/tickets/S158BELVIEWLEAK-001.md` closed the economic leak for
+  `has_sale_listing`, `seller_for_sale_lot`, and `listed_sale_lots_at`, and
+  replaced the stale remote merchant-return golden branch with a no-leak
+  assertion.
+- `archive/tickets/S158BELVIEWLEAK-005.md` restored the merchant-return lifecycle
+  proof through a lawful local-observation rebind after the economic no-leak fix.
+- `archive/tickets/S158BELVIEWLEAK-002.md` closed the production and physical
+  leak surfaces for `has_production_job`, `carry_capacity`, and `load_of_entity`.
+- `archive/tickets/S158BELVIEWLEAK-003.md` closed the contention leak surfaces
+  for `facility_queue_position`, `facility_grant`,
+  `extraction_slot_queue_position`, `actor_holds_extraction_slot_grant`, and
+  `contention_queue_is_full`.
+- `archive/tickets/S158BELVIEWLEAK-004.md` codified the source-class rule in
+  `docs/planner-contracts.md` and added the belief-view accessor drafting rule to
+  `docs/spec-drafting-rules.md`.
+
+Deviations from the original proof plan:
+- Load/capacity remote reads now return unknown because no load/capacity belief
+  aspect exists; this spec intentionally added no new belief state.
+- Remote contention remains only aggregate-belief-backed where the current
+  `ContentionState` carrier can represent it; actor-specific remote queue/grant
+  details return unknown rather than fabricating precision.
+- The AI-vs-Human fingerprint was not duplicated for every new S158 golden.
+  The landed tests exercise the shared belief-view accessors used by both paths,
+  while the existing shared fingerprint remained green.
+- `can_control` and `believed_rights` were deliberately left unchanged per the
+  S155/S158 scope decision; stricter rights-value belief-backing remains future
+  work requiring a believed-rights or jurisdiction aspect.
+
+Verification:
+- Passed `cargo test -p worldwake-sim --lib per_agent_belief_view::tests::remote_listed_sale_lot_does_not_read_live_sale_listing -- --exact`
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::belief_wall_trap::golden_belief_wall_trap_remote_sale_listing_does_not_leak_live_truth -- --exact`
+- Passed `cargo test -p worldwake-ai --lib agent_tick::tests::expired_remote_seller_belief_remains_until_perception_refresh_without_acquisition_leak -- --exact`
+- Passed `cargo test -p worldwake-ai --lib agent_tick::tests::perception_refresh_preserves_remote_seller_belief_without_acquisition_leak -- --exact`
+- Passed `cargo test -p worldwake-ai --lib agent_tick::tests::perception_refresh_evicts_remote_seller_belief_below_activation_threshold_without_acquisition_leak -- --exact`
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::merchant_selling::remote_listing_belief_does_not_select_trade_branch_before_local_observation -- --exact`
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::merchant_selling::merchant_return_trade_from_local_observation_rebinds_after_s158 -- --exact`
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::belief_wall_trap::golden_belief_wall_trap_remote_production_job_unseen -- --exact`
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::belief_wall_trap::golden_belief_wall_trap_remote_load_change_unseen -- --exact`
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::belief_wall_trap::golden_belief_wall_trap_remote_queue_grant_unseen -- --exact`
+- Passed `cargo test -p worldwake-ai --test golden_ai belief_wall_trap`
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo build --workspace`

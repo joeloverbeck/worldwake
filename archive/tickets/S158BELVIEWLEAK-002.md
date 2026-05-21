@@ -25,7 +25,7 @@ ticket closed the S158 D1 production + physical slice with focused
    `carry_capacity` (1850) → `self.world.get_component_carry_capacity`;
    `load_of_entity` (1856) → `load_of_entity(self.world, entity)`. None gate on
    co-location or belief.
-2. Source authority: `specs/S158-belief-view-remote-truth-leak-closure.md` D1
+2. Source authority: `archive/specs/S158-belief-view-remote-truth-leak-closure.md` D1
    (production + physical bullets). Remote production activity is belief-backed by
    the existing `EntityBeliefAspect::Activity`
    (`crates/worldwake-core/src/entity_belief_claim.rs:24,41`); no new aspect is

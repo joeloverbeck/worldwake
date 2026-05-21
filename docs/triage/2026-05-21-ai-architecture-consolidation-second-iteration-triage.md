@@ -11,11 +11,13 @@ narrowed form, with the audit's `Sourced<T>`/per-field-snapshot static-typing
 ## Accepted (specs written)
 
 - **S158 — Belief-View Remote-Truth Leak Closure** —
-  `specs/S158-belief-view-remote-truth-leak-closure.md`. Seven `PerAgentBeliefView`
-  accessors confirmed to leak current world truth for remote entities
+  `archive/specs/S158-belief-view-remote-truth-leak-closure.md`. Economic,
+  production, physical, and contention `PerAgentBeliefView` accessors were
+  confirmed to leak current world truth for remote entities
   (`has_sale_listing`, `seller_for_sale_lot`, `listed_sale_lots_at`,
-  `has_production_job`, `carry_capacity`, `load_of_entity`, `can_control`/
-  `believed_rights`, plus ungated contention reads). FND-7/14/14A/19. Priority.
+  `has_production_job`, `carry_capacity`, `load_of_entity`, plus ungated
+  contention reads). `can_control` / `believed_rights` value-backing was
+  deliberately deferred after S155/S158 reassessment. FND-7/14/14A/19. Completed.
 - **S159 — Candidate-Generation Schema-Owned Extractor Authority** —
   `specs/S159-candidate-generation-schema-owned-extractor-authority.md`.
   `LEGACY_EXTRACTOR_ORDER` fossil + out-of-band blocked-self-care emitter confirmed.

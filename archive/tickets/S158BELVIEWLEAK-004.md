@@ -30,7 +30,7 @@ gap.
    Section H, HTN, and agent-profile drafting rules.
 3. Documentation-only ticket; no shared runtime boundary. The documented
    accessor list matches the S158 set gated by archived tickets 001-003 and
-   enumerated in `specs/S158-belief-view-remote-truth-leak-closure.md`
+   enumerated in `archive/specs/S158-belief-view-remote-truth-leak-closure.md`
    (Source-Class Rule + D1).
 
 ## Architecture Check
@@ -135,7 +135,7 @@ Completed on 2026-05-21.
 
 - Passed `cargo build --workspace`
 - Passed manual cross-read of the documented accessor list against
-  `specs/S158-belief-view-remote-truth-leak-closure.md` and
+  `archive/specs/S158-belief-view-remote-truth-leak-closure.md` and
   `archive/tickets/S158BELVIEWLEAK-001.md`,
   `archive/tickets/S158BELVIEWLEAK-002.md`, and
   `archive/tickets/S158BELVIEWLEAK-003.md`

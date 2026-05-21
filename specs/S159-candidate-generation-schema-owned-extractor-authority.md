@@ -3,7 +3,7 @@
 **Status:** Draft
 **Type:** Pure refactor (behavior-preserving; removes a fossil seam and an
 out-of-band emitter)
-**Priority:** Medium — cleanup, not safety-critical. Sequence after S158.
+**Priority:** Medium — cleanup, not safety-critical. Sequence after archived S158.
 **Foundations:** FND-20, FND-28, FND-29
 
 ## Problem Statement

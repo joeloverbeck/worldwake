@@ -28,7 +28,7 @@ symmetry (FND-19). S158 D1 (economic), proven by S158 D4 economic goldens.
    belief-based `entities_at` but reads `world.has_component_sale_listing` /
    `world.get_component_stock_assignment` per lot. `direct_container` /
    `direct_possessor` (1832–1848) are already correctly gated and are NOT touched.
-2. Source authority is `specs/S158-belief-view-remote-truth-leak-closure.md` D1
+2. Source authority is `archive/specs/S158-belief-view-remote-truth-leak-closure.md` D1
    (economic bullet) and the Source-Class Rule. Live implementation confirmed
    that inferred remote seller/lot beliefs can still emit generic acquisition
    evidence, but seller-backed remote trade binding had been relying on the

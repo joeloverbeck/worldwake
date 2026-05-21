@@ -24,7 +24,7 @@ depended on callers remembering to pass only local facilities. S158 D1
    `extraction_slot_queue_position` (1133), `actor_holds_extraction_slot_grant`
    (1144), `contention_queue_is_full` (1177) — all read `world` contention/queue
    components directly with no co-location/belief gate.
-2. Source authority: `specs/S158-belief-view-remote-truth-leak-closure.md` D1
+2. Source authority: `archive/specs/S158-belief-view-remote-truth-leak-closure.md` D1
    (contention bullet). Remote contention state is belief-backed by the existing
    `EntityBeliefAspect::ContentionState`
    (`crates/worldwake-core/src/entity_belief_claim.rs`); no new aspect is

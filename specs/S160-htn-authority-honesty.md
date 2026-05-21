@@ -3,7 +3,7 @@
 **Status:** Draft
 **Type:** Correctness/honesty fix (planner-local metadata + trace; no new
 simulation state, no method-required goals)
-**Priority:** Medium. Sequence after S158; independent of S159.
+**Priority:** Medium. Sequence after archived S158; independent of S159.
 **Foundations:** FND-20, FND-29, FND-31
 **Extends:** `archive/specs/S156-htn-authority-honesty.md` (first iteration
 stripped the `GoalSchema.methods` fossil, dead methods, and unenforced schema

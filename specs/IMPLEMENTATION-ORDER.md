@@ -37,26 +37,27 @@ belief-view remote-truth leaks (the priority), the FND-28 candidate-generation
 fossil seam, and the FND-20/29 HTN honesty gaps.
 
 ```
-S158 (belief-view remote-truth leak closure)        ── priority; extends S155
+S158 (belief-view remote-truth leak closure)        ── completed; extends S155
 S159 (candidate-gen schema-owned extractor authority) ── independent of S158/S160
 S160 (HTN authority honesty)                          ── extends S156; independent of S159
 ```
 
-S158 is the priority and should land first (it gates adding new AI behavior).
-S159 and S160 are independent cleanups that may proceed in either order, before
-or after S158.
+S158 has landed and is archived. S159 and S160 are independent cleanups that may
+proceed in either order.
 
-### Active
+### Completed
 
 - **S158 — Belief-View Remote-Truth Leak Closure** —
-  `specs/S158-belief-view-remote-truth-leak-closure.md` — *Status: Draft.* Close
-  the seven confirmed `PerAgentBeliefView` accessors that return current
-  authoritative world state for remote entities (economic, production, load,
-  rights/control, contention), under one source-class rule; prove with a
-  failing-first golden adversarial leak suite incl. AI-vs-Human affordance
-  fingerprinting; codify the rule in `docs/planner-contracts.md` §2 and
-  `docs/spec-drafting-rules.md`. Extends S155. **FND-7, FND-14, FND-14A, FND-16,
+  `archive/specs/S158-belief-view-remote-truth-leak-closure.md` — *Status:
+  COMPLETED.* Closed the confirmed economic, production, physical, and contention
+  `PerAgentBeliefView` remote-truth leaks under one source-class rule, restored
+  merchant-return coverage through a lawful local-observation rebind, and
+  codified the rule in `docs/planner-contracts.md` §2 plus
+  `docs/spec-drafting-rules.md`. The social/control rights value path remains
+  deferred per S155/S158 scope. Extends S155. **FND-7, FND-14, FND-14A, FND-16,
   FND-19, FND-27, FND-31.**
+
+### Active
 
 - **S159 — Candidate-Generation Schema-Owned Extractor Authority** —
   `specs/S159-candidate-generation-schema-owned-extractor-authority.md` —
