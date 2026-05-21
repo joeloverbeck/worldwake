@@ -97,7 +97,8 @@ assertion message with canonical-order wording.
 - Folding `emit_exploration_candidates_for_blocked_self_care` into the registry
   (ticket S159CANGENSCH-002).
 - Adding the blocked-self-care `CandidateExtractorId` variant (ticket 002).
-- The provenance guard test (ticket S159CANGENSCH-003).
+- The provenance guard test (the now-archived
+  `archive/tickets/S159CANGENSCH-003.md`).
 - Any change to the emitted candidate set, ranking, or plans.
 
 ## Acceptance Result

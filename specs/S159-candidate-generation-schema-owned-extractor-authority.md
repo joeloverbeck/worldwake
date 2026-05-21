@@ -17,9 +17,9 @@ authority for which extractors run. That consolidation has landed in two
 behavior-preserving slices: `archive/tickets/S159CANGENSCH-001.md` removed the
 fossil ordering name, `archive/tickets/S159CANGENSCH-002.md` removed the
 out-of-band blocked-self-care emitter by moving it into a declared
-post-suppression extractor phase, and `archive/tickets/S159CANGENSCH-004.md`
-proved the retained phase-local blocked-self-care gate semantics. Remaining
-active work is the provenance guard (`tickets/S159CANGENSCH-003.md`):
+post-suppression extractor phase, `archive/tickets/S159CANGENSCH-004.md`
+proved the retained phase-local blocked-self-care gate semantics, and
+`archive/tickets/S159CANGENSCH-003.md` added the transient provenance guard:
 
 1. Before `archive/tickets/S159CANGENSCH-001.md`, a constant literally named
    **`LEGACY_EXTRACTOR_ORDER`** owned extractor *execution order*. That live
@@ -189,21 +189,23 @@ here (see below).
    `crates/worldwake-sim/src/per_agent_belief_view.rs:2350`) construct
    `disabled_extractors` sets and need **no** new arm.
 
-3. **Provenance guard test (structural, keyed on `CandidateExtractorId`).** Add a
-   test that proves no candidate is emitted outside the declared extractor
-   pipeline. Mechanism (Q1 resolution — option (a), tightened against
-   FOUNDATIONS):
+3. **Provenance guard test (structural, keyed on `CandidateExtractorId`) —
+   completed by `archive/tickets/S159CANGENSCH-003.md`.** The focused test proves no
+   candidate is emitted outside the declared extractor pipeline. Mechanism (Q1
+   resolution — option (a), tightened against FOUNDATIONS):
 
    - The guard keys on `CandidateExtractorId` — the registry authority this spec
      consolidates — by capturing, **inside the generation pipeline**, the emitting
-     `extractor_id` for each candidate (the loop already binds `extractor_id` at
-     `candidate_generation.rs:768`; after Deliverable 2 the post-suppression phase
-     binds it too). The capture lives in the transient `CandidateGenerationResult` /
-     diagnostics, never promoted to authoritative state (FND-3/FND-27).
-   - The test asserts: (i) **no untracked candidate** — every emitted candidate
-     traces to a pipeline extractor (this is what actually falsifies a re-introduced
-     out-of-band append; FND-31); and (ii) every contributing `extractor_id` is a
-     member of the canonical order from Deliverable 1 (FND-20).
+     `extractor_id` for each surviving candidate in
+     `CandidateGenerationDiagnostics::extractor_sources`. The capture covers the
+     pre-suppression phase and the post-suppression phase, and is pruned through
+     suppression plus redundant opportunity-compiler removal. It remains
+     transient diagnostics, never promoted to authoritative state (FND-3/FND-27).
+   - The test asserts: (i) **no untracked candidate** — every surviving emitted
+     candidate traces to a pipeline extractor (this is what actually falsifies a
+     re-introduced out-of-band append; FND-31); and (ii) every contributing
+     `extractor_id` is a member of the canonical order from Deliverable 1
+     (FND-20).
    - **Do not** add a `source_extractor` field to `GoalOffer`. Per-candidate
      provenance is already carried authoritatively by `EmitterTag` on the
      persisted `GoalOfferedPayload` (FND-29A); a second, non-isomorphic, transient
@@ -226,8 +228,9 @@ existing static policy enum, not new authoritative world/belief state.)
 - **Concrete dampeners:** Not applicable.
 - **Stored-state vs. derived read-model list:** No authoritative state.
   `CandidateExtractorId` ordering is a static policy table; the
-  `CandidateGenerationResult` (including any per-extractor provenance capture added
-  for the Deliverable 3 guard) remains a transient derived computation (FND-3).
+  `CandidateGenerationResult` and `CandidateGenerationDiagnostics` (including the
+  per-extractor provenance capture added for the Deliverable 3 guard) remain
+  transient derived computations (FND-3).
   The rename/folding/guard does not promote any derived value to truth, and does
   not add a second authoritative provenance surface beside `EmitterTag` (FND-27/28).
 - **Planner-formalism analysis:** No formalism change. Candidate generation feeds
@@ -241,9 +244,9 @@ existing static policy enum, not new authoritative world/belief state.)
 
 - All existing `worldwake-ai` goldens pass unchanged (behavior preservation is the
   primary regression guard).
-- New: candidate-provenance guard test (Deliverable 3) — fails if any candidate is
-  emitted outside the declared extractor pipeline (untracked candidate) or from an
-  extractor absent from the canonical order.
+- Added: candidate-provenance guard test (Deliverable 3) — fails if any surviving
+  candidate is emitted outside the declared extractor pipeline (untracked
+  candidate) or from an extractor absent from the canonical order.
 - Updated: the existing ordering-completeness test is now
   `canonical_extractor_order_covers_every_registered_extractor_once` and is
   re-pointed at `CANDIDATE_EXTRACTOR_ORDER` — it fails if the canonical order and

@@ -1,18 +1,18 @@
 # S159CANGENSCH-003: Provenance guard — no out-of-band candidate source
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
-**Engine Changes**: Yes — transient provenance capture in the candidate-generation result (AI; no authoritative state)
+**Engine Changes**: Yes — transient provenance capture in candidate-generation diagnostics (AI; no authoritative state)
 **Deps**: archive/tickets/S159CANGENSCH-002.md
 
 ## Problem
 
 After `archive/tickets/S159CANGENSCH-002.md` folded blocked-self-care into the
-declared extractor pipeline, every candidate should originate from a
-registry-declared `CandidateExtractorId`. This ticket adds the guard that
-*proves* the invariant and keeps it from regressing: a test asserting that no
-candidate is emitted outside the declared extractor path (no untracked
+declared extractor pipeline, the required invariant was that every candidate
+originated from a registry-declared `CandidateExtractorId`. This ticket added the
+guard that proves the invariant and keeps it from regressing: a test asserting
+that no candidate is emitted outside the declared extractor path (no untracked
 candidate) and that every contributing extractor is a member of the canonical
 order (no undeclared source). This is S159 Deliverable 3.
 
@@ -27,9 +27,9 @@ would be a parallel representation of the same fact (FND-27/FND-28).
 1. `GoalOffer` (`crates/worldwake-ai/src/goal_model.rs:2227`) carries no
    extractor-id field, confirming the guard cannot read per-`GoalOffer`
    provenance directly. The pipeline loop binds `extractor_id` for each
-   `extractor.extract(...)` call (`candidate_generation.rs:768`; after ticket 002
-   the post-suppression phase binds it too), so the capture happens at emission
-   time inside the pipeline.
+   `extractor.extract(...)` call in both the pre-suppression and
+   post-suppression phases, so the capture happens at emission time inside the
+   pipeline.
 2. `EmitterTag` (`crates/worldwake-core/src/decision_event_payload.rs:110`, 18
    variants) is a field on the authoritative, persisted `GoalOfferedPayload`
    (`decision_event_payload.rs:37`, serialized in
@@ -65,7 +65,7 @@ would be a parallel representation of the same fact (FND-27/FND-28).
 2. No backward-compatibility concern — this is net-new instrumentation plus a
    test; nothing is aliased or shimmed.
 
-## Verification Layers
+## Verified Layers
 
 1. No candidate emitted outside the declared pipeline (no untracked candidate)
    -> focused unit guard test reading the transient per-candidate
@@ -77,32 +77,28 @@ would be a parallel representation of the same fact (FND-27/FND-28).
    mutation or action lifecycle is involved; stated explicitly per the
    single-layer rule.
 
-## What to Change
+## Landed Changes
 
-### 1. Capture per-candidate extractor provenance (transient)
+### 1. Captured per-candidate extractor provenance (transient)
 
-In `crates/worldwake-ai/src/candidate_generation.rs`: record, inside the
-generation pipeline, the emitting `CandidateExtractorId` for each emitted
-candidate (e.g., a `BTreeMap<OpportunityKey, CandidateExtractorId>` or a parallel
-`Vec` aligned with the candidate vector) on `CandidateGenerationResult` or
-`CandidateGenerationDiagnostics`. The capture must cover both the pre-suppression
-phase and the post-suppression phase added in ticket 002, so that every surviving
-candidate has a recorded contributing extractor. Use a `Default`-friendly field so
-existing construction sites in this file (the dead-agent early return and the main
-result assembly) need no value-bearing edits beyond the capture itself.
+`crates/worldwake-ai/src/candidate_generation.rs` now records the emitting
+`CandidateExtractorId` for each surviving candidate in the transient
+`CandidateGenerationDiagnostics::extractor_sources` map. The capture is keyed by
+`OpportunityKey`, covers the pre-suppression phase and the post-suppression
+blocked-self-care phase, and is pruned through suppression plus redundant
+opportunity-compiler removal so it stays aligned to the final candidate vector.
+No `GoalOffer` field or authoritative state was added.
 
-### 2. Add the provenance guard test
+### 2. Added the provenance guard test
 
-Add a focused unit test (e.g., `every_candidate_traces_to_a_declared_extractor`)
-that runs candidate generation on a representative belief view and asserts:
-(i) every emitted candidate has a recorded contributing extractor (no untracked
-candidate), and (ii) every recorded `CandidateExtractorId` is a member of
-`CANDIDATE_EXTRACTOR_ORDER`. The test fails if a future change reintroduces an
-out-of-band append (untracked candidate) or an undeclared extractor.
+Added `candidate_generation::tests::every_candidate_traces_to_a_declared_extractor`.
+The test runs candidate generation on a representative belief view and asserts
+that every surviving candidate has a recorded contributing extractor and every
+recorded `CandidateExtractorId` is a member of `CANDIDATE_EXTRACTOR_ORDER`.
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-ai/src/candidate_generation.rs` (modify)
+- `crates/worldwake-ai/src/candidate_generation.rs`
 
 ## Out of Scope
 
@@ -111,15 +107,15 @@ out-of-band append (untracked candidate) or an undeclared extractor.
 - Unifying `EmitterTag` with `CandidateExtractorId` (S159 Non-Goal; future spec).
 - Any change to the emitted candidate set, ranking, or plans.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Test Results
 
-1. `every_candidate_traces_to_a_declared_extractor` — passes: no untracked
-   candidate, every contributing extractor ∈ `CANDIDATE_EXTRACTOR_ORDER`.
-2. Existing suite: `cargo test -p worldwake-ai`
+1. `every_candidate_traces_to_a_declared_extractor` passes: no untracked
+   candidate, every contributing extractor is in `CANDIDATE_EXTRACTOR_ORDER`.
+2. Existing suite `cargo test -p worldwake-ai` passes.
 
-### Invariants
+### Verified Invariants
 
 1. Every emitted candidate traces to a registry-declared `CandidateExtractorId`
    in the canonical order; no out-of-band source exists.
@@ -128,16 +124,42 @@ out-of-band append (untracked candidate) or an undeclared extractor.
 3. `GoalOffer` gains no provenance field (single authoritative provenance surface
    remains `EmitterTag`).
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
-1. `crates/worldwake-ai/src/candidate_generation.rs` — add
-   `every_candidate_traces_to_a_declared_extractor` focused guard test plus the
-   transient capture it reads.
+1. `crates/worldwake-ai/src/candidate_generation.rs` — added
+   `every_candidate_traces_to_a_declared_extractor` plus the transient capture it
+   reads.
 
-### Commands
+### Commands Run
 
-1. `cargo test -p worldwake-ai every_candidate_traces_to_a_declared_extractor`
+1. `cargo test -p worldwake-ai --lib candidate_generation::tests::every_candidate_traces_to_a_declared_extractor -- --exact`
 2. `cargo test -p worldwake-ai`
 3. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-05-21.
+
+- Added transient `CandidateGenerationDiagnostics::extractor_sources` keyed by
+  `OpportunityKey` to record the registry extractor that contributed each
+  surviving candidate.
+- Populated the capture for both pre-suppression extractors and the
+  post-suppression blocked-self-care extractor phase.
+- Kept the capture aligned with the final candidate set by pruning suppressed
+  candidates and redundant opportunity-compiler candidates.
+- Added the focused provenance guard test without adding any `GoalOffer`
+  provenance field or authoritative persisted state.
+
+## Deviations
+
+- The landed capture uses `CandidateGenerationDiagnostics` rather than
+  `CandidateGenerationResult`; this preserves the ticket's transient-proof
+  contract while keeping provenance beside the existing candidate diagnostics.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib candidate_generation::tests::every_candidate_traces_to_a_declared_extractor -- --exact`
+- Passed `cargo test -p worldwake-ai`
+- Passed `./scripts/verify.sh`

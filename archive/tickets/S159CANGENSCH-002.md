@@ -156,7 +156,8 @@ it and deserialize unchanged.
 
 ## Out of Scope
 
-- The provenance guard test (ticket S159CANGENSCH-003).
+- The provenance guard test (the now-archived
+  `archive/tickets/S159CANGENSCH-003.md`).
 - Unifying `EmitterTag` with `CandidateExtractorId` (S159 Non-Goal; future spec).
 - Moving anomaly/observation interpretation out of candidate emission (S159 Non-Goal).
 - Any change to the emitted candidate set, ranking, or plans.
@@ -179,7 +180,7 @@ it and deserialize unchanged.
 
 1. No blocked-self-care candidate is emitted outside the declared extractor
    pipeline (the out-of-band call is removed); full no-untracked-candidate guard
-   remains ticket S159CANGENSCH-003 scope.
+   later landed in `archive/tickets/S159CANGENSCH-003.md`.
 2. `CandidateExtractorId::ALL` and the canonical order remain in sync (no
    orphan/missing extractor).
 3. Bincode variant indices for pre-existing `CandidateExtractorId` variants are
@@ -226,7 +227,7 @@ Completed on 2026-05-21.
   so this ticket preserved that phase-local gate for behavior preservation and
   split the stronger gate question to `archive/tickets/S159CANGENSCH-004.md`.
 - The no-untracked-candidate provenance guard remains out of scope for this
-  ticket and is still owned by `tickets/S159CANGENSCH-003.md`.
+  ticket and later landed in `archive/tickets/S159CANGENSCH-003.md`.
 
 ## Verification Result
 

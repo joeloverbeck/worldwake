@@ -187,6 +187,7 @@ pub(crate) struct CandidateGenerationDiagnostics {
     pub ask_witness_gate_rejections: Vec<AskWitnessGateRejection>,
     pub evidence: BTreeMap<OpportunityKey, CandidateEvidenceTrace>,
     pub sources: BTreeMap<OpportunityKey, CandidateSource>,
+    pub extractor_sources: BTreeMap<OpportunityKey, CandidateExtractorId>,
     pub fully_blocked_desires: Vec<DesireFullyBlocked>,
     pub places_reachable: u32,
     pub places_after_belief_filter: u32,
@@ -854,7 +855,9 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
             pending_acquisition_exhaustion_resets: &mut pending_acquisition_exhaustion_resets,
             _marker: std::marker::PhantomData,
         };
-        candidates.extend(extractor.extract(&mut extractor_ctx));
+        let extracted = extractor.extract(&mut extractor_ctx);
+        record_extractor_sources(&mut diagnostics, extractor_id, &extracted);
+        candidates.extend(extracted);
     }
 
     let mut candidates = filter_suppressed_candidates(
@@ -866,6 +869,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
     );
     let fully_blocked_desires = diagnostics.fully_blocked_desires.clone();
     let mut blocked_fallback_candidates = Vec::new();
+    let mut blocked_fallback_extractor_sources = BTreeMap::new();
     for extractor_id in
         ordered_candidate_extractors_for_phase(CandidateExtractorPhase::PostSuppression)
     {
@@ -886,20 +890,43 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
             pending_acquisition_exhaustion_resets: &mut pending_acquisition_exhaustion_resets,
             _marker: std::marker::PhantomData,
         };
-        blocked_fallback_candidates.extend(extractor.extract(&mut extractor_ctx));
+        let extracted = extractor.extract(&mut extractor_ctx);
+        for candidate in &extracted {
+            blocked_fallback_extractor_sources.insert(
+                OpportunityKey {
+                    goal_key: candidate.key,
+                    anchor: candidate.anchor,
+                },
+                extractor_id,
+            );
+        }
+        blocked_fallback_candidates.extend(extracted);
     }
     let mut fallback_diagnostics = CandidateGenerationDiagnostics::default();
-    candidates.extend(filter_suppressed_candidates(
+    let filtered_fallback_candidates = filter_suppressed_candidates(
         blocked_fallback_candidates,
         blocked,
         discrepancies,
         current_tick,
         &mut fallback_diagnostics,
-    ));
+    );
+    let surviving_fallback_opportunities: BTreeSet<OpportunityKey> = filtered_fallback_candidates
+        .iter()
+        .map(|candidate| OpportunityKey {
+            goal_key: candidate.key,
+            anchor: candidate.anchor,
+        })
+        .collect();
+    blocked_fallback_extractor_sources
+        .retain(|opportunity, _source| surviving_fallback_opportunities.contains(opportunity));
+    candidates.extend(filtered_fallback_candidates);
     diagnostics
         .suppressed
         .extend(fallback_diagnostics.suppressed);
     diagnostics.sources.extend(fallback_diagnostics.sources);
+    diagnostics
+        .extractor_sources
+        .extend(blocked_fallback_extractor_sources);
     remove_redundant_opportunity_compiler_candidates(&mut candidates, &mut diagnostics);
 
     CandidateGenerationResult {
@@ -915,6 +942,22 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
 fn empty_testimony_reliability() -> &'static TestimonyReliability {
     static EMPTY: OnceLock<TestimonyReliability> = OnceLock::new();
     EMPTY.get_or_init(TestimonyReliability::default)
+}
+
+fn record_extractor_sources(
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    extractor_id: CandidateExtractorId,
+    candidates: &[GoalOffer],
+) {
+    for candidate in candidates {
+        diagnostics.extractor_sources.insert(
+            OpportunityKey {
+                goal_key: candidate.key,
+                anchor: candidate.anchor,
+            },
+            extractor_id,
+        );
+    }
 }
 
 fn extract_opportunity_compiler_candidates(
@@ -1028,6 +1071,9 @@ fn remove_redundant_opportunity_compiler_candidates(
     diagnostics
         .offers
         .retain(|offer| !removed_opportunities.contains(&offer.opportunity));
+    diagnostics
+        .extractor_sources
+        .retain(|opportunity, _source| !removed_opportunities.contains(opportunity));
 }
 
 fn utility_profile_for_goal_generation(ctx: &GenerationContext<'_>) -> UtilityProfile {
@@ -1076,6 +1122,7 @@ fn filter_suppressed_candidates(
                 },
                 testimony_trust_context: Vec::new(),
             });
+            diagnostics.extractor_sources.remove(&opportunity);
             blocked_by_goal.entry(candidate.key).or_default().push((
                 opportunity,
                 match suppression {
@@ -18251,6 +18298,106 @@ mod tests {
             ordered.len(),
             "schema-derived dispatch should dedupe extractor IDs shared across goal schemas"
         );
+    }
+
+    #[test]
+    fn every_candidate_traces_to_a_declared_extractor() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let attacker = entity(3);
+        let place = entity(10);
+        let adjacent = entity(11);
+        let workstation = entity(12);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller, attacker]);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(seller, place);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.register_seller(place, CommodityKind::Bread, seller);
+        view.known_recipes.insert(agent, vec![RecipeId(0)]);
+        view.unique_item_counts
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
+        view.workstations
+            .insert((place, WorkstationTag::Mill), vec![workstation]);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Grain), Quantity(2));
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_facility: Some(place),
+            },
+        );
+        view.demand_memory.insert(
+            agent,
+            vec![DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(3),
+                place,
+                tick: Tick(2),
+                counterparty: Some(seller),
+                reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+            }],
+        );
+        view.hostiles.insert(agent, vec![attacker]);
+        view.attackers.insert(agent, vec![attacker]);
+        view.adjacent_places.insert(place, vec![adjacent]);
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(sample_recipe(
+            vec![(CommodityKind::Bread, Quantity(1))],
+            vec![(CommodityKind::Grain, Quantity(2))],
+            WorkstationTag::Mill,
+        ));
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &ViolationMemory::default(),
+            &recipes,
+            Tick(5),
+            6,
+            false,
+        );
+        let canonical_extractors = super::CANDIDATE_EXTRACTOR_ORDER
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let surviving_opportunities = result
+            .candidates
+            .iter()
+            .map(|candidate| OpportunityKey {
+                goal_key: candidate.key,
+                anchor: candidate.anchor,
+            })
+            .collect::<BTreeSet<_>>();
+
+        assert!(
+            !surviving_opportunities.is_empty(),
+            "fixture must emit candidates before it can prove provenance"
+        );
+        assert_eq!(
+            result.diagnostics.extractor_sources.len(),
+            surviving_opportunities.len(),
+            "extractor provenance should be aligned to surviving candidates"
+        );
+        for opportunity in surviving_opportunities {
+            let source = result
+                .diagnostics
+                .extractor_sources
+                .get(&opportunity)
+                .copied()
+                .unwrap_or_else(|| {
+                    panic!("candidate should have a recorded extractor: {opportunity:?}")
+                });
+            assert!(
+                canonical_extractors.contains(&source),
+                "candidate source should be declared in CANDIDATE_EXTRACTOR_ORDER: {source:?}"
+            );
+        }
     }
 
     #[test]
