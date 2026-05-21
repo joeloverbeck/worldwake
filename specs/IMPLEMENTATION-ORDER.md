@@ -66,6 +66,41 @@ CAUSEVTHON-001 (ticket: explicit no-source-event) ── independent of S162/S16
   and adds a player/AI symmetry test. Sequence after archived S162. **FND-14,
   FND-14A, FND-19.**
 
+## Adjunct Wave: AI Architecture Consolidation — Fourth Iteration
+
+**Source.** `reports/ai-architecture-consolidation-fourth-iteration.md` — the fourth
+hostile AI-architecture audit (ChatGPT-Pro). As with prior iterations the author did
+not clone the repo (the leak inventory's "Evidence" column is empty), so every
+load-bearing claim was re-verified against the actual tree. Verdict: **~85% of the
+report is re-litigation of decisions already made and documented in S155/S157/S158/
+S162 (the `&World`-holding view / `RuntimeBeliefView` capability-trait split and
+per-field `SnapshotFieldSource` typing — rejected across the second and third
+iterations; the `believed_rights`/`can_control` self/belief-gated live read —
+S162's deliberate design; `direct_container`/`direct_possessor` — S158-verified
+lawful; `merchandise_profile`/reward encumbrance — third-triage-verified gated) or
+already pending as S163 (the CLI player-menu leak).** Stripped of re-litigation, the
+report surfaced **one genuinely new, confirmed leak** — `entity_kind` and the
+last-seen belief synthesis read live `world.entity_kind` for remote entities (S164)
+— plus two latent footguns closed alongside it. See
+`docs/triage/2026-05-22-ai-architecture-consolidation-fourth-iteration-triage.md`.
+
+```
+S163 (CLI player-POV boundary)            ── pending from the third iteration; higher priority; land first
+S164 (belief-view kind source-gate)       ── sequence after S163; touches the shared belief view, independent of S163's CLI work
+```
+
+### Pending
+
+- **S164 — Belief-View Kind Source-Gate + Faction-Policy Footgun Closure** —
+  `specs/S164-belief-view-kind-source-gate.md` — *Status: DRAFT.* Closes the residual
+  FND-14/14A entity-kind leak S158/S162's accessor sweep missed (`entity_kind` and
+  the last-seen `believed_kind` synthesis must come from stored belief / a last-seen
+  observed-kind carrier, never live `world.entity_kind`); gates the ungated bandit
+  faction-policy accessors to lawfully known factions; adds a `facility_controller_at`
+  remote-control-change confirming test; extends the S162 belief-wall goldens with a
+  remote-kind-change scenario. Correctness fix; no new authoritative state. Sequence
+  after S163. **FND-7, FND-14, FND-14A, FND-15, FND-19, FND-27, FND-31.**
+
 ## Excluded from the active order (by directive)
 
 - **S60–S66** (gameplay/world-dynamics specs) — authored, but held until core AI
