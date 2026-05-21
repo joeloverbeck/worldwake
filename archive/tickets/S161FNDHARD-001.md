@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: `specs/S161-foundations-constitutional-hardening.md`
+**Deps**: `archive/specs/S161-foundations-constitutional-hardening.md`
 
 ## Problem
 
@@ -41,14 +41,15 @@ anti-script guard, replace FND-31, and add canonical scenarios I–L.
    "Interesting-looking output is not evidence that the model is right." at L399;
    Scenario H header is L523 and `## VII. Final Rule of Thumb` is L540 (the I–L
    insertion lands between them).
-2. Spec source: `specs/S161-foundations-constitutional-hardening.md` Deliverables
+2. Spec source: `archive/specs/S161-foundations-constitutional-hardening.md` Deliverables
    1–5 carry the verbatim replacement/insertion text. The report's two misquotes
    (a non-verbatim FND-20 anchor, and "## VII. Rule of Thumb" missing "Final") were
    corrected in the spec and re-verified here.
 3. Shared boundary under audit: `docs/FOUNDATIONS.md` is the constitutional source
    of truth cited by `docs/planner-contracts.md`, `docs/spec-drafting-rules.md`,
    `docs/golden-e2e-testing.md`, and generated coverage. This ticket changes only
-   the constitution; the downstream citations are anchored in S161FNDHARD-002.
+   the constitution; the downstream citations are anchored in
+   `archive/tickets/S161FNDHARD-002.md`.
 4. Intra-edit coupling: Deliverable 3's inserted FND-20 text references "Principle
    14B", created by Deliverable 2. Both land in this ticket, so the cross-reference
    is never dangling. Apply the FND-14B insertion before (or with) the FND-20 edit.
@@ -123,7 +124,8 @@ before `## VII. Final Rule of Thumb` (L540).
 ## Out of Scope
 
 - Downstream-doc anchoring (`planner-contracts.md`, `spec-drafting-rules.md`,
-  `golden-e2e-testing.md`) — that is S161FNDHARD-002, which depends on this ticket.
+  `golden-e2e-testing.md`) — that is `archive/tickets/S161FNDHARD-002.md`, which
+  depends on this ticket.
 - All S161 Deliverable 7 deferred items: `docs/causal-equivalence-contracts.md`,
   scenario K/L goldens, `scenario-roadmap.md` rows for I–L, and the scenario-J /
   remote-seller-HTN-rejection goldens. Do NOT create these here.

@@ -102,7 +102,8 @@ S161 (FOUNDATIONS constitutional hardening) ── independent of S159/S160; seq
 ### Active
 
 - **S161 — FOUNDATIONS Constitutional Hardening (Gap Audit 2026-05)** —
-  `specs/S161-foundations-constitutional-hardening.md` — *Status: Draft.* Strengthen
+  `archive/specs/S161-foundations-constitutional-hardening.md` — *Status:
+  Completed and archived.* Strengthen
   FND-12 with explicit causal-equivalence-contract requirements; insert FND-14B
   (planner-visible inputs must be belief-backed or lawful boundary artifacts,
   anchoring the S158 source-class rule); insert an HTN anti-script guard into
