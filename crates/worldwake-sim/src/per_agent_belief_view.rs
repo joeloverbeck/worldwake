@@ -1175,6 +1175,9 @@ impl TemporalBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn actor_can_claim_extraction_slot(&self, source: EntityId, actor: EntityId) -> bool {
+        if !self.has_authoritative_local_visibility(source) {
+            return false;
+        }
         self.world
             .get_component_resource_extraction_queues(source)
             .is_some_and(|queues| {
@@ -1189,6 +1192,9 @@ impl TemporalBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn has_extraction_queues(&self, source: EntityId) -> bool {
+        if !self.has_authoritative_local_visibility(source) {
+            return false;
+        }
         self.world
             .get_component_resource_extraction_queues(source)
             .is_some_and(|queues| !queues.queues.is_empty())
@@ -1218,6 +1224,9 @@ impl TemporalBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn facility_queue_join_tick(&self, facility: EntityId, actor: EntityId) -> Option<Tick> {
+        if !self.has_authoritative_local_visibility(facility) {
+            return None;
+        }
         self.world
             .get_component_contention_queue(facility)
             .and_then(|queue| {
@@ -1236,6 +1245,9 @@ impl TemporalBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool {
+        if !self.has_authoritative_local_visibility(entity) {
+            return false;
+        }
         self.world
             .reservations_for(entity)
             .into_iter()
@@ -1243,6 +1255,9 @@ impl TemporalBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange> {
+        if !self.has_authoritative_local_visibility(entity) {
+            return Vec::new();
+        }
         self.world
             .reservations_for(entity)
             .into_iter()
@@ -2310,19 +2325,19 @@ mod tests {
         ActionDefId, ActionDomain, AgentBeliefStore, AgentSchemaContextProfile,
         ArtifactPostingProfile, BanditFactionPolicy, BeliefConfidencePolicy, BelievedEntityState,
         BodyCostPerTick, BodyPart, CandidateExtractorId, CauseRef, ClaimId, ClaimValue,
-        CognitiveProfile, CombatProfile, CommodityKind, ControlSource, DisposalProfile,
-        EdgeExperience, EffectiveRight, EntityBeliefAspect, EntityBeliefClaim, EntityId,
-        EntityKind, EntityState, EventLog, ExpectationBasis, ExpectationId, ExpectationRecord,
-        ExpectationState, ExpectationStore, ExplorationProfile, FactionData, FactionPurpose,
-        GoalDispatchKey, GoalPlanningBudget, HarvestTraceEntry, HomeostaticNeedId,
-        InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+        CognitiveProfile, CombatProfile, CommodityKind, ContentionQueue, ContentionWaiter,
+        ControlSource, DisposalProfile, EdgeExperience, EffectiveRight, EntityBeliefAspect,
+        EntityBeliefClaim, EntityId, EntityKind, EntityState, EventLog, ExpectationBasis,
+        ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
+        FactionData, FactionPurpose, GoalDispatchKey, GoalPlanningBudget, HarvestTraceEntry,
+        HomeostaticNeedId, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
         InstitutionalKnowledgeSource, LastHarvestTrace, LastSeenMemory, LastSeenProvenance,
         LastSeenRecord, LawAbidingProfile, ObligationExecutionTracker, ObligationSatiationProfile,
         OfficeData, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag,
         PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind,
         ResourceExtractionQueues, ResourceSource, RightKind, RiskWeightProfile, RouteExperience,
-        SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
-        TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
+        SuccessionLaw, TellMemoryKey, TellTopic, Tick, TickRange, ToldBeliefMemory, Topology,
+        TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
         WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state,
         build_prototype_world,
         test_utils::{
@@ -6323,5 +6338,129 @@ mod tests {
             GoalBeliefView::resource_extraction_queues(&view, remote_source),
             None
         );
+    }
+
+    #[test]
+    fn contention_accessors_require_local_visibility() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let near_place = places[0];
+        let remote_place = world.topology().neighbors(near_place)[0];
+        let action = ActionDefId(77);
+        let queued_at = Tick(7);
+        let reservation_range = TickRange::new(Tick(10), Tick(14)).unwrap();
+        let query_range = TickRange::new(Tick(12), Tick(16)).unwrap();
+
+        let (agent, near_source, remote_source, near_facility, remote_facility) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let reserver = txn.create_agent("Bryn", ControlSource::Ai).unwrap();
+            let near_source = txn.create_entity(EntityKind::Facility);
+            let remote_source = txn.create_entity(EntityKind::Facility);
+            let near_facility = txn.create_entity(EntityKind::Facility);
+            let remote_facility = txn.create_entity(EntityKind::Facility);
+
+            txn.set_ground_location(agent, near_place).unwrap();
+            txn.set_ground_location(reserver, remote_place).unwrap();
+            txn.set_ground_location(near_source, near_place).unwrap();
+            txn.set_ground_location(remote_source, remote_place)
+                .unwrap();
+            txn.set_ground_location(near_facility, near_place).unwrap();
+            txn.set_ground_location(remote_facility, remote_place)
+                .unwrap();
+
+            for source in [near_source, remote_source] {
+                txn.set_component_resource_extraction_queues(
+                    source,
+                    ResourceExtractionQueues {
+                        queues: vec![queue_waiting_for(agent, action, queued_at)],
+                    },
+                )
+                .unwrap();
+            }
+            for facility in [near_facility, remote_facility] {
+                txn.set_component_contention_queue(
+                    facility,
+                    queue_waiting_for(agent, action, queued_at),
+                )
+                .unwrap();
+                txn.try_reserve(facility, reserver, reservation_range)
+                    .unwrap();
+            }
+
+            commit_txn(txn);
+            (
+                agent,
+                near_source,
+                remote_source,
+                near_facility,
+                remote_facility,
+            )
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert!(TemporalBeliefView::actor_can_claim_extraction_slot(
+            &view,
+            near_source,
+            agent
+        ));
+        assert!(TemporalBeliefView::has_extraction_queues(
+            &view,
+            near_source
+        ));
+        assert_eq!(
+            TemporalBeliefView::facility_queue_join_tick(&view, near_facility, agent),
+            Some(queued_at)
+        );
+        assert!(TemporalBeliefView::reservation_conflicts(
+            &view,
+            near_facility,
+            query_range
+        ));
+        assert_eq!(
+            TemporalBeliefView::reservation_ranges(&view, near_facility),
+            vec![reservation_range]
+        );
+
+        assert!(!TemporalBeliefView::actor_can_claim_extraction_slot(
+            &view,
+            remote_source,
+            agent
+        ));
+        assert!(!TemporalBeliefView::has_extraction_queues(
+            &view,
+            remote_source
+        ));
+        assert_eq!(
+            TemporalBeliefView::facility_queue_join_tick(&view, remote_facility, agent),
+            None
+        );
+        assert!(!TemporalBeliefView::reservation_conflicts(
+            &view,
+            remote_facility,
+            query_range
+        ));
+        assert!(TemporalBeliefView::reservation_ranges(&view, remote_facility).is_empty());
+    }
+
+    fn queue_waiting_for(
+        actor: EntityId,
+        intended_action: ActionDefId,
+        queued_at: Tick,
+    ) -> ContentionQueue {
+        ContentionQueue {
+            next_ordinal: 1,
+            waiting: BTreeMap::from([(
+                0,
+                ContentionWaiter {
+                    actor,
+                    intended_action,
+                    queued_at,
+                },
+            )]),
+            granted: None,
+        }
     }
 }

@@ -1,6 +1,6 @@
 # S162BELVIESOU-001: Contention-read co-location gates
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-sim` belief-view contention accessors (`per_agent_belief_view.rs`)
@@ -65,7 +65,7 @@ to mirror the gate the lawful sibling methods already use.
 2. No backwards-compatibility shim: the unlawful direct read is replaced outright
    (FND-28); no fallback path to the old behavior remains.
 
-## Verification Layers
+## Verified Layers
 
 1. Remote contention change invisible to a non-co-located actor -> focused unit test
    on each gated accessor (actor at a different place than the resource; assert
@@ -77,29 +77,27 @@ to mirror the gate the lawful sibling methods already use.
    candidate) -> deferred to S162BELVIESOU-005 goldens; this ticket's proof surface
    is the focused accessor tests above (strongest lower layer for the gate itself).
 
-## What to Change
+## Landed Changes
 
-### 1. Gate the five contention accessors
+### 1. Gated the five contention accessors
 
-For `actor_can_claim_extraction_slot`, `has_extraction_queues`,
-`facility_queue_join_tick`, `reservation_conflicts`, and `reservation_ranges`, add a
-leading `if !self.has_authoritative_local_visibility(<source/facility/entity>) { return <false|empty|None>; }`
-guard, matching `extraction_slot_queue_position`/`facility_grant`. For
-`has_extraction_queues` and the reservation pair, the gated entity is the
-source/entity argument. Where an own-ticket/own-reservation belief surface is the
-more precise lawful source (e.g., the actor already holds a ticket recorded in
-belief), prefer it; otherwise co-location is the gate and remote returns the empty
-result.
+`actor_can_claim_extraction_slot`, `has_extraction_queues`,
+`facility_queue_join_tick`, `reservation_conflicts`, and `reservation_ranges` now
+return `false` / empty / `None` before reading live queue or reservation state
+unless `has_authoritative_local_visibility(<source/facility/entity>)` succeeds.
+No own-ticket/own-reservation belief surface existed in this seam, so this ticket
+landed the strict co-location gate described by S162 D3.
 
 ### 2. Focused unit coverage
 
-Add focused tests proving each gated accessor returns the empty result when the
-actor is not co-located (and no own-ticket belief), and the live value when
-co-located.
+Added `contention_accessors_require_local_visibility`, which proves the five
+accessors return the live value for co-located resources/facilities and the empty
+result for remote resources/facilities with authoritative queue or reservation
+state.
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-sim/src/per_agent_belief_view.rs` (modify — five accessor gates + `#[cfg(test)]` unit tests)
+- `crates/worldwake-sim/src/per_agent_belief_view.rs` (modified — five accessor gates + `#[cfg(test)]` unit test)
 
 ## Out of Scope
 
@@ -108,27 +106,63 @@ co-located.
 - Any new own-reservation belief substrate beyond what already exists — strict
   co-location gating is sufficient and lawful.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests Passed
 
-1. New: each of the five accessors returns `false`/empty/`None` for a remote (non-co-located) resource with live contention state.
-2. New: each accessor returns the live value when the actor is co-located with the resource.
-3. Existing suite: `cargo test -p worldwake-sim`
+1. Passed: each of the five accessors returns `false`/empty/`None` for a remote
+   non-co-located resource/facility with live contention state.
+2. Passed: each accessor returns the live value when the actor is co-located with
+   the resource/facility.
+3. Passed: `cargo test -p worldwake-sim`.
 
 ### Invariants
 
 1. No `PerAgentBeliefView` contention accessor reads `world.*` queue/reservation state without a co-location/own-ticket/belief gate.
 2. Co-located observation behavior is unchanged (FND-14A physical perception preserved).
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added Tests
 
 1. `crates/worldwake-sim/src/per_agent_belief_view.rs` (`#[cfg(test)]`) — remote-invisible + co-located-visible cases per gated accessor; rationale: prove the gate without relying on the deferred goldens.
 
-### Commands
+### Commands Run
 
-1. `cargo test -p worldwake-sim per_agent_belief_view`
-2. `cargo clippy -p worldwake-sim --all-targets -- -D warnings`
-3. `./scripts/verify.sh` (before PR; the narrow command above is the iteration boundary)
+1. Passed `cargo test -p worldwake-sim contention_accessors_require_local_visibility`
+2. Passed `cargo test -p worldwake-sim per_agent_belief_view`
+3. Passed `cargo clippy -p worldwake-sim --all-targets -- -D warnings`
+4. Passed `cargo test -p worldwake-sim`
+5. Waived `./scripts/verify.sh` during this ticket iteration because the S162
+   harness runs focused/package proof per ticket and reserves the full wrapper for
+   final branch push.
+
+## Outcome
+
+Completed on 2026-05-21.
+
+- Closed the S162 D3 contention leak by putting all five ungated
+  `PerAgentBeliefView` queue/reservation reads behind the existing
+  `has_authoritative_local_visibility` gate.
+- Added focused lower-layer coverage proving remote authoritative contention state
+  no longer leaks through the belief view while co-located observation remains
+  lawful.
+- No new belief substrate, action, component, or planner logic was introduced;
+  S162BELVIESOU-005 remains the end-to-end golden owner for planner consequences.
+
+## Deviations
+
+- The ticket allowed an own-ticket/own-reservation belief gate if one already
+  existed. Reassessment found no such existing surface for these methods, so the
+  landed implementation uses strict co-location gating and returns the empty
+  result when remote.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-sim contention_accessors_require_local_visibility`
+- Passed `cargo test -p worldwake-sim per_agent_belief_view`
+- Passed `cargo clippy -p worldwake-sim --all-targets -- -D warnings`
+- Passed `cargo test -p worldwake-sim`
+- Waived `./scripts/verify.sh` until final S162 branch push; the focused
+  `worldwake-sim` test, package test, and package all-target clippy gates cover
+  this ticket's landed source diff.
