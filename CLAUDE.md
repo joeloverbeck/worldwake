@@ -111,7 +111,7 @@ All new spec drafts MUST:
 
 ## Implementation Plan
 
-Specs live in `specs/`. The former implementation-order authority is retired at `archive/specs/IMPLEMENTATION-ORDER-2026-05-21.md`; gameplay-related specs remain in place while core AI architecture is prioritized first. Completed specs and tickets are archived under `archive/specs/` and `archive/tickets/`.
+Specs live in `specs/`. The final implementation-order authority is retired at `archive/specs/IMPLEMENTATION-ORDER-final-2026-05-21.md`; gameplay-related specs remain in place while core AI architecture is prioritized first. Completed specs and tickets are archived under `archive/specs/` and `archive/tickets/`.
 
 ## External Dependencies
 

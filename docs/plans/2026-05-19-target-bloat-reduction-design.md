@@ -75,16 +75,19 @@ verifiable.
 **Implementation NOT performed in this session.** Spec is queued for later
 decomposition via `/spec-to-tickets`.
 
-### Deliverable 3 — `specs/IMPLEMENTATION-ORDER.md` update
+### Deliverable 3 — implementation-order update
 
 Add `### Adjunct Wave: Test-Binary Consolidation` under the existing
-`## Developer Tooling` section, citing this brainstorm and the 95 GiB
-pain point.
+`## Developer Tooling` section of the then-active implementation-order artifact
+(now archived at `archive/specs/IMPLEMENTATION-ORDER-final-2026-05-21.md`),
+citing this brainstorm and the 95 GiB pain point.
 
 ## Implementation Sequence
 
 1. Write `specs/S154-test-binary-consolidation.md` ✅ (done in this session).
-2. Update `specs/IMPLEMENTATION-ORDER.md` ✅ (done in this session).
+2. Update the then-active implementation-order artifact ✅ (done in this
+   session; now archived at
+   `archive/specs/IMPLEMENTATION-ORDER-final-2026-05-21.md`).
 3. Apply Deliverable 1 edits (after Step 6 menu approval).
 4. Run `./scripts/verify.sh`; record disk measurement in §Outcome.
 5. Commit (when user requests).

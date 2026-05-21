@@ -64,5 +64,6 @@ narrowed form, with the audit's `Sourced<T>`/per-field-snapshot static-typing
 - Decision-trace/visualizer "debug-as-gameplay-oracle" separation (audit §10).
   No live leak found; revisit when a player-facing "why" view is built.
 
-See `specs/IMPLEMENTATION-ORDER.md` → "Adjunct Wave: AI Architecture Consolidation
-— Second Iteration" for sequencing.
+See `archive/specs/IMPLEMENTATION-ORDER-final-2026-05-21.md` -> "Adjunct Wave:
+AI Architecture Consolidation - Second Iteration" for the retired sequencing
+record.
