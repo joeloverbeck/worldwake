@@ -35,31 +35,32 @@ use std::num::NonZeroU32;
 use std::path::PathBuf;
 use worldwake_core::{
     AcquisitionQuantity, ActionDefId, AgentBeliefStore, BanditFactionPolicy,
-    BeliefConfidencePolicy, BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory,
-    BlockerRecordedPayload, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CausalLink,
-    CausalProvider, CauseRef, CognitiveProfile, CommodityKind, ContentionGrant, ContentionIntents,
-    ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DecisionEventPayload, DemandMemory,
-    DemandObservation, DemandObservationReason, DeprivationExposure, Discrepancy,
-    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EmitterTag,
-    EntityBeliefAspect, EntityId, EntityKind, EventLog, EventPayload, EventTag, EventView,
-    EvidenceKindTag, EvidenceSummary, ExecutionBudget, ExpectationBasis,
+    BeliefConfidencePolicy, BelievedInstitutionalClaim, BelievedOfficeDataSnapshot, Blocker,
+    BlockerKey, BlockerMemory, BlockerRecordedPayload, BlockingFact, BodyCostPerTick, BodyPart,
+    CarryCapacity, CausalLink, CausalProvider, CauseRef, CognitiveProfile, CommodityKind,
+    ContentionGrant, ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
+    DecisionEventPayload, DemandMemory, DemandObservation, DemandObservationReason,
+    DeprivationExposure, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
+    DriveThresholds, EmitterTag, EntityBeliefAspect, EntityId, EntityKind, EventLog, EventPayload,
+    EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExecutionBudget, ExpectationBasis,
     ExpectationFailureCauseTag, ExpectationFailurePhaseTag, ExpectationId, ExpectationKindTag,
     ExpectationMismatchPayload, ExpectationOutcome, ExpectationRecord, ExpectationState,
     ExplorationProfile, FrameAssumption, FrameClearReason, FrameState, GoalAbandonReason,
     GoalAbandonedPayload, GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload,
     HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
-    InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
-    InvalidatorTag, KnownRecipes, LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile,
-    MerchandiseProfile, MetabolismProfile, MismatchDetail, ObservationPredicate, OfficeData,
-    OpportunityExpectationKindTag, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
-    PerceptionSource, Permille, Place, PlanningFact, Quantity, QueuedContentionIntent, RecipeId,
-    RecordData, RecordKind, RepairAppliedPayload, RepairKind, RepairMemory, ResourceSource, Seed,
-    SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKey, SourceKeyPayload,
-    StatePredicate, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, TestimonyTrustSummary,
-    Tick, ToldBeliefMemory, TopicScope, Topology, TravelEdge, TravelEdgeId, UniqueItemKind,
-    UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker,
-    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
-    build_believed_entity_state, build_prototype_world,
+    InstitutionalKnowledgeSource, InstitutionalSnapshotSource, IntentionDispositionProfile,
+    IntentionDomain, IntentionFrame, InvalidatorTag, KnownRecipes, LearnedOpportunityMemory,
+    LoadUnits, MemoryCapacityProfile, MerchandiseProfile, MetabolismProfile, MismatchDetail,
+    ObservationPredicate, OfficeData, OpportunityExpectationKindTag, PatrolProfile, PatrolRoute,
+    PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, PlanningFact, Quantity,
+    QueuedContentionIntent, RecipeId, RecordData, RecordKind, RepairAppliedPayload, RepairKind,
+    RepairMemory, ResourceSource, Seed, SourceAttributionOutcomeTag,
+    SourceExpectationFailurePayload, SourceKey, SourceKeyPayload, StatePredicate, SuccessionLaw,
+    TellMemoryKey, TellProfile, TellTopic, TestimonyTrustSummary, Tick, ToldBeliefMemory,
+    TopicScope, Topology, TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile,
+    ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+    WorldTxn, Wound, WoundCause, WoundId, WoundList, build_believed_entity_state,
+    build_prototype_world,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
@@ -7268,16 +7269,25 @@ fn trace_force_law_office_skips_political_candidates_and_planning() {
             .unwrap();
 
         let office = txn.create_office("War Chief").unwrap();
-        txn.set_component_office_data(
+        let office_data = OfficeData {
+            title: "War Chief".to_string(),
+            seat: place,
+            jurisdiction: BTreeSet::from([place]),
+            succession_law: SuccessionLaw::Force,
+            succession_period_ticks: 5,
+            eligibility_rules: Vec::new(),
+            vacancy_since: Some(Tick(1)),
+        };
+        txn.set_component_office_data(office, office_data.clone())
+            .unwrap();
+        txn.project_believed_office_data(
+            harness.actor,
             office,
-            OfficeData {
-                title: "War Chief".to_string(),
-                seat: place,
-                jurisdiction: BTreeSet::from([place]),
-                succession_law: SuccessionLaw::Force,
-                succession_period_ticks: 5,
-                eligibility_rules: Vec::new(),
-                vacancy_since: Some(Tick(1)),
+            BelievedOfficeDataSnapshot {
+                data: office_data,
+                source: InstitutionalSnapshotSource::DirectObservation,
+                learned_tick: Tick(2),
+                learned_at: Some(place),
             },
         )
         .unwrap();
@@ -7651,16 +7661,25 @@ fn trace_planning_records_political_over_share_belief_priority_class_reason() {
         txn.set_ground_location(listener, place).unwrap();
 
         let office = txn.create_office("Speaker").unwrap();
-        txn.set_component_office_data(
+        let office_data = OfficeData {
+            title: "Speaker".to_string(),
+            seat: remote_place,
+            jurisdiction: BTreeSet::from([remote_place]),
+            succession_law: SuccessionLaw::Support,
+            succession_period_ticks: 5,
+            eligibility_rules: Vec::new(),
+            vacancy_since: Some(vacancy_tick),
+        };
+        txn.set_component_office_data(office, office_data.clone())
+            .unwrap();
+        txn.project_believed_office_data(
+            harness.actor,
             office,
-            OfficeData {
-                title: "Speaker".to_string(),
-                seat: remote_place,
-                jurisdiction: BTreeSet::from([remote_place]),
-                succession_law: SuccessionLaw::Support,
-                succession_period_ticks: 5,
-                eligibility_rules: Vec::new(),
-                vacancy_since: Some(vacancy_tick),
+            BelievedOfficeDataSnapshot {
+                data: office_data,
+                source: InstitutionalSnapshotSource::DirectObservation,
+                learned_tick: Tick(2),
+                learned_at: Some(remote_place),
             },
         )
         .unwrap();

@@ -58,6 +58,17 @@ reason rather than "looked plausible."
     positive-carrier half of this golden ticket should use that substrate instead of
     faking a carrier by seeding authoritative world truth. Owner/control, contention,
     and loyalty no-carrier absence cases may still be reassessed independently.
+15. Post-[S162BELVIESOU-004](../archive/tickets/S162BELVIESOU-004.md) handoff:
+    `cargo test -p worldwake-ai` is currently blocked in package-level
+    golden/scenario surfaces after the snapshot guard and library fixture repair
+    landed. The observed failures include office goldens
+    (`scenarios::offices::*`) plus adjacent scenario fallout
+    (`ai_decisions::golden_consume_pipeline_rebinds_pick_up_after_remote_lot_change`
+    and
+    `planner_pathology::obligation_satiation_allows_survival_needs_to_override_posting`).
+    This ticket owns reassessing those golden/scenario contracts against the lawful
+    believed office/record snapshot substrate before adding the new adversarial
+    belief-wall matrix.
 
 ## Architecture Check
 
@@ -88,6 +99,11 @@ reason rather than "looked plausible."
 
 ### 1. Add adversarial belief-wall goldens
 
+First repair or truth-sync the existing package-level golden/scenario surfaces that
+now depend on S162's lawful believed office/record snapshot substrate, so
+`cargo test -p worldwake-ai` has a stable baseline before adding new belief-wall
+coverage.
+
 Add golden scenarios under the current `worldwake-ai` golden harness covering, at
 minimum: remote owner/control change, remote office vacancy + remote record entry
 change, remote extraction slot fill + remote reservation, and remote loyalty change.
@@ -113,7 +129,8 @@ If the harness requires it, regenerate the golden inventory docs
 ## Out of Scope
 
 - The accessor gate fixes themselves (001/002/003).
-- The snapshot-through-view guard (004).
+- The snapshot-through-view guard
+  (`archive/tickets/S162BELVIESOU-004.md`).
 - The believed record/office snapshot substrate (`archive/tickets/S162BELVIESOU-006.md`).
 
 ## Acceptance Criteria

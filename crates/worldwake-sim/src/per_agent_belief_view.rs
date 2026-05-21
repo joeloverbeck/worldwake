@@ -1700,9 +1700,7 @@ impl PoliticalBeliefView for PerAgentBeliefView<'_> {
         if subject != self.agent {
             return None;
         }
-        if self.believed_entity(target).is_none() {
-            return None;
-        }
+        self.believed_entity(target)?;
 
         self.world.loyalty_to(subject, target)
     }

@@ -126,7 +126,8 @@ persisted `AgentBeliefStore` shape changed.
 - Reopening `knows_entity` / co-location / last-seen access to whole `RecordData` or
   `OfficeData`.
 - The adversarial end-to-end golden matrix itself (S162BELVIESOU-005).
-- Snapshot-through-view structural guard (S162BELVIESOU-004).
+- Snapshot-through-view structural guard
+  (`archive/tickets/S162BELVIESOU-004.md`).
 
 ## Acceptance Result
 
