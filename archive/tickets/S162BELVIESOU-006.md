@@ -4,14 +4,14 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — believed institutional snapshot substrate in `worldwake-core` / `worldwake-sim`, plus AI consumers that currently need whole `RecordData` / `OfficeData` semantics.
-**Deps**: `archive/tickets/S162BELVIESOU-003.md`, Spec `specs/S162-belief-view-source-gate-hardening.md` (D2 open implementation question resolved by this ticket), `tickets/S162BELVIESOU-005.md` consumes this for office/record carrier-positive goldens.
+**Deps**: `S162BELVIESOU-003.md`, Spec `../specs/S162-belief-view-source-gate-hardening.md` (D2 open implementation question resolved by this ticket), the now-archived `S162BELVIESOU-005.md` consumes this for office/record carrier-positive goldens.
 
 ## Problem
 
 Before this ticket, the following gap remained after
-`archive/tickets/S162BELVIESOU-003.md`:
+`S162BELVIESOU-003.md`:
 
-`archive/tickets/S162BELVIESOU-003.md` correctly closed the leak by making
+`S162BELVIESOU-003.md` correctly closed the leak by making
 `PerAgentBeliefView::record_data` and `PerAgentBeliefView::office_data` return
 `None` when no lawful whole-record/office belief snapshot exists. That fail-closed
 behavior removed live-truth leakage, but it also left legitimate downstream
@@ -22,7 +22,7 @@ carrier-positive adversarial goldens.
 
 ## Assumption Reassessment (2026-05-21)
 
-1. `archive/tickets/S162BELVIESOU-003.md` landed the minimal lawful gate: whole
+1. `S162BELVIESOU-003.md` landed the minimal lawful gate: whole
    `record_data` / `office_data` no longer read authoritative truth from
    `PerAgentBeliefView`; normalized institutional beliefs such as
    `believed_office_holder`, `believed_force_controller`, membership, and support
@@ -75,7 +75,7 @@ carrier-positive adversarial goldens.
    proves duration estimation remains hidden without the carrier and recovers with it.
 5. AI HTN/planning regression -> `cargo test -p worldwake-ai htn` passed after the
    snapshot storage and fixture updates. The full adversarial office/record golden
-   matrix remains owned by `tickets/S162BELVIESOU-005.md`.
+   matrix remains owned by the now-archived `S162BELVIESOU-005.md`.
 
 ## Landed Changes
 
@@ -127,7 +127,7 @@ persisted `AgentBeliefStore` shape changed.
   `OfficeData`.
 - The adversarial end-to-end golden matrix itself (S162BELVIESOU-005).
 - Snapshot-through-view structural guard
-  (`archive/tickets/S162BELVIESOU-004.md`).
+  (`S162BELVIESOU-004.md`).
 
 ## Acceptance Result
 
@@ -138,7 +138,7 @@ persisted `AgentBeliefStore` shape changed.
    record snapshot.
 3. Passed: the touched AI HTN/planning surface still composes after the carrier
    migration. The end-to-end adversarial office/record golden matrix is still
-   deliberately deferred to `tickets/S162BELVIESOU-005.md`.
+   deliberately deferred to the now-archived `S162BELVIESOU-005.md`.
 
 ### Invariants
 
@@ -158,7 +158,7 @@ Completed on 2026-05-21.
   intentionally expect planner-visible office/register metadata.
 - Bumped the current save format to 99 for the persisted `AgentBeliefStore` shape.
 - Left the adversarial end-to-end office/record golden matrix to
-  `tickets/S162BELVIESOU-005.md`, as drafted.
+  the now-archived `S162BELVIESOU-005.md`, as drafted.
 
 ## Deviations
 

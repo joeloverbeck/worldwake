@@ -8,7 +8,7 @@ fn cross_location_water_acquisition_succeeds_without_budget_exhaustion() {
 }
 
 // Scenario 144: Obligation satiation allows survival needs to override posting
-// Setup: A guard remembers a hostile, starts at Hearthstone Inn with local Bread and Water, critical needs, and high notice-posting weight.
+// Setup: A guard remembers a hostile, starts at Hearthstone Inn with possessed Bread and Water, critical needs, and high notice-posting weight.
 // Proves: Repeated PostNotice still happens, but eat and drink commits recover and notice posting does not dominate indefinitely.
 // Chain: remembered hostile belief -> repeated PostNotice commits -> obligation satiation dampens notice motive -> self-care commits recover.
 #[test]

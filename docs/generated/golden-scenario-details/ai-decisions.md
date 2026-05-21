@@ -100,9 +100,9 @@ Scenarios: 6
 - ActionDomains: Needs
 - Places: VillageSquare, OrchardFarm
 - Principles: P20 (resource-bounded practical reasoning)
-- Primary tests: `golden_utility_weight_diversity_in_need_selection`, `golden_trace_enabled_scenario`, `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`, `golden_loot_refuses_substitute_corpse_after_remote_travel_commitment`, `golden_consume_pipeline_rebinds_pick_up_after_remote_lot_change`
+- Primary tests: `golden_utility_weight_diversity_in_need_selection`, `golden_trace_enabled_scenario`, `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`, `golden_loot_refuses_substitute_corpse_after_remote_travel_commitment`, `golden_consume_pipeline_records_start_failure_after_remote_lot_change`
 - Replay tests: None
-- All tests: `golden_utility_weight_diversity_in_need_selection`, `golden_trace_enabled_scenario`, `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`, `golden_loot_refuses_substitute_corpse_after_remote_travel_commitment`, `golden_consume_pipeline_rebinds_pick_up_after_remote_lot_change`
+- All tests: `golden_utility_weight_diversity_in_need_selection`, `golden_trace_enabled_scenario`, `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`, `golden_loot_refuses_substitute_corpse_after_remote_travel_commitment`, `golden_consume_pipeline_records_start_failure_after_remote_lot_change`
 
 **Setup**: Single AI agent with high thirst (700) and moderate hunger (400). No Water items anywhere (thirst unsatisfiable). Apple available at location.
 

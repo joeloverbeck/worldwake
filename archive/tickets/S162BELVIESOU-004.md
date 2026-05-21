@@ -5,7 +5,7 @@
 **Effort**: Small
 **Engine Changes**: None (test/guard only, plus same-family lint cleanup) —
 `worldwake-ai`, `worldwake-sim`
-**Deps**: Spec `specs/S162-belief-view-source-gate-hardening.md` (D6)
+**Deps**: Spec `../specs/S162-belief-view-source-gate-hardening.md` (D6)
 
 ## Problem
 
@@ -27,7 +27,7 @@ regressing to a direct world read. This ticket locks the invariant.
    `view.loyalty_to`, `view.effective_place`). `SnapshotControl.has_control` at
    `:211` is populated by `view.has_control(entity)` at `:1118`.
 2. Spec D6 and the FND-14B/FND-27 alignment in
-   `specs/S162-belief-view-source-gate-hardening.md` define the invariant: the
+   `../specs/S162-belief-view-source-gate-hardening.md` defines the invariant: the
    snapshot may read only through the belief view, so lawfulness flows from the view
    (hardened by S162BELVIESOU-001/002/003), not from per-field source tags.
 3. Shared boundary under audit: the construction surface of `planning_snapshot.rs`
@@ -47,7 +47,7 @@ regressing to a direct world read. This ticket locks the invariant.
    `WorldTxn::project_believed_office_data`; no production fallback was reopened.
 7. Broader golden fallout: the package-level command still fails in pending golden/
    scenario surfaces, mostly `scenarios::offices::*`. That is not part of the
-   snapshot guard seam and remains owned by `tickets/S162BELVIESOU-005.md`.
+   snapshot guard seam and remains owned by the now-archived `S162BELVIESOU-005.md`.
 13. Adjacent contradiction: this ticket does not depend on the gate tickets
     (001/002/003) — the invariant holds today regardless of whether the view is fully
     lawful. It is independent and may land in any order. (Its *value* compounds once
@@ -114,7 +114,7 @@ the equivalent `?` form required by the CI clippy gate.
    `planning_snapshot.rs`.
 2. Passed: `cargo test -p worldwake-ai --lib` after repairing the same-family
    positive political unit fixtures.
-3. Deferred to `tickets/S162BELVIESOU-005.md`: package-level `cargo test -p
+3. Deferred to the now-archived `S162BELVIESOU-005.md`: package-level `cargo test -p
    worldwake-ai` still fails in pending golden/scenario surfaces, primarily
    `scenarios::offices::*`, while the library owner seam is green.
 
@@ -133,7 +133,7 @@ Completed on 2026-05-21.
   S162BELVIESOU-006.
 - Applied a lint-only same-family `loyalty_to` cleanup required by the all-target
   clippy gate.
-- Left package-level golden/scenario fallout to `tickets/S162BELVIESOU-005.md`.
+- Left package-level golden/scenario fallout to the now-archived `S162BELVIESOU-005.md`.
 
 ## Verification Result
 
@@ -142,4 +142,4 @@ Completed on 2026-05-21.
 - Passed `cargo clippy -p worldwake-ai --all-targets -- -D warnings`
 - Waived `cargo test -p worldwake-ai` as 004 completion proof because the current
   package-level failures are golden/scenario surfaces owned by
-  `tickets/S162BELVIESOU-005.md`; the 004 library and guard surfaces pass.
+  the now-archived `S162BELVIESOU-005.md`; the 004 library and guard surfaces pass.

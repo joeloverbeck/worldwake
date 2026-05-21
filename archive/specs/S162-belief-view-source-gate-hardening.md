@@ -1,6 +1,6 @@
 # S162 — Belief-View Source-Gate Hardening
 
-**Status:** DRAFT
+**Status:** COMPLETED
 **Type:** Correctness fix (closes FND-14/FND-14A leaks in `PerAgentBeliefView`
 accessors; adds adversarial belief-wall goldens; locks the snapshot-through-view
 invariant). No new authoritative simulation state, system, component, action, or
@@ -10,7 +10,7 @@ new AI behavior should be added on top of the belief view until these leaks clos
 **Crates:** `worldwake-sim` (`per_agent_belief_view.rs` accessor gates),
 `worldwake-ai` (adversarial goldens + snapshot-source invariant test).
 **Foundations:** FND-7, FND-14, FND-14A, FND-14B, FND-19, FND-27, FND-31
-**Extends:** `archive/specs/S158-belief-view-remote-truth-leak-closure.md`. S158
+**Extends:** `S158-belief-view-remote-truth-leak-closure.md`. S158
 closed the economic/production/physical/contention leaks "under one source-class
 rule" but **explicitly deferred the social/control rights value path** (per
 S155/S158 scope). S162 completes that deferred path (`has_control`, `record_data`,
@@ -159,7 +159,7 @@ leaks; it was wrong):**
    cannot be fully reconstructed from them today. Because `record_data`/`office_data`
    return whole `Option<RecordData>`/`Option<OfficeData>` structs (not field-by-field),
    the accessor returns `None` (the whole `Option`) unless a believed snapshot covers
-   the read — it must never read current truth. `archive/tickets/S162BELVIESOU-006.md`
+   the read — it must never read current truth. `../tickets/S162BELVIESOU-006.md`
    landed that carrier as `BelievedOfficeDataSnapshot` /
    `BelievedRecordDataSnapshot`, with `consult_record` as the first lawful
    acquisition path. The dependent candidate then depends on the institutional
@@ -290,12 +290,32 @@ unit tests per accessor (remote vs. co-located vs. self), and a causal/decision
 trace audit showing the candidate's source belief. Existing `worldwake-ai` goldens
 serve as the regression/composition suite.
 
-## Remaining Implementation Questions
-
-- The exact carrier of the snapshot-through-view invariant (Deliverable 6).
-
 ## Resolved Implementation Questions
 
-- `archive/tickets/S162BELVIESOU-006.md` landed the lawful whole-record/office substrate as
+- `../tickets/S162BELVIESOU-006.md` landed the lawful whole-record/office substrate as
   `BelievedRecordDataSnapshot` / `BelievedOfficeDataSnapshot`, with
   `consult_record` as the first lawful acquisition path.
+- `../tickets/S162BELVIESOU-004.md` landed the snapshot-through-view
+  invariant as a compile-time source guard plus focused tests.
+- `../tickets/S162BELVIESOU-005.md` completed the package-level golden
+  proof surface by reusing the existing `belief_wall_trap` matrix, repairing the
+  lawful office snapshot carriers, and truth-syncing the stale remote-lot and
+  obligation-satiation goldens.
+
+## Outcome
+
+Completed on 2026-05-21.
+
+- Closed the S162 belief-view source gates through the archived ticket family:
+  contention co-location gates, control/rights gates, institutional/social gates,
+  lawful record/office snapshot carriers, snapshot-through-view guard coverage,
+  and package-level adversarial golden proof.
+- Deviated from the draft's assumption that a new adversarial golden module was
+  required: live reassessment found the active `belief_wall_trap` matrix already
+  covered the D7 proof surface, so the final ticket repaired and truth-synced
+  existing goldens instead of duplicating them.
+- Verified the final package seam with `cargo test -p worldwake-ai`; focused
+  supporting proof included `scenarios::belief_wall_trap`, `scenarios::offices`,
+  `golden_consume_pipeline_records_start_failure_after_remote_lot_change`,
+  `obligation_satiation_allows_survival_needs_to_override_posting`, and
+  `python3 scripts/golden_inventory.py --write --check-docs`.

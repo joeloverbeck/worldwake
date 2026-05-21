@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-sim` belief-view contention accessors (`per_agent_belief_view.rs`)
-**Deps**: Spec `specs/S162-belief-view-source-gate-hardening.md` (D3)
+**Deps**: Spec `../specs/S162-belief-view-source-gate-hardening.md` (D3)
 
 ## Problem
 
@@ -102,7 +102,7 @@ state.
 ## Out of Scope
 
 - Adversarial end-to-end belief-wall goldens (S162BELVIESOU-005).
-- Control/rights gates (`archive/tickets/S162BELVIESOU-002.md`), institutional/social gates (`archive/tickets/S162BELVIESOU-003.md`).
+- Control/rights gates (`S162BELVIESOU-002.md`), institutional/social gates (`S162BELVIESOU-003.md`).
 - Any new own-reservation belief substrate beyond what already exists — strict
   co-location gating is sufficient and lawful.
 

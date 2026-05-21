@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `worldwake-sim` belief-view institutional/social accessors (`per_agent_belief_view.rs`) plus focused lower-layer reward-source expectations in `belief_view.rs`. No believed-institutional snapshot type was introduced.
-**Deps**: Spec `specs/S162-belief-view-source-gate-hardening.md` (D2, D4)
+**Deps**: Spec `../specs/S162-belief-view-source-gate-hardening.md` (D2, D4)
 
 ## Problem
 
@@ -128,7 +128,7 @@ snapshot is absent.
 
 - A new `BelievedOfficeData`/`BelievedRecordData` snapshot type and any consulted-record
   perception write that populates it — deferred follow-up (Assumption Reassessment 13).
-- Contention gates (S162BELVIESOU-001), control/rights gates (`archive/tickets/S162BELVIESOU-002.md`).
+- Contention gates (S162BELVIESOU-001), control/rights gates (`S162BELVIESOU-002.md`).
 - Adversarial end-to-end goldens (S162BELVIESOU-005).
 - Restoring planner-visible consult duration, bounty reward-source derivation, or
   richer office/record candidates through a lawful whole-record/office belief

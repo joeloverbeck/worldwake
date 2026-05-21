@@ -46,22 +46,25 @@ CAUSEVTHON-001 (ticket: explicit no-source-event) ── independent of S162/S16
   across producers, persistence stamping, consumers, and tests. Independent.
   **FND-2, FND-29A.**
 
-### Pending
+### Completed / Archived
 
 - **S162 — Belief-View Source-Gate Hardening** —
-  `specs/S162-belief-view-source-gate-hardening.md` — *Status: DRAFT.* Closes the
+  `archive/specs/S162-belief-view-source-gate-hardening.md` — *Status:
+  COMPLETED.* Closed the
   confirmed FND-14/14A `PerAgentBeliefView` leaks (`has_control`, `record_data`/
   `office_data`, the no-gate contention reads, `loyalty_to`/`stock_storage_policy`,
-  `believed_rights`/`can_control`), adds adversarial belief-wall goldens, and locks
-  the snapshot-through-view invariant. Completes the social/control path S158
+  `believed_rights`/`can_control`), restored adversarial belief-wall golden proof,
+  and locked the snapshot-through-view invariant. Completed the social/control path S158
   deferred. **FND-7, FND-14, FND-14A, FND-14B, FND-19, FND-27, FND-31.**
+
+### Pending
 
 - **S163 — CLI Player-POV Boundary** —
   `specs/S163-cli-player-pov-boundary.md` — *Status: DRAFT.* FND-19: routes the
   player action-menu labels and `handle_cancel` through the lawful belief view,
   marks `display.rs`/`control.rs` observer/debug-only with an enforceable guard,
-  and adds a player/AI symmetry test. Sequence after S162. **FND-14, FND-14A,
-  FND-19.**
+  and adds a player/AI symmetry test. Sequence after archived S162. **FND-14,
+  FND-14A, FND-19.**
 
 ## Excluded from the active order (by directive)
 

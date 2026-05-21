@@ -4,9 +4,10 @@ use crate::golden_harness::*;
 use worldwake_core::{
     AgentData, BeliefConfidencePolicy, CombatProfile, CommodityKind, ControlSource,
     DriveThresholds, EventTag, ExecutionBudget, FactionPurpose, GoalKind, HomeostaticNeeds,
-    InstitutionalBeliefRead, MetabolismProfile, NoticeTopic, PerceptionProfile, PerceptionSource,
-    Permille, PrototypePlace, Quantity, Seed, StateHash, SuccessionLaw, TellProfile, Tick,
-    UtilityProfile, hash_event_log, hash_world, prototype_place_entity,
+    InstitutionalBeliefRead, InstitutionalSnapshotSource, MetabolismProfile, NoticeTopic,
+    PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity, Seed, StateHash,
+    SuccessionLaw, TellProfile, Tick, UtilityProfile, hash_event_log, hash_world,
+    prototype_place_entity,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionTraceDetail, ActionTraceKind, InputKind,
@@ -98,16 +99,7 @@ fn build_simple_office_claim_scenario(
         Tick(0),
         PerceptionSource::DirectObservation,
     );
-    seed_office_holder_belief(
-        &mut h.world,
-        &mut h.event_log,
-        agent,
-        office,
-        None,
-        Tick(0),
-        worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
-        Some(VILLAGE_SQUARE),
-    );
+    seed_support_office_belief(&mut h, agent, office, Some(VILLAGE_SQUARE));
 
     (h, agent, office)
 }
@@ -208,6 +200,33 @@ fn focused_accepting_tell_profile() -> TellProfile {
         max_tell_candidates: 1,
         ..accepting_tell_profile()
     }
+}
+
+fn seed_support_office_belief(
+    h: &mut GoldenHarness,
+    agent: worldwake_core::EntityId,
+    office: worldwake_core::EntityId,
+    learned_at: Option<worldwake_core::EntityId>,
+) {
+    seed_office_holder_belief(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        office,
+        None,
+        Tick(0),
+        worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+        learned_at,
+    );
+    seed_believed_office_data_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        office,
+        Tick(0),
+        InstitutionalSnapshotSource::InstitutionalBelief,
+        learned_at,
+    );
 }
 
 fn set_control_source(
@@ -329,16 +348,7 @@ fn golden_competing_claims_with_loyal_supporter() {
             Tick(0),
             PerceptionSource::DirectObservation,
         );
-        seed_office_holder_belief(
-            &mut h.world,
-            &mut h.event_log,
-            agent,
-            office,
-            None,
-            Tick(0),
-            worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
-            Some(VILLAGE_SQUARE),
-        );
+        seed_support_office_belief(&mut h, agent, office, Some(VILLAGE_SQUARE));
     }
     // C needs to know about A as a candidate to support.
     seed_actor_beliefs(
@@ -512,16 +522,7 @@ fn golden_bribe_support_coalition() {
             Tick(0),
             PerceptionSource::DirectObservation,
         );
-        seed_office_holder_belief(
-            &mut h.world,
-            &mut h.event_log,
-            agent,
-            office,
-            None,
-            Tick(0),
-            worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
-            Some(VILLAGE_SQUARE),
-        );
+        seed_support_office_belief(&mut h, agent, office, Some(VILLAGE_SQUARE));
     }
     // A needs to know about B (bribe target) and C (competitor).
     seed_actor_beliefs(
@@ -792,16 +793,7 @@ fn golden_threaten_with_courage_diversity() {
             Tick(0),
             PerceptionSource::DirectObservation,
         );
-        seed_office_holder_belief(
-            &mut h.world,
-            &mut h.event_log,
-            agent,
-            office,
-            None,
-            Tick(0),
-            worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
-            Some(VILLAGE_SQUARE),
-        );
+        seed_support_office_belief(&mut h, agent, office, Some(VILLAGE_SQUARE));
     }
     // A needs to know about B, C (threaten targets) and D (competitor).
     seed_actor_beliefs(
@@ -992,16 +984,7 @@ fn golden_travel_to_distant_jurisdiction_for_claim() {
         Tick(0),
         PerceptionSource::DirectObservation,
     );
-    seed_office_holder_belief(
-        &mut h.world,
-        &mut h.event_log,
-        agent,
-        office,
-        None,
-        Tick(0),
-        worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
-        Some(VILLAGE_SQUARE),
-    );
+    seed_support_office_belief(&mut h, agent, office, Some(VILLAGE_SQUARE));
 
     // Verify starting position.
     assert_eq!(
@@ -1184,6 +1167,18 @@ fn run_information_locality_for_political_facts(seed: Seed) -> (StateHash, State
         },
         Some(bandit_camp),
     );
+    seed_believed_office_data_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        office,
+        Tick(phase_one_end),
+        InstitutionalSnapshotSource::Report {
+            from: informant,
+            chain_len: 1,
+        },
+        Some(bandit_camp),
+    );
     let seeded_belief = agent_belief_about(&h.world, agent, office)
         .expect("agent should immediately receive the explicit office belief update");
     assert!(
@@ -1281,7 +1276,10 @@ fn build_survival_pressure_suppresses_political_goals_scenario(
         "Hungry Claimant",
         VILLAGE_SQUARE,
         HomeostaticNeeds::new(hunger_high, pm(0), pm(0), pm(0), pm(0)),
-        MetabolismProfile::default(),
+        MetabolismProfile {
+            hunger_rate: pm(0),
+            ..MetabolismProfile::default()
+        },
         enterprise_weighted_utility(pm(800)),
     );
     set_agent_perception_profile(
@@ -1316,16 +1314,7 @@ fn build_survival_pressure_suppresses_political_goals_scenario(
         Tick(0),
         PerceptionSource::DirectObservation,
     );
-    seed_office_holder_belief(
-        &mut h.world,
-        &mut h.event_log,
-        agent,
-        office,
-        None,
-        Tick(0),
-        worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
-        Some(VILLAGE_SQUARE),
-    );
+    seed_support_office_belief(&mut h, agent, office, Some(VILLAGE_SQUARE));
 
     (h, agent, office, hunger_high)
 }
@@ -1520,16 +1509,7 @@ fn golden_faction_eligibility_filters_office_claim() {
             Tick(0),
             PerceptionSource::DirectObservation,
         );
-        seed_office_holder_belief(
-            &mut h.world,
-            &mut h.event_log,
-            agent,
-            office,
-            None,
-            Tick(0),
-            worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
-            Some(VILLAGE_SQUARE),
-        );
+        seed_support_office_belief(&mut h, agent, office, Some(VILLAGE_SQUARE));
     }
     seed_faction_membership_belief(
         &mut h.world,
@@ -1676,16 +1656,7 @@ fn build_contested_force_claim_resolution_scenario(
             Tick(0),
             PerceptionSource::DirectObservation,
         );
-        seed_office_holder_belief(
-            &mut h.world,
-            &mut h.event_log,
-            agent,
-            office,
-            None,
-            Tick(0),
-            worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
-            Some(VILLAGE_SQUARE),
-        );
+        seed_support_office_belief(&mut h, agent, office, Some(VILLAGE_SQUARE));
         set_control_source(&mut h, agent, ControlSource::Human, 0);
     }
 
@@ -1980,16 +1951,7 @@ fn build_force_control_locality_and_tell_scenario(
         Tick(0),
         PerceptionSource::DirectObservation,
     );
-    seed_office_holder_belief(
-        &mut h.world,
-        &mut h.event_log,
-        claimant,
-        office,
-        None,
-        Tick(0),
-        worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
-        Some(VILLAGE_SQUARE),
-    );
+    seed_support_office_belief(&mut h, claimant, office, Some(VILLAGE_SQUARE));
 
     set_control_source(&mut h, claimant, ControlSource::Human, 0);
 
@@ -2204,6 +2166,30 @@ fn run_vacancy_notice_political_uptake(seed: Seed) -> (StateHash, StateHash) {
         SuccessionLaw::Support,
         5,
         vec![],
+    );
+
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        claimant,
+        &[office],
+        Tick(0),
+        PerceptionSource::Report {
+            from: issuer,
+            chain_len: 1,
+        },
+    );
+    seed_believed_office_data_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        claimant,
+        office,
+        Tick(0),
+        InstitutionalSnapshotSource::Report {
+            from: issuer,
+            chain_len: 1,
+        },
+        Some(VILLAGE_SQUARE),
     );
 
     let pre_notice_belief = h

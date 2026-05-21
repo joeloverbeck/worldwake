@@ -2116,7 +2116,7 @@ fn golden_loot_refuses_substitute_corpse_after_remote_travel_commitment() {
 }
 
 #[test]
-fn golden_consume_pipeline_rebinds_pick_up_after_remote_lot_change() {
+fn golden_consume_pipeline_records_start_failure_after_remote_lot_change() {
     let mut h = GoldenHarness::new(Seed([82; 32]));
     h.driver.enable_tracing();
     h.enable_action_tracing();
@@ -2128,19 +2128,38 @@ fn golden_consume_pipeline_rebinds_pick_up_after_remote_lot_change() {
         "Remote Eater",
         prototype_place_entity(PrototypePlace::CommonHouse),
         HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
-        MetabolismProfile::default(),
+        MetabolismProfile {
+            hunger_rate: pm(0),
+            ..MetabolismProfile::default()
+        },
         UtilityProfile::default(),
     );
-    let _bread_a =
-        place_ground_commodity(&mut h, VILLAGE_SQUARE, CommodityKind::Bread, Quantity(1));
-    let _bread_b =
-        place_ground_commodity(&mut h, VILLAGE_SQUARE, CommodityKind::Bread, Quantity(1));
+    let bread_a = place_ground_commodity(&mut h, VILLAGE_SQUARE, CommodityKind::Bread, Quantity(1));
+    let bread_b = place_ground_commodity(&mut h, VILLAGE_SQUARE, CommodityKind::Bread, Quantity(1));
     seed_actor_world_beliefs(
         &mut h.world,
         &mut h.event_log,
         eater,
         Tick(0),
         worldwake_core::PerceptionSource::Inference,
+    );
+    seed_owner_belief(
+        &mut h.world,
+        &mut h.event_log,
+        eater,
+        bread_a,
+        None,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+    seed_owner_belief(
+        &mut h.world,
+        &mut h.event_log,
+        eater,
+        bread_b,
+        None,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
     );
 
     let mut planned_pick_up = None;
@@ -2230,7 +2249,7 @@ fn golden_consume_pipeline_rebinds_pick_up_after_remote_lot_change() {
         .events_for_at(eater, rebound_tick)
         .into_iter()
         .find(|event| event.action_name == "pick_up")
-        .expect("rebound pick_up attempt should record request resolution");
+        .expect("stale pick_up attempt should record request resolution");
     match &request_event.outcome {
         RequestResolutionOutcome::Bound {
             binding,
@@ -2239,46 +2258,26 @@ fn golden_consume_pipeline_rebinds_pick_up_after_remote_lot_change() {
         } => {
             assert_eq!(*binding, RequestBindingKind::BestEffortFallback);
             assert_eq!(request_event.requested_targets, vec![planned_pick_up]);
-            assert!(*start_attempted, "rebound pick_up should still start");
+            assert!(*start_attempted, "stale pick_up should still reach start");
         }
         other @ RequestResolutionOutcome::RejectedBeforeStart { .. } => {
-            panic!("unexpected request-resolution outcome for rebound pick_up: {other:?}")
+            panic!("unexpected request-resolution outcome for stale pick_up: {other:?}")
         }
     }
 
-    let mut ai_txn = new_txn(&mut h.world, 0);
-    ai_txn
-        .set_component_agent_data(
-            eater,
-            AgentData {
-                control_source: ControlSource::Ai,
-            },
-        )
-        .unwrap();
-    commit_txn(ai_txn, &mut h.event_log);
-
-    let mut ate = false;
-    for _ in 0..10 {
-        h.step_once();
-        ate = h
-            .action_trace_sink()
+    assert!(
+        h.action_trace_sink()
             .expect("action tracing should be enabled")
             .events_for(eater)
             .iter()
             .any(|event| {
-                event.action_name == "eat"
-                    && matches!(event.kind, ActionTraceKind::Committed { .. })
-            });
-        if ate {
-            break;
-        }
-    }
-    assert!(
-        ate,
-        "the consume pipeline should still complete with an eat commit"
+                event.action_name == "pick_up"
+                    && matches!(event.kind, ActionTraceKind::StartFailed { .. })
+            }),
+        "stale external pick_up should reach authoritative start and fail lawfully"
     );
     assert!(
-        h.agent_hunger(eater) < pm(900),
-        "hunger should fall after the fungible fallback path completes"
+        h.agent_hunger(eater) >= pm(900),
+        "hunger should remain unresolved until a later AI tick receives a lawful replacement carrier"
     );
 }

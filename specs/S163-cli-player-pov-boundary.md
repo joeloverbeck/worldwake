@@ -5,8 +5,10 @@
 from surfacing omniscient world facts; mark the omniscient observer/debug surfaces
 as such). No new authoritative simulation state, system, component, action, or
 feedback loop.
-**Priority:** Medium. Sequence after S162 — the player menu inherits the belief
-view, so the view must be lawful first. Independent of the FRAMECAUSEVT ticket.
+**Priority:** Medium. Sequence after
+`archive/specs/S162-belief-view-source-gate-hardening.md` — the player menu
+inherits the belief view, so the view must be lawful first. Independent of the
+FRAMECAUSEVT ticket.
 **Crates:** `worldwake-cli` (`handlers/actions.rs`, `display.rs`, `handlers/control.rs`).
 **Foundations:** FND-14, FND-14A, FND-19
 **Source:** `reports/ai-architecture-consolidation-third-iteration.md` §10/§5
@@ -25,8 +27,8 @@ The CLI action menu is the player-facing prototype and is built correctly throug
 `PerAgentBeliefView` + `get_affordances` (the right skeleton for AI/player
 symmetry). But two seams in the *player* path read authoritative `World` directly,
 and the omniscient observer/debug helpers carry no marker preventing a future
-player UI from importing them. Once S162 makes the belief view lawful, these CLI
-seams become the remaining FND-19 leaks in the play interface.
+player UI from importing them. Now that archived S162 makes the belief view
+lawful, these CLI seams are the remaining FND-19 leaks in the play interface.
 
 ### Evidence (verified against code on 2026-05-21)
 
@@ -91,7 +93,7 @@ seams become the remaining FND-19 leaks in the play interface.
 4. **FND-19 player/AI symmetry test** — assert that, for the same controlled
    entity with the same belief state, the player action menu and the AI affordance
    set are identical, and that the menu's *labels* expose no fact absent from the
-   actor's belief. Combined with S162's belief-wall goldens, this proves the play
+   actor's belief. Combined with archived S162's belief-wall goldens, this proves the play
    interface adds no omniscient side channel. (`switch`/`observe` are explicitly
    excluded as debug/meta and tested separately as such.)
 
@@ -128,5 +130,6 @@ must **not** produce: a player reading, through the action menu or cancel comman
 any entity name/location/in-flight-action that the controlled agent does not
 lawfully know. Feature-scoped checks: the player/AI symmetry test (Deliverable 4),
 the module-boundary guard (Deliverable 3), and focused tests on `handle_actions`
-labels and `handle_cancel` scoping. Depends on S162 (the belief view must be lawful
-for the symmetry test to be meaningful).
+labels and `handle_cancel` scoping. Depends on archived
+`archive/specs/S162-belief-view-source-gate-hardening.md` (the belief view must
+be lawful for the symmetry test to be meaningful).

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-sim` belief-view control/rights accessors (`per_agent_belief_view.rs`)
-**Deps**: Spec `specs/S162-belief-view-source-gate-hardening.md` (D1, D5)
+**Deps**: Spec `../specs/S162-belief-view-source-gate-hardening.md` (D1, D5)
 
 ## Problem
 
@@ -120,7 +120,7 @@ invisibility regression. Re-verified the existing belief-accessible control test
 
 ## Out of Scope
 
-- Contention gates (`archive/tickets/S162BELVIESOU-001.md`), institutional/social gates (`archive/tickets/S162BELVIESOU-003.md`).
+- Contention gates (`S162BELVIESOU-001.md`), institutional/social gates (`S162BELVIESOU-003.md`).
 - Authoritative `can_exercise_control` / dispatch-time validation — unchanged.
 - Adversarial end-to-end goldens (S162BELVIESOU-005).
 

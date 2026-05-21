@@ -7,7 +7,7 @@ Scenarios: 11
 
 ### Scenario 11: Simple Office Claim via DeclareSupport
 
-- Source: `offices.rs:18`
+- Source: `offices.rs:19`
 - Systems: Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -25,7 +25,7 @@ Scenarios: 11
 
 ### Scenario 12: Competing Claims with Loyal Supporter
 
-- Source: `offices.rs:149`
+- Source: `offices.rs:141`
 - Systems: Succession, AI, Political actions
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -43,7 +43,7 @@ Scenarios: 11
 
 ### Scenario 13: Bribe -> Support Coalition (Full-Quantity Transfer)
 
-- Source: `offices.rs:382`
+- Source: `offices.rs:392`
 - Systems: Bribe, Succession, AI, Conservation
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -61,7 +61,7 @@ Scenarios: 11
 
 ### Scenario 14: Threaten with Courage Diversity (Principle 20)
 
-- Source: `offices.rs:629`
+- Source: `offices.rs:630`
 - Systems: Threaten, Succession, AI
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -79,7 +79,7 @@ Scenarios: 11
 
 ### Scenario 15: Travel to Distant Jurisdiction for Office Claim
 
-- Source: `offices.rs:930`
+- Source: `offices.rs:922`
 - Systems: Travel, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -97,7 +97,7 @@ Scenarios: 11
 
 ### Scenario 16: Political Office Facts Remain Local Until Belief Update
 
-- Source: `offices.rs:1043`
+- Source: `offices.rs:1026`
 - Systems: AI, Travel, Succession, Political actions, Perception
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -115,7 +115,7 @@ Scenarios: 11
 
 ### Scenario 17: Survival Pressure Suppresses Political Goals
 
-- Source: `offices.rs:1247`
+- Source: `offices.rs:1242`
 - Systems: Needs, AI, Succession, Political actions
 - GoalKinds: ClaimOffice, ConsumeOwnedCommodity
 - ActionDomains: Needs, Generic
@@ -133,7 +133,7 @@ Scenarios: 11
 
 ### Scenario 18: Faction Eligibility Filters Office Claim
 
-- Source: `offices.rs:1437`
+- Source: `offices.rs:1426`
 - Systems: Factions, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -151,7 +151,7 @@ Scenarios: 11
 
 ### Scenario 71: Contested Force Claim Resolves Only After Yield
 
-- Source: `offices.rs:1598`
+- Source: `offices.rs:1578`
 - Systems: Force-claim actions, Force-control succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -169,7 +169,7 @@ Scenarios: 11
 
 ### Scenario 72: Force Control Knowledge Stays Local Until Tell
 
-- Source: `offices.rs:1850`
+- Source: `offices.rs:1821`
 - Systems: Force-control succession, Tell, Perception
 - GoalKinds: ClaimOffice, ShareBelief
 - ActionDomains: Generic, Social
@@ -187,7 +187,7 @@ Scenarios: 11
 
 ### Scenario 109: Vacancy notice unlocks political action without record consult
 
-- Source: `offices.rs:2138`
+- Source: `offices.rs:2100`
 - Systems: Social artifact actions, Perception, Institutional beliefs, AI, Political actions, Succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Social, Generic

@@ -16,7 +16,7 @@ by FND-14B. Three deliverables.
 
 ## Accepted
 
-- **`specs/S162-belief-view-source-gate-hardening.md`** — closes the confirmed
+- **`archive/specs/S162-belief-view-source-gate-hardening.md`** — closes the confirmed
   FND-14/14A leaks in `PerAgentBeliefView`: `has_control` (no gate), `record_data`/
   `office_data` (live institutional truth on `knows_entity`), the no-gate
   contention reads (`actor_can_claim_extraction_slot`, `has_extraction_queues`,
