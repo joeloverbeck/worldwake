@@ -114,7 +114,8 @@ target resolves to a believed label or the "unknown" token, never the authoritat
 ## Out of Scope
 
 - The POV resolver implementation (D1) — archived `archive/tickets/S163CLIPLAPOV-001.md`.
-- The debug-only markers and play-surface boundary guard (D3) — S163CLIPLAPOV-002.
+- The debug-only markers and play-surface boundary guard (D3) —
+  `archive/tickets/S163CLIPLAPOV-002.md`.
 - Any production behavior change to `handle_cancel` (it is already correctly
   scoped) or `handle_actions`.
 - POV-gating or testing the console commands (`world`/`inspect`/`events`/`switch`/

@@ -1,4 +1,8 @@
 //! Handlers for agent control commands: `switch` and `observe`.
+//!
+//! These meta-control commands read authoritative world truth and are for
+//! observer, debug, and replay tooling only. Normal player-facing UI must not
+//! depend on this module for POV-safe display.
 
 use worldwake_core::{
     CauseRef, VisibilitySpec, WitnessData, WorldTxn, components::AgentData, control::ControlSource,

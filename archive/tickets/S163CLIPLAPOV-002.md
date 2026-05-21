@@ -1,6 +1,6 @@
 # S163CLIPLAPOV-002: Mark debug/observer console surfaces + play-surface guard
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — `worldwake-cli` doc comments + a boundary test
@@ -70,7 +70,7 @@ dependency. This is S163 Deliverable 3.
    test are added. The guard enforces the play-surface boundary established by
    archived `archive/tickets/S163CLIPLAPOV-001.md` rather than introducing a parallel path.
 
-## Verification Layers
+## Verified Layers
 
 1. Debug/observer classification is explicit → presence of the module-level
    (`display.rs`/`control.rs`/`world_overview.rs`/`inspect.rs`/`events.rs`) and
@@ -83,41 +83,40 @@ dependency. This is S163 Deliverable 3.
 3. Single-layer ticket: doc comments + one boundary test in `worldwake-cli`; no
    decision trace / action trace / event-log delta applies (no engine change).
 
-## What to Change
+## Landed Changes
 
 ### 1. Module-level debug/observer markers
 
-Add a module-level doc comment to each of `display.rs`, `handlers/control.rs`,
+Added a module-level doc comment to each of `display.rs`, `handlers/control.rs`,
 `handlers/world_overview.rs`, `handlers/inspect.rs`, and `handlers/events.rs`
-stating: these surfaces read authoritative world truth and are for
-observer/debug/replay tooling only; normal player-facing UI must not depend on
-them. Keep the existing "read-only" line where present.
+stating that these surfaces read authoritative world truth and are for
+observer/debug/replay tooling only, and that normal player-facing UI must not
+depend on them for POV-safe display. Existing read-only notes were preserved.
 
 ### 2. Function-level marker on the tick trace render
 
-Add a doc comment to the trace-rendering path in `handlers/tick.rs` (the
-`handle_tick` action-trace output around `:80-89`, not `handle_status`) noting it
-renders omniscient action traces for observer/debug use, and that a normal
-player-facing UI must route per-agent feedback through a POV-safe surface instead.
+Added a comment on the `handle_tick` action-trace rendering block in
+`handlers/tick.rs` noting that it summarizes all trace events from authoritative
+world truth for observer/debug use, and that normal player-facing UI must route
+per-agent feedback through a POV-safe surface instead. `handle_status` was left
+unmarked as debug-only.
 
 ### 3. Play-surface boundary guard
 
-Add an enforceable guard (preferred: a `#[cfg(test)]` unit test in `actions.rs` or a
-`crates/worldwake-cli/tests/` file) asserting the play surface
-(`handle_actions`/`handle_do`) does not call
-`entity_display_name`/`resolve_entity`/`format_location` for player-visible output.
-The guard must fail if a future change reintroduces an omniscient display dependency
-in the play path.
+Added `action_menu_play_surface_avoids_omniscient_display_helpers`, an inline
+`#[cfg(test)]` source-boundary guard in `actions.rs`. It scans only the
+`handle_actions` and `handle_do` bodies and fails if either play-surface function
+references `entity_display_name`, `resolve_entity`, or `format_location`.
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-cli/src/display.rs` (modify — module doc)
-- `crates/worldwake-cli/src/handlers/control.rs` (modify — module doc)
-- `crates/worldwake-cli/src/handlers/world_overview.rs` (modify — module doc)
-- `crates/worldwake-cli/src/handlers/inspect.rs` (modify — module doc)
-- `crates/worldwake-cli/src/handlers/events.rs` (modify — module doc)
-- `crates/worldwake-cli/src/handlers/tick.rs` (modify — function-level doc on the trace render)
-- `crates/worldwake-cli/src/handlers/actions.rs` (modify — add the boundary guard test) OR `crates/worldwake-cli/tests/` (new test file), implementer's choice
+- `crates/worldwake-cli/src/display.rs` (module debug/observer marker)
+- `crates/worldwake-cli/src/handlers/control.rs` (module debug/observer marker)
+- `crates/worldwake-cli/src/handlers/world_overview.rs` (module debug/observer marker)
+- `crates/worldwake-cli/src/handlers/inspect.rs` (module debug/observer marker)
+- `crates/worldwake-cli/src/handlers/events.rs` (module debug/observer marker)
+- `crates/worldwake-cli/src/handlers/tick.rs` (trace-rendering debug/observer marker)
+- `crates/worldwake-cli/src/handlers/actions.rs` (play-surface boundary guard test)
 
 ## Out of Scope
 
@@ -128,16 +127,17 @@ in the play path.
   `tick` trace) — explicit S163 Non-Goal; this ticket only marks them.
 - A `DebugWorldView`/`ObserverUi` capability layer — future spec (S163 Non-Goals).
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Passed Criteria
 
-1. Boundary guard fails if `handle_actions`/`handle_do` reference
-   `entity_display_name`/`resolve_entity`/`format_location` for player-visible
-   output; passes against the post-`archive/tickets/S163CLIPLAPOV-001.md` code.
-2. Existing suite: `cargo test -p worldwake-cli`.
+1. `action_menu_play_surface_avoids_omniscient_display_helpers` proves the
+   boundary guard passes against the post-`archive/tickets/S163CLIPLAPOV-001.md`
+   code and would fail if `handle_actions` or `handle_do` referenced
+   `entity_display_name`/`resolve_entity`/`format_location`.
+2. Existing suite passed: `cargo test -p worldwake-cli`.
 
-### Invariants
+### Preserved Invariants
 
 1. The play surface carries no omniscient display dependency; every wholly-debug
    console surface and the `tick` trace render are explicitly marked
@@ -146,16 +146,41 @@ in the play path.
 2. `handle_status` (self-scoped play) is **not** marked debug-only — only the
    omniscient trace-rendering path in `tick.rs` is.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
-1. Play-surface boundary guard — new `#[cfg(test)]` test in
-   `crates/worldwake-cli/src/handlers/actions.rs` (or a `tests/` file) asserting the
-   action-menu path does not depend on the three omniscient display helpers.
+1. `crates/worldwake-cli/src/handlers/actions.rs` — added inline `#[cfg(test)]`
+   source-boundary guard over `handle_actions` and `handle_do`.
 
-### Commands
+### Commands Run
 
-1. `cargo test -p worldwake-cli`
-2. `cargo clippy -p worldwake-cli --all-targets -- -D warnings`
-3. `scripts/verify.sh` (before PR push)
+1. `cargo test -p worldwake-cli handlers::actions`
+2. `cargo test -p worldwake-cli`
+3. `cargo clippy -p worldwake-cli --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-22.
+
+- Marked the CLI's authoritative world-truth display and debug console surfaces as
+  observer/debug/replay-only.
+- Kept the `tick.rs` marker scoped to omniscient action-trace rendering so
+  self-scoped `handle_status` remains a lawful play surface.
+- Added the play-surface source-boundary guard in `actions.rs` so
+  `handle_actions`/`handle_do` cannot regain the three omniscient display helper
+  dependencies without a focused test failure.
+
+## Deviations
+
+- The `tick.rs` marker landed as a block comment on the trace-rendering block
+  rather than as a function-level rustdoc comment because the surrounding
+  `handle_tick` function also owns non-display tick advancement behavior.
+- `scripts/verify.sh` was not run for this ticket iteration; it remains the
+  pre-push harness gate for the whole S163 branch after all queued tickets land.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli handlers::actions`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy -p worldwake-cli --all-targets -- -D warnings`

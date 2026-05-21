@@ -661,6 +661,36 @@ mod tests {
         PerAgentBeliefView::with_runtime_from_world(actor, spawned.state.world(), runtime)
     }
 
+    fn source_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+        let start_index = source
+            .find(start)
+            .unwrap_or_else(|| panic!("missing source marker: {start}"));
+        let remaining = &source[start_index..];
+        let end_index = remaining
+            .find(end)
+            .unwrap_or_else(|| panic!("missing source marker: {end}"));
+        &remaining[..end_index]
+    }
+
+    #[test]
+    fn action_menu_play_surface_avoids_omniscient_display_helpers() {
+        let source = include_str!("actions.rs");
+        let handle_actions_body =
+            source_between(source, "pub fn handle_actions", "\nfn pov_target_label");
+        let handle_do_body = source_between(source, "pub fn handle_do", "\n/// Cancel");
+
+        for forbidden in ["entity_display_name", "resolve_entity", "format_location"] {
+            assert!(
+                !handle_actions_body.contains(forbidden),
+                "handle_actions must not call omniscient display helper {forbidden}"
+            );
+            assert!(
+                !handle_do_body.contains(forbidden),
+                "handle_do must not call omniscient display helper {forbidden}"
+            );
+        }
+    }
+
     #[test]
     fn pov_target_label_uses_local_physical_item_label() {
         let (spawned, actor) = human_with_food_scenario();

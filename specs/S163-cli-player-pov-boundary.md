@@ -158,8 +158,8 @@ controlled entity — see Evidence and Deliverable 2.)
 ## Authoritative-to-AI Impact Analysis
 
 This spec does not touch authoritative validation, affordance enumeration, or agent
-decision logic — only CLI presentation and the cancel-scoping. The CLAUDE.md
-authoritative-to-AI checklist is therefore **not applicable** (no `validate_*`,
+decision logic — only CLI presentation and the cancel-scoping. The AGENTS.md
+Authoritative-To-AI Impact Rule is therefore **not applicable** (no `validate_*`,
 `can_exercise_control`, precondition, or planner-input change). There is no
 behavioral change at all: Deliverable 1 alters only how the menu *labels* are
 resolved, Deliverable 2 is a regression test over already-correct scoping, and

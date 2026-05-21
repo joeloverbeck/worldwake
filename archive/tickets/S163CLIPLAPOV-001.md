@@ -53,8 +53,8 @@ supposed to be lawful. This was S163 Deliverable 1.
    `actions.rs` in-scope.
 5. Adjacent contradiction classification: the wider REPL (`world`/`inspect`/
    `events`/`tick` traces) is also omniscient, but that is **future cleanup** owned
-   by S163CLIPLAPOV-002 (debug-only marking, not POV-gating) per S163 Non-Goals —
-   it is explicitly out of scope here.
+   by the now-archived `archive/tickets/S163CLIPLAPOV-002.md` (debug-only marking,
+   not POV-gating) per S163 Non-Goals — it is explicitly out of scope here.
 
 ## Architecture Check
 
@@ -116,7 +116,7 @@ removed from the play-surface action menu.
 
 - Marking the debug/observer console surfaces (`display.rs`, `control.rs`,
   `world_overview.rs`, `inspect.rs`, `events.rs`, `tick.rs`) debug-only and the
-  play-surface boundary guard — S163CLIPLAPOV-002.
+  play-surface boundary guard — `archive/tickets/S163CLIPLAPOV-002.md`.
 - The `handle_cancel` regression guard (D2) and the FND-19 symmetry test (D4) —
   S163CLIPLAPOV-003.
 - Any belief-view trait/accessor change in `worldwake-sim`; the resolver is

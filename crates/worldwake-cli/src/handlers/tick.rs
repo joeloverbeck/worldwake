@@ -75,7 +75,9 @@ pub fn handle_tick(
             result.tick.0, result.events_emitted_count
         );
 
-        // Per-agent action lifecycle summary from trace events
+        // Observer/debug trace rendering: this summarizes all action trace
+        // events from authoritative world truth. Normal player-facing UI must
+        // route per-agent feedback through a POV-safe surface instead.
         for trace_event in action_trace.events() {
             let actor_name = entity_display_name(sim.world(), trace_event.actor);
             let action_name = &trace_event.action_name;

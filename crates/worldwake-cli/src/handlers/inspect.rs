@@ -1,6 +1,9 @@
 //! Inspection command handlers: look, inspect, inventory, needs, relations.
 //!
 //! All handlers are read-only — zero world mutation.
+//! These handlers read authoritative world truth and are for observer, debug,
+//! and replay tooling only. Normal player-facing UI must not depend on this
+//! module for POV-safe display.
 
 use worldwake_core::{
     drives::ThresholdBand, ids::EntityId, load::load_of_entity, numerics::Permille, world::World,

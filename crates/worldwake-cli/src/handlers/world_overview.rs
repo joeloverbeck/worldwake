@@ -1,6 +1,9 @@
 //! Handlers for world overview commands: `world`, `places`, `agents`, `goods`.
 //!
 //! All functions are read-only — zero world mutation.
+//! These commands read authoritative world truth and are for observer, debug,
+//! and replay tooling only. Normal player-facing UI must not depend on this
+//! module for POV-safe display.
 
 use std::collections::BTreeMap;
 
