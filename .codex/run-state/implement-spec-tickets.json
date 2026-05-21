@@ -1,23 +1,26 @@
 {
-  "originating_spec": "specs/S162-belief-view-source-gate-hardening.md",
-  "archived_spec": "archive/specs/S162-belief-view-source-gate-hardening.md",
+  "originating_spec": "specs/S163-cli-player-pov-boundary.md",
+  "archived_spec": null,
   "worktree_root": "/home/joeloverbeck/projects/worldwake",
   "starting_branch": "main",
-  "current_branch": "implement-S162-belief-view-source-gate-hardening",
-  "base_head": "6abb20ab8a3bfa98f782b2fef72e7e8127ef2159",
-  "last_ticket": "archive/tickets/S162BELVIESOU-005.md",
-  "last_result": "completed_archived_spec_archived",
-  "last_work_commit": "d002532df8b84418a569f5bf7e70d6d9fa462054",
+  "current_branch": "implement-S163-cli-player-pov-boundary",
+  "base_head": "ff71d0942dded4d97d817ae53955e264991bc6aa",
+  "last_ticket": "archive/tickets/S163CLIPLAPOV-001.md",
+  "last_result": "completed_archived",
+  "last_work_commit": "06dc7ee0d69b7f143b170d672ff8213392206195",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": null,
-  "queue": [],
-  "implement_ticket_audit": "done",
-  "post_ticket_review_audit": "done",
+  "next_target": "tickets/S163CLIPLAPOV-002.md",
+  "queue": [
+    "tickets/S163CLIPLAPOV-002.md",
+    "tickets/S163CLIPLAPOV-003.md"
+  ],
+  "implement_ticket_audit": "pending",
+  "post_ticket_review_audit": "not_required",
   "last_implement_ticket_audit": "done",
   "last_post_ticket_review_audit": "done",
   "blocked": false,
   "blocker": null,
   "dirty_state": "clean",
-  "updated_at": "2026-05-21"
+  "updated_at": "2026-05-22"
 }
