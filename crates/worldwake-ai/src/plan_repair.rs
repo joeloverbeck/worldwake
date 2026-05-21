@@ -420,7 +420,7 @@ mod tests {
             discrepancy: Discrepancy::BeliefStale,
             observed_tick: Tick(5),
             expires_tick: Tick(25),
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
             clearing_condition,
         }
     }

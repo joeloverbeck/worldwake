@@ -217,7 +217,7 @@ pub struct Blocker {
     pub expires_tick: Tick,
     pub clearing_condition: BlockerClearingCondition,
     pub baseline_snapshot: Option<ClearingBaseline>,
-    pub source_event: EventId,
+    pub source_event: Option<EventId>,
 }
 
 impl Blocker {
@@ -284,7 +284,7 @@ mod tests {
             expires_tick: expires,
             clearing_condition: BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: EventId(1),
+            source_event: Some(EventId(1)),
         }
     }
 
@@ -437,7 +437,7 @@ mod tests {
             expires_tick: Tick(19),
             clearing_condition: BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: EventId(2),
+            source_event: Some(EventId(2)),
         };
         let mut memory = BlockerMemory::default();
         memory.record(original);
@@ -599,6 +599,22 @@ mod tests {
     }
 
     #[test]
+    fn blocker_memory_preserves_explicit_absent_source_event() {
+        let mut memory = BlockerMemory::default();
+        let mut intent = sample_blocker();
+        intent.source_event = None;
+        memory.record(intent);
+
+        let bytes = bincode::serialize(&memory).unwrap();
+        let roundtrip: BlockerMemory = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(
+            roundtrip.intents.values().next().unwrap().source_event,
+            None
+        );
+    }
+
+    #[test]
     fn blocker_memory_roundtrips_non_exact_scope_entries() {
         let mut memory = BlockerMemory::default();
         let route_scope =
@@ -614,7 +630,7 @@ mod tests {
                 RouteSegment::new(entity_id(10, 0), entity_id(11, 0)),
             ),
             baseline_snapshot: None,
-            source_event: EventId(7),
+            source_event: Some(EventId(7)),
         });
         memory.record(Blocker {
             scope: counterparty_scope,
@@ -624,17 +640,20 @@ mod tests {
             expires_tick: Tick(30),
             clearing_condition: BlockerClearingCondition::CounterpartyAccepted(entity_id(12, 0)),
             baseline_snapshot: None,
-            source_event: EventId(8),
+            source_event: Some(EventId(8)),
         });
 
         let bytes = bincode::serialize(&memory).unwrap();
         let roundtrip: BlockerMemory = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, memory);
-        assert_eq!(roundtrip.intents[&route_scope].source_event, EventId(7));
+        assert_eq!(
+            roundtrip.intents[&route_scope].source_event,
+            Some(EventId(7))
+        );
         assert_eq!(
             roundtrip.intents[&counterparty_scope].source_event,
-            EventId(8)
+            Some(EventId(8))
         );
     }
 
@@ -718,7 +737,7 @@ mod tests {
             expires_tick: Tick(10),
             clearing_condition: BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: EventId(4),
+            source_event: Some(EventId(4)),
         });
 
         assert!(memory.route_segment_blocked(to, from, Tick(5)).is_some());
@@ -737,7 +756,7 @@ mod tests {
             expires_tick: Tick(10),
             clearing_condition: BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: EventId(5),
+            source_event: Some(EventId(5)),
         });
 
         assert!(memory.counterparty_blocked(counterparty, Tick(5)).is_some());
@@ -762,7 +781,7 @@ mod tests {
             expires_tick: Tick(10),
             clearing_condition: BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: EventId(6),
+            source_event: Some(EventId(6)),
         });
 
         assert_eq!(
@@ -878,7 +897,7 @@ mod tests {
             expires_tick: Tick(100),
             clearing_condition: BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: EventId(3),
+            source_event: Some(EventId(3)),
         };
         assert!(intent.blocks_goal_generation());
     }
@@ -937,7 +956,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::RouteRetraversedSafely(segment),
             baseline_snapshot: None,
-            source_event: EventId(9),
+            source_event: Some(EventId(9)),
         });
         memory.record(Blocker {
             scope: BlockerScope::RouteSegment(retained_segment),
@@ -947,7 +966,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::RouteRetraversedSafely(retained_segment),
             baseline_snapshot: None,
-            source_event: EventId(10),
+            source_event: Some(EventId(10)),
         });
 
         memory.sweep_cleared(|blocker| {
@@ -978,7 +997,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::CounterpartyAccepted(counterparty),
             baseline_snapshot: None,
-            source_event: EventId(11),
+            source_event: Some(EventId(11)),
         });
         memory.record(Blocker {
             scope: BlockerScope::Counterparty(retained_counterparty),
@@ -990,7 +1009,7 @@ mod tests {
                 retained_counterparty,
             ),
             baseline_snapshot: None,
-            source_event: EventId(12),
+            source_event: Some(EventId(12)),
         });
 
         memory.sweep_cleared(|blocker| {

@@ -480,7 +480,7 @@ fn discrepancy_entry_for_repair(
         observed_tick: tick,
         expires_tick: Tick(tick.0 + 1),
         clearing_condition,
-        source_event: worldwake_core::EventId(0),
+        source_event: None,
     }
 }
 
@@ -964,7 +964,7 @@ fn blocker_memory_already_persisted(
                 return true;
             }
             let mut normalized = *requested;
-            if normalized.source_event == worldwake_core::EventId(0) {
+            if normalized.source_event.is_none() {
                 normalized.source_event = existing.source_event;
             }
             existing == &normalized
@@ -979,8 +979,8 @@ fn blocker_memory_with_source_events(
     let mut updated = memory.clone();
     let mut changed = false;
     for blocker in updated.intents.values_mut() {
-        if blocker.source_event == worldwake_core::EventId(0) {
-            blocker.source_event = source_event;
+        if blocker.source_event.is_none() {
+            blocker.source_event = Some(source_event);
             changed = true;
         }
     }
@@ -1069,7 +1069,7 @@ fn discrepancy_memory_already_persisted(
                 return true;
             }
             let mut normalized = *requested;
-            if normalized.source_event == worldwake_core::EventId(0) {
+            if normalized.source_event.is_none() {
                 normalized.source_event = existing.source_event;
             }
             existing == &normalized
@@ -1084,8 +1084,8 @@ fn discrepancy_memory_with_source_events(
     let mut updated = memory.clone();
     let mut changed = false;
     for entry in updated.entries.values_mut() {
-        if entry.source_event == worldwake_core::EventId(0) {
-            entry.source_event = source_event;
+        if entry.source_event.is_none() {
+            entry.source_event = Some(source_event);
             changed = true;
         }
     }
@@ -1439,7 +1439,7 @@ mod tests {
                 facility: affordance.facility,
             },
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
         memory
     }

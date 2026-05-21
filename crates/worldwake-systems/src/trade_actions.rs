@@ -9,8 +9,8 @@ use std::{
 use worldwake_core::{
     ActionDefId, Blocker, BlockerClearingCondition, BlockerScope, BlockingFact, BodyCostPerTick,
     CauseRef, CommodityKind, DemandMemory, DemandObservation, DemandObservationReason, Discrepancy,
-    EntityId, EntityKind, EventId, EventTag, GoalKey, GoalKind, MerchandiseProfile, Quantity,
-    SourceKey, Tick, VisibilitySpec, WorldTxn, WoundList,
+    EntityId, EntityKind, EventTag, GoalKey, GoalKind, MerchandiseProfile, Quantity, SourceKey,
+    Tick, VisibilitySpec, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
@@ -1943,8 +1943,8 @@ fn record_sell_blocked_intent(
         .cloned()
         .unwrap_or_default();
     let source_event = match txn.cause() {
-        CauseRef::Event(event_id) => event_id,
-        CauseRef::SystemTick(_) | CauseRef::Bootstrap | CauseRef::ExternalInput(_) => EventId(0),
+        CauseRef::Event(event_id) => Some(event_id),
+        CauseRef::SystemTick(_) | CauseRef::Bootstrap | CauseRef::ExternalInput(_) => None,
     };
     let scope = BlockerScope::exact(
         GoalKey::from(GoalKind::SellCommodity { commodity }),
@@ -3343,7 +3343,7 @@ mod tests {
                 harness.counterparty,
             ),
             baseline_snapshot: None,
-            source_event: EventId(1),
+            source_event: Some(EventId(1)),
         });
         memory.record(Blocker {
             scope: BlockerScope::Counterparty(other),
@@ -3353,7 +3353,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::CounterpartyAccepted(other),
             baseline_snapshot: None,
-            source_event: EventId(2),
+            source_event: Some(EventId(2)),
         });
         let mut txn = new_txn(&mut harness.world, 2);
         txn.set_component_blocker_memory(harness.actor, memory)

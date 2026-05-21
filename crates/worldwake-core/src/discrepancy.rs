@@ -71,7 +71,7 @@ pub struct DiscrepancyEntry {
     pub observed_tick: Tick,
     pub expires_tick: Tick,
     pub clearing_condition: DiscrepancyClearing,
-    pub source_event: EventId,
+    pub source_event: Option<EventId>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -166,7 +166,7 @@ mod tests {
             observed_tick: Tick(9),
             expires_tick,
             clearing_condition,
-            source_event: EventId(1),
+            source_event: Some(EventId(1)),
         }
     }
 
@@ -287,6 +287,24 @@ mod tests {
     }
 
     #[test]
+    fn discrepancy_entry_preserves_explicit_absent_source_event() {
+        let mut entry = discrepancy_entry(
+            blocker_key(),
+            Discrepancy::RouteUnknown,
+            Tick(19),
+            DiscrepancyClearing::ReobservationOf {
+                target: entity_id(4, 0),
+            },
+        );
+        entry.source_event = None;
+
+        let bytes = bincode::serialize(&entry).unwrap();
+        let roundtrip: DiscrepancyEntry = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip.source_event, None);
+    }
+
+    #[test]
     fn discrepancy_memory_roundtrips_non_exact_scope_entries() {
         let route_scope =
             BlockerScope::RouteSegment(RouteSegment::new(entity_id(10, 0), entity_id(11, 0)));
@@ -298,7 +316,7 @@ mod tests {
             observed_tick: Tick(2),
             expires_tick: Tick(20),
             clearing_condition: DiscrepancyClearing::WorldStructureChange,
-            source_event: EventId(7),
+            source_event: Some(EventId(7)),
         });
         memory.record(DiscrepancyEntry {
             scope: counterparty_scope,
@@ -306,7 +324,7 @@ mod tests {
             observed_tick: Tick(3),
             expires_tick: Tick(30),
             clearing_condition: DiscrepancyClearing::TtlExpiry,
-            source_event: EventId(8),
+            source_event: Some(EventId(8)),
         });
 
         let bytes = bincode::serialize(&memory).unwrap();
@@ -315,10 +333,13 @@ mod tests {
         assert_eq!(roundtrip, memory);
         assert!(roundtrip.is_suppressed(&route_scope, Tick(10)));
         assert!(roundtrip.is_suppressed(&counterparty_scope, Tick(10)));
-        assert_eq!(roundtrip.entries[&route_scope].source_event, EventId(7));
+        assert_eq!(
+            roundtrip.entries[&route_scope].source_event,
+            Some(EventId(7))
+        );
         assert_eq!(
             roundtrip.entries[&counterparty_scope].source_event,
-            EventId(8)
+            Some(EventId(8))
         );
     }
 

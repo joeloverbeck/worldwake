@@ -3,8 +3,8 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-/// S160HTNAUTHHON-004 stores unresolved escort heal action ids as `None`.
-pub const SAVE_FORMAT_VERSION: u32 = 97;
+/// CAUSEVTHON-001 stores blocker/discrepancy source events as `Option<EventId>`.
+pub const SAVE_FORMAT_VERSION: u32 = 98;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -622,7 +622,7 @@ mod tests {
             observed_tick: Tick(5),
             expires_tick: Tick(25),
             clearing_condition: DiscrepancyClearing::ReobservationOf { target: artifact },
-            source_event: worldwake_core::EventId(5),
+            source_event: Some(worldwake_core::EventId(5)),
         });
         belief_txn
             .set_component_discrepancy_memory(actor, discrepancy_memory)
@@ -641,7 +641,7 @@ mod tests {
             expires_tick: Tick(25),
             clearing_condition: BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(6),
+            source_event: Some(worldwake_core::EventId(6)),
         });
         blocker_memory.record(Blocker {
             scope: counterparty_scope,
@@ -651,7 +651,7 @@ mod tests {
             expires_tick: Tick(26),
             clearing_condition: BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(7),
+            source_event: Some(worldwake_core::EventId(7)),
         });
         belief_txn
             .set_component_blocker_memory(actor, blocker_memory)
@@ -1365,8 +1365,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_97_after_s160_escort_sentinel_removal() {
-        assert_eq!(SAVE_FORMAT_VERSION, 97);
+    fn save_format_version_is_98_after_causevthon_source_event_option() {
+        assert_eq!(SAVE_FORMAT_VERSION, 98);
     }
 
     #[test]
@@ -1377,7 +1377,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 97);
+        assert_eq!(SAVE_FORMAT_VERSION, 98);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]

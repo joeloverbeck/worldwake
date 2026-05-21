@@ -29,13 +29,13 @@ pub fn expect_route_blocker_lifecycle(
         expires_tick,
         clearing_condition: BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
-        source_event: observation_event,
+        source_event: Some(observation_event),
     });
 
     let stored = memory
         .route_segment_blocked(segment.from, segment.to, observed_tick)
         .expect("route segment should be blocked at the observation tick");
-    assert_eq!(stored.source_event, observation_event);
+    assert_eq!(stored.source_event, Some(observation_event));
     assert_eq!(stored.clearing_condition, BlockerClearingCondition::TtlOnly);
 
     let last_persistent_tick = Tick(expires_tick.0.saturating_sub(1));

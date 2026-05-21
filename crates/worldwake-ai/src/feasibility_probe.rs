@@ -769,7 +769,7 @@ mod tests {
                     discrepancy: Discrepancy::RouteUnknown,
                     observed_tick: Tick(4),
                     expires_tick: Tick(10),
-                    source_event: worldwake_core::EventId(0),
+                    source_event: None,
                     clearing_condition: DiscrepancyClearing::TtlExpiry,
                 },
             )]),
@@ -819,7 +819,7 @@ mod tests {
                     expires_tick: Tick(10),
                     clearing_condition: BlockerClearingCondition::TtlOnly,
                     baseline_snapshot: None,
-                    source_event: worldwake_core::EventId(0),
+                    source_event: None,
                 },
             )]),
         };

@@ -37,6 +37,15 @@ S163 (CLI player-POV boundary)            ── depends on S162 (player menu in
 CAUSEVTHON-001 (ticket: explicit no-source-event) ── independent of S162/S163
 ```
 
+### Completed
+
+- **CAUSEVTHON-001 — Explicit "no source event" in blocker/discrepancy memory**
+  (ticket) — `archive/tickets/CAUSEVTHON-001-explicit-no-source-event.md` — *Status:
+  COMPLETED on 2026-05-21.* Replaced the implicit `EventId(0)` sentinel on
+  `Blocker.source_event`/`DiscrepancyEntry.source_event` with `Option<EventId>`
+  across producers, persistence stamping, consumers, and tests. Independent.
+  **FND-2, FND-29A.**
+
 ### Pending
 
 - **S162 — Belief-View Source-Gate Hardening** —
@@ -53,13 +62,6 @@ CAUSEVTHON-001 (ticket: explicit no-source-event) ── independent of S162/S16
   marks `display.rs`/`control.rs` observer/debug-only with an enforceable guard,
   and adds a player/AI symmetry test. Sequence after S162. **FND-14, FND-14A,
   FND-19.**
-
-- **CAUSEVTHON-001 — Explicit "no source event" in blocker/discrepancy memory**
-  (ticket) — `tickets/CAUSEVTHON-001-explicit-no-source-event.md` — *Status:
-  PENDING.* Replaces the implicit `EventId(0)` sentinel on `Blocker.source_event`/
-  `DiscrepancyEntry.source_event` with `Option<EventId>` across all producers, the
-  live `agent_tick/execution.rs` sentinel consumers, and tests. Independent.
-  **FND-2, FND-29A.**
 
 ## Excluded from the active order (by directive)
 

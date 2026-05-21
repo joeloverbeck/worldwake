@@ -29,7 +29,7 @@ by FND-14B. Three deliverables.
   (`actions.rs` omniscient target names; global `handle_cancel`) from leaking world
   truth; marks `display.rs`/`control.rs` observer/debug-only with an enforceable
   guard; adds a player/AI symmetry test.
-- **`tickets/CAUSEVTHON-001-explicit-no-source-event.md`** — replaces the implicit
+- **`archive/tickets/CAUSEVTHON-001-explicit-no-source-event.md`** — replaces the implicit
   `EventId(0)` "no source event" sentinel in `Blocker`/`DiscrepancyEntry` with
   `Option<EventId>`. Reassessment found the report undercounted (60+ production
   sites, not 5; `agent_tick/execution.rs` already branches on `== EventId(0)`).

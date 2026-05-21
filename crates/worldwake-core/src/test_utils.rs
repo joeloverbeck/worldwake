@@ -213,7 +213,7 @@ pub fn sample_blocker() -> Blocker {
         baseline_snapshot: Some(ClearingBaseline::CommodityQuantity {
             quantity: Quantity(2),
         }),
-        source_event: crate::EventId(1),
+        source_event: Some(crate::EventId(1)),
     }
 }
 
@@ -233,7 +233,7 @@ pub fn sample_discrepancy_memory() -> DiscrepancyMemory {
         observed_tick: Tick(12),
         expires_tick: Tick(18),
         clearing_condition: DiscrepancyClearing::TtlExpiry,
-        source_event: crate::EventId(1),
+        source_event: Some(crate::EventId(1)),
     };
     let mut entries = BTreeMap::new();
     entries.insert(entry.scope, entry);

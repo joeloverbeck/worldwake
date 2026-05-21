@@ -32,7 +32,7 @@ fn active_blocker(scope: BlockerScope, fact: BlockingFact, expires_tick: Tick) -
             BlockerClearingCondition::TtlOnly,
         ),
         baseline_snapshot: None,
-        source_event: EventId(0),
+        source_event: None,
     }
 }
 
@@ -376,7 +376,7 @@ fn discrepancy_memory_preserves_parallel_route_scope_suppression() {
         discrepancy: Discrepancy::RouteUnknown,
         observed_tick: Tick(0),
         expires_tick: Tick(30),
-        source_event: EventId(0),
+        source_event: None,
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
 
@@ -400,15 +400,15 @@ fn blocker_source_event_points_to_recorded_event() {
         BlockingFact::PatienceExhausted,
         Tick(60),
     );
-    stored_intent.source_event = source_event;
+    stored_intent.source_event = Some(source_event);
     blocked.record(stored_intent);
 
     let recorded = blocked
         .intents
         .get(&BlockerScope::Counterparty(actor))
         .expect("blocker should be stored");
-    assert_eq!(recorded.source_event, source_event);
-    assert!(h.event_log.get(recorded.source_event).is_some());
+    assert_eq!(recorded.source_event, Some(source_event));
+    assert!(h.event_log.get(recorded.source_event.unwrap()).is_some());
 }
 
 #[test]

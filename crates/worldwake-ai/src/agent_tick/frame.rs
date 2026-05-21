@@ -194,7 +194,7 @@ pub(super) fn handle_recoverable_travel_step_blockage(
             expires_tick: tick + u64::from(cognitive.structural_block_ticks),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: worldwake_core::EventId(0),
+            source_event: None,
         });
         runtime.last_frame_clear_reason = Some(FrameClearReason::PatienceExhausted);
         None
@@ -762,7 +762,7 @@ pub(super) fn record_abandon_condition_fired(
         observed_tick: tick,
         expires_tick: tick + u64::from(structural_block_ticks),
         clearing_condition: DiscrepancyClearing::TtlExpiry,
-        source_event: worldwake_core::EventId(0),
+        source_event: None,
     });
 }
 
@@ -820,7 +820,7 @@ pub(super) fn check_patience_exhaustion(
         expires_tick: ctx.tick + u64::from(ctx.structural_block_ticks),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
-        source_event: worldwake_core::EventId(0),
+        source_event: None,
     });
     record_abandon_condition_fired(
         frame,
@@ -900,7 +900,7 @@ pub(super) fn record_assumption_failure(
         observed_tick: tick,
         expires_tick: tick + u64::from(structural_block_ticks),
         clearing_condition,
-        source_event: worldwake_core::EventId(0),
+        source_event: None,
     });
 }
 
@@ -923,7 +923,7 @@ pub(super) fn record_source_invalidation(
         observed_tick: tick,
         expires_tick: tick + u64::from(structural_block_ticks),
         clearing_condition: DiscrepancyClearing::TtlExpiry,
-        source_event: worldwake_core::EventId(0),
+        source_event: None,
     });
 }
 

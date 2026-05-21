@@ -128,7 +128,7 @@ fn discrepancy_entry(clearing_condition: DiscrepancyClearing) -> DiscrepancyEntr
         observed_tick: Tick(5),
         expires_tick: Tick(50),
         clearing_condition,
-        source_event: worldwake_core::EventId(0),
+        source_event: None,
     }
 }
 
@@ -422,7 +422,7 @@ fn commodity_availability_changed_clears_blocker_structurally() {
             place: market,
         },
         baseline_snapshot: None,
-        source_event: worldwake_core::EventId(0),
+        source_event: None,
     });
     blocker_memory.sweep_cleared(|blocker| {
         blocker.clearing_condition
