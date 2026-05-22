@@ -95,7 +95,7 @@ trace retains the stale-kind hostile candidate.
 - `docs/generated/golden-e2e-inventory.md` (regenerated)
 - `docs/generated/golden-scenario-details/belief-wall-trap.md` (regenerated)
 - `docs/generated/golden-scenario-index.md` (regenerated)
-- `specs/S164-belief-view-kind-source-gate.md` (modified — truth-synced deliverable 5 to the immutable-kind proof seam)
+- `archive/specs/S164-belief-view-kind-source-gate.md` (modified — truth-synced deliverable 5 to the immutable-kind proof seam before spec archival)
 - `crates/worldwake-ai/tests/scenarios/mod.rs` unchanged — no sibling scenario module was added.
 - No scenario `.ron` fixture was added; the existing belief-wall family uses inline programmatic fixtures.
 

@@ -108,7 +108,7 @@ belief they depend on.
 - `crates/worldwake-sim/src/per_agent_belief_view.rs` (modify — accessor + focused tests + remote-hostile fixture)
 - `crates/worldwake-systems/src/justice_actions.rs` (modify — test fixture believed kind)
 - `crates/worldwake-systems/src/office_actions.rs` (modify — test fixture believed kind)
-- `specs/S164-belief-view-kind-source-gate.md` (modify — deliverable 1 source-class truth-sync)
+- `archive/specs/S164-belief-view-kind-source-gate.md` (modified — deliverable 1 source-class truth-sync before spec archival)
 
 ## Out of Scope
 
@@ -184,4 +184,4 @@ Completed on 2026-05-22.
 12. Passed `cargo test -p worldwake-systems --lib office_actions::tests::press_force_claim_affordance_filters_nonlocal_and_duplicate_cases -- --exact`.
 13. Passed `cargo test -p worldwake-systems`.
 14. Passed `./scripts/verify.sh`.
-15. Passed `git diff --check -- crates/worldwake-sim/src/per_agent_belief_view.rs crates/worldwake-systems/src/justice_actions.rs crates/worldwake-systems/src/office_actions.rs tickets/S164BELVIEKIN-002.md specs/S164-belief-view-kind-source-gate.md` after post-wrapper ticket/spec closeout edits. After archival, the ticket path is `archive/tickets/S164BELVIEKIN-002.md`.
+15. Passed scoped diff hygiene over the touched source files and the then-active ticket/spec closeout edits after post-wrapper ticket/spec closeout edits. After archival, the ticket path is `archive/tickets/S164BELVIEKIN-002.md`; the spec path is now `archive/specs/S164-belief-view-kind-source-gate.md`.

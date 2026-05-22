@@ -1,6 +1,6 @@
 # S164 — Belief-View Kind Source-Gate + Faction-Policy Footgun Closure
 
-**Status:** DRAFT
+**Status:** COMPLETED
 **Type:** Correctness fix (closes the residual FND-14/14A entity-kind leak in
 `PerAgentBeliefView` that S158/S162's accessor sweep missed; removes the ungated
 faction-policy accessor footgun; adds confirming coverage for
@@ -255,3 +255,38 @@ Feature-scoped checks: the remote-kind-divergence belief-wall golden (Deliverabl
 accessor (remote vs. co-located vs. self) for `entity_kind`, the last-seen synthesis,
 and the gated bandit accessors. Builds on the S162 belief-wall golden family and the
 snapshot-through-view invariant.
+
+## Outcome
+
+Completed on 2026-05-22.
+
+- Added `observed_kind: Option<EntityKind>` to `LastSeenRecord` and scenario
+  last-seen definitions, populated it at direct observation and testimony relay sites,
+  and preserved it through save/load.
+- Changed `PerAgentBeliefView::entity_kind` and last-seen belief synthesis so remote
+  known entity kind comes from stored belief or last-seen memory rather than live
+  `world.entity_kind`.
+- Gated bandit faction-policy accessors to the observing actor's own/believed bandit
+  factions.
+- Added focused regression coverage for `facility_controller_at`.
+- Added Scenario 460 to the S162 belief-wall golden family, plus a deterministic
+  replay companion, proving stale last-seen kind survives authoritative kind
+  divergence across belief-view, candidate, affordance, and decision-trace surfaces.
+- Regenerated golden inventory/index/detail/coverage docs.
+- Deviated from the drafted `agent -> corpse` kind-transition example because live
+  `EntityKind` is immutable metadata; the final golden uses equivalent static
+  `Agent` vs. `Facility` fixtures to prove the same FND-14B source-gate invariant.
+
+Verification:
+
+- Passed `cargo test -p worldwake-core expectation`
+- Passed `cargo test -p worldwake-cli last_seen`
+- Passed `cargo test -p worldwake-systems search_place report_found ask_about_person`
+- Passed `cargo test -p worldwake-sim entity_kind last_seen`
+- Passed `cargo test -p worldwake-ai --test golden_ai remote_kind_change -- --list`
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::belief_wall_trap::golden_belief_wall_trap_remote_kind_change_uses_stale_kind_not_live_truth -- --exact`
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::belief_wall_trap::golden_belief_wall_trap_remote_kind_change_replays_deterministically -- --exact`
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`
+- Passed `cargo test -p worldwake-ai --test golden_ai belief_wall`
+- Passed `cargo test -p worldwake-ai`
+- Passed `./scripts/verify.sh`
