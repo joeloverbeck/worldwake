@@ -1445,7 +1445,7 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         ActionDefId, AgentBeliefStore, BelievedEntityState, CauseRef, CombatProfile, CommodityKind,
-        ControlSource, EligibilityRule, EntityId, EventLog, EventTag, EventView,
+        ControlSource, EligibilityRule, EntityId, EntityKind, EventLog, EventTag, EventView,
         InstitutionalBeliefRead, OfficeData, PerceptionSource, Permille, Quantity, RecordData,
         RecordKind, Seed, SuccessionLaw, Tick, UtilityProfile, VisibilitySpec, WitnessData, World,
         WorldTxn, build_prototype_world, verify_live_lot_conservation,
@@ -1779,7 +1779,7 @@ mod tests {
         beliefs.update_entity(
             entity,
             BelievedEntityState {
-                believed_kind: None,
+                believed_kind: world.entity_kind(entity),
                 last_known_place: Some(place),
                 last_known_inventory: std::collections::BTreeMap::default(),
                 workstation_tag: None,
@@ -1973,7 +1973,7 @@ mod tests {
             beliefs.update_entity(
                 fx.office,
                 BelievedEntityState {
-                    believed_kind: None,
+                    believed_kind: Some(EntityKind::Office),
                     last_known_place: None,
                     last_known_inventory: std::collections::BTreeMap::default(),
                     workstation_tag: None,

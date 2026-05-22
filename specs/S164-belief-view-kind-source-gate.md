@@ -111,10 +111,12 @@ perception, testimony, record, or memory carrier.
    (`per_agent_belief_view.rs:604-609`) — the current accessor has only two branches
    (`Place` → public topology; otherwise a `knows_entity`-gated **live**
    `world.entity_kind` read that fires for co-located *and* remote known entities
-   alike — there is no separate co-located branch today). Restructure it into three
-   explicit branches: (a) `Place` → `Place` (public topology); (b)
-   `has_authoritative_local_visibility(entity)` → live `world.entity_kind` (FND-14A:
-   an entity the actor is co-located with this tick may have its current kind read);
+   alike — there is no separate co-located branch today). Restructure it into explicit
+   source-class branches: (a) `Place` → `Place` (public topology); (b)
+   `entity == self.agent`, `has_authoritative_local_visibility(entity)`, or
+   `world.possessor_of(entity) == Some(self.agent)` → live `world.entity_kind`
+   (self-state / FND-14A: the actor, an entity the actor is co-located with this tick,
+   or an entity the actor directly possesses may have its current kind read);
    (c) otherwise (remote known) → the **stored kind** —
    `believed_entity(entity).believed_kind` for belief-store entities, or the
    last-seen record's `observed_kind` (Deliverable 2) for last-seen-only entities,
@@ -183,7 +185,7 @@ perception, testimony, record, or memory carrier.
 
 This spec narrows belief-facing accessors (`entity_kind`, the last-seen synthesis)
 that feed affordances, candidate generation, ranking, HTN selection, the planning
-snapshot, and revalidation, plus two hardening items. The CLAUDE.md checklist
+snapshot, and revalidation, plus two hardening items. The AGENTS.md checklist
 applies and must be walked before the kind changes land:
 
 1. `get_affordances` — candidates that depend on the *current* kind of a remote

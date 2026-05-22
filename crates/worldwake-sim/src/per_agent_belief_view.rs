@@ -602,10 +602,25 @@ impl EntityBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
-        match self.world.entity_kind(entity) {
-            Some(EntityKind::Place) => Some(EntityKind::Place),
-            kind => self.knows_entity(entity).then_some(kind).flatten(),
+        if self.world.topology().place(entity).is_some() {
+            return Some(EntityKind::Place);
         }
+
+        if entity == self.agent
+            || self.has_authoritative_local_visibility(entity)
+            || self.world.possessor_of(entity) == Some(self.agent)
+        {
+            return self.world.entity_kind(entity);
+        }
+
+        self.believed_entity(entity)
+            .and_then(|belief| belief.believed_kind)
+            .or_else(|| {
+                self.world
+                    .get_component_last_seen_memory(self.agent)
+                    .and_then(|memory| memory.records.get(&entity))
+                    .and_then(|record| record.observed_kind)
+            })
     }
 
     fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
@@ -3030,6 +3045,109 @@ mod tests {
     }
 
     #[test]
+    fn entity_kind_uses_stored_belief_for_remote_entity_not_live_world() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let actor_place = places[0];
+        let remote_place = places[1];
+        let (agent, remote_facility) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, actor_place).unwrap();
+            let remote_facility = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(remote_facility, remote_place)
+                .unwrap();
+            commit_txn(txn);
+            (agent, remote_facility)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        let mut stale_belief = entity_belief(remote_place, true, 0, 1);
+        stale_belief.believed_kind = Some(EntityKind::Agent);
+        beliefs.update_entity(remote_facility, stale_belief);
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            world.entity_kind(remote_facility),
+            Some(EntityKind::Facility)
+        );
+        assert_eq!(
+            EntityBeliefView::entity_kind(&view, remote_facility),
+            Some(EntityKind::Agent)
+        );
+    }
+
+    #[test]
+    fn entity_kind_uses_last_seen_kind_for_remote_entity_without_belief_store_entry() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let actor_place = places[0];
+        let remote_place = places[1];
+        let (agent, remote_facility) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, actor_place).unwrap();
+            let remote_facility = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(remote_facility, remote_place)
+                .unwrap();
+            txn.set_component_last_seen_memory(
+                agent,
+                LastSeenMemory {
+                    records: BTreeMap::from([(
+                        remote_facility,
+                        LastSeenRecord {
+                            subject: remote_facility,
+                            place: remote_place,
+                            observed_kind: Some(EntityKind::Agent),
+                            observed_tick: Tick(1),
+                            source: agent,
+                            provenance: LastSeenProvenance::DirectObservation,
+                        },
+                    )]),
+                    capacity: 8,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, remote_facility)
+        };
+
+        let view = PerAgentBeliefView::from_world(agent, &world);
+
+        assert_eq!(
+            world.entity_kind(remote_facility),
+            Some(EntityKind::Facility)
+        );
+        assert_eq!(
+            EntityBeliefView::entity_kind(&view, remote_facility),
+            Some(EntityKind::Agent)
+        );
+    }
+
+    #[test]
+    fn entity_kind_keeps_live_read_for_co_located_entity_without_stored_belief() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, local_facility) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let local_facility = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(local_facility, place).unwrap();
+            commit_txn(txn);
+            (agent, local_facility)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            EntityBeliefView::entity_kind(&view, local_facility),
+            Some(EntityKind::Facility)
+        );
+    }
+
+    #[test]
     fn known_entity_beliefs_expose_only_actor_subjective_memory() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
@@ -4586,7 +4704,9 @@ mod tests {
         };
 
         let mut beliefs = AgentBeliefStore::new();
-        beliefs.update_entity(attacker, entity_belief(remote, true, 0, 1));
+        let mut attacker_belief = entity_belief(remote, true, 0, 1);
+        attacker_belief.believed_kind = Some(EntityKind::Agent);
+        beliefs.update_entity(attacker, attacker_belief);
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
