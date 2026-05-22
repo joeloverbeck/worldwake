@@ -19,7 +19,7 @@ contention accessors S158's wave did not gate (`actor_can_claim_extraction_slot`
 `has_extraction_queues`, `facility_queue_join_tick`, `reservation_conflicts`,
 `reservation_ranges`). Like S158, it rejects the `Sourced<T>`/field-source-typing
 and trait-split proposals as out-of-scope migration risk.
-**Source:** `reports/ai-architecture-consolidation-third-iteration.md` (triage
+**Source:** `archive/reports/ai-architecture-consolidation-third-iteration-2026-05-22-exploited.md` (triage
 `docs/triage/2026-05-21-ai-architecture-consolidation-third-iteration-triage.md`).
 
 ## Problem Statement

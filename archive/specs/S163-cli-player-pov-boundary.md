@@ -13,7 +13,7 @@ FRAMECAUSEVT ticket.
 targets `display.rs`, `handlers/control.rs`, `handlers/world_overview.rs`,
 `handlers/inspect.rs`, `handlers/events.rs`, `handlers/tick.rs`.
 **Foundations:** FND-14, FND-14A, FND-19
-**Source:** `reports/ai-architecture-consolidation-third-iteration.md` §10/§5
+**Source:** `archive/reports/ai-architecture-consolidation-third-iteration-2026-05-22-exploited.md` §10/§5
 (triage `docs/triage/2026-05-21-ai-architecture-consolidation-third-iteration-triage.md`).
 
 ## Problem Statement

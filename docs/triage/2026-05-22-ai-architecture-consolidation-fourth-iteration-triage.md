@@ -1,6 +1,6 @@
 # Triage — AI Architecture Consolidation, Fourth Iteration (2026-05-22)
 
-**Source:** `reports/ai-architecture-consolidation-fourth-iteration.md` (ChatGPT-Pro
+**Source:** `archive/reports/ai-architecture-consolidation-fourth-iteration-2026-05-22-exploited.md` (ChatGPT-Pro
 hostile AI-architecture audit, fourth iteration). The author **did not clone the
 repo** and ran no tests — the leak inventory's "Evidence" column is empty. Every
 load-bearing claim was re-verified against the actual tree using FND-14A as the lens

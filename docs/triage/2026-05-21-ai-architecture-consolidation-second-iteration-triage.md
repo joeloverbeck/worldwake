@@ -1,7 +1,7 @@
 # Triage — AI Architecture Consolidation (Second Iteration)
 
 **Date:** 2026-05-21
-**Source:** `reports/ai-architecture-consolidation-second-iteration.md` (ChatGPT-Pro
+**Source:** `archive/reports/ai-architecture-consolidation-second-iteration-2026-05-22-exploited.md` (ChatGPT-Pro
 hostile AI-architecture audit, second iteration; follows S155–S157 from the first).
 **Method:** Every load-bearing claim re-verified against current code before
 acceptance. Audit recommended Option B (Moderate Consolidation); accepted in

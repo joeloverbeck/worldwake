@@ -9,7 +9,7 @@
 `worldwake-systems` (recording sites), and `worldwake-sim`
 (`SAVE_FORMAT_VERSION`).
 **Deps**: None. Independent of S162/S163. Source:
-`reports/ai-architecture-consolidation-third-iteration.md` §11 / Hostile Failure
+`archive/reports/ai-architecture-consolidation-third-iteration-2026-05-22-exploited.md` §11 / Hostile Failure
 Inventory ("Causal placeholder IDs"); triage
 `docs/triage/2026-05-21-ai-architecture-consolidation-third-iteration-triage.md`.
 

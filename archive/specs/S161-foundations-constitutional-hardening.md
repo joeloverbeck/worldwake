@@ -7,7 +7,7 @@ loops)
 **Priority:** Medium-high. FND-14B is the keystone (it anchors the source-class
 doctrine S158 already shipped). Independent of S159/S160; sequence whenever.
 **Foundations:** FND-12, FND-13, FND-14, FND-14A, FND-20, FND-27, FND-29A, FND-31
-**Source:** `reports/foundations-gap-audit.md` (ChatGPT-Pro). Every load-bearing
+**Source:** `archive/reports/foundations-gap-audit-2026-05-22-exploited.md` (ChatGPT-Pro). Every load-bearing
 claim re-verified against the codebase on 2026-05-21 before acceptance; the most
 important correction (the report's headline leak risk is already closed by S158)
 is recorded under Evidence below.

@@ -12,7 +12,7 @@ excluded** from the active order until the AI architecture is solid.
 
 ## Adjunct Wave: AI Architecture Consolidation — Second Iteration
 
-**Source.** `reports/ai-architecture-consolidation-second-iteration.md` — the
+**Source.** `archive/reports/ai-architecture-consolidation-second-iteration-2026-05-22-exploited.md` — the
 second hostile AI-architecture audit (ChatGPT-Pro), following the first iteration
 that produced S155–S157 (completed). Every load-bearing claim was re-verified
 against the codebase before acceptance. The audit's verdict ("keep the
@@ -75,7 +75,7 @@ S158, S159, and S160 have landed and are archived.
 
 ## Adjunct Wave: FOUNDATIONS Constitutional Hardening — Gap Audit 2026-05
 
-**Source.** `reports/foundations-gap-audit.md` (ChatGPT-Pro) answered the standing
+**Source.** `archive/reports/foundations-gap-audit-2026-05-22-exploited.md` (ChatGPT-Pro) answered the standing
 question *"are the foundations complete?"* during the AI-architecture
 consolidation. Verdict: **mostly correct with four targeted strengthenings plus
 new canonical scenarios** — no rewrite, no renumbering. Every load-bearing claim

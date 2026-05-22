@@ -1,6 +1,6 @@
 # Triage — AI Architecture Consolidation, Third Iteration (2026-05-21)
 
-**Source:** `reports/ai-architecture-consolidation-third-iteration.md` (ChatGPT-Pro
+**Source:** `archive/reports/ai-architecture-consolidation-third-iteration-2026-05-22-exploited.md` (ChatGPT-Pro
 hostile AI-architecture audit, third iteration). The author **did not clone the
 repo** — it used GitHub code search + targeted file fetches. Every load-bearing
 claim was re-verified against the actual tree before acceptance. The decisive lens
