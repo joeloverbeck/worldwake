@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implement-S164-belief-view-kind-source-gate",
   "base_head": "c57cae974672cb946e2b72eb5b903a6f11bc33b9",
-  "last_ticket": "archive/tickets/S164BELVIEKIN-002.md",
+  "last_ticket": "archive/tickets/S164BELVIEKIN-003.md",
   "last_result": "completed_archived",
-  "last_work_commit": "bdad3adb8a7a8d0909e580bd6752d54869da407f",
+  "last_work_commit": "ca9230ad53a042706bc8dc7c8f6a23b2a85cf6ff",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S164BELVIEKIN-003.md",
+  "next_target": "tickets/S164BELVIEKIN-004.md",
   "queue": [
-    "tickets/S164BELVIEKIN-003.md",
     "tickets/S164BELVIEKIN-004.md",
     "tickets/S164BELVIEKIN-005.md"
   ],
