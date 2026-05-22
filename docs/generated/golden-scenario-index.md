@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 216
+- Scenario blocks: 217
 - Contributing golden scenario source files: 53
-- Associated tests: 265
+- Associated tests: 267
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -219,7 +219,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 420: Belief Wall Trap Suppresses Theft
 
-- Source: `belief_wall_trap.rs:1101`
+- Source: `belief_wall_trap.rs:1294`
 - Systems: Perception, AI, Crime
 - ActionDomains: Crime
 - Places: VillageSquare, OrchardFarm
@@ -233,7 +233,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 454: Stale Remote Pursuit Uses Last-Seen Place
 
-- Source: `belief_wall_trap.rs:1227`
+- Source: `belief_wall_trap.rs:1420`
 - Systems: Perception, AI, Combat
 - ActionDomains: Combat, Travel
 - Places: VillageSquare, OrchardFarm, RulersHall
@@ -245,9 +245,23 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: direct observation belief -> hidden remote move -> belief-view effective_place -> remote hostile candidate evidence -> decision trace excludes live remote truth.
 
+### Scenario 460: Remote Kind Change Does Not Leak Live Truth
+
+- Source: `belief_wall_trap.rs:1443`
+- Systems: Perception, AI, Combat
+- ActionDomains: Combat, Travel
+- Places: VillageSquare, OrchardFarm
+- Principles: 7, 14, 14A, 14B, 15, 31
+
+**Setup**: An AI actor at Village Square has a last-seen memory that a remote Orchard Farm entity was an Agent. The comparison fixture makes the same remote entity authoritatively a Facility without testimony, record, or local observation carrying that current kind back to the actor.
+
+**Proves**: Remote `entity_kind`, hostile candidate generation, affordance enumeration, and the decision trace use the stale last-seen kind rather than current authoritative kind.
+
+**Cross-system chain**: last-seen observed kind -> divergent hidden authoritative kind -> belief-view entity_kind -> candidate and affordance invariance -> decision trace retains stale-kind candidate.
+
 ### Scenario 456: Remote Sale Listing Does Not Leak Live Truth
 
-- Source: `belief_wall_trap.rs:1250`
+- Source: `belief_wall_trap.rs:1482`
 - Systems: Perception, AI, Trade
 - ActionDomains: Trade
 - Places: VillageSquare, OrchardFarm
@@ -261,7 +275,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 457: Remote Production Job Does Not Leak Live Truth
 
-- Source: `belief_wall_trap.rs:1275`
+- Source: `belief_wall_trap.rs:1507`
 - Systems: Perception, AI, Production
 - ActionDomains: Production
 - Places: VillageSquare, OrchardFarm
@@ -275,7 +289,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 458: Remote Load Change Does Not Leak Live Truth
 
-- Source: `belief_wall_trap.rs:1295`
+- Source: `belief_wall_trap.rs:1527`
 - Systems: Perception, AI, Inventory
 - ActionDomains: Trade, Travel
 - Places: VillageSquare, OrchardFarm
@@ -289,7 +303,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 459: Remote Queue Grant Does Not Leak Live Truth
 
-- Source: `belief_wall_trap.rs:1314`
+- Source: `belief_wall_trap.rs:1546`
 - Systems: Perception, AI, Production
 - ActionDomains: Production
 - Places: VillageSquare, OrchardFarm
@@ -303,7 +317,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 455: Control Source Swap Preserves Belief Affordances
 
-- Source: `belief_wall_trap.rs:1334`
+- Source: `belief_wall_trap.rs:1566`
 - Systems: Perception, AI
 - ActionDomains: Crime, Travel, Production
 - Places: VillageSquare, OrchardFarm

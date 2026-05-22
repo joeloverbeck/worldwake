@@ -41,9 +41,9 @@ plus two latent footguns worth closing while the belief view is open:
 for remote, non-co-located known entities. FND-14A admits kind as a *co-located*
 physical observation; reading the *current* kind of a remote entity known only via
 last-seen memory is not lawful — kind, like location, must be a stored belief that
-can go stale. The leak is narrow but real: if a remote entity changes kind (e.g.,
-an agent becomes a corpse on death), the observer "knows" the new kind with no
-perception, testimony, record, or memory carrier.
+can go stale. The leak is narrow but real: if a remote entity's current
+authoritative kind diverges from the observer's last-seen kind, the observer must
+not "know" the current kind without perception, testimony, record, or memory carrier.
 
 ### Evidence (verified against code on 2026-05-22)
 
@@ -171,13 +171,15 @@ perception, testimony, record, or memory carrier.
    belief-filtered candidate gate, so no production behavior change landed.
 
 5. **Adversarial belief-wall goldens** (`worldwake-ai`) — extend the S162 belief-wall
-   golden family with a **remote kind change** scenario: an entity changes kind
-   (e.g., agent → corpse) at a remote place with no carrier reaching a distant actor;
-   assert the distant actor's `entity_kind` / candidate / affordance set is unchanged
+   golden family with a **remote kind divergence** scenario: the actor's last-seen
+   memory says a remote entity was an `Agent`, current authoritative truth says the
+   same remote entity is a `Facility`, and no carrier reaches the distant actor.
+   Assert the distant actor's `entity_kind` / candidate / affordance set is unchanged
    (keeps the stale kind), and that authoritative truth diverged. Mirror the S162
    assertion discipline: assert the candidate/affordance is *absent or unchanged*
-   while authoritative truth changed (FND-31), not merely that the run "looked
-   plausible."
+   while authoritative truth diverges (FND-31), not merely that the run "looked
+   plausible." This uses equivalent static fixtures rather than an `agent -> corpse`
+   mutation because live `EntityKind` is immutable entity metadata.
 
 ## Authoritative-to-AI Impact Analysis
 
@@ -244,11 +246,11 @@ loop. Per `docs/spec-drafting-rules.md`, mandatory headers with applicability:
 
 Cross-system feature (belief boundary → planner → CLI affordance path). Negative
 illegal-path case the feature must **not** produce: a distant actor (or, via the
-shared affordance path, the human player) gaining a candidate, affordance, ranking
-change, or HTN method selection from a **remote entity-kind change** for which no
-carrier updated belief — and, for the footgun items, leaking an arbitrary faction's
-hidden behavioral policy or a remote facility controller's identity. Feature-scoped
-checks: the remote-kind-change belief-wall golden (Deliverable 5), the
+shared affordance path, the human player) gaining or losing a candidate, affordance,
+ranking change, or HTN method selection from a **remote entity-kind divergence** for
+which no carrier updated belief — and, for the footgun items, leaking an arbitrary
+faction's hidden behavioral policy or a remote facility controller's identity.
+Feature-scoped checks: the remote-kind-divergence belief-wall golden (Deliverable 5), the
 `facility_controller_at` confirming test (Deliverable 4), and focused unit tests per
 accessor (remote vs. co-located vs. self) for `entity_kind`, the last-seen synthesis,
 and the gated bandit accessors. Builds on the S162 belief-wall golden family and the
