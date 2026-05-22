@@ -59,6 +59,7 @@
                     (
                         subject: "Fugitive Vale",
                         place: "Old Mill",
+                        observed_kind: Some(Agent),
                         observed_tick: 0,
                         source: "Guard Mira",
                         provenance: DirectObservation,
