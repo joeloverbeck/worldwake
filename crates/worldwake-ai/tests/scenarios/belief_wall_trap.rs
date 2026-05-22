@@ -1,6 +1,6 @@
 //! Golden coverage for S143's FND-14A belief wall.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use crate::golden_harness::*;
@@ -8,17 +8,18 @@ use worldwake_ai::{DecisionOutcome, GoalKey, PlannerOpKind, generate_candidates}
 use worldwake_core::{
     ActionDefId, ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BlockerMemory,
     CarryCapacity, ClaimId, ClaimValue, CommodityKind, ContentionGrant, ContentionPolicy,
-    ContentionQueue, ControlSource, EntityId, EntityKind, GoalKind, HomeostaticNeeds, LoadUnits,
-    MetabolismProfile, PerceptionSource, Permille, ProductionJob, PursuitProfile, Quantity,
-    RecipeId, ResourceExtractionQueues, SaleListing, Seed, StockAssignment, StockAssignmentKind,
+    ContentionQueue, ControlSource, EntityId, EntityKind, GoalKind, HomeostaticNeeds,
+    LastSeenMemory, LastSeenProvenance, LastSeenRecord, LoadUnits, MetabolismProfile,
+    PerceptionSource, Permille, ProductionJob, PursuitProfile, Quantity, RecipeId,
+    ResourceExtractionQueues, SaleListing, Seed, StockAssignment, StockAssignmentKind,
     SuccessionLaw, TheftDispositionProfile, Tick, UtilityProfile, WorkstationMarker,
     WorkstationTag,
 };
 use worldwake_core::{EntityBeliefAspect, EntityBeliefClaim};
 use worldwake_sim::{
-    BeliefRead, BelievedAuthorityView, EconomicBeliefView, FacilityBeliefView, InventoryBeliefView,
-    LocalPhysicalObservationView, PerAgentBeliefView, SpatialBeliefView, TemporalBeliefView,
-    get_affordances,
+    BeliefRead, BelievedAuthorityView, EconomicBeliefView, EntityBeliefView, FacilityBeliefView,
+    InventoryBeliefView, LocalPhysicalObservationView, PerAgentBeliefView, SpatialBeliefView,
+    TemporalBeliefView, get_affordances,
 };
 
 struct BeliefWallFixture {
@@ -68,6 +69,14 @@ struct RemoteContentionFixture {
     remote_source: EntityId,
     local_facility: EntityId,
     local_source: EntityId,
+}
+
+struct RemoteKindFixture {
+    h: GoldenHarness,
+    actor: EntityId,
+    target: EntityId,
+    stale_kind: EntityKind,
+    authoritative_kind: EntityKind,
 }
 
 fn set_control_source(h: &mut GoldenHarness, agent: EntityId, control_source: ControlSource) {
@@ -232,6 +241,87 @@ fn build_remote_pursuit_fixture(seed: Seed) -> RemotePursuitFixture {
         target,
         last_seen_place: ORCHARD_FARM,
         current_place: RULERS_HALL,
+    }
+}
+
+fn build_remote_kind_fixture(seed: Seed, authoritative_kind: EntityKind) -> RemoteKindFixture {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let actor = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Remote-Kind Actor",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            courage: Permille::new(1000).unwrap(),
+            ..UtilityProfile::default()
+        },
+    );
+    set_pursuit_profile(
+        &mut h,
+        actor,
+        PursuitProfile {
+            min_location_confidence: Permille::new(0).unwrap(),
+            max_pursuit_travel_ticks: NonZeroU32::new(20).unwrap(),
+        },
+    );
+
+    let target = match authoritative_kind {
+        EntityKind::Agent => {
+            let target = seed_agent(
+                &mut h.world,
+                &mut h.event_log,
+                "Stale-Kind Target",
+                ORCHARD_FARM,
+                HomeostaticNeeds::new_sated(),
+                MetabolismProfile::default(),
+                UtilityProfile::default(),
+            );
+            set_control_source(&mut h, target, ControlSource::Human);
+            target
+        }
+        EntityKind::Facility => {
+            let mut txn = new_txn(&mut h.world, 0);
+            let target = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(target, ORCHARD_FARM).unwrap();
+            commit_txn(txn, &mut h.event_log);
+            target
+        }
+        other => panic!("remote kind fixture does not support authoritative kind {other:?}"),
+    };
+
+    add_hostility(&mut h, actor, target);
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_last_seen_memory(
+        actor,
+        LastSeenMemory {
+            records: BTreeMap::from([(
+                target,
+                LastSeenRecord {
+                    subject: target,
+                    place: ORCHARD_FARM,
+                    observed_kind: Some(EntityKind::Agent),
+                    observed_tick: Tick(0),
+                    source: actor,
+                    provenance: LastSeenProvenance::DirectObservation,
+                },
+            )]),
+            ..LastSeenMemory::default()
+        },
+    )
+    .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    RemoteKindFixture {
+        h,
+        actor,
+        target,
+        stale_kind: EntityKind::Agent,
+        authoritative_kind,
     }
 }
 
@@ -631,6 +721,10 @@ fn remote_pursuit_view_for(
     worldwake_sim::PerAgentBeliefView::from_world(fixture.actor, &fixture.h.world)
 }
 
+fn remote_kind_view_for(fixture: &RemoteKindFixture) -> PerAgentBeliefView<'_> {
+    PerAgentBeliefView::from_world(fixture.actor, &fixture.h.world)
+}
+
 fn remote_production_view_for(fixture: &RemoteProductionFixture) -> PerAgentBeliefView<'_> {
     PerAgentBeliefView::from_world(fixture.actor, &fixture.h.world)
 }
@@ -781,6 +875,105 @@ fn assert_remote_pursuit_trace_never_targets_current_place(fixture: &RemotePursu
     assert!(
         saw_last_seen_evidence,
         "expected decision trace evidence for stale last-seen place; traces={traces:#?}"
+    );
+}
+
+fn remote_kind_candidate_fingerprint(fixture: &RemoteKindFixture) -> BTreeSet<GoalKey> {
+    let view = remote_kind_view_for(fixture);
+    generate_candidates(
+        &view,
+        fixture.actor,
+        &BlockerMemory::default(),
+        &fixture.h.recipes,
+        Tick(1),
+    )
+    .into_iter()
+    .map(|candidate| candidate.key)
+    .collect()
+}
+
+fn remote_kind_affordance_fingerprint(fixture: &RemoteKindFixture) -> BTreeSet<String> {
+    let view = remote_kind_view_for(fixture);
+    get_affordances(&view, fixture.actor, &fixture.h.defs, &fixture.h.handlers)
+        .into_iter()
+        .map(|affordance| {
+            format!(
+                "{:?}|{:?}|{:?}",
+                affordance.def_id, affordance.bound_targets, affordance.payload_override
+            )
+        })
+        .collect()
+}
+
+fn assert_remote_kind_uses_stale_belief(fixture: &RemoteKindFixture) {
+    let view = remote_kind_view_for(fixture);
+    assert_eq!(
+        fixture.h.world.entity_kind(fixture.target),
+        Some(fixture.authoritative_kind),
+        "fixture must make authoritative kind explicit"
+    );
+    assert_eq!(
+        EntityBeliefView::entity_kind(&view, fixture.target),
+        Some(fixture.stale_kind),
+        "remote kind must come from last-seen belief, not current world truth"
+    );
+}
+
+fn assert_remote_kind_surfaces_ignore_authoritative_divergence() {
+    let stale_matches_truth = build_remote_kind_fixture(Seed([0x4c; 32]), EntityKind::Agent);
+    let stale_diverges_from_truth =
+        build_remote_kind_fixture(Seed([0x4d; 32]), EntityKind::Facility);
+
+    assert_remote_kind_uses_stale_belief(&stale_matches_truth);
+    assert_remote_kind_uses_stale_belief(&stale_diverges_from_truth);
+    assert_eq!(
+        remote_kind_candidate_fingerprint(&stale_matches_truth),
+        remote_kind_candidate_fingerprint(&stale_diverges_from_truth),
+        "candidate generation must be unchanged when only remote authoritative kind diverges"
+    );
+    assert_eq!(
+        remote_kind_affordance_fingerprint(&stale_matches_truth),
+        remote_kind_affordance_fingerprint(&stale_diverges_from_truth),
+        "affordance enumeration must be unchanged when only remote authoritative kind diverges"
+    );
+    assert!(
+        remote_kind_candidate_fingerprint(&stale_diverges_from_truth).contains(&GoalKey::from(
+            GoalKind::EngageHostile {
+                target: stale_diverges_from_truth.target,
+            },
+        )),
+        "stale observed Agent kind should still admit the hostile-target candidate"
+    );
+}
+
+fn assert_remote_kind_trace_uses_stale_kind(fixture: &RemoteKindFixture) {
+    let goal = GoalKey::from(GoalKind::EngageHostile {
+        target: fixture.target,
+    });
+    let trace_sink = fixture
+        .h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled");
+    let traces = trace_sink.traces_for(fixture.actor);
+    assert!(
+        traces
+            .iter()
+            .any(|trace| matches!(trace.outcome, DecisionOutcome::Planning(_))),
+        "expected at least one planning trace; traces={traces:#?}"
+    );
+    assert!(
+        traces.iter().any(|trace| {
+            let DecisionOutcome::Planning(ref planning) = trace.outcome else {
+                return false;
+            };
+            planning
+                .candidates
+                .generated
+                .iter()
+                .any(|candidate| candidate.goal_key == goal)
+        }),
+        "decision trace must retain the stale-kind hostile candidate; traces={traces:#?}"
     );
 }
 
@@ -1245,6 +1438,45 @@ fn golden_belief_wall_trap_remote_pursuit_uses_stale_location_not_live_truth() {
     fixture.h.step_once();
 
     assert_remote_pursuit_trace_never_targets_current_place(&fixture);
+}
+
+// Scenario 460: Remote Kind Change Does Not Leak Live Truth
+//
+// Systems: Perception, AI, Combat
+// ActionDomains: Combat, Travel
+// Places: VillageSquare, OrchardFarm
+// Principles: 7, 14, 14A, 14B, 15, 31
+//
+// Setup: An AI actor at Village Square has a last-seen memory that a remote Orchard Farm entity was an Agent. The comparison fixture makes the same remote entity authoritatively a Facility without testimony, record, or local observation carrying that current kind back to the actor.
+//
+// Proves: Remote `entity_kind`, hostile candidate generation, affordance enumeration, and the decision trace use the stale last-seen kind rather than current authoritative kind.
+//
+// Chain: last-seen observed kind -> divergent hidden authoritative kind -> belief-view entity_kind -> candidate and affordance invariance -> decision trace retains stale-kind candidate.
+#[test]
+fn golden_belief_wall_trap_remote_kind_change_uses_stale_kind_not_live_truth() {
+    assert_remote_kind_surfaces_ignore_authoritative_divergence();
+
+    let mut fixture = build_remote_kind_fixture(Seed([0x4e; 32]), EntityKind::Facility);
+    assert_remote_kind_uses_stale_belief(&fixture);
+
+    fixture.h.step_once();
+
+    assert_remote_kind_trace_uses_stale_kind(&fixture);
+}
+
+#[test]
+fn golden_belief_wall_trap_remote_kind_change_replays_deterministically() {
+    let first = build_remote_kind_fixture(Seed([0x4f; 32]), EntityKind::Facility);
+    let second = build_remote_kind_fixture(Seed([0x4f; 32]), EntityKind::Facility);
+
+    assert_eq!(
+        remote_kind_candidate_fingerprint(&first),
+        remote_kind_candidate_fingerprint(&second)
+    );
+    assert_eq!(
+        remote_kind_affordance_fingerprint(&first),
+        remote_kind_affordance_fingerprint(&second)
+    );
 }
 
 // Scenario 456: Remote Sale Listing Does Not Leak Live Truth

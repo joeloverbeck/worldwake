@@ -579,6 +579,7 @@ mod tests {
                     crate::LastSeenRecord {
                         subject: entity(47),
                         place: entity(48),
+                        observed_kind: Some(crate::EntityKind::Agent),
                         observed_tick: Tick(18),
                         source: entity(49),
                         provenance: crate::LastSeenProvenance::Hearsay {

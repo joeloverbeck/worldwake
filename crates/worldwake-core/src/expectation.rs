@@ -1,6 +1,9 @@
 //! Expectation, last-seen, and search substrate types shared across crates.
 
-use crate::{CommodityKind, Component, EntityId, EvidenceKind, ExpectationKindTag, Quantity, Tick};
+use crate::{
+    CommodityKind, Component, EntityId, EntityKind, EvidenceKind, ExpectationKindTag, Quantity,
+    Tick,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -121,11 +124,13 @@ impl ExpectationStore {
 
 impl Component for ExpectationStore {}
 
-/// A record of when and where an entity was last seen, with provenance.
+/// A record of when, where, and as what kind an entity was last seen, with provenance.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LastSeenRecord {
     pub subject: EntityId,
     pub place: EntityId,
+    /// Entity kind observed at last-seen time; belief carrier state that may go stale.
+    pub observed_kind: Option<EntityKind>,
     pub observed_tick: Tick,
     pub source: EntityId,
     pub provenance: LastSeenProvenance,
@@ -294,6 +299,7 @@ mod tests {
         let record = LastSeenRecord {
             subject: entity(6),
             place: entity(7),
+            observed_kind: Some(crate::EntityKind::Agent),
             observed_tick: Tick(80),
             source: entity(8),
             provenance: LastSeenProvenance::Hearsay {
@@ -409,6 +415,7 @@ mod tests {
                 LastSeenRecord {
                     subject: entity(22),
                     place: entity(23),
+                    observed_kind: Some(crate::EntityKind::Agent),
                     observed_tick: Tick(12),
                     source: agent,
                     provenance: LastSeenProvenance::DirectObservation,

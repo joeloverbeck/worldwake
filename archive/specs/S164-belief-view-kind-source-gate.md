@@ -1,11 +1,11 @@
 # S164 — Belief-View Kind Source-Gate + Faction-Policy Footgun Closure
 
-**Status:** DRAFT
+**Status:** COMPLETED
 **Type:** Correctness fix (closes the residual FND-14/14A entity-kind leak in
 `PerAgentBeliefView` that S158/S162's accessor sweep missed; removes the ungated
 faction-policy accessor footgun; adds confirming coverage for
 `facility_controller_at`). No new authoritative simulation state, system,
-component, action, or feedback loop. (Deliverable 2 may add a *belief-carrier*
+component, action, or feedback loop. (Deliverable 2 adds a *belief-carrier*
 field — observed kind on the last-seen memory record — which is belief/memory
 state, not authoritative world truth.)
 **Priority:** Medium. Sequence after `archive/specs/S163-cli-player-pov-boundary.md` in the
@@ -13,9 +13,12 @@ fourth-iteration belief-boundary wave. Independent of S163's CLI work — touche
 shared belief view, not the CLI — S163 has already landed as the prerequisite
 player-POV boundary.
 **Crates:** `worldwake-sim` (`per_agent_belief_view.rs` accessors + last-seen
-synthesis), possibly `worldwake-core` (`expectation.rs` `LastSeenRecord` if a kind
-field is added), `worldwake-ai` (adversarial goldens).
-**Foundations:** FND-7, FND-14, FND-14A, FND-15, FND-19, FND-27, FND-31
+synthesis), `worldwake-core` (`expectation.rs` `LastSeenRecord` gains
+`observed_kind`), `worldwake-systems` (last-seen construction/relay sites in
+`search_actions.rs`, `report_actions.rs`, `ask_about_person_actions.rs`),
+`worldwake-cli` (`LastSeenRecordDef` + scenario loader), `worldwake-ai`
+(adversarial goldens).
+**Foundations:** FND-7, FND-14, FND-14A, FND-14B, FND-15, FND-16, FND-19, FND-27, FND-31
 **Source:** `reports/ai-architecture-consolidation-fourth-iteration.md` (triage
 `docs/triage/2026-05-22-ai-architecture-consolidation-fourth-iteration-triage.md`).
 
@@ -38,9 +41,9 @@ plus two latent footguns worth closing while the belief view is open:
 for remote, non-co-located known entities. FND-14A admits kind as a *co-located*
 physical observation; reading the *current* kind of a remote entity known only via
 last-seen memory is not lawful — kind, like location, must be a stored belief that
-can go stale. The leak is narrow but real: if a remote entity changes kind (e.g.,
-an agent becomes a corpse on death), the observer "knows" the new kind with no
-perception, testimony, record, or memory carrier.
+can go stale. The leak is narrow but real: if a remote entity's current
+authoritative kind diverges from the observer's last-seen kind, the observer must
+not "know" the current kind without perception, testimony, record, or memory carrier.
 
 ### Evidence (verified against code on 2026-05-22)
 
@@ -74,9 +77,9 @@ perception, testimony, record, or memory carrier.
   `world.can_exercise_control(entity, facility)` for each agent in
   `self.entities_at(place)`. The candidate set is **belief-filtered** (only agents the
   observer believes are present), so this is defensible as local observation of who is
-  staffing a believed-present facility. It is borderline and currently **untested for
-  the remote-control-change case**; it warrants a confirming test, not necessarily a
-  behavior change.
+  staffing a believed-present facility. It was borderline and untested for the
+  remote-control-change case when this spec was drafted; S164BELVIEKIN-004 added the
+  confirming focused regression guard with no production behavior change.
 
 ### Key scoping decisions (brainstorm 2026-05-22)
 
@@ -105,57 +108,84 @@ perception, testimony, record, or memory carrier.
 ## Deliverables
 
 1. **`entity_kind` returns stored belief for non-co-located entities**
-   (`per_agent_belief_view.rs:604-609`) — keep the `Place` → public-topology branch
-   and the FND-14A co-located physical branch (an entity the actor can lawfully
-   observe this tick may have its current kind read). For a non-co-located,
-   non-place entity, return the **stored `believed_kind`** from the belief store /
-   last-seen synthesis, never `world.entity_kind`. A remote entity that changes kind
-   with no carrier must keep its last-known kind (or remain unknown).
+   (`per_agent_belief_view.rs:604-609`) — the current accessor has only two branches
+   (`Place` → public topology; otherwise a `knows_entity`-gated **live**
+   `world.entity_kind` read that fires for co-located *and* remote known entities
+   alike — there is no separate co-located branch today). Restructure it into explicit
+   source-class branches: (a) `Place` → `Place` (public topology); (b)
+   `entity == self.agent`, `has_authoritative_local_visibility(entity)`, or
+   `world.possessor_of(entity) == Some(self.agent)` → live `world.entity_kind`
+   (self-state / FND-14A: the actor, an entity the actor is co-located with this tick,
+   or an entity the actor directly possesses may have its current kind read);
+   (c) otherwise (remote known) → the **stored kind** —
+   `believed_entity(entity).believed_kind` for belief-store entities, or the
+   last-seen record's `observed_kind` (Deliverable 2) for last-seen-only entities,
+   which `believed_entity` does not cover — else `None`. A remote entity that changes
+   kind with no carrier must keep its last-known kind (or remain unknown). Branch (c)
+   must never read `world.entity_kind`.
 
 2. **Last-seen kind synthesis must not read live world**
    (`per_agent_belief_view.rs:1293-1304`) — set `believed_kind` for a last-seen-only
-   entity from a belief-local source, never `self.world.entity_kind(*entity)`.
-   Ticket-time mechanism choice, with a hard constraint that no live world read is
-   introduced:
-   - **Preferred:** add an `observed_kind: Option<EntityKind>` field to
-     `LastSeenRecord` (`crates/worldwake-core/src/expectation.rs`) populated at
-     observation time, and the matching `LastSeenRecordDef` field in
-     `crates/worldwake-cli/src/scenario/types.rs`; the synthesis reads that.
-   - **Fallback:** synthesize `believed_kind: None` (kind unknown for last-seen-only
-     entities). Acceptable but loses kind-at-observation; choose only if the carrier
-     field proves disproportionate.
+   entity from a belief-local carrier, never `self.world.entity_kind(*entity)`. Use
+   the **observed-kind carrier** mechanism (preserves kind-at-observation, the FND-15
+   fidelity goal):
+   - Add `observed_kind: Option<EntityKind>` to `LastSeenRecord`
+     (`crates/worldwake-core/src/expectation.rs:126-132`). `EntityKind` already
+     derives `Copy, Serialize, Deserialize`, so the `Copy`-deriving record is
+     unaffected.
+   - Add the matching `observed_kind: Option<EntityKind>` to `LastSeenRecordDef`
+     (`crates/worldwake-cli/src/scenario/types.rs:402`) with `#[serde(default)]` —
+     the `Def` carries `#[serde(deny_unknown_fields)]` with all-required fields, so an
+     un-defaulted addition would force every existing scenario to author the field.
+     `EntityKind` is a plain enum, not an `EntityId` reference, so no `*Def` wrapper
+     is needed; `Option<EntityKind>` deserializes directly.
+   - Populate the field at every runtime construction site (5 of them; the compiler
+     enforces this for the literal-construction sites). The direct-observation
+     writers `search_actions.rs:436` and `:474` read the found entity's kind at
+     observation. The scenario loader `scenario/mod.rs:1724` maps it from the `Def`.
+     The two testimony relays `report_actions.rs:784` and
+     `ask_about_person_actions.rs:364` must **propagate** `observed_kind:
+     record.observed_kind` (no `..record` spread exists today), so kind travels with
+     the relayed memory through the hearsay chain (FND-15) rather than being dropped
+     to `None`. Save/load round-trips the field automatically via the serde derive.
+   - The synthesis at `:1296` then reads `record.observed_kind` instead of
+     `self.world.entity_kind(*entity)`.
    This is belief/memory carrier state (FND-7/FND-15), not authoritative world state.
 
 3. **Gate the bandit faction-policy accessors to lawfully known factions**
    (`per_agent_belief_view.rs:611-621`) — `bandit_flee_wound_threshold` and
-   `bandit_camp_establishment_ticks` must return `None` for a faction the actor does
-   not lawfully know (i.e., gate on the same belief/self path `bandit_factions_of`
-   already enforces — own/believed faction membership). Current call sites pass
-   `bandit_factions_of(actor)`, so lawful behavior is unchanged; the gate removes the
-   footgun of a future caller leaking an arbitrary faction's hidden policy.
+   `bandit_camp_establishment_ticks` must return `None` unless `faction` is among the
+   **observing agent's own/believed bandit factions** — i.e., gate on
+   `self.bandit_factions_of(self.agent).contains(&faction)` (the self/belief path
+   `factions_of` (`:1571`) already enforces this: world factions for self,
+   institutional-belief membership otherwise). A bandit lawfully knows their own
+   gang's policy, not an arbitrary faction's. Current call sites pass
+   `bandit_factions_of(actor)` with `actor == self.agent`, so lawful behavior is
+   unchanged; the gate removes the footgun of a future caller leaking an arbitrary
+   faction's hidden policy.
 
 4. **`facility_controller_at` confirming test** (`per_agent_belief_view.rs:385-401`) —
-   add a focused test proving that a **remote** control change (a controller the
-   observer does not believe is present, or a control transfer with no carrier) does
-   **not** alter the resolved controller/seller identity for a distant actor. If the
-   test reveals an actual leak (controller resolved for a non-believed-present agent),
-   gate the `can_exercise_control` probe on belief-presence; if it confirms lawfulness,
-   the test stands as a regression guard. No behavior change unless the test fails.
+   S164BELVIEKIN-004 added the focused test proving that a **remote** controller the
+   observer does not believe is present does **not** become the resolved
+   controller/seller for a distant actor. The test confirmed the existing
+   belief-filtered candidate gate, so no production behavior change landed.
 
 5. **Adversarial belief-wall goldens** (`worldwake-ai`) — extend the S162 belief-wall
-   golden family with a **remote kind change** scenario: an entity changes kind
-   (e.g., agent → corpse) at a remote place with no carrier reaching a distant actor;
-   assert the distant actor's `entity_kind` / candidate / affordance set is unchanged
+   golden family with a **remote kind divergence** scenario: the actor's last-seen
+   memory says a remote entity was an `Agent`, current authoritative truth says the
+   same remote entity is a `Facility`, and no carrier reaches the distant actor.
+   Assert the distant actor's `entity_kind` / candidate / affordance set is unchanged
    (keeps the stale kind), and that authoritative truth diverged. Mirror the S162
    assertion discipline: assert the candidate/affordance is *absent or unchanged*
-   while authoritative truth changed (FND-31), not merely that the run "looked
-   plausible."
+   while authoritative truth diverges (FND-31), not merely that the run "looked
+   plausible." This uses equivalent static fixtures rather than an `agent -> corpse`
+   mutation because live `EntityKind` is immutable entity metadata.
 
 ## Authoritative-to-AI Impact Analysis
 
 This spec narrows belief-facing accessors (`entity_kind`, the last-seen synthesis)
 that feed affordances, candidate generation, ranking, HTN selection, the planning
-snapshot, and revalidation, plus two hardening items. The CLAUDE.md checklist
+snapshot, and revalidation, plus two hardening items. The AGENTS.md checklist
 applies and must be walked before the kind changes land:
 
 1. `get_affordances` — candidates that depend on the *current* kind of a remote
@@ -191,11 +221,12 @@ loop. Per `docs/spec-drafting-rules.md`, mandatory headers with applicability:
 - **Concrete dampeners:** Not applicable.
 - **Stored-state vs. derived read-model list:** `PerAgentBeliefView` is a derived
   read-model over `World` + belief stores; this spec narrows what it derives for
-  kind. If Deliverable 2 takes the preferred mechanism, `LastSeenRecord` gains an
-  `observed_kind: Option<EntityKind>` field — this is **belief/memory carrier state**
-  (FND-7/FND-15), recorded at observation time, never promoted to authoritative
-  world truth. The planning snapshot remains a transient derived read-model (FND-27),
-  still lawful by construction via the snapshot-through-view invariant.
+  kind. Deliverable 2 adds an `observed_kind: Option<EntityKind>` field to
+  `LastSeenRecord` — this is **belief/memory carrier state** (FND-7/FND-15), recorded
+  at observation time and propagated through testimony relay, never promoted to
+  authoritative world truth. The planning snapshot remains a transient derived
+  read-model (FND-27), still lawful by construction via the snapshot-through-view
+  invariant.
 - **Planner-formalism analysis:** Not applicable; no planner-formalism change. Plain
   GOAP/affordance search and the StageHint HTN layer simply receive a belief-sourced
   kind instead of a live one. No goal becomes method-required.
@@ -215,12 +246,47 @@ loop. Per `docs/spec-drafting-rules.md`, mandatory headers with applicability:
 
 Cross-system feature (belief boundary → planner → CLI affordance path). Negative
 illegal-path case the feature must **not** produce: a distant actor (or, via the
-shared affordance path, the human player) gaining a candidate, affordance, ranking
-change, or HTN method selection from a **remote entity-kind change** for which no
-carrier updated belief — and, for the footgun items, leaking an arbitrary faction's
-hidden behavioral policy or a remote facility controller's identity. Feature-scoped
-checks: the remote-kind-change belief-wall golden (Deliverable 5), the
+shared affordance path, the human player) gaining or losing a candidate, affordance,
+ranking change, or HTN method selection from a **remote entity-kind divergence** for
+which no carrier updated belief — and, for the footgun items, leaking an arbitrary
+faction's hidden behavioral policy or a remote facility controller's identity.
+Feature-scoped checks: the remote-kind-divergence belief-wall golden (Deliverable 5), the
 `facility_controller_at` confirming test (Deliverable 4), and focused unit tests per
 accessor (remote vs. co-located vs. self) for `entity_kind`, the last-seen synthesis,
 and the gated bandit accessors. Builds on the S162 belief-wall golden family and the
 snapshot-through-view invariant.
+
+## Outcome
+
+Completed on 2026-05-22.
+
+- Added `observed_kind: Option<EntityKind>` to `LastSeenRecord` and scenario
+  last-seen definitions, populated it at direct observation and testimony relay sites,
+  and preserved it through save/load.
+- Changed `PerAgentBeliefView::entity_kind` and last-seen belief synthesis so remote
+  known entity kind comes from stored belief or last-seen memory rather than live
+  `world.entity_kind`.
+- Gated bandit faction-policy accessors to the observing actor's own/believed bandit
+  factions.
+- Added focused regression coverage for `facility_controller_at`.
+- Added Scenario 460 to the S162 belief-wall golden family, plus a deterministic
+  replay companion, proving stale last-seen kind survives authoritative kind
+  divergence across belief-view, candidate, affordance, and decision-trace surfaces.
+- Regenerated golden inventory/index/detail/coverage docs.
+- Deviated from the drafted `agent -> corpse` kind-transition example because live
+  `EntityKind` is immutable metadata; the final golden uses equivalent static
+  `Agent` vs. `Facility` fixtures to prove the same FND-14B source-gate invariant.
+
+Verification:
+
+- Passed `cargo test -p worldwake-core expectation`
+- Passed `cargo test -p worldwake-cli last_seen`
+- Passed `cargo test -p worldwake-systems search_place report_found ask_about_person`
+- Passed `cargo test -p worldwake-sim entity_kind last_seen`
+- Passed `cargo test -p worldwake-ai --test golden_ai remote_kind_change -- --list`
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::belief_wall_trap::golden_belief_wall_trap_remote_kind_change_uses_stale_kind_not_live_truth -- --exact`
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::belief_wall_trap::golden_belief_wall_trap_remote_kind_change_replays_deterministically -- --exact`
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`
+- Passed `cargo test -p worldwake-ai --test golden_ai belief_wall`
+- Passed `cargo test -p worldwake-ai`
+- Passed `./scripts/verify.sh`

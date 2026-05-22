@@ -84,20 +84,20 @@ last-seen belief synthesis read live `world.entity_kind` for remote entities (S1
 
 ```
 S163 (CLI player-POV boundary)            ── completed from the third iteration
-S164 (belief-view kind source-gate)       ── sequence after archived S163; touches the shared belief view, independent of S163's CLI work
+S164 (belief-view kind source-gate)       ── completed and archived; touched the shared belief view, independent of S163's CLI work
 ```
 
-### Pending
+### Completed And Archived
 
 - **S164 — Belief-View Kind Source-Gate + Faction-Policy Footgun Closure** —
-  `specs/S164-belief-view-kind-source-gate.md` — *Status: DRAFT.* Closes the residual
+  `archive/specs/S164-belief-view-kind-source-gate.md` — *Status: COMPLETED.* Closed the residual
   FND-14/14A entity-kind leak S158/S162's accessor sweep missed (`entity_kind` and
-  the last-seen `believed_kind` synthesis must come from stored belief / a last-seen
-  observed-kind carrier, never live `world.entity_kind`); gates the ungated bandit
-  faction-policy accessors to lawfully known factions; adds a `facility_controller_at`
-  remote-control-change confirming test; extends the S162 belief-wall goldens with a
-  remote-kind-change scenario. Correctness fix; no new authoritative state. Sequence
-  after archived S163. **FND-7, FND-14, FND-14A, FND-15, FND-19, FND-27, FND-31.**
+  the last-seen `believed_kind` synthesis now come from stored belief / a last-seen
+  observed-kind carrier, never live `world.entity_kind`); gated the ungated bandit
+  faction-policy accessors to lawfully known factions; added a `facility_controller_at`
+  remote-control-change confirming test; extended the S162 belief-wall goldens with a
+  remote-kind-divergence scenario. Correctness fix; no new authoritative state.
+  **FND-7, FND-14, FND-14A, FND-14B, FND-15, FND-19, FND-27, FND-31.**
 
 ## Excluded from the active order (by directive)
 

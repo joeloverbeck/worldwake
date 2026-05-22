@@ -16,19 +16,19 @@ closed alongside it. One new spec; reaffirm the pending S163 as higher priority.
 
 ## Accepted
 
-- **`specs/S164-belief-view-kind-source-gate.md`** — closes the confirmed residual
+- **`archive/specs/S164-belief-view-kind-source-gate.md`** — closed the confirmed residual
   leak: `entity_kind` (`per_agent_belief_view.rs:604-609`) and the last-seen belief
-  synthesis (`:1293-1304`, `believed_kind: self.world.entity_kind(*entity)`) read live
+  synthesis (`:1293-1304`, `believed_kind: self.world.entity_kind(*entity)`) had read live
   `world.entity_kind` for remote, non-co-located entities while location/aliveness are
   correctly frozen — an internal inconsistency S158/S162's accessor sweep missed
   because it lives in a belief-construction path, not a named accessor.
-  `LastSeenRecord` (`expectation.rs:126-132`) stores no kind, so the synthesis reaches
-  for live world. S164 routes remote kind through stored belief / a last-seen
-  observed-kind carrier, gates the ungated bandit faction-policy accessors
+  `LastSeenRecord` (`expectation.rs:126-132`) had stored no kind, so the synthesis reached
+  for live world. S164 now routes remote kind through stored belief / a last-seen
+  observed-kind carrier, gates the former ungated bandit faction-policy accessors
   (`:611-621`) to lawfully known factions (footgun: today's call sites pass own
   factions, so behavior is unchanged), adds a `facility_controller_at` (`:385-401`)
   remote-control-change confirming test, and extends the S162 belief-wall goldens with
-  a remote-kind-change scenario.
+  a remote-kind-divergence scenario.
 
 ## Reaffirmed (no new spec)
 

@@ -4,7 +4,7 @@ use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
 /// CAUSEVTHON-001 stores blocker/discrepancy source events as `Option<EventId>`.
-pub const SAVE_FORMAT_VERSION: u32 = 99;
+pub const SAVE_FORMAT_VERSION: u32 = 100;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -207,26 +207,27 @@ mod tests {
         CommodityKind, CommodityPurpose, ContentionClaimant, ContentionEventPayload,
         ContentionResolutionRule, ControlSource, DecisionEventPayload, Discrepancy,
         DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EmitterTag, EntityBeliefAspect,
-        EntityBeliefClaim, EntityId, EpistemicDispositionProfile, EventLog, EventPayload, EventTag,
-        EventView, EvidenceKindTag, EvidenceSummary, ExpectationBasis, ExpectationId,
-        ExpectationMismatchPayload, ExpectationRecord, ExpectationState, ExpectationStore,
-        GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalDispatchKey, GoalKey,
-        GoalKind, GoalOfferedPayload, GoalPlanningBudget, GoalRejectionReason,
-        GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason, GroundComfortTag,
-        HomeostaticNeedId, LastSeenMemory, LastSeenProvenance, LastSeenRecord, LatrineFullness,
-        LawAbidingProfile, MaterializationTag, MetabolismProfile, MotiveSource, MotiveSourceRef,
-        ObservationOmission, ObservationRef, OmissionReason, PendingEvent, PerceptionSource,
-        PersonalityAssignedPayload, PlaceDirtiness, PlanAdoptedPayload, PlanAssumptionRef,
-        PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
-        RankedGoalComparisonDimensionTag, RecordRef, RejectedAlternativeSummary,
-        RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
-        RewardEncumbrance, RiskWeightProfile, RoutePreferenceProfile, RoutePreferenceSummary,
-        RouteSegment, Seed, ShelterTag, SleepEpisode, SleepEpisodeEndedPayload,
-        SleepEpisodeStartedPayload, SleepQualityProfile, SleepRecoveryModifier, StateHash,
-        SuspensionReason, TestimonyTrustProfile, TestimonyTrustSummary, Tick, TickRange,
-        TopicScope, UniqueItemKind, UtilityProfile, VisibilitySpec, WakeCondition, WakeReason,
-        WashBasinState, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
+        EntityBeliefClaim, EntityId, EntityKind, EpistemicDispositionProfile, EventLog,
+        EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExpectationBasis,
+        ExpectationId, ExpectationMismatchPayload, ExpectationRecord, ExpectationState,
+        ExpectationStore, GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload,
+        GoalDispatchKey, GoalKey, GoalKind, GoalOfferedPayload, GoalPlanningBudget,
+        GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
+        GroundComfortTag, HomeostaticNeedId, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
+        LatrineFullness, LawAbidingProfile, MaterializationTag, MetabolismProfile, MotiveSource,
+        MotiveSourceRef, ObservationOmission, ObservationRef, OmissionReason, PendingEvent,
+        PerceptionSource, PersonalityAssignedPayload, PlaceDirtiness, PlanAdoptedPayload,
+        PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
+        PursuitInvalidationReasonTag, Quantity, RankedGoalComparisonDimensionTag, RecordRef,
+        RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
+        ReplanTriggeredPayload, ReservationId, RewardEncumbrance, RiskWeightProfile,
+        RoutePreferenceProfile, RoutePreferenceSummary, RouteSegment, Seed, ShelterTag,
+        SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepQualityProfile,
+        SleepRecoveryModifier, StateHash, SuspensionReason, TestimonyTrustProfile,
+        TestimonyTrustSummary, Tick, TickRange, TopicScope, UniqueItemKind, UtilityProfile,
+        VisibilitySpec, WakeCondition, WakeReason, WashBasinState, WashFacilityUsedPayload,
+        WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker, WorkstationTag, World,
+        WorldTxn, build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -665,6 +666,7 @@ mod tests {
                         LastSeenRecord {
                             subject: target,
                             place: belief_place,
+                            observed_kind: Some(EntityKind::Agent),
                             observed_tick: Tick(3),
                             source: actor,
                             provenance: LastSeenProvenance::DirectObservation,
@@ -1365,8 +1367,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_99_after_believed_record_office_snapshots() {
-        assert_eq!(SAVE_FORMAT_VERSION, 99);
+    fn save_format_version_is_100_after_last_seen_observed_kind() {
+        assert_eq!(SAVE_FORMAT_VERSION, 100);
     }
 
     #[test]
@@ -1377,7 +1379,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 99);
+        assert_eq!(SAVE_FORMAT_VERSION, 100);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1654,6 +1656,7 @@ mod tests {
             Some(&LastSeenRecord {
                 subject: target,
                 place: restored_belief_place,
+                observed_kind: Some(EntityKind::Agent),
                 observed_tick: Tick(3),
                 source: actor,
                 provenance: LastSeenProvenance::DirectObservation,

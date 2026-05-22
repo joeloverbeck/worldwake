@@ -364,6 +364,7 @@ fn relay_last_seen_record(record: LastSeenRecord, teller: EntityId) -> LastSeenR
     LastSeenRecord {
         subject: record.subject,
         place: record.place,
+        observed_kind: record.observed_kind,
         observed_tick: record.observed_tick,
         source: teller,
         provenance: LastSeenProvenance::Hearsay {
@@ -843,6 +844,7 @@ mod tests {
             LastSeenRecord {
                 subject,
                 place: other_place,
+                observed_kind: Some(EntityKind::Agent),
                 observed_tick: Tick(7),
                 source: witness,
                 provenance: LastSeenProvenance::DirectObservation,
@@ -863,6 +865,7 @@ mod tests {
             Some(&LastSeenRecord {
                 subject,
                 place: other_place,
+                observed_kind: Some(EntityKind::Agent),
                 observed_tick: Tick(7),
                 source: witness,
                 provenance: LastSeenProvenance::Hearsay {
@@ -887,6 +890,7 @@ mod tests {
             LastSeenRecord {
                 subject: stale_subject,
                 place: actor_place,
+                observed_kind: Some(EntityKind::Agent),
                 observed_tick: Tick(1),
                 source: actor,
                 provenance: LastSeenProvenance::DirectObservation,
@@ -899,6 +903,7 @@ mod tests {
             LastSeenRecord {
                 subject,
                 place: other_place,
+                observed_kind: Some(EntityKind::Agent),
                 observed_tick: Tick(8),
                 source: witness,
                 provenance: LastSeenProvenance::Hearsay {
@@ -923,6 +928,7 @@ mod tests {
             Some(&LastSeenRecord {
                 subject,
                 place: other_place,
+                observed_kind: Some(EntityKind::Agent),
                 observed_tick: Tick(8),
                 source: witness,
                 provenance: LastSeenProvenance::Hearsay {
@@ -943,6 +949,7 @@ mod tests {
             LastSeenRecord {
                 subject,
                 place: actor_place,
+                observed_kind: Some(EntityKind::Agent),
                 observed_tick: Tick(2),
                 source: actor,
                 provenance: LastSeenProvenance::DirectObservation,
@@ -963,6 +970,7 @@ mod tests {
             Some(&LastSeenRecord {
                 subject,
                 place: actor_place,
+                observed_kind: Some(EntityKind::Agent),
                 observed_tick: Tick(2),
                 source: actor,
                 provenance: LastSeenProvenance::DirectObservation,
