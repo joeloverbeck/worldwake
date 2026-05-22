@@ -77,9 +77,9 @@ perception, testimony, record, or memory carrier.
   `world.can_exercise_control(entity, facility)` for each agent in
   `self.entities_at(place)`. The candidate set is **belief-filtered** (only agents the
   observer believes are present), so this is defensible as local observation of who is
-  staffing a believed-present facility. It is borderline and currently **untested for
-  the remote-control-change case**; it warrants a confirming test, not necessarily a
-  behavior change.
+  staffing a believed-present facility. It was borderline and untested for the
+  remote-control-change case when this spec was drafted; S164BELVIEKIN-004 added the
+  confirming focused regression guard with no production behavior change.
 
 ### Key scoping decisions (brainstorm 2026-05-22)
 
@@ -165,12 +165,10 @@ perception, testimony, record, or memory carrier.
    faction's hidden policy.
 
 4. **`facility_controller_at` confirming test** (`per_agent_belief_view.rs:385-401`) —
-   add a focused test proving that a **remote** control change (a controller the
-   observer does not believe is present, or a control transfer with no carrier) does
-   **not** alter the resolved controller/seller identity for a distant actor. If the
-   test reveals an actual leak (controller resolved for a non-believed-present agent),
-   gate the `can_exercise_control` probe on belief-presence; if it confirms lawfulness,
-   the test stands as a regression guard. No behavior change unless the test fails.
+   S164BELVIEKIN-004 added the focused test proving that a **remote** controller the
+   observer does not believe is present does **not** become the resolved
+   controller/seller for a distant actor. The test confirmed the existing
+   belief-filtered candidate gate, so no production behavior change landed.
 
 5. **Adversarial belief-wall goldens** (`worldwake-ai`) — extend the S162 belief-wall
    golden family with a **remote kind change** scenario: an entity changes kind

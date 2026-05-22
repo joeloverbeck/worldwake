@@ -4375,6 +4375,62 @@ mod tests {
         );
     }
 
+    #[test]
+    fn remote_facility_controller_change_without_carrier_stays_hidden() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let observer_place = places[0];
+        let market = places[1];
+        let (observer, believed_staff, hidden_controller, facility) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let believed_staff = txn.create_agent("Staff", ControlSource::Ai).unwrap();
+            let hidden_controller = txn
+                .create_agent("Hidden Controller", ControlSource::Ai)
+                .unwrap();
+            let facility = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(observer, observer_place).unwrap();
+            txn.set_ground_location(believed_staff, market).unwrap();
+            txn.set_ground_location(hidden_controller, market).unwrap();
+            txn.set_ground_location(facility, market).unwrap();
+            commit_txn(txn);
+            (observer, believed_staff, hidden_controller, facility)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        let mut staff_belief = entity_belief(market, true, 0, 1);
+        staff_belief.believed_kind = Some(EntityKind::Agent);
+        beliefs.update_entity(believed_staff, staff_belief);
+        let mut facility_belief = entity_belief(market, true, 0, 1);
+        facility_belief.believed_kind = Some(EntityKind::Facility);
+        beliefs.update_entity(facility, facility_belief);
+
+        let view = PerAgentBeliefView::new(observer, &world, &beliefs);
+        assert_eq!(view.facility_controller_at(facility, market), None);
+
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_owner(facility, hidden_controller).unwrap();
+            commit_txn(txn);
+        }
+        assert!(
+            world
+                .can_exercise_control(hidden_controller, facility)
+                .is_ok()
+        );
+
+        let view = PerAgentBeliefView::new(observer, &world, &beliefs);
+        assert_eq!(
+            view.facility_controller_at(facility, market),
+            None,
+            "hidden authoritative control must not surface as a remote seller/controller"
+        );
+        assert!(
+            !SpatialBeliefView::entities_at(&view, market).contains(&hidden_controller),
+            "the hidden controller must remain outside the observer's believed-present candidates"
+        );
+    }
+
     fn place(name: &str, tag: PlaceTag) -> Place {
         Place {
             name: name.to_string(),

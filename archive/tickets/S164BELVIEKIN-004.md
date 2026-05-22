@@ -1,6 +1,6 @@
 # S164BELVIEKIN-004: `facility_controller_at` remote-change regression guard
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None (test-only, unless the test reveals an actual leak)
@@ -8,14 +8,14 @@
 
 ## Problem
 
-`facility_controller_at` (`per_agent_belief_view.rs:385-401`) resolves seller/
+Before this ticket, `facility_controller_at` (`per_agent_belief_view.rs:385-401`) resolved seller/
 controller identity by calling `world.can_exercise_control(entity, facility)` for
 each agent in `self.entities_at(place)`. The candidate set is belief-filtered (only
 agents the observer believes are present), so this is defensible as local observation
-of who is staffing a believed-present facility — but it is borderline and currently
-**untested for the remote-control-change case**. This ticket adds a confirming test
-proving a remote control change does not alter the resolved controller for a distant
-actor. No behavior change unless the test fails.
+of who is staffing a believed-present facility — but it was borderline and
+**untested for the remote-control-change case**. This ticket added a confirming test
+proving a hidden remote controller does not become the resolved controller for a
+distant actor. No production behavior change was required.
 
 ## Assumption Reassessment (2026-05-22)
 
@@ -51,7 +51,7 @@ actor. No behavior change unless the test fails.
 2. No backward-compat shim introduced. If a fix becomes necessary, it tightens the
    candidate gate (belief-presence) rather than adding an alias path.
 
-## Verification Layers
+## Verified Layers
 
 1. Controller stability under remote control change → focused unit test on
    `facility_controller_at`: transfer control of a facility to an agent the distant
@@ -61,53 +61,73 @@ actor. No behavior change unless the test fails.
    event-log surface applies; the authoritative control transfer is set up directly in
    the test world, and the accessor result is the contract under test.
 
-## What to Change
+## Landed Changes
 
-### 1. Add the confirming focused test
+### 1. Added the confirming focused test
 
-In `crates/worldwake-sim/src/per_agent_belief_view.rs` `#[cfg(test)]`, add a test that
-sets up a facility with a believed-present controller for the observer, then transfers
-`can_exercise_control` to a remote agent the observer does not believe is present (no
-carrier). Assert `facility_controller_at` resolves the believed-present controller (or
-`None`), not the remote one.
+In `crates/worldwake-sim/src/per_agent_belief_view.rs` `#[cfg(test)]`, added
+`remote_facility_controller_change_without_carrier_stays_hidden`. It sets up a
+remote facility known to the observer, keeps the authoritative hidden controller
+outside the observer's believed-present entity set, transfers authoritative control
+to that hidden controller with no carrier, and asserts `facility_controller_at`
+still resolves `None` rather than the hidden remote controller.
 
-### 2. (Conditional) Gate the probe on belief-presence
+### 2. Production accessor unchanged
 
-Only if the test fails: restrict the `can_exercise_control` probe to agents the
-observer believes are present, and document the tightening here.
+The focused test confirmed the existing candidate-set gate: `facility_controller_at`
+only evaluates authoritative control for entities returned by the observer's
+belief-filtered `entities_at(place)` set. No production change was required.
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-sim/src/per_agent_belief_view.rs` (modify — new `#[cfg(test)]` test; conditionally `:385-401`)
+- `crates/worldwake-sim/src/per_agent_belief_view.rs` (modified — added focused
+  `#[cfg(test)]` regression guard only)
 
 ## Out of Scope
 
 - `entity_kind`, the last-seen carrier, and the bandit gate (tickets 001/002/003).
-- Any behavior change unless the new test fails.
+- Any production behavior change; the focused test passed against the existing
+  belief-filtered candidate set.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Passed Criteria
 
-1. A remote control change with no carrier does not alter `facility_controller_at`'s
-   resolved controller for a distant observer.
-2. Existing suite: `cargo test -p worldwake-sim`.
+1. A hidden remote controller with live authoritative control does not become
+   `facility_controller_at`'s resolved controller for a distant observer.
+2. Existing `worldwake-sim` tests passed.
 
-### Invariants
+### Verified Invariants
 
 1. The resolved controller is drawn only from agents the observer believes are present
    at the facility's place.
 2. No omniscient resolution of a control transfer the observer has no carrier for.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added Tests
 
 1. `crates/worldwake-sim/src/per_agent_belief_view.rs` — new focused test for
    controller stability under remote control change.
 
-### Commands
+### Commands Run
 
-1. `cargo test -p worldwake-sim per_agent_belief_view`
-2. `cargo test -p worldwake-sim`
-3. `./scripts/verify.sh`
+1. Passed `cargo test -p worldwake-sim --lib per_agent_belief_view::tests::remote_facility_controller_change_without_carrier_stays_hidden -- --exact`.
+2. Passed `cargo test -p worldwake-sim`.
+3. Passed `./scripts/verify.sh`.
+
+## Outcome
+
+Completed on 2026-05-22.
+
+- Added a focused `PerAgentBeliefView` regression guard for `facility_controller_at`
+  proving an authoritative controller hidden from the observer's believed-present
+  set does not surface as a remote seller/controller.
+- The test confirmed the existing belief-filtered candidate boundary, so no
+  production behavior change was needed.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-sim --lib per_agent_belief_view::tests::remote_facility_controller_change_without_carrier_stays_hidden -- --exact`.
+- Passed `cargo test -p worldwake-sim`.
+- Passed `./scripts/verify.sh`.
