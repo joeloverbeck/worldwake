@@ -624,12 +624,20 @@ impl EntityBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
+        if !self.bandit_factions_of(self.agent).contains(&faction) {
+            return None;
+        }
+
         self.world
             .get_component_bandit_faction_policy(faction)
             .map(|policy| policy.flee_wound_threshold)
     }
 
     fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<NonZeroU32> {
+        if !self.bandit_factions_of(self.agent).contains(&faction) {
+            return None;
+        }
+
         self.world
             .get_component_bandit_faction_policy(faction)
             .map(|policy| policy.establishment_duration_ticks)
@@ -6341,14 +6349,16 @@ mod tests {
     }
 
     #[test]
-    fn bandit_policy_entity_methods_read_from_authoritative_faction_policy() {
+    fn bandit_policy_entity_methods_are_gated_to_own_bandit_factions() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
-        let (agent, faction) = {
+        let (agent, faction, other_faction) = {
             let mut txn = new_txn(&mut world, 1);
             let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let faction = txn.create_faction("River Pact").unwrap();
+            let other_faction = txn.create_faction("Hill Knives").unwrap();
             txn.set_ground_location(agent, place).unwrap();
+            txn.add_member(agent, faction).unwrap();
             txn.set_component_bandit_faction_policy(
                 faction,
                 BanditFactionPolicy {
@@ -6360,8 +6370,19 @@ mod tests {
                 },
             )
             .unwrap();
+            txn.set_component_bandit_faction_policy(
+                other_faction,
+                BanditFactionPolicy {
+                    rally_place: Some(place),
+                    establishment_duration_ticks: NonZeroU32::new(12).unwrap(),
+                    min_regroup_count: 1,
+                    abandonment_grace_ticks: NonZeroU32::new(5).unwrap(),
+                    flee_wound_threshold: Permille::new(800).unwrap(),
+                },
+            )
+            .unwrap();
             commit_txn(txn);
-            (agent, faction)
+            (agent, faction, other_faction)
         };
 
         let beliefs = AgentBeliefStore::new();
@@ -6374,6 +6395,14 @@ mod tests {
         assert_eq!(
             EntityBeliefView::bandit_camp_establishment_ticks(&view, faction),
             Some(NonZeroU32::new(8).unwrap())
+        );
+        assert_eq!(
+            EntityBeliefView::bandit_flee_wound_threshold(&view, other_faction),
+            None
+        );
+        assert_eq!(
+            EntityBeliefView::bandit_camp_establishment_ticks(&view, other_faction),
+            None
         );
     }
 
