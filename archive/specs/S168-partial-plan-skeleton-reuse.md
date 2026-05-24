@@ -311,7 +311,9 @@ S168 landed the partial-plan skeleton reuse path through the archived ticket fam
 `archive/tickets/S168PARPLASKE-006.md`. The implementation added belief-backed
 skeleton revalidation, a planner-owned skeleton source carrier, budget-exhausted and
 information-barrier skeleton population, seeded tactical search consumption, and
-`PartialPlanResumeTrace` coverage for reuse versus fallback.
+`PartialPlanResumeTrace` coverage for reuse versus fallback. Pre-push verification
+also fixed downstream CLI and visualizer test-fixture constructors so every
+`AgentDecisionTrace` construction initializes the new `partial_plan_resumes` carrier.
 
 Deviations from the draft:
 
@@ -337,3 +339,7 @@ Verification:
   `golden_s168_populated_skeleton_survives_save_load_before_resume`.
 - Passed broader no-regression gates recorded by the final S168 tickets, including
   `cargo test -p worldwake-ai` and generated golden inventory/documentation checks.
+- During final pre-push verification, `./scripts/verify.sh` first exposed missing
+  `partial_plan_resumes` initializers in `crates/worldwake-cli/src/bin/observer.rs` and
+  `crates/worldwake-visualizer/src/trace_buffers.rs`; those were corrected before the
+  final verification rerun.
