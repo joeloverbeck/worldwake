@@ -160,6 +160,8 @@ If implementation ends blocked:
 
 If a user resolves a blocker in the same session and explicitly authorizes continuing the same ticket, clear the durable blocked state before invoking the child implementation phase again or making source edits: set `blocked: false`, restore `next_target` to the ticket being resumed, keep or repair the queue, update the blocker field to `null`, and refresh `.codex/run-state/implement-spec-tickets.json`. This prevents a mid-run interruption or compaction from preserving a stale `"blocked"` state while implementation is actively proceeding.
 
+If a user resolves a blocker by approving a new prerequisite ticket instead of resuming the blocked ticket directly, create or update that prerequisite through the normal ticket rules, clear the durable blocked state, put the prerequisite at the front of the queue, and set `next_target` to the prerequisite before invoking `implement-ticket`. After that prerequisite is completed and archived, update the originally blocked ticket's `Deps` and stale blocker wording to point at the archived prerequisite, remove the prerequisite from the active queue, and make the originally blocked ticket the next target again unless a newer follow-up takes priority.
+
 ### 2. Audit And Apply Implement-Ticket Suggestions
 
 Run the audit phase as if the user had said:
