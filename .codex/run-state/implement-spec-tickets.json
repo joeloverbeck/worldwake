@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implement-S167-cognitive-archetype-behavioral-proof",
   "base_head": "c89d62922e4be1f56ccfa184840c8ce3c316e819",
-  "last_ticket": "archive/tickets/S167COGARCBEH-001A.md",
+  "last_ticket": "archive/tickets/S167COGARCBEH-002.md",
   "last_result": "completed_archived",
-  "last_work_commit": "e880773200dc86da6a4c837938e0e8502a49a578",
+  "last_work_commit": "e4f8fdf3ced8b63eab9ef4dcff31fd331ee2080f",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S167COGARCBEH-002.md",
+  "next_target": "tickets/S167COGARCBEH-003.md",
   "queue": [
-    "tickets/S167COGARCBEH-002.md",
     "tickets/S167COGARCBEH-003.md",
     "tickets/S167COGARCBEH-004.md"
   ],
