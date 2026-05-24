@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` revalidation seam (`agent_tick/execution.rs`)
-**Deps**: archive/tickets/S165EPIVERREP-001.md, S165EPIVERREP-002
+**Deps**: archive/tickets/S165EPIVERREP-001.md, archive/tickets/S165EPIVERREP-002.md
 
 ## Problem
 
