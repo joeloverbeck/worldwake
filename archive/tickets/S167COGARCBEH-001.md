@@ -74,7 +74,8 @@ to active.
    `final-integration.ron` or another existing canonical scenario would
    destabilize that scenario's existing assertions and dilute the archetype
    impact among unrelated competing tensions. A dedicated focused scenario
-   keeps the proof self-contained and lets D4 (S167COGARCBEH-003) classify it
+   keeps the proof self-contained and lets D4
+   ([`S167COGARCBEH-003`](S167COGARCBEH-003.md)) classify it
    as auxiliary-behavior coverage rather than a survival-coexistence landing.
 2. **Explicit per-agent `AgentDef.archetype` over policy** — the spec's D2
    commits to explicit assignment because `ArchetypeAssignmentPolicy` is seeded
@@ -164,7 +165,8 @@ inspecting the regenerated file).
 
 - The behavioral-divergence golden test that loads this scenario — lives in
   S167COGARCBEH-002.
-- Scenario roadmap formalization — lives in S167COGARCBEH-003.
+- Scenario roadmap formalization — completed in
+  [`S167COGARCBEH-003`](S167COGARCBEH-003.md).
 - CI workflow lane — lives in S167COGARCBEH-004.
 - Any change to engine code, profile templates, archetype assignment logic,
   decision-trace surface, or `cognitive_archetype.rs` — this is

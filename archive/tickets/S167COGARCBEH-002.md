@@ -213,7 +213,8 @@ per-scenario facility/source counts so `scenario-coverage --check` passes.
   [`archive/tickets/S167COGARCBEH-001.md`](S167COGARCBEH-001.md).
 - Initial coverage doc regeneration — completed in
   [`archive/tickets/S167COGARCBEH-001.md`](S167COGARCBEH-001.md).
-- Roadmap formalization — owned by S167COGARCBEH-003.
+- Roadmap formalization — completed in
+  [`S167COGARCBEH-003`](S167COGARCBEH-003.md).
 - CI workflow lane — owned by S167COGARCBEH-004.
 - Extending `decision_trace.rs` with new fields naming profile deltas —
   explicit Non-Goal in the spec; attribution lives test-side.

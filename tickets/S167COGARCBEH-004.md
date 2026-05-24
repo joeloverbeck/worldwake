@@ -161,8 +161,8 @@ cognitive_archetypes_divergence`.
 - Authoring the scenario file — completed in
   [`archive/tickets/S167COGARCBEH-001.md`](../archive/tickets/S167COGARCBEH-001.md).
 - Authoring the golden test — owned by S167COGARCBEH-002.
-- Adding scenario-roadmap entry citing this workflow path — owned by
-  S167COGARCBEH-003.
+- Adding scenario-roadmap entry for this auxiliary proof row — completed in
+  [`archive/tickets/S167COGARCBEH-003.md`](../archive/tickets/S167COGARCBEH-003.md).
 - Adding additional archetype pairs as matrix entries — reserved for
   future specs per the spec's Follow-ups section (`Bold vs Methodical`,
   `Sociable vs Skeptical`, etc.). Those land as additional matrix

@@ -1,10 +1,10 @@
 # S167COGARCBEH-003: Formalize archetype proof row in scenario-roadmap.md
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: [`archive/tickets/S167COGARCBEH-001.md`](../archive/tickets/S167COGARCBEH-001.md), [`archive/tickets/S167COGARCBEH-002.md`](../archive/tickets/S167COGARCBEH-002.md), [`specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md)
+**Deps**: [`archive/tickets/S167COGARCBEH-001.md`](S167COGARCBEH-001.md), [`archive/tickets/S167COGARCBEH-002.md`](S167COGARCBEH-002.md), [`specs/S167-cognitive-archetype-behavioral-proof.md`](../../specs/S167-cognitive-archetype-behavioral-proof.md)
 
 ## Problem
 
@@ -28,7 +28,7 @@ existing entry contract template.
    Entry Contract Template at lines 115-151 defines the canonical shape for
    landed entries.
 2. The spec
-   ([`specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md))
+   ([`specs/S167-cognitive-archetype-behavioral-proof.md`](../../specs/S167-cognitive-archetype-behavioral-proof.md))
    D4 commits to four update points: catalog row in §2, ordering table row in
    §4.2, landed entry in §5 (auxiliary-coverage classification), Status Summary
    update in §3. The auxiliary classification mirrors the §5.17 entries for
@@ -47,6 +47,11 @@ existing entry contract template.
    `simulation_gaps.rs` (auxiliary simulation-gap coverage only). The new
    archetype row follows this pattern — it owns the FND-31 archetype-decision
    causal proof, not a survival-coexistence landing.
+5. Live reassessment found that `.github/workflows/golden-cognitive-archetypes.yml`
+   does not exist yet because S167COGARCBEH-004 is still active and owns that
+   CI lane. This ticket must not claim the workflow as landed or require the
+   workflow path to resolve; it may cite the active follow-up as the CI-lane
+   owner if the roadmap entry mentions CI visibility.
 
 ## Architecture Check
 
@@ -64,7 +69,7 @@ existing entry contract template.
    would diverge from the existing readability pattern future readers
    navigate.
 
-## Verification Layers
+## Verified Layers
 
 1. Documentation truthfulness (single-layer ticket — proof surface is human
    review + the doc's own coverage references resolving) -> manual
@@ -79,14 +84,14 @@ existing entry contract template.
    template's Verification Layers are not applicable — no decision trace,
    action trace, or event-log delta is involved.
 
-## What to Change
+## Landed Changes
 
 ### 1. Add catalog row in §2 Gameplay Feature Catalog
 
-Add a new row to the table at `docs/scenario-roadmap.md` lines 32+:
+Added a new row to the table in `docs/scenario-roadmap.md`:
 
 ```markdown
-| Cognitive archetypes | Per-agent `AgentDef.archetype` set OR `archetype_assignment_policy` authored | [`cognitive_archetype.rs`](../crates/worldwake-core/src/cognitive_archetype.rs), [`scenario/mod.rs`](../crates/worldwake-cli/src/scenario/mod.rs) spawn-time delta application | Landed in [§5.18](#518-landed-auxiliary-cognitive-archetypes-divergence) |
+| Cognitive archetypes | Per-agent `AgentDef.archetype` set OR `archetype_assignment_policy` authored | [`cognitive_archetype.rs`](../../crates/worldwake-core/src/cognitive_archetype.rs), [`scenario/mod.rs`](../../crates/worldwake-cli/src/scenario/mod.rs) spawn-time delta application | Landed in [§5.18](#518-landed-auxiliary-cognitive-archetypes-divergence) |
 ```
 
 (Section number `5.18` is illustrative — verify the next available
@@ -96,59 +101,53 @@ The activation signal text must match `cognitive_archetypes_status(def)` at
 `crates/worldwake-cli/src/bin/scenario_coverage.rs:865-872` — it checks both
 `scenario_def.archetype_assignment_policy` and per-agent `archetype`.
 
-### 2. Add ordering table row in §4.2 Ordered Roadmap
+### 2. Added ordering table row in §4.2 Ordered Roadmap
 
-Add a new row at the end of the table at lines 158-175, after row 17
-`final-integration`:
+Added a new row at the end of the table after row 17 `final-integration`:
 
 ```markdown
 | 18 | `cognitive-archetypes-divergence` | Cognitive archetypes (auxiliary behavior coverage) | Landed | Auxiliary behavior-proof row; not subject to 1440-tick survival-health contract. Owns the FND-31 archetype-decision causal proof. |
 ```
 
-### 3. Add landed entry in §5 Landed Scenarios
+### 3. Added landed entry in §5 Landed Scenarios
 
-Add a new sub-section (e.g., `### 5.18 Landed Auxiliary:
-cognitive-archetypes-divergence`) using the §4.1 Entry Contract Template:
+Added `### 5.18 Landed Auxiliary: cognitive-archetypes-divergence` using the
+§4.1 Entry Contract Template:
 
 ```markdown
 ### 5.18 Landed Auxiliary: cognitive-archetypes-divergence
 
 **Status**: Landed
-**Source scenario**: [`scenarios/cognitive-archetypes-divergence.ron`](../scenarios/cognitive-archetypes-divergence.ron)
-**Backing goldens**: [`cognitive_archetypes_divergence.rs`](../crates/worldwake-ai/tests/scenarios/cognitive_archetypes_divergence.rs)
-**Depends on**: archived [S152 archetype implementation](../archive/specs/S152-cognitive-archetypes-seeded-diversity.md)
+**Source scenario**: [`scenarios/cognitive-archetypes-divergence.ron`](../../scenarios/cognitive-archetypes-divergence.ron)
+**Backing goldens**: [`cognitive_archetypes_divergence.rs`](../../crates/worldwake-ai/tests/scenarios/cognitive_archetypes_divergence.rs)
+**Depends on**: archived [S152 archetype implementation](../specs/S152-cognitive-archetypes-seeded-diversity.md)
 
 This row is **auxiliary behavior coverage**, not a survival-coexistence
 landing. It owns the FND-31 archetype-decision causal proof: two same-role
 same-belief agents differing only by `CognitiveArchetype` choose different
 actions under identical local facts, with the decision trace and a test-side
-profile-delta attribution naming the cause (Greedy's higher
-`portfolio_weights.economic_weight` tipping a marginal economic-vs-safety
-trade). A counterfactual archetype-swap replay asserts the divergence
-reverses correspondingly.
+profile-delta attribution naming the cause (Greedy's lower
+`RoutePreferenceProfile.dangerous_traversal_penalty` making the mixed-history
+Risky Orchard route cheaper than the neutral Sheltered Cut route). A
+counterfactual archetype-swap replay asserts the divergence reverses
+correspondingly.
 
 The row has no `survival_health_contract` and runs on a short tick budget;
 the proof is decision divergence + counterfactual symmetry + knowledge
 legality, not 1440-tick coexistence. The scenario uses no new mechanics:
-existing substrate primitives author the marginal economic-vs-safety tension,
-and the archetype delta flows through ordinary ranking/search.
+existing substrate primitives author the route-choice tension, and the
+archetype delta flows through ordinary route-aware ranking/search.
 
-The scenario runs in its own dedicated CI workflow lane,
-[`golden-cognitive-archetypes.yml`](../.github/workflows/golden-cognitive-archetypes.yml),
-so a future profile retune that erases the divergence fails loudly in
-isolation rather than silently in a batched lane.
+The dedicated CI lane is tracked by active follow-up
+[`S167COGARCBEH-004`](../../tickets/S167COGARCBEH-004.md) and is not claimed as
+landed by this row.
 ```
 
-### 4. Update Status Summary in §3
+### 4. Updated Status Summary in §3
 
-Read the current §3 contents and add the new auxiliary row to whichever
-counter or list tracks landed scenarios. The exact update depends on §3's
-current structure — inspect at write time and apply the minimal coherent
-update. If §3 maintains a per-category count (survival-row count + auxiliary
-count), increment the auxiliary count. If §3 lists landed rows by name, add
-the new row's name.
+Added the new auxiliary row to the §3 status table.
 
-## Files to Touch
+## Landed Files
 
 - `docs/scenario-roadmap.md` (modify — 4 update points across §2, §3, §4.2,
   §5)
@@ -156,12 +155,13 @@ the new row's name.
 ## Out of Scope
 
 - Authoring the scenario file — completed in
-  [`archive/tickets/S167COGARCBEH-001.md`](../archive/tickets/S167COGARCBEH-001.md).
+  [`archive/tickets/S167COGARCBEH-001.md`](S167COGARCBEH-001.md).
 - Authoring the golden test — owned by S167COGARCBEH-002.
-- CI workflow file — owned by S167COGARCBEH-004 (the roadmap entry cites
-  the workflow path, but the workflow file itself lands in 004).
+- CI workflow file — owned by S167COGARCBEH-004. Because that ticket is still
+  active, this ticket must not require
+  `.github/workflows/golden-cognitive-archetypes.yml` to exist yet.
 - Coverage doc regeneration — completed in
-  [`archive/tickets/S167COGARCBEH-001.md`](../archive/tickets/S167COGARCBEH-001.md).
+  [`archive/tickets/S167COGARCBEH-001.md`](S167COGARCBEH-001.md).
 - Any change to `scenario_coverage.rs`'s `FEATURES` table or the
   `CognitiveArchetypes` feature row registration — already present and
   cited by the new catalog row.
@@ -170,18 +170,18 @@ the new row's name.
   social observations) — explicit Non-Goal in the spec, reserved for
   follow-up specs.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Acceptance Proof
 
-1. The catalog row's `Feature` column text matches `scenario_coverage.rs`'s
+1. Passed: the catalog row's `Feature` column text matches `scenario_coverage.rs`'s
    `CognitiveArchetypes` feature name byte-for-byte (verified by grep).
-2. All cited paths in the new landed entry resolve to existing files at
-   review time (the source scenario, backing golden, and CI workflow all
-   exist because S167COGARCBEH-001/002/004 are dependencies).
-3. Existing suite: `scripts/verify.sh` passes. (Roadmap docs do not have a
-   dedicated automated check beyond markdown rendering; the test surface is
-   editorial review.)
+2. Passed: all cited landed-entry source/proof paths resolve to existing files
+   at review time (the source scenario, backing golden, and the active
+   S167COGARCBEH-004 CI-lane owner ticket).
+3. Waived `scripts/verify.sh` for this per-ticket closeout because the landed
+   diff is non-generated Markdown only; the implement-spec-tickets harness final
+   branch phase still owns the full pre-PR gate before push.
 
 ### Invariants
 
@@ -197,18 +197,54 @@ the new row's name.
    §5 landed entry) land in the same diff — partial updates would leave
    the roadmap internally inconsistent.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Focused Tests
 
 1. `None — documentation-only ticket; verification is command-based and
    existing runtime coverage is named in Assumption Reassessment.`
 
-### Commands
+### Commands Result
 
-1. `grep -n "Cognitive archetypes\|CognitiveArchetypes"
+1. Passed `grep -n "Cognitive archetypes\|CognitiveArchetypes"
    docs/scenario-roadmap.md
    crates/worldwake-cli/src/bin/scenario_coverage.rs` — verify the
    feature name appears in both files and the text matches.
-2. `scripts/verify.sh` — full pre-PR gate (catches markdown parse errors,
-   broken intra-doc references if any).
+2. Passed `test -f scenarios/cognitive-archetypes-divergence.ron && test -f
+   crates/worldwake-ai/tests/scenarios/cognitive_archetypes_divergence.rs &&
+   test -f tickets/S167COGARCBEH-004.md` — verify cited S167 source/proof/owner
+   paths resolve.
+3. Passed `git diff --check -- docs/scenario-roadmap.md
+   archive/tickets/S167COGARCBEH-003.md` — scoped Markdown whitespace hygiene.
+4. Waived `scripts/verify.sh` for this per-ticket closeout because no source,
+   generated, scenario, test, or executable behavior changed after the prior
+   S167 proof tickets; the harness final branch phase still owns the full
+   pre-PR gate before push.
+
+## Outcome
+
+Completed on 2026-05-24.
+
+- Added the `Cognitive archetypes` gameplay-feature catalog row to
+  `docs/scenario-roadmap.md`, aligned with the live
+  `FeatureDef.name = "Cognitive archetypes"` and the
+  `cognitive_archetypes_status(def)` activation logic.
+- Added the §3 status-summary row, §4.2 ordered-roadmap row, and §5.18 landed
+  auxiliary entry for `cognitive-archetypes-divergence`.
+- Truth-synced this ticket's draft wording: the landed causal reason is the
+  Greedy vs. Cautious route-preference penalty delta, not a portfolio economic
+  weight trade, and the dedicated CI lane remains active follow-up work in
+  S167COGARCBEH-004 rather than a landed workflow file.
+
+## Deviations
+
+- The roadmap entry cites active `tickets/S167COGARCBEH-004.md` as the CI-lane
+  owner instead of linking `.github/workflows/golden-cognitive-archetypes.yml`,
+  because that workflow is intentionally not created until S167COGARCBEH-004.
+
+## Verification Result
+
+- Passed `grep -n "Cognitive archetypes\|CognitiveArchetypes" docs/scenario-roadmap.md crates/worldwake-cli/src/bin/scenario_coverage.rs`.
+- Passed `test -f scenarios/cognitive-archetypes-divergence.ron && test -f crates/worldwake-ai/tests/scenarios/cognitive_archetypes_divergence.rs && test -f tickets/S167COGARCBEH-004.md`.
+- Passed `git diff --check -- docs/scenario-roadmap.md archive/tickets/S167COGARCBEH-003.md`.
+- Waived `scripts/verify.sh` for this per-ticket closeout because the landed diff is non-generated Markdown only; the implement-spec-tickets final branch phase still owns the full pre-PR gate before push.
