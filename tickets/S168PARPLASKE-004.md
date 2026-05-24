@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: None — golden tests + replay equivalence checks. New scenario RON files; new test files in `crates/worldwake-ai/tests/`.
-**Deps**: `S168PARPLASKE-001` (`revalidate_skeleton_step`); `S168PARPLASKE-002` (populated `remaining_skeleton`); `S168PARPLASKE-003` (`search_plan_seeded` + `PartialPlanResumeTrace`); `specs/S168-partial-plan-skeleton-reuse.md` (Validation and Falsification section).
+**Deps**: `archive/tickets/S168PARPLASKE-001.md` (`revalidate_skeleton_step`); `S168PARPLASKE-002` (populated `remaining_skeleton`); `S168PARPLASKE-003` (`search_plan_seeded` + `PartialPlanResumeTrace`); `specs/S168-partial-plan-skeleton-reuse.md` (Validation and Falsification section).
 
 ## Problem
 

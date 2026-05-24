@@ -33,6 +33,7 @@ pub mod motive_source_mapping;
 pub mod opportunity_compiler;
 pub mod opportunity_expectation_failure;
 pub mod partial_plan;
+pub mod partial_plan_revalidation;
 pub mod perf_telemetry;
 pub mod plan_guard;
 pub mod plan_guard_build;
@@ -128,6 +129,10 @@ pub use partial_plan::{
     build_partial_plan_segment, coordination_barrier_blocking_fact,
     record_coordination_barrier_blocker, resume_conditions_for_barrier_fact,
     terminal_to_discrepancy,
+};
+pub use partial_plan_revalidation::{
+    SkeletonRevalidationContext, SkeletonRevalidationReason, SkeletonRevalidationVerdict,
+    revalidate_skeleton_step,
 };
 pub use plan_guard::{ExpectationKind, Invalidator, PlanExpectation, PlanGuard, RequiredFact};
 pub use plan_guard_build::{

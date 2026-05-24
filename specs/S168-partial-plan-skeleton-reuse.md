@@ -156,8 +156,9 @@ path.
 
 A new function `revalidate_skeleton_step` (in `worldwake-ai`, alongside
 `agenda_manager.rs` or in a sibling module — implementer's choice) that checks each
-`PlannedSkeletonStep` against current lawful beliefs and returns a verdict: `Reusable`
-(seed search) or `Invalid(reason)` (fall back to full replan).
+`PlannedSkeletonStep` against current lawful beliefs and the stored `GoalOffer` context
+needed to resolve goal-relative templates, then returns a verdict: `Reusable` (seed
+search) or `Invalid(reason)` (fall back to full replan).
 
 Implementation specifics:
 

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `crates/worldwake-ai/src/agent_tick/planning.rs` (new `search_plan_seeded` tactical-search entry); `crates/worldwake-ai/src/agenda_manager.rs` (`try_resume_partial_plan` calls revalidation + invokes seeded search + emits trace); `crates/worldwake-ai/src/decision_trace.rs` (new `PartialPlanResumeTrace` struct).
-**Deps**: `S168PARPLASKE-001` (`revalidate_skeleton_step` + `SkeletonRevalidationVerdict`); `S168PARPLASKE-002` (populated `remaining_skeleton` to consume); `specs/S168-partial-plan-skeleton-reuse.md` (D3, D4).
+**Deps**: `archive/tickets/S168PARPLASKE-001.md` (`revalidate_skeleton_step` + `SkeletonRevalidationContext` + `SkeletonRevalidationVerdict`); `S168PARPLASKE-002` (populated `remaining_skeleton` to consume); `specs/S168-partial-plan-skeleton-reuse.md` (D3, D4).
 
 ## Problem
 
@@ -25,7 +25,7 @@ D4's `PartialPlanResumeTrace` struct lives in `decision_trace.rs` (parallel to `
    - Decision trace sink installation pattern: traces are appended to the per-agent trace via the existing decision-trace surface. Read `RepairAttemptTrace` consumers (~5-10 sites) to confirm the existing emit/observation pattern before authoring the new trace's wiring.
 2. **Spec/doc references**. S168 D3 (`specs/S168-partial-plan-skeleton-reuse.md:176-192`) names `search_plan_seeded` and the search-control-bias semantics. D4 (lines 194-201) names `PartialPlanResumeTrace` and the emit point. The decision to use a separate function (not an optional parameter on `search_plan_with_trace_metadata_and_source`) is explicit in the spec — preserves the unseeded entry's tracing/termination contract.
 3. **Mixed-layer boundary**. This is a cross-module AI ticket but stays AI-internal. Shared boundaries under audit:
-   - `try_resume_partial_plan` → `revalidate_skeleton_step` (ticket 001) → verdict.
+   - `try_resume_partial_plan` → `revalidate_skeleton_step(SkeletonRevalidationContext { actor, goal: &segment.goal, step, view })` (ticket 001) → verdict.
    - `try_resume_partial_plan` → `search_plan_seeded` (new) → planned plan or fallback.
    - `try_resume_partial_plan` → `PartialPlanResumeTrace` emit (new, decision_trace sink).
 4. **Phase distinction (precision rule 1)**. The seeded path replaces the *plan search* phase only. Candidate generation, ranking, suppression, filtering, and authoritative outcome are unchanged. Spec is explicit: the seeded path does not replay actions; it rebuilds tactical detail through ordinary search.
@@ -96,7 +96,7 @@ In `crates/worldwake-ai/src/agent_tick/planning.rs`, alongside the existing `sea
 In `crates/worldwake-ai/src/agenda_manager.rs::try_resume_partial_plan` (lines 86-145):
 
 - After the existing resume-condition checks succeed and the resume-attempt counter is incremented (line 128), check whether `segment.remaining_skeleton` is `Some(_)`.
-- If `Some(skeleton)`: iterate `skeleton.iter()` calling `revalidate_skeleton_step(actor, step, view)` and collect per-step verdicts. If any verdict is `Invalid(_)`, the decision is `FallbackToReplanInvalid(first_invalid_reason)`. If all are `Reusable`, the decision is `ReusedSeededSearch`.
+- If `Some(skeleton)`: iterate `skeleton.iter()` calling `revalidate_skeleton_step(SkeletonRevalidationContext { actor, goal: &segment.goal, step, view })` and collect per-step verdicts. If any verdict is `Invalid(_)`, the decision is `FallbackToReplanInvalid(first_invalid_reason)`. If all are `Reusable`, the decision is `ReusedSeededSearch`.
 - If `None`: decision is `FallbackToReplanNoSkeleton`.
 - Emit `PartialPlanResumeTrace` via the decision-trace sink with the segment id, decision, per-step verdicts, and seeded ops (when reused). Emit happens *before* `search_plan_seeded` runs (per Architecture Check #4).
 - On `ReusedSeededSearch`: call `search_plan_seeded(skeleton, …)` instead of setting `entry.phase = AgendaPhase::Pending`. The returned plan is committed via the existing plan-commit machinery (the resume should yield the same final agenda state as full replan would).
