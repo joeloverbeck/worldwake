@@ -5,9 +5,9 @@
   "starting_branch": "main",
   "current_branch": "implement-S167-cognitive-archetype-behavioral-proof",
   "base_head": "c89d62922e4be1f56ccfa184840c8ce3c316e819",
-  "last_ticket": "archive/tickets/S167COGARCBEH-001.md",
+  "last_ticket": "archive/tickets/S167COGARCBEH-001A.md",
   "last_result": "completed_archived",
-  "last_work_commit": "451e6cac697bbc88e2e50f4d9634badda92aea5c",
+  "last_work_commit": "e880773200dc86da6a4c837938e0e8502a49a578",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
   "next_target": "tickets/S167COGARCBEH-002.md",
@@ -20,8 +20,8 @@
   "post_ticket_review_audit": "not_required",
   "last_implement_ticket_audit": "done",
   "last_post_ticket_review_audit": "done",
-  "blocked": true,
-  "blocker": "S167COGARCBEH-002 live reassessment blocked: archived cognitive-archetypes-divergence scenario plus identical test-side beliefs does not produce Greedy/Cautious decision divergence; isolated replays select the same goals through tick 31 and selected summaries carry zero Greed contribution. User decision required to retarget the ticket/spec or change engine/scenario scope.",
+  "blocked": false,
+  "blocker": null,
   "dirty_state": "clean",
   "updated_at": "2026-05-24"
 }
