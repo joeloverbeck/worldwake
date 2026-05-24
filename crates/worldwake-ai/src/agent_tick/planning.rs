@@ -31,13 +31,12 @@ use crate::{
     AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime,
     DirtySet, ExhaustionEntry, ExhaustionRetryState, ExpectationFailureCause,
     ExpectationFailurePhase, KillCondition, OpportunityExpectationFailureIncident, OpportunityKey,
-    PendingRepairContext, PlanTerminalKind, PlanValue, PlannedPlan, PlannedStep,
-    PlannerOpSemantics, PlanningStateCacheCounters, RevivalTrigger, authoritative_target,
+    PendingRepairContext, PlanValue, PlannedPlan, PlannedStep, PlannerOpSemantics,
+    PlanningStateCacheCounters, RevivalTrigger, authoritative_target,
     budget_exhausted_partial_plan_segment,
     build_planning_snapshot_with_blocked_facility_uses_and_route_preference,
-    information_barrier_partial_plan_segment, planner_ops::committed_source_for_offer,
-    planner_ops::expectation_kind_for_offer, ranking::OrderedRanked, revalidate_next_step,
-    select_best_plan,
+    planner_ops::committed_source_for_offer, planner_ops::expectation_kind_for_offer,
+    ranking::OrderedRanked, revalidate_next_step, select_best_plan,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
@@ -1178,71 +1177,18 @@ fn write_budget_exhausted_partial_plan_segments(
 }
 
 fn write_information_barrier_partial_plan_segment(
-    agenda_state: &mut AgendaState,
-    ranked_candidates: &OrderedRanked<'_>,
-    selected_plan: &PlannedPlan,
-    plans: &[CandidatePlanSearch],
-    tick: Tick,
-    cognitive: &CognitiveProfile,
+    _agenda_state: &mut AgendaState,
+    _ranked_candidates: &OrderedRanked<'_>,
+    _selected_plan: &PlannedPlan,
+    _plans: &[CandidatePlanSearch],
+    _tick: Tick,
+    _cognitive: &CognitiveProfile,
 ) -> bool {
-    let PlanTerminalKind::InformationBarrier { topic } = selected_plan.terminal_kind else {
-        return false;
-    };
-    if matches!(
-        selected_plan.goal.kind,
-        GoalKind::AskWitness { .. } | GoalKind::ShareBelief { .. }
-    ) {
-        return false;
-    }
-    let Some(candidate) = ranked_candidates.iter().find(|candidate| {
-        candidate.offer.key == selected_plan.opportunity.goal_key
-            && candidate.offer.anchor == selected_plan.opportunity.anchor
-    }) else {
-        return false;
-    };
-    let remaining_skeleton = plans
-        .iter()
-        .find(|plan| plan.opportunity == selected_plan.opportunity)
-        .and_then(|plan| plan.skeleton_source.as_ref())
-        .map(|source| source.remaining_skeleton.clone());
-    let Some(segment) = information_barrier_partial_plan_segment(
-        candidate.offer.clone(),
-        topic,
-        remaining_skeleton,
-        tick,
-        next_partial_plan_segment_counter(agenda_state, tick),
-        cognitive,
-    ) else {
-        return false;
-    };
-
-    let mut entry = candidate.clone();
-    entry.phase = AgendaPhase::Suspended;
-    entry.last_reconsidered_tick = tick;
-    entry.revival_trigger = None;
-    entry.kill_condition = KillCondition::External;
-    entry.partial_plan_segment = Some(segment);
-    agenda_state.pending.remove(&entry.key);
-    if agenda_state
-        .committed
-        .as_ref()
-        .is_some_and(|committed| committed.key == entry.key)
-    {
-        agenda_state.committed = None;
-    }
-    agenda_state.suspended.insert(entry.key, entry);
-    true
-}
-
-fn next_partial_plan_segment_counter(agenda_state: &AgendaState, tick: Tick) -> u16 {
-    agenda_state
-        .suspended
-        .values()
-        .filter_map(|entry| entry.partial_plan_segment.as_ref())
-        .filter(|segment| segment.created_tick == tick)
-        .map(|segment| segment.id.local_counter)
-        .max()
-        .map_or(0, |counter| counter.saturating_add(1))
+    // S168PARPLASKE-006 producer disabled — see tickets/S168PARPLASKE-007.
+    // The D7 chain (suspend → spawn companion → resume) has unproven end-to-end
+    // behavior; producer activation trapped agents in 5+ gated goldens. Skeleton
+    // reuse via the budget-exhausted producer is unaffected.
+    false
 }
 
 fn frontier_exhaustion_entry(
@@ -7144,118 +7090,12 @@ mod tests {
     }
 
     #[test]
-    fn write_information_barrier_partial_plan_segment_suspends_selected_goal_with_skeleton() {
+    fn write_information_barrier_partial_plan_segment_is_disabled() {
+        // S168PARPLASKE-006 producer disabled — see tickets/S168PARPLASKE-007.
+        // The producer is intentionally a no-op; the agenda is left untouched so
+        // the selected plan adopts normally through the standard path.
         let subject = place_entity(42);
         let opportunity = consume_opportunity(CommodityKind::Bread, OpportunityAnchor::None);
-        let ranked = vec![ranked_goal_with_score(
-            opportunity,
-            GoalPriorityClass::Medium,
-            50,
-        )];
-        let skeleton = vec![crate::PlannedSkeletonStep {
-            op: PlannerOpKind::Trade,
-            target_template: crate::htn::PayloadTemplate::FromContext,
-            expected_pre: vec![crate::htn::BeliefPredicate::TargetLastSeenKnown {
-                target: crate::htn::EntityTemplate::Fixed(subject),
-            }],
-        }];
-        let selected_plan = information_barrier_plan(opportunity, subject);
-        let plans = vec![searched_plan_with_skeleton(
-            opportunity,
-            PlanSearchResult::Found(Box::new(selected_plan.clone())),
-            PartialPlanSkeletonSource {
-                remaining_skeleton: skeleton.clone(),
-            },
-        )];
-        let mut agenda_state = AgendaState::default();
-        agenda_state
-            .pending
-            .insert(ranked[0].key, ranked[0].clone());
-
-        let written = write_information_barrier_partial_plan_segment(
-            &mut agenda_state,
-            &ordered(&ranked),
-            &selected_plan,
-            &plans,
-            Tick(31),
-            &CognitiveProfile::default(),
-        );
-
-        assert!(written);
-        assert!(!agenda_state.pending.contains_key(&opportunity));
-        let suspended = agenda_state
-            .suspended
-            .get(&opportunity)
-            .expect("information-barrier goal should be suspended with a segment");
-        assert_eq!(suspended.phase, AgendaPhase::Suspended);
-        let segment = suspended.partial_plan_segment.as_ref().unwrap();
-        assert_eq!(segment.goal, ranked[0].offer);
-        assert_eq!(
-            segment.terminal_barrier,
-            PlanTerminalKind::InformationBarrier {
-                topic: TellTopic::EntityBelief { subject },
-            }
-        );
-        assert_eq!(segment.remaining_skeleton, Some(skeleton));
-        assert_eq!(
-            segment.resume_conditions,
-            vec![
-                worldwake_core::IntentionResumeCondition::BeliefStatusChanged {
-                    subject,
-                    target_status: worldwake_core::BeliefStatusTag::Certain,
-                }
-            ]
-        );
-    }
-
-    #[test]
-    fn write_information_barrier_partial_plan_segment_allows_missing_skeleton_source() {
-        let subject = place_entity(42);
-        let opportunity = consume_opportunity(CommodityKind::Bread, OpportunityAnchor::None);
-        let ranked = vec![ranked_goal_with_score(
-            opportunity,
-            GoalPriorityClass::Medium,
-            50,
-        )];
-        let selected_plan = information_barrier_plan(opportunity, subject);
-        let plans = vec![searched_plan(
-            opportunity,
-            PlanSearchResult::Found(Box::new(selected_plan.clone())),
-        )];
-        let mut agenda_state = AgendaState::default();
-        agenda_state
-            .pending
-            .insert(ranked[0].key, ranked[0].clone());
-
-        let written = write_information_barrier_partial_plan_segment(
-            &mut agenda_state,
-            &ordered(&ranked),
-            &selected_plan,
-            &plans,
-            Tick(31),
-            &CognitiveProfile::default(),
-        );
-
-        assert!(written);
-        let segment = agenda_state
-            .suspended
-            .get(&opportunity)
-            .and_then(|entry| entry.partial_plan_segment.as_ref())
-            .expect("information-barrier segment should still be lawful without a source");
-        assert_eq!(segment.remaining_skeleton, None);
-    }
-
-    #[test]
-    fn write_information_barrier_partial_plan_segment_does_not_suspend_ask_witness_companion() {
-        let subject = place_entity(42);
-        let witness = place_entity(43);
-        let opportunity = OpportunityKey {
-            goal_key: GoalKey::from(GoalKind::AskWitness {
-                witness,
-                topic: TellTopic::EntityBelief { subject },
-            }),
-            anchor: OpportunityAnchor::Entity(witness),
-        };
         let ranked = vec![ranked_goal_with_score(
             opportunity,
             GoalPriorityClass::Medium,
