@@ -10,7 +10,6 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 - cli-evaluation: agent field `intention_disposition` is not mapped by any FeatureDef
 - cli-evaluation: agent field `last_seen_memory` is not mapped by any FeatureDef
 - cli-evaluation: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
-- cognitive-archetypes-divergence: scenario field `artifacts` is not mapped by any FeatureDef
 - cognitive-archetypes-divergence: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - cognitive-archetypes-divergence: agent field `risk_weight_profile` is not mapped by any FeatureDef
 - final-integration: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
@@ -153,7 +152,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 
 - Seed: 167001
 - Agents: 2 Ai
-- Places: 2
+- Places: 3
 - Survival contract: absent
 
 **Active features**

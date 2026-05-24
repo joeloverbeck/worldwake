@@ -3,17 +3,21 @@
 // Purpose: provide a canonical authored fixture for the S167 behavioral proof
 // lane. Two same-role AI agents start at the same place with identical authored
 // profiles and local facts. The only authored identity difference is the
-// spawn-time archetype: Greedy versus Cautious. A nearby apple source and public
-// threat-warning notice create the economic-vs-safety tension that the S167
-// golden will assert through decision traces.
+// spawn-time archetype: Greedy versus Cautious. A nearby apple source with a
+// short direct route and a slightly longer alternate route creates the
+// route-choice substrate that the S167 golden will assert through decision
+// traces after seeding identical route-experience memory.
 (
     seed: 167001,
     places: [
         (name: "Market Green", tags: [Village, Store]),
+        (name: "Sheltered Cut", tags: [Village]),
         (name: "Risky Orchard", tags: [Farm, Field]),
     ],
     edges: [
         (from: "Market Green", to: "Risky Orchard", travel_ticks: 3, bidirectional: true),
+        (from: "Market Green", to: "Sheltered Cut", travel_ticks: 1, bidirectional: true),
+        (from: "Sheltered Cut", to: "Risky Orchard", travel_ticks: 2, bidirectional: true),
     ],
     agents: [
         (
@@ -275,20 +279,7 @@
             carry_capacity: 40,
         ),
     ],
-    artifacts: [
-        (
-            kind: Notice,
-            issuer: "Greedy Rowan",
-            location: "Market Green",
-            payload: Notice(ThreatWarning(place: "Risky Orchard")),
-        ),
-        (
-            kind: Notice,
-            issuer: "Cautious Rowan",
-            location: "Market Green",
-            payload: Notice(ThreatWarning(place: "Risky Orchard")),
-        ),
-    ],
+    artifacts: [],
     facilities: [
         (name: "Risky Orchard Row", workstation: OrchardRow, location: "Risky Orchard"),
     ],

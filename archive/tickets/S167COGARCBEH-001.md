@@ -253,3 +253,15 @@ Verification:
 - `cargo run -p worldwake-cli --bin scenario-coverage -- --check`
 - `cargo test --workspace`
 - `./scripts/verify.sh`
+
+## Subsequent Retarget Note
+
+Updated: 2026-05-24 by `S167COGARCBEH-001A`.
+
+The original economic-vs-safety behavioral premise did not hold under live
+planner reassessment. `S167COGARCBEH-001A` retargeted the active scenario to a
+route-preference plan-path substrate: the scenario now uses direct and alternate
+routes to Risky Orchard and no longer contains public threat-warning notice
+artifacts. This archived ticket remains the historical scenario-creation record;
+use the active scenario file and `S167COGARCBEH-001A` for current substrate
+truth.
