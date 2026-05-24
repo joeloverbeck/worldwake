@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 221
+- Scenario blocks: 224
 - Contributing golden scenario source files: 54
-- Associated tests: 271
+- Associated tests: 274
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1445,7 +1445,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 439: S149 Typed Terminal Segments Carry Resume And Failure Shape
 
-- Source: `partial_plan_terminals.rs:184`
+- Source: `partial_plan_terminals.rs:243`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity, AskWitness
 - ActionDomains: Planning, Agenda
@@ -1457,7 +1457,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 440: S149 Suspended Agenda Entries Preserve Partial Plan Segments
 
-- Source: `partial_plan_terminals.rs:227`
+- Source: `partial_plan_terminals.rs:286`
 - Systems: AI, SaveLoad
 - GoalKinds: AcquireCommodity
 - ActionDomains: Agenda
@@ -1469,7 +1469,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 441: S149 Partial Plan Resume And Patience Abandon Lifecycle
 
-- Source: `partial_plan_terminals.rs:277`
+- Source: `partial_plan_terminals.rs:336`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Agenda
@@ -1479,9 +1479,45 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Proves**: eligible partial-plan segments resume back to Pending with an incremented retry counter, while PatienceExhausted removes an over-limit segment before replaying the stale tail.
 
+### Scenario 465: S168 Information Barrier Resume Reuses Skeleton
+
+- Source: `partial_plan_terminals.rs:410`
+- Systems: AI
+- GoalKinds: AcquireCommodity
+- ActionDomains: Planning, Agenda
+- Principles: P12, P20, P21, P29
+
+**Setup**: fixture seeds a suspended information-barrier agenda entry with a populated, preservable skeleton and a lawful belief-status update for the barrier subject; no rival agenda entries are inserted.
+
+**Proves**: on resume, revalidation marks the skeleton reusable, the pending entry keeps the skeleton for seeded tactical search, and the decision trace records ReusedSeededSearch with the seeded ops.
+
+### Scenario 466: S168 Information Barrier Resume Falls Back On Invalid Skeleton
+
+- Source: `partial_plan_terminals.rs:479`
+- Systems: AI
+- GoalKinds: AcquireCommodity
+- ActionDomains: Planning, Agenda
+- Principles: P14, P20, P21, P29
+
+**Setup**: fixture satisfies the information-barrier resume gate while leaving a load-bearing seller-known skeleton predicate unknown; no seller or sale-lot belief is present.
+
+**Proves**: the resume trace records FallbackToReplanInvalid with the concrete invalidation reason and clears the unusable skeleton before the ordinary pending replan path continues.
+
+### Scenario 467: S168 Populated Skeleton Survives Save Load Before Resume
+
+- Source: `partial_plan_terminals.rs:562`
+- Systems: AI, SaveLoad
+- GoalKinds: AcquireCommodity
+- ActionDomains: Planning, Agenda
+- Principles: P4, P12, P20, P21
+
+**Setup**: fixture saves and reloads a harness whose driver runtime contains a suspended information-barrier segment with a populated skeleton before any resume tick runs.
+
+**Proves**: the populated skeleton survives the enclosing simulation+runtime save/load boundary and the reloaded runtime emits the same reuse decision on the next tick as the original.
+
 ### Scenario 442: S149 Coordination Barrier Uses Blocker Memory
 
-- Source: `partial_plan_terminals.rs:351`
+- Source: `partial_plan_terminals.rs:628`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: Planning, Contention
