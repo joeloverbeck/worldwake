@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-ai` helper extraction only; no behavior change at existing call sites.
-**Deps**: spec `specs/S166-opportunity-compiler-source-fidelity.md` (D4)
+**Deps**: spec `archive/specs/S166-opportunity-compiler-source-fidelity.md` (D4)
 
 ## Problem
 

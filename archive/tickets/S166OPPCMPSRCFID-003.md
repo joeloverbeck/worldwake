@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — opportunity compiler reads belief envelope status instead of stamping `Probable`. Candidate-generation parity preserved (same opportunity keys emit); per-opportunity `source_belief.status` value changes to reflect actual belief state.
-**Deps**: `archive/tickets/S166OPPCMPSRCFID-001.md` (shared `belief_status_tag_for_claim` helper); spec `specs/S166-opportunity-compiler-source-fidelity.md` (D1)
+**Deps**: `archive/tickets/S166OPPCMPSRCFID-001.md` (shared `belief_status_tag_for_claim` helper); spec `archive/specs/S166-opportunity-compiler-source-fidelity.md` (D1)
 
 ## Problem
 

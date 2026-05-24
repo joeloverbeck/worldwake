@@ -52,16 +52,17 @@ Recommended priority follows benefit: **S165 → S167 → S166 → S168.**
   scenario-coverage activation, roadmap row, and dedicated
   `golden-cognitive-archetypes` workflow lane proving Greedy vs. Cautious
   route-plan divergence through existing archetype-resolved profile state.
+- **S166 — Opportunity Compiler Source Fidelity** —
+  `archive/specs/S166-opportunity-compiler-source-fidelity.md` — *Status:
+  COMPLETED 2026-05-24.* Derives the compiled opportunity's
+  `source_belief.status` from the real belief and `required_actions` from
+  `EffectSchemaIndex`; adds compiler-load and scenario-diagnostics status
+  distribution proof. Narrowed from the report's "canonical substrate" ambition to
+  source fidelity only; absorbs Proposal 5. **FND-3, FND-15, FND-16, FND-27,
+  FND-29.**
 
 ### Pending
 
-- **S166 — Opportunity Compiler Source Fidelity** —
-  `specs/S166-opportunity-compiler-source-fidelity.md` — *Status: DRAFT.* Derives the
-  compiled opportunity's `source_belief.status` from the real belief (not the
-  hard-coded `Probable` at `compile.rs:222`) and `required_actions` from
-  `EffectSchemaIndex` (not the hard-coded `MoveCargo` at `compile.rs:127`). Narrowed
-  from the report's "canonical substrate" ambition to source fidelity only; absorbs
-  Proposal 5. **FND-3, FND-15, FND-16, FND-27, FND-29.**
 - **S168 — Partial-Plan Skeleton Reuse** —
   `specs/S168-partial-plan-skeleton-reuse.md` — *Status: DRAFT.* Populates and
   consumes the dead `remaining_skeleton` field (`partial_plan.rs:36,123`) for

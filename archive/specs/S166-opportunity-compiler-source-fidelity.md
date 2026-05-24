@@ -1,6 +1,6 @@
 # S166: Opportunity Compiler Source Fidelity
 
-**Status**: DRAFT
+**Status**: COMPLETED
 
 ## Problem Statement
 
@@ -64,8 +64,8 @@ canonical-substrate rewrite.
 
 ## Phase and Status
 
-Adjunct Wave: AI Architecture Improvements — First Iteration. Draft, pending ticket
-decomposition.
+Adjunct Wave: AI Architecture Improvements — First Iteration. Completed and archived
+on 2026-05-24.
 
 ## Crates
 
@@ -367,3 +367,36 @@ threaded through `RuntimeBeliefView`.
   silently diverged. Reassessment confirmed they are presently verbatim-identical;
   the D4 equivalence test pins this. Any future divergence would require an
   explicit branch in the shared helper rather than a quiet copy-paste fork.
+
+## Outcome
+
+Completed on 2026-05-24.
+
+- Landed the spec through archived tickets
+  `archive/tickets/S166OPPCMPSRCFID-001.md`,
+  `archive/tickets/S166OPPCMPSRCFID-002.md`,
+  `archive/tickets/S166OPPCMPSRCFID-003.md`, and
+  `archive/tickets/S166OPPCMPSRCFID-004.md`.
+- Lifted `belief_status_tag_for_claim` into a shared `worldwake-ai` helper and
+  reused it from `agent_tick/frame.rs`, `agenda_manager.rs`, and the opportunity
+  compiler.
+- Replaced hard-coded opportunity source status with belief-envelope-derived status,
+  including stale, disputed, and contradicted cases.
+- Replaced the hard-coded `MoveCargo` required-action claim with registry-derived
+  planner ops from `EffectSchemaIndex`.
+- Added `OpportunityCompilerLoad::compiled_by_status` and
+  `PerformanceMetrics::opportunity_compiled_by_status` so trace/diagnostics output
+  exposes the real source-status distribution.
+- Added focused compiler, diagnostics, and opportunity-compiler golden coverage;
+  refreshed generated golden docs and the scenario diagnostics fixture.
+- Deviations from draft: `compiled_by_status` partitions the live post-cap
+  `compiled_count` value rather than pre-cap candidates, and the mixed-freshness
+  scenario proves the compiler-load distribution while the diagnostics mirror is
+  proved by focused reducer/fixture coverage.
+
+Verification highlights:
+
+- Passed `cargo test -p worldwake-ai`.
+- Passed `cargo test -p worldwake-cli`.
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::scenario_diagnostics_fixture::golden_scenario_diagnostics_survival_baseline_fixture_is_stable -- --ignored --exact`.
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`.

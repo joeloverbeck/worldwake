@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `OpportunityCompilerLoad` gains a per-status count map; `ScenarioDiagnosticsReport::PerformanceMetrics` mirrors the per-tag aggregation. `OpportunityCompilerLoad` loses its `Copy` derive (storage-shape change forced by `BTreeMap` field).
-**Deps**: `archive/tickets/S166OPPCMPSRCFID-003.md` (derived `source_belief.status` available in emission loop); spec `specs/S166-opportunity-compiler-source-fidelity.md` (D3)
+**Deps**: `archive/tickets/S166OPPCMPSRCFID-003.md` (derived `source_belief.status` available in emission loop); spec `archive/specs/S166-opportunity-compiler-source-fidelity.md` (D3)
 
 ## Problem
 

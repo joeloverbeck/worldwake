@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — substrate fidelity fix in `worldwake-ai`; no behavioral change to any current consumer (`Opportunity.required_actions` has zero runtime readers today).
-**Deps**: spec `specs/S166-opportunity-compiler-source-fidelity.md` (D2)
+**Deps**: spec `archive/specs/S166-opportunity-compiler-source-fidelity.md` (D2)
 
 ## Problem
 
