@@ -39,7 +39,10 @@ already-suspended entries with a `PartialPlanSegment`; it cannot be the first pr
 because it skips entries whose segment is absent. Making the field live at
 information-barrier suspensions therefore requires a producer at the selected/completed
 information-barrier plan boundary, while the companion-spawn path remains a consumer.
-That corrected producer landed in `archive/tickets/S168PARPLASKE-006.md`.
+That corrected producer first landed in `archive/tickets/S168PARPLASKE-006.md`, and
+`archive/tickets/S168PARPLASKE-007.md` later re-enabled it with witness gating,
+`TickExpiry` safety, diagnostics fixture refresh, and the originally regressed ignored
+golden proof.
 
 Accepted in the triage of `reports/ai-architecture-improvements-second-iteration.md`
 (Proposal 3), explicitly the **lowest-benefit** of the accepted set — an optimization
@@ -130,13 +133,12 @@ Adjunct Wave: AI Architecture Improvements — First Iteration. Completed and ar
 
 ### D1.a. Populate `remaining_skeleton` at the budget-exhausted suspension site
 
-In `budget_exhausted_partial_plan_segment` (`partial_plan.rs:118`, which currently
-passes `remaining_skeleton: None` to `build_partial_plan_segment` at line 123), thread
-a populated `Some(Vec<PlannedSkeletonStep>)` when a meaningful remainder exists beyond
-the completed prefix, excluding combat- and target-identity-bound steps. Sites with no
-meaningful remainder keep `None`. The caller
-`write_budget_exhausted_partial_plan_segments` in `agent_tick/planning.rs:1114` must
-also thread the skeleton from the partial search frontier through the seed.
+In `budget_exhausted_partial_plan_segment` in `partial_plan.rs`, thread a populated
+`Some(Vec<PlannedSkeletonStep>)` when a meaningful remainder exists beyond the completed
+prefix, excluding combat- and target-identity-bound steps. Sites with no meaningful
+remainder keep `None`. The caller
+`write_budget_exhausted_partial_plan_segments` in `agent_tick/planning.rs` must also
+thread the skeleton from the partial search frontier through the seed.
 
 ### D1.b. Add an info-barrier suspension producer
 
@@ -144,13 +146,15 @@ Information-barrier companion spawning in `agenda_manager.rs` is a consumer of
 already-suspended `PartialPlanSegment`s, not the producer. Add the info-barrier
 producer at the selected/completed barrier-plan boundary where the implementation still
 has both the `PlannedPlan` terminal (`PlanTerminalKind::InformationBarrier { … }`) and
-the planner-owned skeleton source. The producer should build a `PartialPlanSegment`
-through `build_partial_plan_segment` (`partial_plan.rs:94`) with populated
+the planner-owned skeleton source. The producer builds a `PartialPlanSegment` through
+the information-barrier partial-plan constructor in `partial_plan.rs`, with populated
 `remaining_skeleton`, the appropriate `PlanTerminalKind::InformationBarrier { … }`
-terminal, and the corresponding `BarrierFact`, then suspend the matching agenda entry
+terminal, and the corresponding `BarrierFact`, then suspends the matching agenda entry
 so `spawn_information_barrier_companions` can consume it. Combat- and
-target-identity-bound steps are excluded as for D1.a. The corrected producer seam
-landed in `archive/tickets/S168PARPLASKE-006.md`.
+target-identity-bound steps are excluded as for D1.a. The corrected producer seam first
+landed in `archive/tickets/S168PARPLASKE-006.md`; `archive/tickets/S168PARPLASKE-007.md`
+re-enabled it with witness gating, `TickExpiry`, and the originally regressed ignored
+golden proof.
 
 ### D2. Skeleton revalidation
 
@@ -308,9 +312,9 @@ Completed: 2026-05-24
 
 S168 landed the partial-plan skeleton reuse path through the archived ticket family:
 `archive/tickets/S168PARPLASKE-001.md` through
-`archive/tickets/S168PARPLASKE-006.md`. The implementation added belief-backed
+`archive/tickets/S168PARPLASKE-007.md`. The implementation added belief-backed
 skeleton revalidation, a planner-owned skeleton source carrier, budget-exhausted and
-information-barrier skeleton population, seeded tactical search consumption, and
+information-barrier skeleton population with validated producer gating, seeded tactical search consumption, and
 `PartialPlanResumeTrace` coverage for reuse versus fallback. Pre-push verification
 also fixed downstream CLI and visualizer test-fixture constructors so every
 `AgentDecisionTrace` construction initializes the new `partial_plan_resumes` carrier.
@@ -320,7 +324,8 @@ Deviations from the draft:
 - Live reassessment disproved `spawn_information_barrier_companions` as the first
   information-barrier producer because it consumes already-suspended entries. The
   corrected selected/completed barrier-plan producer landed in
-  `archive/tickets/S168PARPLASKE-006.md`.
+  `archive/tickets/S168PARPLASKE-006.md` and was re-enabled with end-to-end regression
+  proof in `archive/tickets/S168PARPLASKE-007.md`.
 - `search_plan_seeded` remained a tactical-search seed/fallback path, not direct
   action replay. Concrete action definitions, bindings, durations, and payloads are
   still rebuilt through ordinary search.

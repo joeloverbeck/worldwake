@@ -23,11 +23,25 @@ An implement-ticket invocation authorizes narrow truthing edits to the active ti
 - Before the first Cargo command you will count as proof, load `references/verification.md` unless the ticket is already classified as a small/local fast path whose focused selector and proof boundary are unambiguous.
 - Close out the ticket/spec with the real landed seam and deviations. Do not leave the correction only in conversation.
 - For shared Rust struct-literal fallout, do not use broad regex/perl insertion across files. Use compiler-guided precise patches or syntax-aware tooling, and inspect each changed hunk immediately when any mechanical rewrite was used.
+- For any mechanical source rewrite, including regex, scripted, or syntax-aware changes, keep the rewrite narrow, inspect every changed hunk, and rerun a targeted search for missed or over-applied edits; prefer `apply_patch` for small call-site changes.
 - During ticket/spec stale-claim scans, quote Markdown/code-span search patterns safely. Use single-quoted `rg` patterns for backticked symbols so the shell does not treat them as command substitution.
 - Leave active ticket status non-completed until the last executable gate required for the final source diff has passed. Provisional verification notes may name remaining gates, but `Status: COMPLETED` must remain unset until those gates are observed complete.
 - Do not archive from `implement-ticket` alone; archive only when the user explicitly asks for archival or another invoked workflow owns it.
 
 Keep this top-level skill as routing plus hard stops. Load the referenced files for detailed case law only when the ticket shape, reassessment, implementation, verification, or closeout step needs that detail. When new guidance is not a global hard stop, put the detailed rule in the relevant `references/*.md` file and keep any top-level change to a one-sentence routing note; if the guidance needs more than one sentence, it belongs in a reference file, not here.
+
+## Reference Load Map
+
+After Step 0, load the narrowest reference set that matches the live ticket shape:
+
+| Ticket shape | References to load before coding or proof |
+| --- | --- |
+| Clear small/local helper, CLI, observer, formatter, or utility edit | `references/ticket-classification.md`; add `references/verification.md` only for ambiguous selectors or proof scope |
+| Default implementation, mixed crate, or uncertain scope | `references/reassessment-checks.md`, `references/verification.md`, `references/closeout.md` |
+| Planner, AI, candidate, agenda, traceability, or revalidation seam | `references/reassessment-planner-ai.md`, `docs/planner-contracts.md`, `references/verification.md`, `references/closeout.md` |
+| Golden, observer, report, fixture, ignored-test, or generated-doc seam | `references/reassessment-golden.md`, `references/reassessment-golden-observer-report.md`, `references/verification.md`, `references/closeout.md` |
+| Shared field, carrier, payload, schema, profile, or save-shape migration | `references/reassessment-checks.md`; add `references/shared-field-migration.md` for authored scenario fields or `references/effect-schema-migrations.md` for effect schemas |
+| False premise, duplicate path, split outcome, or follow-up decision | `references/mismatch-handling.md`; use `references/closeout.md` for any completed, rejected, or narrowed result |
 
 ## Common Fast Lanes
 
@@ -43,6 +57,7 @@ Keep this top-level skill as routing plus hard stops. Load the referenced files 
 - Never include a Cargo command in `multi_tool_use.parallel`. Run Cargo alone and wait for any in-flight Cargo command before starting another.
 - If a resumed or compacted session has an unpollable proof-counted command, treat that prior run as untrusted and rerun it before recording verification.
 - Do not use broad regex/perl insertion for shared Rust struct-literal fallout; use compiler-guided precise patches or syntax-aware tooling and inspect the changed hunks.
+- Do not run broad mechanical source rewrites without a narrow target, immediate hunk inspection, and a follow-up search for missed or over-applied edits.
 - Quote stale-scan `rg` patterns containing Markdown code spans with single quotes so backticked symbols are not treated as shell command substitution. For example, use `rg -n 'Pending|Blocked|`symbol_name`' <paths>`, not a double-quoted pattern. If a quoting mistake starts unintended commands, wait for them to exit, treat the output as non-proof, then rerun the intended scan with safe quoting before recording any closeout evidence.
 - Do not set `Status: COMPLETED` while any required proof gate is still running, blocked, unpollable, or unrun. Keep provisional closeout notes under `Verification Result` with `Blocked` rows until proof is observed complete.
 - After any source, generated, scenario, test, or executable-behavior edit that follows a broad gate, rerun the narrowest affected proof and the required broad gate before completing the ticket. Exception: if the only post-gate non-Markdown changes are comment-only golden metadata/prose edits in `golden_*.rs` plus regenerated `docs/generated/*`, and no assertions, fixtures, scenarios, or executable behavior changed, rerun the golden inventory generator and stale/diff hygiene instead of Cargo. For final ticket/spec Markdown-only edits, run `git diff --check` plus targeted stale-claim scans.
