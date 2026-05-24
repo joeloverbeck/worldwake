@@ -101,9 +101,11 @@ decomposition.
    belief claim by calling the existing `belief_status_tag_for_claim` derivation
    (post-consolidation, the shared helper from D4): `Contradicted` when the claim
    is refuted, `Certain` when effective confidence ≥ `2 × claim_confidence_threshold`
-   (capped at 1000), `Probable` when ≥ threshold, `Stale` otherwise. `Disputed` flows
-   through the existing source-enum→tag map. A compiled opportunity never claims
-   more certainty than its source carries.
+   (capped at 1000), `Probable` when ≥ threshold, `Stale` otherwise.
+   `Disputed` is derived by the compiler when multiple active claims exist for the
+   same inventory aspect, matching the separate disputed-claim predicate used by
+   the existing AI call sites. A compiled opportunity never claims more certainty
+   than its source carries.
 2. **Derived required actions.** `required_actions` is built from the lawful producers
    the compiler already enumerates: `EffectSchemaIndex::actions_producing(
    EffectFactKey::CommodityTransfer)` mapped to `PlannerOpKind` through the existing
@@ -165,7 +167,8 @@ to derive `BeliefStatusTag` from the underlying belief claim instead of stamping
 `belief_status_tag_for_claim` helper from D4. `claim_held_at_tick` continues to use
 `state.last_observed_tick()`. If the claim lookup yields no matching claim (the
 belief state is present but no claim exists for the inventory aspect — defensive
-guard), the opportunity is not emitted; this case must be impossible in practice
+guard), the opportunity is emitted with `BeliefStatusTag::Stale` rather than
+over-asserting confidence or panicking. This case must be impossible in practice
 because the compiler only iterates entities the belief view confirms are known.
 
 Signature change: `source_belief()` gains the belief-view reference and the agent
