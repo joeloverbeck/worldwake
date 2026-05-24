@@ -1,10 +1,13 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+use crate::PlannerOpKind;
 use crate::opportunity_compiler::EffectFactKey;
+use crate::planner_ops::classify_action_def;
 use worldwake_sim::{ActionDefRegistry, EffectStep};
 
 pub struct EffectSchemaIndex {
     pub by_effect: BTreeMap<EffectFactKey, Vec<worldwake_core::ActionDefId>>,
+    pub by_effect_op: BTreeMap<EffectFactKey, BTreeSet<PlannerOpKind>>,
 }
 
 impl EffectSchemaIndex {
@@ -12,6 +15,7 @@ impl EffectSchemaIndex {
     pub fn empty() -> Self {
         Self {
             by_effect: BTreeMap::new(),
+            by_effect_op: BTreeMap::new(),
         }
     }
 
@@ -19,16 +23,24 @@ impl EffectSchemaIndex {
     pub fn build(registry: &ActionDefRegistry) -> Self {
         let mut by_effect: BTreeMap<EffectFactKey, Vec<worldwake_core::ActionDefId>> =
             BTreeMap::new();
+        let mut by_effect_op: BTreeMap<EffectFactKey, BTreeSet<PlannerOpKind>> = BTreeMap::new();
         for action_def in registry.iter() {
+            let op_kind = classify_action_def(action_def);
             for key in effect_keys_for_steps(&action_def.effect_schema.steps) {
                 by_effect.entry(key).or_default().push(action_def.id);
+                if let Some(op_kind) = op_kind {
+                    by_effect_op.entry(key).or_default().insert(op_kind);
+                }
             }
         }
         for ids in by_effect.values_mut() {
             ids.sort();
             ids.dedup();
         }
-        Self { by_effect }
+        Self {
+            by_effect,
+            by_effect_op,
+        }
     }
 
     #[must_use]
@@ -36,6 +48,12 @@ impl EffectSchemaIndex {
         self.by_effect
             .get(&fact)
             .map_or(&[], std::vec::Vec::as_slice)
+    }
+
+    #[must_use]
+    pub fn planner_ops_producing(&self, fact: EffectFactKey) -> &BTreeSet<PlannerOpKind> {
+        static EMPTY: BTreeSet<PlannerOpKind> = BTreeSet::new();
+        self.by_effect_op.get(&fact).unwrap_or(&EMPTY)
     }
 }
 
@@ -135,11 +153,12 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         ActionDefId, ActionDomain, BodyCostPerTick, CommodityKind, EntityId, EventTag, Quantity,
-        VisibilitySpec,
+        RecipeId, VisibilitySpec, WorkstationTag,
     };
     use worldwake_sim::{
         ActionDef, ActionHandlerId, ActionPayload, BindingStrictness, Constraint, DurationExpr,
-        EffectEntityRef, EffectSchema, Interruptibility, Precondition, ReservationReq, TargetSpec,
+        EffectEntityRef, EffectSchema, HarvestActionPayload, Interruptibility, Precondition,
+        ReservationReq, TargetSpec,
     };
 
     fn action_def(id: u32, name: &str, steps: Vec<EffectStep>) -> ActionDef {
@@ -179,6 +198,19 @@ mod tests {
             registry.register(def);
         }
         registry
+    }
+
+    fn classified_action_def(
+        id: u32,
+        name: &str,
+        domain: ActionDomain,
+        payload: ActionPayload,
+        steps: Vec<EffectStep>,
+    ) -> ActionDef {
+        let mut def = action_def(id, name, steps);
+        def.domain = domain;
+        def.payload = payload;
+        def
     }
 
     #[test]
@@ -284,5 +316,71 @@ mod tests {
         let second = EffectSchemaIndex::build(&registry);
 
         assert_eq!(first.by_effect, second.by_effect);
+    }
+
+    #[test]
+    fn planner_ops_producing_returns_classified_set() {
+        let registry = registry_with_defs(vec![
+            classified_action_def(
+                0,
+                "pick_up",
+                ActionDomain::Transport,
+                ActionPayload::None,
+                vec![EffectStep::PickUp {
+                    target: EffectEntityRef::Target { index: 0 },
+                }],
+            ),
+            classified_action_def(
+                1,
+                "harvest:bread",
+                ActionDomain::Production,
+                ActionPayload::Harvest(HarvestActionPayload {
+                    recipe_id: RecipeId(1),
+                    required_workstation_tag: WorkstationTag::FieldPlot,
+                    output_commodity: CommodityKind::Bread,
+                    requested_quantity: Quantity(1),
+                    required_tool_kinds: Vec::new(),
+                }),
+                vec![EffectStep::HarvestResource {
+                    workstation: EffectEntityRef::Target { index: 0 },
+                }],
+            ),
+            classified_action_def(
+                2,
+                "trade",
+                ActionDomain::Trade,
+                ActionPayload::None,
+                vec![EffectStep::CompleteTrade],
+            ),
+            classified_action_def(
+                3,
+                "transfer",
+                ActionDomain::Generic,
+                ActionPayload::None,
+                vec![EffectStep::Transfer {
+                    source: EffectEntityRef::Actor,
+                    dest: EffectEntityRef::Target { index: 0 },
+                    commodity: CommodityKind::Bread,
+                    quantity: Quantity(1),
+                }],
+            ),
+        ]);
+
+        let index = EffectSchemaIndex::build(&registry);
+        let expected = BTreeSet::from([
+            PlannerOpKind::Harvest,
+            PlannerOpKind::Trade,
+            PlannerOpKind::MoveCargo,
+        ]);
+
+        assert_eq!(
+            index.planner_ops_producing(EffectFactKey::CommodityTransfer),
+            &expected
+        );
+        assert!(
+            index
+                .planner_ops_producing(EffectFactKey::WoundApplied)
+                .is_empty()
+        );
     }
 }

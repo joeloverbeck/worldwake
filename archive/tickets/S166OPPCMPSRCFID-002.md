@@ -1,9 +1,9 @@
 # S166OPPCMPSRCFID-002: Derive `required_actions` from registry via `EffectSchemaIndex`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
-**Engine Changes**: None — substrate fidelity fix; no behavioral change to any current consumer (`Opportunity.required_actions` has zero runtime readers today).
+**Engine Changes**: Yes — substrate fidelity fix in `worldwake-ai`; no behavioral change to any current consumer (`Opportunity.required_actions` has zero runtime readers today).
 **Deps**: spec `specs/S166-opportunity-compiler-source-fidelity.md` (D2)
 
 ## Problem
@@ -26,11 +26,11 @@ intersection of `effect_keys_for_steps` producing `CommodityTransfer`
 generic `transfer` action with no name match) are filtered out — the opportunity
 advertises only ops the planner can actually emit.
 
-`Opportunity.required_actions` has **no current runtime consumer** (workspace
+At reassessment, `Opportunity.required_actions` had **no runtime consumer** (workspace
 grep confirms zero non-construction call sites outside `observer.rs:6278` which
 constructs an empty `Vec`). This fix is fidelity-preserving substrate work: it
 ensures the field's value is truthful for any future consumer, aligning with
-FND-3 (concrete state) and FND-29 (debuggability — the field's claim should be
+FND-3 (concrete state) and FND-29 (debuggability — the field's claim must be
 inspectable and correct).
 
 ## Assumption Reassessment (2026-05-24)
@@ -49,16 +49,16 @@ inspectable and correct).
 2. The new accessor `planner_ops_producing(EffectFactKey) -> &BTreeSet<PlannerOpKind>` returns a borrowed `BTreeSet` rather than allocating a fresh `Vec` per call. The compiler binds the result once before the outer entity loop at `compile.rs:45` and clones into each emitted opportunity's `required_actions` field, so the per-opportunity allocation is bounded by the set's size (≤ N for N classifiable producers).
 3. No backward-compatibility shim: the `MoveCargo` literal at `compile.rs:127` is replaced in place. The `actions_producing` accessor remains for callers that need the raw `ActionDefId` slice (none today outside compile.rs's emptiness gate, but the surface is preserved for future use).
 
-## Verification Layers
+## Verified Layers
 
 1. Derived-set correctness — focused unit test in `effect_schema_index.rs::tests` constructing a registry with known producers (transfer, harvest, craft, trade, pick_up, etc.) and asserting `planner_ops_producing(EffectFactKey::CommodityTransfer)` returns the expected `BTreeSet<PlannerOpKind>`.
 2. Compile-pass derivation — focused unit test in `opportunity_compiler/compile.rs::tests` constructing a multi-producer registry and asserting an emitted opportunity's `required_actions` matches the derived set rather than `vec![MoveCargo]`.
 3. Determinism — the new field is `BTreeMap<EffectFactKey, BTreeSet<PlannerOpKind>>`; iteration order is determinism-stable per the workspace's no-`HashMap` invariant.
 4. Existing-test no-regression — the 3 existing `effect_schema_index.rs` tests (build-deterministic, sort/dedup, key mapping) and the 5 existing `opportunity_compiler/compile.rs` tests (listed in Assumption 5) continue to pass.
 
-## What to Change
+## Landed Changes
 
-### 1. Extend `EffectSchemaIndex` in `crates/worldwake-ai/src/effect_schema_index.rs`
+### 1. Extended `EffectSchemaIndex` in `crates/worldwake-ai/src/effect_schema_index.rs`
 
 Add a `by_effect_op: BTreeMap<EffectFactKey, BTreeSet<PlannerOpKind>>` field alongside the existing `by_effect`. In `build()`, alongside the `by_effect` insertion, compute `classify_action_def(action_def)` for each `action_def`; if the result is `Some(op)`, insert into `by_effect_op.entry(key).or_default()` for each `key` in `effect_keys_for_steps(...)`. Drop `None`-classifying actions.
 
@@ -78,9 +78,9 @@ Update `impl Default for EffectSchemaIndex` to seed both fields empty.
 
 Update the import block to bring `BTreeSet` and `PlannerOpKind` into scope. Bring `classify_action_def` into scope from `crate::planner_ops`.
 
-### 2. Update the test fixture at `crates/worldwake-ai/src/opportunity_compiler/compile.rs:317-323`
+### 2. Updated explicit test fixtures
 
-The current fixture:
+The original compiler fixture:
 
 ```rust
 fn index() -> EffectSchemaIndex {
@@ -110,11 +110,11 @@ fn index() -> EffectSchemaIndex {
 }
 ```
 
-The `BTreeSet::from([PlannerOpKind::MoveCargo])` preserves the existing test setup's intent (the registry-of-one has MoveCargo as the only classified producer).
+The `BTreeSet::from([PlannerOpKind::MoveCargo])` preserves the existing test setup's intent (the registry-of-one has MoveCargo as the only classified producer). The same field was also added to the explicit `EffectSchemaIndex` constructor in `crates/worldwake-ai/src/agent_tick/tests.rs`.
 
-### 3. Replace the `required_actions` literal in `crates/worldwake-ai/src/opportunity_compiler/compile.rs`
+### 3. Replaced the `required_actions` literal in `crates/worldwake-ai/src/opportunity_compiler/compile.rs`
 
-Before the outer entity loop at line 45, bind:
+The compile pass now binds before the outer entity loop:
 
 ```rust
 let required_actions_for_transfer: Vec<PlannerOpKind> = action_index
@@ -124,13 +124,13 @@ let required_actions_for_transfer: Vec<PlannerOpKind> = action_index
     .collect();
 ```
 
-At line 127, replace `required_actions: vec![PlannerOpKind::MoveCargo]` with `required_actions: required_actions_for_transfer.clone()`.
+The emitted `Opportunity` now uses `required_actions: required_actions_for_transfer.clone()`.
 
 The set is computed once per `compile_opportunities` call; the `.clone()` per emitted opportunity is unavoidable because `Opportunity.required_actions` is `Vec<PlannerOpKind>` owned.
 
-### 4. Add a focused test for the derived set
+### 4. Added focused tests for the derived set
 
-In `crates/worldwake-ai/src/effect_schema_index.rs::tests`, add a test that builds a registry with multiple known classifiable producers (e.g., `pick_up`, `harvest:bread`, `trade`) and asserts:
+In `crates/worldwake-ai/src/effect_schema_index.rs::tests`, `planner_ops_producing_returns_classified_set` builds a registry with multiple known classifiable producers (`pick_up`, `harvest:bread`, `trade`) and asserts:
 
 ```rust
 let expected: BTreeSet<PlannerOpKind> =
@@ -138,12 +138,14 @@ let expected: BTreeSet<PlannerOpKind> =
 assert_eq!(index.planner_ops_producing(EffectFactKey::CommodityTransfer), &expected);
 ```
 
-In `crates/worldwake-ai/src/opportunity_compiler/compile.rs::tests`, add a test that constructs an index with multiple classifiable producers and asserts an emitted opportunity's `required_actions` matches the derived set (sorted by `BTreeSet`'s natural ordering when collected into `Vec`).
+In `crates/worldwake-ai/src/opportunity_compiler/compile.rs::tests`, `compile_opportunities_emits_derived_required_actions` constructs an index with multiple classifiable producers and asserts an emitted opportunity's `required_actions` matches the derived set sorted by `BTreeSet`'s natural ordering when collected into `Vec`.
 
-## Files to Touch
+## Landed Files
 
 - `crates/worldwake-ai/src/effect_schema_index.rs` (modify — add field, accessor, classifier integration, focused test)
 - `crates/worldwake-ai/src/opportunity_compiler/compile.rs` (modify — fixture update, replace literal, add focused test)
+- `crates/worldwake-ai/src/planner_ops.rs` (modify — make `classify_action_def` visible within the crate for the index build)
+- `crates/worldwake-ai/src/agent_tick/tests.rs` (modify — update explicit `EffectSchemaIndex` constructor)
 
 ## Out of Scope
 
@@ -151,9 +153,9 @@ In `crates/worldwake-ai/src/opportunity_compiler/compile.rs::tests`, add a test 
 - Changing `Opportunity`'s field shape or removing `required_actions`. Spec D2 explicitly preserves the field's signature.
 - Caching at any layer above `EffectSchemaIndex` (e.g., a per-tick `BTreeSet` interned somewhere on the decision runtime). Per-call clone is acceptable for the per-opportunity hot path.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests Passed
 
 1. New focused test `effect_schema_index::tests::planner_ops_producing_returns_classified_set` asserts the multi-producer derivation.
 2. New focused test `opportunity_compiler::compile::tests::compile_opportunities_emits_derived_required_actions` asserts the emitted opportunity carries the derived set rather than `vec![MoveCargo]`.
@@ -166,18 +168,41 @@ In `crates/worldwake-ai/src/opportunity_compiler/compile.rs::tests`, add a test 
 2. `EffectSchemaIndex::Default::default()` returns an index whose `by_effect` and `by_effect_op` are both empty — the existing emptiness gate at `compile.rs:23-28` continues to return early when no actions produce `CommodityTransfer`.
 3. Iteration of `by_effect_op` is determinism-stable (`BTreeMap` + `BTreeSet` ordering, no `HashMap`).
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
 1. `crates/worldwake-ai/src/effect_schema_index.rs` (inline `tests` module) — `planner_ops_producing_returns_classified_set`: builds a registry with `pick_up`, `harvest:bread`, `trade`, asserts the derived set is `{MoveCargo, Harvest, Trade}`.
-2. `crates/worldwake-ai/src/opportunity_compiler/compile.rs` (inline `tests` module) — `compile_opportunities_emits_derived_required_actions`: builds a multi-producer index and asserts an emitted opportunity's `required_actions` matches the derived set.
-3. The fixture at `compile.rs::tests::index` is updated to include `by_effect_op`; no other existing test bodies change.
+2. `crates/worldwake-ai/src/opportunity_compiler/compile.rs` (inline `tests` module) — `compile_opportunities_emits_derived_required_actions`: builds a multi-producer index and asserts an emitted opportunity's `required_actions` matches the derived set in enum-order `Vec` form (`[Trade, Harvest]` for the fixture).
+3. Explicit `EffectSchemaIndex` fixtures in `compile.rs::tests::index` and `agent_tick/tests.rs` were updated to include `by_effect_op`.
 
-### Commands
+### Commands Run
 
 1. `cargo test -p worldwake-ai effect_schema_index` — targets the new derivation test.
 2. `cargo test -p worldwake-ai opportunity_compiler` — confirms both the new derivation test and existing emission tests pass.
 3. `cargo test -p worldwake-ai` — full AI crate suite for no-regression.
 4. `cargo clippy -p worldwake-ai --all-targets -- -D warnings` — clippy gate.
-5. `./scripts/verify.sh` — full pre-PR gate before pushing.
+5. `./scripts/verify.sh` — waived for this per-ticket closeout because `$implement-spec-tickets` owns the final full pre-PR gate before branch push.
+
+## Outcome
+
+Completed on 2026-05-24.
+
+- `EffectSchemaIndex` now caches planner operation producers per `EffectFactKey` using the existing action registry and `classify_action_def` during index construction.
+- `compile_opportunities` now emits `Opportunity.required_actions` from `planner_ops_producing(CommodityTransfer)` instead of hard-coding `MoveCargo`.
+- Explicit test fixtures were updated for the new index field, and focused coverage was added at both the index and compiler seams.
+
+## Deviations
+
+- `classify_action_def` was made `pub(crate)` rather than duplicated or wrapped so `EffectSchemaIndex::build` can reuse the existing classifier directly.
+- The compiler-focused expected `Vec` order is `Trade, Harvest` for the test fixture because `BTreeSet<PlannerOpKind>` orders by the enum declaration, not by insertion or prose example order.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib effect_schema_index::tests::planner_ops_producing_returns_classified_set -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib opportunity_compiler::compile::tests::compile_opportunities_emits_derived_required_actions -- --exact`.
+- Passed `cargo test -p worldwake-ai effect_schema_index`.
+- Passed `cargo test -p worldwake-ai opportunity_compiler`.
+- Passed `cargo test -p worldwake-ai`.
+- Passed `cargo clippy -p worldwake-ai --all-targets -- -D warnings`.
+- Waived `./scripts/verify.sh` for this per-ticket closeout because the spec-ticket harness owns that full gate before pushing the final branch.

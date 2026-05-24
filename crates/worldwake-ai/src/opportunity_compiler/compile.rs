@@ -26,6 +26,11 @@ pub fn compile_opportunities(
     {
         return (Vec::new(), load);
     }
+    let required_actions_for_transfer: Vec<PlannerOpKind> = action_index
+        .planner_ops_producing(EffectFactKey::CommodityTransfer)
+        .iter()
+        .copied()
+        .collect();
 
     let current_tick = belief_view.current_tick();
     let floor = belief_view
@@ -124,7 +129,7 @@ pub fn compile_opportunities(
                     ClaimTopic::EntityLocation { subject: entity },
                     ClaimTopic::CommodityAvailability { commodity, place },
                 ],
-                required_actions: vec![PlannerOpKind::MoveCargo],
+                required_actions: required_actions_for_transfer.clone(),
                 legal_status,
                 social_exposure: if risks.is_empty() {
                     SocialExposureBand::Public
@@ -247,6 +252,7 @@ fn confirmed_empty_for_any_inventory(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
     use worldwake_core::{
         AgentBeliefStore, BelievedEntityState, CauseRef, CognitiveProfile, LawAbidingProfile,
         LearnedOpportunityMemory, OpportunityEntry, PerceptionProfile, PerceptionSource,
@@ -319,6 +325,26 @@ mod tests {
             by_effect: BTreeMap::from([(
                 EffectFactKey::CommodityTransfer,
                 vec![worldwake_core::ActionDefId(0)],
+            )]),
+            by_effect_op: BTreeMap::from([(
+                EffectFactKey::CommodityTransfer,
+                BTreeSet::from([PlannerOpKind::MoveCargo]),
+            )]),
+        }
+    }
+
+    fn multi_op_index() -> EffectSchemaIndex {
+        EffectSchemaIndex {
+            by_effect: BTreeMap::from([(
+                EffectFactKey::CommodityTransfer,
+                vec![
+                    worldwake_core::ActionDefId(0),
+                    worldwake_core::ActionDefId(1),
+                ],
+            )]),
+            by_effect_op: BTreeMap::from([(
+                EffectFactKey::CommodityTransfer,
+                BTreeSet::from([PlannerOpKind::Harvest, PlannerOpKind::Trade]),
             )]),
         }
     }
@@ -511,5 +537,31 @@ mod tests {
 
         assert_eq!(load.learned_memory_damped, 1);
         assert_eq!(opportunities[0].salience, Permille::new_unchecked(300));
+    }
+
+    #[test]
+    fn compile_opportunities_emits_derived_required_actions() {
+        let mut store = AgentBeliefStore::new();
+        store
+            .known_entities
+            .insert(entity(2), belief(entity(2), CommodityKind::Bread, 3));
+        let (world, agent) = view_with_store(
+            store,
+            CognitiveProfile::default(),
+            PerceptionProfile::default(),
+            RiskWeightProfile::default(),
+            LawAbidingProfile::default(),
+            SurveyMemory::default(),
+            LearnedOpportunityMemory::default(),
+        );
+        let view = PerAgentBeliefView::from_world(agent, &world);
+
+        let (opportunities, load) = compile_opportunities(agent, &view, &multi_op_index());
+
+        assert_eq!(load.compiled_count, 1);
+        assert_eq!(
+            opportunities[0].required_actions,
+            vec![PlannerOpKind::Trade, PlannerOpKind::Harvest]
+        );
     }
 }
