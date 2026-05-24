@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: [`archive/tickets/S167COGARCBEH-001.md`](../archive/tickets/S167COGARCBEH-001.md), S167COGARCBEH-002, [`specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md)
+**Deps**: [`archive/tickets/S167COGARCBEH-001.md`](../archive/tickets/S167COGARCBEH-001.md), [`archive/tickets/S167COGARCBEH-002.md`](../archive/tickets/S167COGARCBEH-002.md), [`specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md)
 
 ## Problem
 

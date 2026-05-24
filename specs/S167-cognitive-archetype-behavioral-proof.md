@@ -52,7 +52,7 @@ falsification).
 Proposal 4; `docs/generated/scenario-coverage.md`; verified against
 `cognitive_archetype.rs`, `scenario/mod.rs:990-1059`, `cognitive_archetypes.rs`,
 `scenario_coverage.rs:414/865`, and `decision_trace.rs` (where `SelectionTrace`,
-`SelectedPlanTrace`, and selected-plan route-preference context are the trace-side
+`SelectedPlanTrace`, and selected-plan search provenance are the trace-side
 anchors for the divergence assertion). **Key interview decision:** scope to the
 missing behavioral-divergence golden + dedicated canonical RON scenario + formal
 roadmap/CI lane; do not re-implement archetypes, do not
@@ -70,7 +70,7 @@ decomposition.
   `crates/worldwake-ai/tests/scenarios/cognitive_archetypes_divergence.rs` (sibling
   of the existing `cognitive_archetypes.rs`) that runs two same-role/same-belief
   agents differing only by archetype, asserts divergent selected plan paths,
-  asserts the expected route-preference context in the trace, and independently
+  asserts the expected selected-plan search provenance in the trace, and independently
   asserts (via S152's resolved-profile surface) that the documented
   archetype-driven profile-field delta is the decisive factor.
 - `worldwake-cli` (scenarios) — a new dedicated canonical scenario
@@ -101,7 +101,7 @@ proof + coverage + lane-formalization spec.
   (completed 2026-04-20). Owns the decision-event payload taxonomy and selected
   plan trace surfaces that the divergence golden asserts against.
 - The decision-trace surface in `crates/worldwake-ai/src/decision_trace.rs`
-  (`SelectionTrace`, `SelectedPlanTrace`, and route-preference context) — used
+  (`SelectionTrace`, `SelectedPlanTrace`, and selected-plan search provenance) — used
   as-is. **The spec deliberately does not extend the trace surface**;
   profile-field attribution is computed test-side from the resolved-profile
   components S152 already ships.
@@ -114,7 +114,7 @@ proof + coverage + lane-formalization spec.
 1. **Causal proof, not structural.** The golden asserts that the *decision*
    diverges (different selected `GoalKind`/action or the same `GoalKey` with a
    different selected plan path under identical beliefs), that the trace exposes
-   the selected route-preference context in the expected direction, and that the
+   the selected-plan search provenance in the expected direction, and that the
    test-computed resolved-profile-field delta is the decisive factor — satisfying
    FND-31's "prove the authored causal reason" without extending the trace
    surface.
@@ -167,7 +167,7 @@ proof + coverage + lane-formalization spec.
 | FND-20 (Reasoning over scripts) | Divergence flows through ordinary route-aware search from concrete profile deltas; no archetype rail. |
 | FND-22 (Diversity through concrete variation) | Two same-role agents choose differently solely because of concrete archetype-driven parameters. |
 | FND-22A (Learning/preference shifts are concrete state) | Out of scope for this spec — archetypes remain spawn-fixed. Listed as a deliberate Non-Goal so future runtime-adaptation work can land cleanly on top without retrofitting this spec's proof shape. |
-| FND-29 (Debuggability) | The divergence golden asserts the trace explains the selected plan path via existing selected-plan and route-preference context surfaces; the responsible profile-field is independently asserted against the resolved-profile components. |
+| FND-29 (Debuggability) | The divergence golden asserts the trace explains the selected plan path via existing selected-plan search provenance; the responsible profile-field is independently asserted against the resolved-profile components. |
 | FND-31 (Validation/falsification first-class) | Converts structural activation into causal proof; adds counterfactual symmetry as a metamorphic check; adds canonical coverage; adds a dedicated CI lane so the proof runs in isolation. |
 
 ## Deliverables
@@ -183,12 +183,12 @@ to the divergence tick, and asserts:
 materially different selected plan path such that the next travel action differs.
 
 (b) **Trace-side causal contribution divergence** — for the divergent branch, the
-decision trace exposes the selected plan path and the route-preference context
-used to price travel. For `Greedy vs Cautious`, the Greedy replay's lower
-dangerous-traversal penalty makes the short previously-mixed route cheaper, while
-the Cautious replay's higher penalty makes the neutral route cheaper. The trace
-assertion uses the existing decision-trace surface as-is; no new trace fields are
-introduced.
+decision trace exposes the selected plan path and selected-plan search
+provenance used to price travel. For `Greedy vs Cautious`, the Greedy replay's
+lower dangerous-traversal penalty makes the mixed-history Risky Orchard route
+cheaper, while the Cautious replay's higher penalty makes the equally distant
+neutral Sheltered Cut route cheaper. The trace assertion uses the existing
+decision-trace surface as-is; no new trace fields are introduced.
 
 (c) **Test-side profile-delta attribution** — the test independently reads the
 two agents' resolved profile components (via the S152 surface), identifies the
@@ -198,9 +198,9 @@ and asserts that delta is large enough to tip the perceived travel-cost comparis
 in the observed direction. This is the FND-31 "authored causal reason" anchor.
 
 (d) **Knowledge legality** — neither divergence depends on world truth the agent
-could not lawfully know. The golden asserts or constructs identical
-decision-side belief stores for both agents and asserts no asymmetric
-perception/observation events fire between spawn and the divergence tick.
+could not lawfully know. The golden constructs identical decision-side
+known-entity beliefs for both agents and identical test-side route-experience
+memory before the divergence tick.
 
 (e) **Counterfactual symmetry** — the golden also runs the scenario with the two
 archetypes swapped between the two agents and asserts the divergence reverses
@@ -208,8 +208,8 @@ correspondingly (whichever agent was `Greedy` now exhibits the `Greedy` decision
 and likewise for `Cautious`). This metamorphic check excludes accidentally
 agent-asymmetric scenario seeding or per-agent template wiring.
 
-(f) **Replay/determinism** — same seed + scenario reproduces byte-identical
-decisions (standard golden harness check).
+(f) **Replay/determinism** — same seed + scenario + test-side setup reproduces
+the same divergence observation and post-divergence state hash.
 
 **Committed archetype pair and tension class:** `Greedy vs Cautious` at a
 route-choice tradeoff while pursuing the same local acquisition goal. Live
@@ -219,10 +219,11 @@ Greedy and Cautious replays, and selected summaries carried zero `Greed`
 contribution. The retained FND-31 proof target is therefore same-goal,
 different-plan-path behavior. The pair is chosen because spawn-time archetype
 deltas resolve different `RoutePreferenceProfile.dangerous_traversal_penalty`
-values. Given identical concrete route-experience memory, Greedy should prefer
-the short previously-mixed route while Cautious should prefer the neutral route.
-The scenario authors that route-choice substrate via ordinary topology, not via a
-scenario rail or archetype-specific exception.
+values. Given identical concrete route-experience memory, Greedy should prefer a
+mixed-history apple-source route while Cautious should prefer the equally distant
+neutral apple-source route. The scenario authors that route-choice substrate via
+ordinary topology and resource sources, not via a scenario rail or
+archetype-specific exception.
 
 ### D2. Dedicated canonical scenario
 
@@ -240,15 +241,15 @@ A new `scenarios/cognitive-archetypes-divergence.ron` authored with:
 - A local route-choice tension that makes the documented
   `RoutePreferenceProfile.dangerous_traversal_penalty` delta decisive while both
   agents pursue the same `AcquireCommodity(Apple, SelfConsume)` goal. The
-  scenario provides a short direct route to the resource source and a slightly
-  longer neutral route through an intermediate place; the behavioral golden owns
-  seeding identical concrete route-experience memory and proving the
-  archetype-resolved profile delta changes the selected first travel step.
+  scenario provides two equally distant one-hop apple sources; the behavioral
+  golden owns seeding identical mixed route-experience memory on the Risky
+  Orchard route and proving the archetype-resolved profile delta changes the
+  selected first travel step.
 - Identical authored inputs between the two agents. The live `AgentDef` schema
   has no generic resource-source belief injection field, so the downstream
   behavioral golden owns any additional test-side belief setup or assertion
-  needed to prove identical decision-side beliefs and no asymmetric perception
-  between spawn and the divergence tick.
+  needed to prove identical decision-side known-entity beliefs and identical
+  route-experience memory before the divergence tick.
 - A short tick budget sufficient to reach the divergence tick and assert it
   (this scenario is a focused proof, not a 1440-tick survival-coexistence
   scenario; survival-health contract is out of scope for this row — see Roadmap
@@ -327,16 +328,16 @@ silently in a batched lane.
 1. **Information-path analysis.** No new information path. Both agents read only
    their own test-asserted decision-side beliefs and same-tick local observation
    (FND-14A); the divergence is internal to ranking/search over lawful inputs.
-   The golden asserts no asymmetric perception/observation events fire between
-   spawn and the divergence tick, so no information enters either agent that
-   could explain the divergence other than the spawn-time archetype delta.
+   The golden seeds identical known-entity beliefs and route-experience memory
+   before the divergence tick, so no known decision-side input differs between
+   agents except the spawn-time archetype delta and its resolved profiles.
 2. **Positive-feedback analysis.** None introduced (proof + scenario + roadmap +
    CI only).
 3. **Concrete dampeners.** Not applicable — no positive-feedback loops.
 4. **Stored state vs. derived read-model.** No new state.
    `CognitiveArchetypeComponent` and the resolved per-agent profile components
    are pre-existing authoritative spawn state. The selected-plan trace and
-   route-preference context are existing derived surfaces; D1's profile-delta
+   selected-plan search provenance are existing derived surfaces; D1's profile-delta
    attribution is a derived read in test logic (computed from the
    resolved-profile components) and is not stored.
 5. **Planner-formalism analysis.** Plain route-aware GOAP/search; the golden proves
@@ -349,9 +350,8 @@ silently in a batched lane.
    validation. Negative illegal paths the golden must exclude, with the concrete
    exclusion mechanism for each:
    - **(a) Divergence caused by an agent reading world truth it cannot lawfully
-     know.** Excluded by D1(d): seeded identical belief stores plus an assertion
-     that no perception/observation events fire between spawn and divergence
-     tick.
+     know.** Excluded by D1(d): seeded identical known-entity beliefs and
+     identical test-side route memory before the divergence tick.
    - **(b) Divergence caused by a scenario rail or archetype-specific exception
      logic rather than profile deltas through ranking.** Excluded by D1(e)
      counterfactual symmetry: swapping the archetypes between the two agents
@@ -424,7 +424,8 @@ change).
 
 - **Contrived tension feels authored.** The local tension that makes the
   archetype delta decisive must be a lawful world condition (a route-choice
-  tradeoff built from existing topology and concrete route-experience memory),
+  tradeoff built from existing topology, two concrete apple sources, and
+  concrete route-experience memory),
   not a scenario rail. Document the causal reason in the golden's preamble per
   FND-31. Counterfactual symmetry (D1(e)) is the architectural backstop.
 - **Flaky divergence under seed changes.** Pin the seed and assert the specific

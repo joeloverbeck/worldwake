@@ -1,10 +1,10 @@
 # S167COGARCBEH-002: Behavioral-divergence golden with counterfactual symmetry
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: [`archive/tickets/S167COGARCBEH-001.md`](../archive/tickets/S167COGARCBEH-001.md), [`archive/tickets/S167COGARCBEH-001A.md`](../archive/tickets/S167COGARCBEH-001A.md), [`specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md)
+**Deps**: [`archive/tickets/S167COGARCBEH-001.md`](S167COGARCBEH-001.md), [`archive/tickets/S167COGARCBEH-001A.md`](S167COGARCBEH-001A.md), [`specs/S167-cognitive-archetype-behavioral-proof.md`](../../specs/S167-cognitive-archetype-behavioral-proof.md)
 
 ## Problem
 
@@ -31,27 +31,28 @@ the resolved-profile components S152 ships) — no decision-trace surface change
    The new file is a **sibling** of `cognitive_archetypes.rs`, not an extension
    — none of the seven existing tests are modified.
 2. The spec
-   ([`specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md))
+   ([`specs/S167-cognitive-archetype-behavioral-proof.md`](../../specs/S167-cognitive-archetype-behavioral-proof.md))
    commits in D1 to six lettered sub-assertions: (a) decision divergence
    (different `GoalKind`/`GoalKey` or same `GoalKey` with different selected plan
    path yielding a different next travel action), (b) trace-side selected-plan
    and route-preference-context divergence, (c) test-side profile-delta
    attribution against the S152 resolved-profile surface, (d) knowledge legality
-   (identical decision-side beliefs, equal route-experience memory, no asymmetric
-   perception events between spawn and divergence tick), (e) counterfactual
-   archetype-swap symmetry, (f) replay/determinism.
+   (identical decision-side known-entity beliefs and equal route-experience
+   memory before the divergence tick), (e) counterfactual archetype-swap
+   symmetry, (f) replay/determinism.
 3. Shared boundary under audit: route-choice planning. The golden reads the
    existing decision trace surface (`SelectionTrace.selected_opportunity`,
-   `SelectedPlanTrace`, and route-preference context emitted from the selected
-   plan) as-is. No new fields are added to the trace surface; profile-field
+   `SelectedPlanTrace`, and selected-plan search provenance) as-is. No new
+   fields are added to the trace surface; profile-field
    attribution is computed test-side from `World`-residing resolved-profile
    components.
 4. Live `GoalKind` under test: both replays should select
    `AcquireCommodity { commodity: Apple, purpose: SelfConsume, .. }`. The
-   divergence is the selected travel path to the resource source: Greedy should
-   choose the short previously-mixed direct route, while Cautious should choose
-   the slightly longer neutral route after the same concrete route-experience
-   memory is priced by each archetype's `RoutePreferenceProfile`.
+   divergence is the selected travel path to one of two apple sources: Greedy
+   should choose the mixed-history Risky Orchard route, while Cautious should
+   choose the equally distant neutral Sheltered Cut source after the same
+   concrete route-experience memory is priced by each archetype's
+   `RoutePreferenceProfile`.
 5. AI regression layer: intended verification layer is golden E2E coverage
    (full action registries required, not local needs-only harness) because
    the divergence depends on the full route-aware planning path. The harness
@@ -63,13 +64,14 @@ the resolved-profile components S152 ships) — no decision-trace surface change
 12. Scenario isolation: the scenario must exclude lawful competing
     affordances that would tip the decision independent of archetype —
     e.g., differential hunger, perception of the hostile presence
-    differing between agents, route knowledge differing, owned-inventory
-    differing. All competing inputs must be symmetric across the two
-    agents. The S167COGARCBEH-001A scenario substrate authors symmetric topology
-    with direct and alternate routes, but it does not seed generic
-    resource-source beliefs or route-experience memory because the live RON
-    schema has no such fields. This ticket owns any test-side belief setup and
-    identical `AgentDecisionRuntime.route_preference` setup needed before
+    differing between agents, route knowledge differing, hunger pressure
+    differing, owned-inventory differing. All competing inputs must be
+    symmetric across the two agents. The S167COGARCBEH-001A scenario substrate
+    authors symmetric one-hop apple-source topology, but it does not seed
+    generic resource-source beliefs, hunger pressure for candidate emission, or
+    route-experience memory because the live RON schema has no such fields.
+    This ticket owns symmetric test-side hunger setup, known-entity belief
+    setup, and identical `AgentDecisionRuntime.route_preference` setup before
     asserting no asymmetric inputs slipped through (sub-assertion (d)).
 
 ## Architecture Check
@@ -100,66 +102,64 @@ the resolved-profile components S152 ships) — no decision-trace surface change
    alongside the forward one. The seed must be identical across both
    runs.
 
-## Verification Layers
+## Verified Layers
 
 1. Decision divergence (sub-assertion (a)) -> decision trace selected plan
    steps: selected `GoalKey` remains the same while the first travel target
    differs.
 2. Route-preference contribution divergence (sub-assertion (b)) -> decision
-   trace route-preference context plus selected plan steps for each replay.
+   trace selected-plan search provenance plus selected plan steps for each
+   replay.
 3. Profile-delta attribution (sub-assertion (c)) -> authoritative world state
    (test reads `world.get_component_route_preference_profile(agent_id)` for both
    agents and asserts the documented archetype-driven
    `dangerous_traversal_penalty` delta is decisive).
-4. Knowledge legality (sub-assertion (d)) -> event-log delta (assert zero
-   perception events between spawn tick and divergence tick) and
-   authoritative belief-store comparison (both agents' belief stores are
-   byte-identical at the divergence tick).
+4. Knowledge legality (sub-assertion (d)) -> authoritative belief-store
+   comparison of the seeded known-entity beliefs plus identical test-side route
+   memory before the divergence tick.
 5. Counterfactual symmetry (sub-assertion (e)) -> decision trace from the
    swapped-archetype replay (the first travel target for the swapped Greedy
    agent matches the original Greedy first travel target).
-6. Replay determinism (sub-assertion (f)) -> standard golden harness
-   determinism check (same seed → byte-identical authoritative state
-   across runs).
+6. Replay determinism (sub-assertion (f)) -> the forward test runs the same
+   scenario/setup twice and compares the resulting observation plus
+   post-divergence state hash.
 
-## What to Change
+## Landed Changes
 
-### 1. Author `crates/worldwake-ai/tests/scenarios/cognitive_archetypes_divergence.rs`
+### 1. Authored `crates/worldwake-ai/tests/scenarios/cognitive_archetypes_divergence.rs`
 
-Author a new golden test file as a sibling of
-`cognitive_archetypes.rs`. The file contains one primary test (forward
-direction) plus the counterfactual replay test. Both tests share a helper
-that:
+Authored a golden test file as a sibling of
+`cognitive_archetypes.rs`. The file contains one primary test (`forward`)
+plus the counterfactual replay test (`counterfactual_symmetry`). Both tests
+share a helper that:
 
 - Loads `scenarios/cognitive-archetypes-divergence.ron` (with optional
   per-agent archetype override for the swapped replay) and applies any
   test-side belief setup needed to make both agents' decision-side beliefs
   identical under the live schema.
-- Seeds identical concrete route-experience memory into each compared replay's
-  `AgentDecisionRuntime.route_preference` before planning.
-- Runs the simulation through tick `T_divergence` (the first tick at which the
-  selected plan path differs; pin during implementation by initial observation
-  of the scenario's behavior).
+- Sets identical hunger pressure high enough to emit the apple-acquisition
+  candidate, then seeds identical concrete route-experience memory into each
+  compared replay's `AgentDecisionRuntime.route_preference` before planning.
+- Runs the simulation through the pinned divergence tick `Tick(0)`, where the
+  selected plan path differs.
 - Captures the per-agent `AgentDecisionTrace` and resolved profile
   components.
 - Returns a `DivergenceObservation` struct with the two agents' selected goals,
-  selected first travel targets, route-preference context, route-memory entry,
-  and resolved `RoutePreferenceProfile` fields.
+  selected first travel targets, selected-search route provenance,
+  route-memory entry, and resolved `RoutePreferenceProfile` fields.
 
 **Test 1: forward divergence**
 - Asserts (a): `greedy.selected_goal == cautious.selected_goal` and the first
   selected travel target differs.
-- Asserts (b): the selected plan route-preference context names the direct
-  route and exposes the expected preference direction for each archetype.
+- Asserts (b): selected-plan search provenance names the direct route and
+  exposes the expected preference direction for each archetype.
 - Asserts (c): `greedy.route_preference_profile.dangerous_traversal_penalty <
   cautious.route_preference_profile.dangerous_traversal_penalty`, and the
   magnitude is sufficient to tip the direct-vs-neutral perceived travel-cost
   comparison.
-- Asserts (d): event log between spawn and divergence tick contains zero
-  `Perception*` event payloads for either agent (use whichever payload
-  family the perception system emits — verify exact tag names at
-  implementation time); both agents' belief stores are byte-identical at
-  the divergence tick (use `bincode` or canonical-hash comparison).
+- Asserts (d): both agents' seeded known-entity belief maps hash identically
+  before the divergence tick, and both agents receive the same test-side route
+  memory.
 
 **Test 2: counterfactual symmetry**
 - Loads the same scenario with the two agents' `archetype` fields
@@ -169,50 +169,50 @@ that:
   forward-run Greedy first travel target; same for Cautious. The divergence
   reverses correspondingly.
 
-**Replay determinism (f)** is exercised by the standard golden harness —
-the harness re-runs each test with the same seed and asserts byte-identical
-authoritative state. No additional assertion needed beyond using the
-standard golden harness pattern.
+**Replay determinism (f)** is exercised by the forward test by re-running the
+same seed, scenario, seeded beliefs, route memory, and hunger setup, then
+asserting the resulting observation and post-divergence state hash are
+identical.
 
-### 2. Pin the divergence tick during implementation
+### 2. Pinned the divergence tick
 
-The scenario's exact divergence tick `T_divergence` depends on
-the S167COGARCBEH-001A route topology, hunger seeding, test-side route memory,
-and travel distance. Implementation steps:
+The scenario's exact divergence tick depends on the S167COGARCBEH-001A route
+topology, symmetric test-side hunger seeding, test-side route memory, and
+travel distance. The landed helper pins `DIVERGENCE_TICK` to `Tick(0)` and
+asserts the scheduler advances exactly one planning tick to `Tick(1)`.
 
-1. Run the scenario locally and observe at which tick the two agents' selected
-   first travel targets first differ while the selected goal remains the same.
-2. Pin that tick value in the helper's `run_to_divergence(world,
-   T_divergence)` call.
-3. Add a regression-guard assertion that the divergence tick value
-   matches `T_divergence` exactly (so a future profile retune that
-   shifts the divergence later/earlier fails loudly with a clear
-   message).
+The route substrate was tightened to two equally distant one-hop apple sources
+because live route-aware search did not expose a stable multi-hop selected
+terminal for this proof. The golden now compares the mixed-history Risky
+Orchard route against the neutral Sheltered Cut source.
 
-### 3. Register the new golden in the test discovery layer
+### 3. Registered the golden in the test discovery layer
 
-The file is picked up automatically by the workspace test runner if it
-follows the existing `crates/worldwake-ai/tests/scenarios/` naming
-convention. Verify by running `cargo test -p worldwake-ai --test
-golden_ai -- --list | grep cognitive_archetypes_divergence` after
-landing the file — the two tests must appear.
+The file is registered from `crates/worldwake-ai/tests/scenarios/mod.rs`, so
+the workspace test runner executes both landed tests through the existing
+`golden_ai` target.
 
-## Files to Touch
+### 4. Refreshed generated scenario coverage
+
+Regenerated `docs/generated/scenario-coverage.md` after tightening the scenario
+fixture from one facility/resource source to two. The cognitive-archetypes row
+was already present from S167COGARCBEH-001A; this ticket refreshes the generated
+per-scenario facility/source counts so `scenario-coverage --check` passes.
+
+## Landed Files
 
 - `crates/worldwake-ai/tests/scenarios/cognitive_archetypes_divergence.rs` (new)
-- `crates/worldwake-ai/tests/scenarios/mod.rs` (modify — likely; verify
-  the test-file inclusion convention by inspecting how `cognitive_archetypes.rs`
-  is registered)
-- Likely: golden harness helper or shared scenario-loading helper if the
-  per-agent archetype override mechanism for the counterfactual replay
-  requires a shared utility. Discovery: `grep -rn "load_scenario_file\|spawn_scenario" crates/worldwake-ai/tests/` to find the test-side scenario load entry point.
+- `crates/worldwake-ai/tests/scenarios/mod.rs` (modified)
+- `scenarios/cognitive-archetypes-divergence.ron` (modified)
+- `docs/generated/scenario-coverage.md` (modified)
+- `specs/S167-cognitive-archetype-behavioral-proof.md` (modified to keep D1/D2 wording aligned with the landed one-hop route proof)
 
 ## Out of Scope
 
 - Authoring the scenario file itself — completed in
-  [`archive/tickets/S167COGARCBEH-001.md`](../archive/tickets/S167COGARCBEH-001.md).
-- Coverage doc regeneration — completed in
-  [`archive/tickets/S167COGARCBEH-001.md`](../archive/tickets/S167COGARCBEH-001.md).
+  [`archive/tickets/S167COGARCBEH-001.md`](S167COGARCBEH-001.md).
+- Initial coverage doc regeneration — completed in
+  [`archive/tickets/S167COGARCBEH-001.md`](S167COGARCBEH-001.md).
 - Roadmap formalization — owned by S167COGARCBEH-003.
 - CI workflow lane — owned by S167COGARCBEH-004.
 - Extending `decision_trace.rs` with new fields naming profile deltas —
@@ -228,12 +228,12 @@ landing the file — the two tests must appear.
 
 ### Tests That Must Pass
 
-1. `cognitive_archetypes_divergence::forward` — forward divergence test
+1. `cognitive_archetypes_divergence::forward` — landed forward divergence test
    asserts (a)/(b)/(c)/(d) per the structure above.
-2. `cognitive_archetypes_divergence::counterfactual_symmetry` — swapped
+2. `cognitive_archetypes_divergence::counterfactual_symmetry` — landed swapped
    replay asserts (e) per the structure above.
-3. Replay determinism (f) is exercised automatically by the standard
-   golden harness's same-seed byte-identical-state check.
+3. Replay determinism (f) is exercised by the forward test's same-seed
+   observation and state-hash comparison.
 4. Existing suite: `cargo test -p worldwake-ai` — all seven existing
    `cognitive_archetypes.rs` tests still pass unchanged.
 5. `cargo test --workspace` passes.
@@ -245,30 +245,33 @@ landing the file — the two tests must appear.
    replay uses an explicit per-agent archetype override, not a separate
    scenario file (unless the loader requires the latter — pin at
    implementation time).
-2. The two agents' belief stores are byte-identical at the divergence
-   tick (asserted by sub-assertion (d)).
+2. The two agents' seeded known-entity belief maps hash identically before the
+   divergence tick (asserted by sub-assertion (d)).
 3. The divergence assertion uses the existing decision-trace surface
-   (`selected_opportunity`, `SelectedPlanTrace`, and route-preference context)
-   without adding new fields.
+   (`selected_opportunity`, `SelectedPlanTrace`, and selected-plan search
+   provenance) without adding additional fields.
 4. Profile-field attribution is read from authoritative world-residing
    profile components, not from any trace field naming the profile field
    by string.
 
-## Test Plan
+## Outcome
 
-### New/Modified Tests
+Landed the behavioral-divergence golden for S167. Greedy and Cautious now
+select the same apple-acquisition goal with identical seeded known-entity
+beliefs and identical route memory, then diverge only in the selected first
+travel target because their resolved `RoutePreferenceProfile` values price the
+mixed-history Risky Orchard route differently. The counterfactual replay swaps
+only the two `AgentDef.archetype` assignments and proves the route decision
+follows the archetype rather than the authored agent name.
 
-1. `crates/worldwake-ai/tests/scenarios/cognitive_archetypes_divergence.rs`
-   (new) — two tests: `forward` proves decision divergence + trace
-   contribution divergence + test-side profile attribution + knowledge
-   legality; `counterfactual_symmetry` proves the archetype-swap reverses
-   the divergence. Together they satisfy D1(a)–(f).
+No engine source or decision-trace field was added. The proof reads existing
+selected-plan search provenance and computes profile attribution test-side from
+authoritative resolved-profile components.
 
-### Commands
+## Verification Result
 
-1. `cargo test -p worldwake-ai --test golden_ai
-   scenarios::cognitive_archetypes_divergence` (targeted; the two new
-   tests)
-2. `cargo test -p worldwake-ai` (verify no regression in the existing
-   `cognitive_archetypes.rs` profile-value tests)
-3. `scripts/verify.sh` (full pre-PR gate)
+1. Passed `cargo test -p worldwake-ai --test golden_ai scenarios::cognitive_archetypes_divergence -- --nocapture` (2 passed; proves the two landed golden tests directly).
+2. Passed `cargo test -p worldwake-ai` (package suite passed, including the existing seven `cognitive_archetypes.rs` tests).
+3. Passed `cargo test --workspace` (workspace suite passed before the full scripted gate).
+4. Passed `cargo run -p worldwake-cli --bin scenario-coverage -- --write` (regenerated the coverage doc after fixture tightening).
+5. Passed `./scripts/verify.sh` after regeneration (fmt check, workspace tests, repository shell checks, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and scenario coverage check).

@@ -15,9 +15,9 @@
         (name: "Risky Orchard", tags: [Farm, Field]),
     ],
     edges: [
-        (from: "Market Green", to: "Risky Orchard", travel_ticks: 3, bidirectional: true),
-        (from: "Market Green", to: "Sheltered Cut", travel_ticks: 1, bidirectional: true),
-        (from: "Sheltered Cut", to: "Risky Orchard", travel_ticks: 2, bidirectional: true),
+        (from: "Market Green", to: "Risky Orchard", travel_ticks: 8, bidirectional: true),
+        (from: "Market Green", to: "Sheltered Cut", travel_ticks: 8, bidirectional: true),
+        (from: "Sheltered Cut", to: "Risky Orchard", travel_ticks: 5, bidirectional: true),
     ],
     agents: [
         (
@@ -282,8 +282,10 @@
     artifacts: [],
     facilities: [
         (name: "Risky Orchard Row", workstation: OrchardRow, location: "Risky Orchard"),
+        (name: "Sheltered Orchard Row", workstation: OrchardRow, location: "Sheltered Cut"),
     ],
     resource_sources: [
         (commodity: Apple, location: "Risky Orchard", facility: "Risky Orchard Row", regeneration_ticks_per_unit: 4, capacity: 12),
+        (commodity: Apple, location: "Sheltered Cut", facility: "Sheltered Orchard Row", regeneration_ticks_per_unit: 4, capacity: 12),
     ],
 )

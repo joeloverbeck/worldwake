@@ -204,8 +204,8 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - commodity_decay: disabled
 - visibility_profile places: none
 - sleep_quality places: none
-- facilities: 1
-- resource sources: 1
+- facilities: 2
+- resource sources: 2
 - known_recipes union: Harvest Apples
 
 ### scenarios/final-integration.ron

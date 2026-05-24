@@ -17,14 +17,15 @@ the selected summaries carry zero `Greed` contribution. The live planner also
 keeps search order tied to ranked candidate preference; `PortfolioWeightsProfile`
 is a trace/probe/cap input and does not by itself steer selected-goal ordering.
 
-This prerequisite retargeted the lawful behavioral substrate before the golden is
-implemented. The S167 scenario now exposes a same-goal, different-plan-path
-decision boundary: both agents can pursue the same apple acquisition under
-identical beliefs and identical concrete route-experience memory, but their
-archetype-resolved `RoutePreferenceProfile.dangerous_traversal_penalty` can make
-the Greedy replay prefer the short previously-mixed route while the Cautious
-replay prefers the slightly longer neutral route. The later S167COGARCBEH-002
-golden owns the plan-path divergence and counterfactual symmetry assertions.
+This prerequisite retargeted the lawful behavioral substrate before the golden
+was implemented. It initially exposed a same-goal, different-plan-path decision
+boundary through ordinary route topology. The later
+[`S167COGARCBEH-002`](S167COGARCBEH-002.md) golden tightened that substrate to
+two equally distant one-hop apple sources and proved that identical concrete
+route-experience memory plus the archetype-resolved
+`RoutePreferenceProfile.dangerous_traversal_penalty` makes Greedy prefer the
+mixed-history Risky Orchard route while Cautious prefers the neutral Sheltered
+Cut source.
 
 ## Assumption Reassessment (2026-05-24)
 
@@ -106,7 +107,8 @@ same-goal, different-plan-path divergence caused by
 
 ### 2. Add the alternate route substrate to the S167 scenario
 
-Modify `scenarios/cognitive-archetypes-divergence.ron` so Market Green has both:
+At this ticket's completion, modified
+`scenarios/cognitive-archetypes-divergence.ron` so Market Green had both:
 
 - a short direct route to Risky Orchard, and
 - a slightly longer neutral route through an intermediate place.
@@ -115,10 +117,16 @@ The route costs allow the later golden to seed equal route history where
 Greedy's lower dangerous-traversal penalty makes the direct route cheaper, while
 Cautious's higher penalty makes the neutral route cheaper.
 
+Outcome amended: 2026-05-24. The later
+[`S167COGARCBEH-002`](S167COGARCBEH-002.md) golden refined this substrate to two
+equally distant one-hop apple sources because the live route-aware search did
+not expose a stable multi-hop selected terminal for the proof.
+
 ## Landed Files
 
 - `specs/S167-cognitive-archetype-behavioral-proof.md` (modify)
-- `tickets/S167COGARCBEH-002.md` (modify)
+- `archive/tickets/S167COGARCBEH-002.md` (later modified and archived by the
+  completed golden ticket)
 - `scenarios/cognitive-archetypes-divergence.ron` (modify)
 - `.codex/run-state/implement-spec-tickets.json` (modify)
 
@@ -170,6 +178,12 @@ Cautious's higher penalty makes the neutral route cheaper.
 
 Completed: 2026-05-24
 
+Outcome amended: 2026-05-24. The later
+[`S167COGARCBEH-002`](S167COGARCBEH-002.md) golden refined the scenario
+substrate from a direct-vs-multi-hop route comparison to two equally distant
+one-hop apple sources. This keeps the prerequisite's lawful same-goal
+route-preference proof boundary intact while matching the implemented golden.
+
 Implemented:
 
 - Updated the active S167 spec from the disproven economic-vs-safety
@@ -178,10 +192,13 @@ Implemented:
 - Updated `S167COGARCBEH-002` so the behavioral golden depends on this
   prerequisite and asserts `RoutePreferenceProfile.dangerous_traversal_penalty`
   attribution, selected plan path divergence, and counterfactual symmetry.
-- Modified `scenarios/cognitive-archetypes-divergence.ron` to provide a direct
-  route and a slightly longer alternate route from Market Green to Risky
-  Orchard, and removed the old public threat-warning artifacts so route-choice
-  cost is not confounded by destination threat estimates.
+- At this ticket's completion, modified
+  `scenarios/cognitive-archetypes-divergence.ron` to provide a direct route and
+  a slightly longer alternate route from Market Green to Risky Orchard, and
+  removed the old public threat-warning artifacts so route-choice cost was not
+  confounded by destination threat estimates. The later S167COGARCBEH-002 golden
+  refined this to two equally distant one-hop apple sources and archived the
+  landed proof.
 - Regenerated `docs/generated/scenario-coverage.md` after the scenario topology
   change.
 - Refreshed `.codex/run-state/implement-spec-tickets.json` so the S167 harness
