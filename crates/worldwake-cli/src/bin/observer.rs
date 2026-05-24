@@ -1100,6 +1100,15 @@ fn repair_applied_detail_lines(
         "&nbsp;&nbsp;substitute_target: {}",
         format_optional_entity(payload.substitute_target)
     ));
+    if let Some(trace) = trace
+        && (payload.repair_kind == worldwake_core::RepairKind::InsertVerification
+            || trace.verification_anchor.is_some())
+    {
+        lines.push(format!(
+            "&nbsp;&nbsp;verification_anchor: {}",
+            format_optional_entity(trace.verification_anchor)
+        ));
+    }
     lines.push(format!(
         "&nbsp;&nbsp;substitute_recipe: {}",
         format_optional_recipe(payload.substitute_recipe)
@@ -6096,10 +6105,10 @@ mod tests {
         PlanInvalidationReason, PrototypePlace, Quantity, RankedGoalComparisonDimensionTag,
         RecipeId, RecordRef, ResourceSource, RoutePreferenceSummary, RouteSegment, SaleListing,
         SaliencePolicy, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
-        SleepRecoveryModifier, TestimonyTrustSummary, Tick, TopicScope, Topology, VisibilitySpec,
-        WakeCondition, WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
-        prototype_place_entity,
+        SleepRecoveryModifier, TellTopic, TestimonyTrustSummary, Tick, TopicScope, Topology,
+        VisibilitySpec, WakeCondition, WakeReason, WashFacilityUsedPayload, WasteCreatedPayload,
+        WasteSource, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionHandlerId, ActionInstanceId, ActionPayload,
@@ -8644,6 +8653,7 @@ mod tests {
                 step_target: Some(target),
             },
             chosen_kind: Some(worldwake_core::RepairKind::ReplaceProvider),
+            verification_anchor: None,
             rejected: vec![
                 (
                     worldwake_core::RepairKind::InsertVerification,
@@ -8682,6 +8692,74 @@ mod tests {
         assert!(out.contains(
             "&nbsp;&nbsp;rejected: RebindTarget (NoSiblingTargetFound), InsertVerification (RecentlyFailed)"
         ));
+    }
+
+    #[test]
+    fn render_insert_verification_repair_with_trace_anchor() {
+        let agent = entity(1);
+        let witness = entity(2);
+        let goal_key = GoalKey::from(GoalKind::AskWitness {
+            witness,
+            topic: TellTopic::EntityBelief { subject: entity(3) },
+        });
+        let mut log = EventLog::new();
+        emit_decision_event(
+            &mut log,
+            412,
+            agent,
+            EventTag::RepairApplied,
+            DecisionEventPayload::RepairApplied(worldwake_core::RepairAppliedPayload {
+                agent,
+                goal_key,
+                step_index: 1,
+                repair_kind: worldwake_core::RepairKind::InsertVerification,
+                substitute_target: Some(witness),
+                substitute_recipe: None,
+            }),
+        );
+
+        let mut trace = planning_affordance_trace(
+            agent,
+            412,
+            AffordanceTrace {
+                available: Vec::new(),
+                place: None,
+            },
+        );
+        trace.repair_attempts.push(RepairAttemptTrace {
+            breach: worldwake_core::BreachSignature {
+                goal_key,
+                invalidator: InvalidatorTag::TargetMoved,
+                step_target: Some(entity(3)),
+            },
+            chosen_kind: Some(worldwake_core::RepairKind::InsertVerification),
+            verification_anchor: Some(witness),
+            rejected: vec![(
+                worldwake_core::RepairKind::RebindTarget,
+                RepairFailure::NoSiblingTargetFound,
+            )],
+            budget_consumed: 2,
+            budget_total: 5,
+        });
+        let mut sink = DecisionTraceSink::new();
+        sink.record(trace);
+
+        let mut out = String::new();
+        let world = World::new(build_prototype_world()).unwrap();
+        render_decision_history_section(
+            &mut out,
+            &world,
+            &log,
+            &[(agent, "Agent A".to_string())],
+            Some(&sink),
+        );
+
+        assert!(out.contains("| 412 | Agent A | RepairApplied |"));
+        assert!(out.contains("kind=InsertVerification"));
+        assert!(out.contains("&nbsp;&nbsp;substitute_target: Some(e2g0)"));
+        assert!(out.contains("&nbsp;&nbsp;verification_anchor: Some(e2g0)"));
+        assert!(out.contains("&nbsp;&nbsp;substitute_recipe: None"));
+        assert!(out.contains("&nbsp;&nbsp;rejected: RebindTarget (NoSiblingTargetFound)"));
     }
 
     #[test]

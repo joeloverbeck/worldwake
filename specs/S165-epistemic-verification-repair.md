@@ -261,13 +261,15 @@ confirm the handler's registered `validate_ask_witness_payload_override`
 
 ### D7. Repair trace (observer detail)
 
-Extend `RepairAttemptTrace` (`decision_trace.rs:197`; current fields: `breach`,
-`chosen_kind`, `rejected`, `budget_consumed`, `budget_total`) so an attempted
-verification records the chosen witness anchor and a rejected one records the
-missing-affordance cause distinct from a bare placeholder. This is the AI-crate
-diagnostic trace (consumed by `scenario_diagnostics`); it is **not** the provenance of
-record (that is D5's authoritative event) and adds no `SAVE_FORMAT_VERSION` impact.
-Observer rendering reuses the existing repair-attempt summary path.
+`RepairAttemptTrace` (`decision_trace.rs`) now includes the optional
+`verification_anchor` diagnostic field in addition to `breach`, `chosen_kind`,
+`rejected`, `budget_consumed`, and `budget_total`. Attempted verification records the
+chosen witness anchor; rejected verification continues to record its missing-affordance
+cause through the existing `rejected` entries rather than a bare placeholder. This is
+the AI-crate diagnostic trace (consumed by `scenario_diagnostics`); it is **not** the
+provenance of record (that is D5's authoritative event) and adds no
+`SAVE_FORMAT_VERSION` impact. Observer rendering reuses the existing repair-attempt
+summary path.
 
 ### D8. Test migration
 

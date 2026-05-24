@@ -143,6 +143,9 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                                 .try_into()
                                 .expect("current step index exceeds u16");
                             if let Some(traces) = &mut repair_attempt_traces {
+                                let verification_anchor = verification_anchor_from_repaired_plan(
+                                    kind, step_index, &new_plan,
+                                );
                                 traces.push(RepairAttemptTrace {
                                     breach: breach_signature_for_step(
                                         goal_key,
@@ -150,6 +153,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                                         mismatch_detail,
                                     ),
                                     chosen_kind: Some(kind),
+                                    verification_anchor,
                                     budget_consumed: repair_budget_consumed(&rejected, true),
                                     rejected,
                                     budget_total: repair_budget(ctx.cognitive),
@@ -677,6 +681,7 @@ fn repair_attempt_trace_from_failed(
     RepairAttemptTrace {
         breach,
         chosen_kind: None,
+        verification_anchor: None,
         rejected: tried.to_vec(),
         budget_consumed: repair_budget_consumed(tried, false),
         budget_total: repair_budget(cognitive),
@@ -759,6 +764,21 @@ fn substitute_target_from_repaired_plan(
             .primary_target()
     })
     .flatten()
+}
+
+fn verification_anchor_from_repaired_plan(
+    kind: RepairKind,
+    step_index: u16,
+    new_plan: &PlannedPlan,
+) -> Option<EntityId> {
+    matches!(kind, RepairKind::InsertVerification)
+        .then(|| {
+            new_plan
+                .steps
+                .get(usize::from(step_index))?
+                .primary_target()
+        })
+        .flatten()
 }
 
 fn substitute_recipe_from_repaired_plan(
@@ -1409,6 +1429,7 @@ mod tests {
         apply_repaired_plan_and_emit, attempt_local_repair_for_invalidated_step,
         breach_signature_for_step, epistemic_verification_subject, populate_contention_event_refs,
         record_failed_repair_attempts, repair_attempt_trace_from_failed, repair_budget_consumed,
+        verification_anchor_from_repaired_plan,
     };
     use crate::RepairOutcome;
     use crate::{PlanGuard, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind};
@@ -1862,6 +1883,29 @@ mod tests {
     }
 
     #[test]
+    fn insert_verification_repair_trace_records_witness_anchor() {
+        let witness = entity(12);
+        let goal_key = sample_goal_key();
+        let prefix = planned_step(10, None);
+        let verification = planned_step(witness.slot, None);
+        let plan = PlannedPlan::new(
+            opportunity(goal_key),
+            goal_key,
+            vec![prefix, verification],
+            PlanTerminalKind::GoalSatisfied,
+        );
+
+        assert_eq!(
+            verification_anchor_from_repaired_plan(RepairKind::InsertVerification, 1, &plan),
+            Some(witness)
+        );
+        assert_eq!(
+            verification_anchor_from_repaired_plan(RepairKind::RebindTarget, 1, &plan),
+            None
+        );
+    }
+
+    #[test]
     fn local_repair_failure_records_failed_attempts_in_repair_memory() {
         let goal_key = sample_goal_key();
         let failed = planned_step(11, Some(causal_link(1)));
@@ -1937,6 +1981,7 @@ mod tests {
 
         assert_eq!(trace.breach, signature);
         assert_eq!(trace.chosen_kind, None);
+        assert_eq!(trace.verification_anchor, None);
         assert_eq!(trace.rejected, tried);
         assert_eq!(trace.budget_consumed, 2);
         assert_eq!(trace.budget_total, 6);

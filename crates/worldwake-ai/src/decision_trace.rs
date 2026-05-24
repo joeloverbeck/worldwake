@@ -197,6 +197,7 @@ impl PlanningStateCacheCounters {
 pub struct RepairAttemptTrace {
     pub breach: worldwake_core::BreachSignature,
     pub chosen_kind: Option<RepairKind>,
+    pub verification_anchor: Option<worldwake_core::EntityId>,
     pub rejected: Vec<(RepairKind, RepairFailure)>,
     pub budget_consumed: u16,
     pub budget_total: u16,
@@ -2885,6 +2886,7 @@ mod tests {
         let trace = RepairAttemptTrace {
             breach: sample_breach_signature(),
             chosen_kind: Some(RepairKind::ReplaceProvider),
+            verification_anchor: None,
             rejected: vec![(
                 RepairKind::RebindTarget,
                 RepairFailure::NoSiblingTargetFound,

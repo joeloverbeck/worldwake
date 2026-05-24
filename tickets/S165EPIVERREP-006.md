@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: No — tests only (`worldwake-ai` tests)
-**Deps**: archive/tickets/S165EPIVERREP-001.md, archive/tickets/S165EPIVERREP-002.md, archive/tickets/S165EPIVERREP-003.md, archive/tickets/S165EPIVERREP-004.md, tickets/S165EPIVERREP-005.md
+**Deps**: archive/tickets/S165EPIVERREP-001.md, archive/tickets/S165EPIVERREP-002.md, archive/tickets/S165EPIVERREP-003.md, archive/tickets/S165EPIVERREP-004.md, archive/tickets/S165EPIVERREP-005.md
 
 ## Problem
 
