@@ -158,7 +158,8 @@ cognitive_archetypes_divergence`.
 
 ## Out of Scope
 
-- Authoring the scenario file — owned by S167COGARCBEH-001.
+- Authoring the scenario file — completed in
+  [`archive/tickets/S167COGARCBEH-001.md`](../archive/tickets/S167COGARCBEH-001.md).
 - Authoring the golden test — owned by S167COGARCBEH-002.
 - Adding scenario-roadmap entry citing this workflow path — owned by
   S167COGARCBEH-003.

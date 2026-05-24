@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: S167COGARCBEH-001, [`specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md)
+**Deps**: [`archive/tickets/S167COGARCBEH-001.md`](../archive/tickets/S167COGARCBEH-001.md), [`specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md)
 
 ## Problem
 
@@ -40,9 +40,9 @@ resolved-profile components S152 ships) — no decision-trace surface change.
    different next-tick action), (b) trace-side
    `motive_source_contributions` divergence, (c) test-side profile-delta
    attribution against the S152 resolved-profile surface, (d) knowledge
-   legality (identical seeded beliefs, no perception events between spawn
-   and divergence tick), (e) counterfactual archetype-swap symmetry, (f)
-   replay/determinism.
+   legality (identical decision-side beliefs, no asymmetric perception events
+   between spawn and divergence tick), (e) counterfactual archetype-swap
+   symmetry, (f) replay/determinism.
 3. Shared boundary under audit: the decision-trace surface
    (`crates/worldwake-ai/src/decision_trace.rs` —
    `RankedGoalSummary.motive_source_contributions: Vec<(MotiveSourceRef,
@@ -58,8 +58,8 @@ resolved-profile components S152 ships) — no decision-trace surface change.
    below it for Cautious. The exact goal pair depends on the scenario's
    substrate — typically `AcquireCommodity(SelfConsume)` (Greedy choice) vs
    `StayPut` / a self-care goal / `Flee` from hostile presence (Cautious
-   choice). Pin the exact goal pair at implementation time once
-   S167COGARCBEH-001's scenario is authored.
+   choice). Pin the exact goal pair at implementation time against the
+   archived S167COGARCBEH-001 scenario.
 5. AI regression layer: intended verification layer is golden E2E coverage
    (full action registries required, not local needs-only harness) because
    the divergence depends on the full ranking pipeline reading from the
@@ -76,9 +76,11 @@ resolved-profile components S152 ships) — no decision-trace surface change.
     e.g., differential hunger, perception of the hostile presence
     differing between agents, route knowledge differing, owned-inventory
     differing. All competing inputs must be symmetric across the two
-    agents. S167COGARCBEH-001's scenario already authors this symmetry;
-    the golden asserts no asymmetric inputs slipped through (sub-assertion
-    (d)).
+    agents. The archived S167COGARCBEH-001 scenario authors symmetric inputs
+    and public threat-warning artifacts, but it does not seed generic
+    resource-source beliefs because the live RON schema has no such field.
+    This ticket owns any test-side belief setup needed before asserting no
+    asymmetric inputs slipped through (sub-assertion (d)).
 
 ## Architecture Check
 
@@ -143,7 +145,9 @@ direction) plus the counterfactual replay test. Both tests share a helper
 that:
 
 - Loads `scenarios/cognitive-archetypes-divergence.ron` (with optional
-  per-agent archetype override for the swapped replay).
+  per-agent archetype override for the swapped replay) and applies any
+  test-side belief setup needed to make both agents' decision-side beliefs
+  identical under the live schema.
 - Runs the simulation through tick `T_divergence` (the first tick at
   which the goal selection differs; pin during implementation by
   initial observation of the scenario's behavior).
@@ -190,7 +194,7 @@ standard golden harness pattern.
 ### 2. Pin the divergence tick during implementation
 
 The scenario's exact divergence tick `T_divergence` depends on
-S167COGARCBEH-001's authored tick budget, hunger seeding, and travel
+the archived S167COGARCBEH-001 authored tick budget, hunger seeding, and travel
 distance. Implementation steps:
 
 1. Run the scenario locally and observe at which tick the two agents'
@@ -222,8 +226,10 @@ landing the file — the two tests must appear.
 
 ## Out of Scope
 
-- Authoring the scenario file itself — owned by S167COGARCBEH-001.
-- Coverage doc regeneration — subsumed in S167COGARCBEH-001.
+- Authoring the scenario file itself — completed in
+  [`archive/tickets/S167COGARCBEH-001.md`](../archive/tickets/S167COGARCBEH-001.md).
+- Coverage doc regeneration — completed in
+  [`archive/tickets/S167COGARCBEH-001.md`](../archive/tickets/S167COGARCBEH-001.md).
 - Roadmap formalization — owned by S167COGARCBEH-003.
 - CI workflow lane — owned by S167COGARCBEH-004.
 - Extending `decision_trace.rs` with new fields naming profile deltas —

@@ -198,9 +198,9 @@ delta is large enough to plausibly tip the motive_score in the observed
 direction. This is the FND-31 "authored causal reason" anchor.
 
 (d) **Knowledge legality** — neither divergence depends on world truth the agent
-could not lawfully know. Both agents are seeded with identical belief stores; the
-golden asserts no perception/observation events fire between spawn and the
-divergence tick.
+could not lawfully know. The golden asserts or constructs identical
+decision-side belief stores for both agents and asserts no asymmetric
+perception/observation events fire between spawn and the divergence tick.
 
 (e) **Counterfactual symmetry** — the golden also runs the scenario with the two
 archetypes swapped between the two agents and asserts the divergence reverses
@@ -238,10 +238,12 @@ A new `scenarios/cognitive-archetypes-divergence.ron` authored with:
 - A local tension that makes the documented `portfolio_weights` economic-weight
   delta decisive — an opportunity to acquire a commodity at marginal safety
   exposure (concrete world state: a commodity source within travel range plus a
-  documented hostile-presence indicator on the route, both authored via existing
-  scenario primitives — `CommodityKind`, `WorkstationTag` / `PlaceTag` /
-  `bandit_camps` or equivalent — no new scenario fields).
-- Seeded belief stores identical between the two agents; no perception events
+  documented hostile-presence indicator authored through existing public notice
+  artifacts — no new scenario fields).
+- Identical authored inputs between the two agents. The live `AgentDef` schema
+  has no generic resource-source belief injection field, so the downstream
+  behavioral golden owns any additional test-side belief setup or assertion
+  needed to prove identical decision-side beliefs and no asymmetric perception
   between spawn and the divergence tick.
 - A short tick budget sufficient to reach the divergence tick and assert it
   (this scenario is a focused proof, not a 1440-tick survival-coexistence
@@ -319,11 +321,11 @@ silently in a batched lane.
 ## FND-01 Section H
 
 1. **Information-path analysis.** No new information path. Both agents read only
-   their own seeded beliefs and same-tick local observation (FND-14A); the
-   divergence is internal to ranking/search over lawful inputs. The golden
-   asserts no perception/observation events fire between spawn and the
-   divergence tick, so no information enters either agent that could explain
-   the divergence other than the spawn-time archetype delta.
+   their own test-asserted decision-side beliefs and same-tick local observation
+   (FND-14A); the divergence is internal to ranking/search over lawful inputs.
+   The golden asserts no asymmetric perception/observation events fire between
+   spawn and the divergence tick, so no information enters either agent that
+   could explain the divergence other than the spawn-time archetype delta.
 2. **Positive-feedback analysis.** None introduced (proof + scenario + roadmap +
    CI only).
 3. **Concrete dampeners.** Not applicable — no positive-feedback loops.

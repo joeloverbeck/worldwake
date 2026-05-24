@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: S167COGARCBEH-001, S167COGARCBEH-002, [`specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md)
+**Deps**: [`archive/tickets/S167COGARCBEH-001.md`](../archive/tickets/S167COGARCBEH-001.md), S167COGARCBEH-002, [`specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md)
 
 ## Problem
 
@@ -155,11 +155,13 @@ the new row's name.
 
 ## Out of Scope
 
-- Authoring the scenario file — owned by S167COGARCBEH-001.
+- Authoring the scenario file — completed in
+  [`archive/tickets/S167COGARCBEH-001.md`](../archive/tickets/S167COGARCBEH-001.md).
 - Authoring the golden test — owned by S167COGARCBEH-002.
 - CI workflow file — owned by S167COGARCBEH-004 (the roadmap entry cites
   the workflow path, but the workflow file itself lands in 004).
-- Coverage doc regeneration — subsumed in S167COGARCBEH-001.
+- Coverage doc regeneration — completed in
+  [`archive/tickets/S167COGARCBEH-001.md`](../archive/tickets/S167COGARCBEH-001.md).
 - Any change to `scenario_coverage.rs`'s `FEATURES` table or the
   `CognitiveArchetypes` feature row registration — already present and
   cited by the new catalog row.

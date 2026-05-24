@@ -1,6 +1,6 @@
 # S167COGARCBEH-001: Author cognitive-archetypes-divergence scenario
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
@@ -57,6 +57,16 @@ to active.
    surfaces: `scenario_def.archetype_assignment_policy` (scenario-level) and
    `agents[].archetype` (per-agent). Per-agent assignment satisfies the detector
    without invoking the randomized policy.
+6. Live-schema correction: `AgentDef` has no generic resource-source belief
+   injection field. Existing scenario-facing belief-like surfaces are specific
+   carriers such as `last_seen_memory`, `expectation_store`, and
+   `social_observations`, none of which can directly seed “known apple source at
+   place X” for this ticket without inventing a new primitive. This ticket
+   therefore owns the canonical authored scenario, public threat-warning
+   artifacts, identical authored agent inputs, and coverage activation. The
+   downstream golden in S167COGARCBEH-002 remains responsible for asserting the
+   exact decision-side belief/trace contract and for adding test-side setup if
+   the canonical RON fixture alone is not the strongest lawful proof seam.
 
 ## Architecture Check
 
@@ -97,21 +107,20 @@ Author a new RON scenario with:
 
 - A single place hosting both agents (e.g., a starting hamlet) plus a
   travel-reachable commodity-source place (e.g., an orchard or grain field).
-- A `bandit_camps` entry (or equivalent hostile-presence world state) on the
-  route or at the commodity-source place, sized so that the marginal safety
-  cost of the acquisition action is small but non-zero.
+- Public `Notice(ThreatWarning(place: ...))` artifacts at the shared starting
+  place as the existing hostile-presence indicator. A `bandit_camps` entry would
+  require additional bandit member agents and would violate this ticket's
+  exactly-two-agent paired-fixture invariant.
 - Two agents of the same role, both at the starting place, with **identical**
   `metabolism_profile`, `perception_profile`, `cognitive_profile`,
   `schema_context_profile`, `epistemic_disposition`, `testimony_profile`,
   `route_preference_profile`, and `risk_profile`. Explicit per-agent
   `archetype: Greedy` on one and `archetype: Cautious` on the other.
-- Both agents seeded with identical belief stores — including identical
-  knowledge of the commodity source AND identical knowledge of the
-  hostile-presence indicator. Belief seeding uses the existing
-  `AgentDef`-level belief-injection surface (whatever the current scenario
-  primitive is — verify against an existing scenario like
-  `scenarios/survival-trade.ron` or `scenarios/survival-contested.ron` at
-  authoring time).
+- Both agents have identical authored inputs and access to the same public
+  threat-warning artifacts. There is no generic `AgentDef` resource-belief
+  injection surface on the live branch; S167COGARCBEH-002 owns any additional
+  test-side belief setup or assertion needed for the behavioral-divergence
+  golden.
 - A short tick budget sufficient to reach the divergence tick — substantially
   shorter than the 1440-tick survival-health contract, since this scenario is
   a focused behavior proof, not a survival-coexistence row.
@@ -125,8 +134,7 @@ during authoring:
 
 - `WorkstationTag` variants live in `crates/worldwake-core/src/production.rs`.
 - `PlaceTag` variants live in `crates/worldwake-core/src/topology.rs`.
-- `CommodityKind` variants live in the commodity module under `worldwake-core`
-  (verify exact path during authoring).
+- `CommodityKind` variants live in `crates/worldwake-core/src/items.rs`.
 - Recipe names are Title Case with spaces (e.g., `"Harvest Apples"`, not
   `HarvestApples`).
 - Closest reference scenarios for shape: `scenarios/survival-contested.ron`
@@ -183,8 +191,10 @@ inspecting the regenerated file).
 
 1. The scenario contains exactly two agents at the same starting place with
    identical profile fields **except** `archetype`.
-2. Both agents have identical seeded beliefs at scenario load — no perception
-   event differences between them at tick 0.
+2. Both agents have identical authored inputs and access to the same public
+   threat-warning artifacts at scenario load. Exact decision-side
+   belief-store equality is owned by S167COGARCBEH-002 because the live RON
+   schema has no generic resource-belief injection field.
 3. The scenario uses only existing `WorkstationTag`, `PlaceTag`,
    `CommodityKind`, and recipe-name variants — no new scenario primitives are
    introduced.
@@ -211,3 +221,35 @@ inspecting the regenerated file).
 2. `cargo test --workspace` (verifies scenario loads without errors across
    the workspace)
 3. `scripts/verify.sh` (full pre-PR gate)
+
+## Outcome
+
+Completed: 2026-05-24
+
+Implemented:
+
+- Added `scenarios/cognitive-archetypes-divergence.ron`, a focused
+  two-agent Greedy-vs-Cautious fixture with identical authored agent inputs,
+  a travel-reachable apple source, and public threat-warning notice artifacts.
+- Regenerated `docs/generated/scenario-coverage.md`; the `Cognitive
+  archetypes` row now shows active coverage for
+  `cognitive-archetypes-divergence`.
+- Truthed this ticket and the active S167 spec to the live scenario schema:
+  there is no generic `AgentDef` resource-belief injection field, so this
+  ticket lands the canonical authored fixture and leaves exact decision-side
+  belief assertions to S167COGARCBEH-002.
+
+Deviations:
+
+- Used public `Notice(ThreatWarning(...))` artifacts instead of `bandit_camps`.
+  A `bandit_camps` setup would require additional bandit member agents and
+  would violate this ticket's exactly-two-agent paired-fixture invariant.
+- Did not add Rust tests; this ticket is scenario-authoring and generated-doc
+  work. Behavioral divergence remains owned by S167COGARCBEH-002.
+
+Verification:
+
+- `cargo run -p worldwake-cli --bin scenario-coverage -- --write`
+- `cargo run -p worldwake-cli --bin scenario-coverage -- --check`
+- `cargo test --workspace`
+- `./scripts/verify.sh`
