@@ -206,13 +206,16 @@ subject `EntityId` (from `claim_key.subject` / `observed_entity` / `record_entit
 ### D2. Single-`(witness, subject)` AskWitness step constructor
 
 In `candidate_generation.rs`, extract the per-witness inner logic of
-`extract_ask_witness_candidates` (`candidate_generation.rs:3063`) into a reusable
-constructor that, given an agent, a co-located witness, and a subject, returns the
+`extract_ask_witness_candidates` (`candidate_generation.rs:3063`) into reusable
+gate/payload helpers plus a repair-facing constructor. Because a `PlannedStep` requires
+the concrete `ActionDefId`, the constructor takes the resolved `ask_witness` action id
+alongside the agent, co-located witness, subject, and belief view. It returns the
 `ask_witness` `PlannedStep` (with the synthesized `AskWitnessPayload` and
 `TellTopic::EntityBelief { subject }`) or `None` when the S139 anchoring rule does not
 deem that witness a lawful source for the subject or the `AskWitnessMemory` cooldown is
-active. `extract_ask_witness_candidates` is refactored to call this constructor so
-there is one construction path (FND-28). The bulk emitter's behavior is unchanged.
+active. `extract_ask_witness_candidates` is refactored to call the same gate/payload
+helpers so there is one construction path for the anchoring decision and payload shape
+(FND-28). The bulk emitter's behavior is unchanged.
 
 ### D3. Seam-side verification-candidate construction
 
