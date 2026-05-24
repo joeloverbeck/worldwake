@@ -82,7 +82,7 @@ pub fn build_semantics_table(
         .collect()
 }
 
-fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
+pub(crate) fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
     match (def.domain, def.name.as_str()) {
         (ActionDomain::Travel, "travel") => Some(PlannerOpKind::Travel),
         (ActionDomain::Generic, "patrol") => Some(PlannerOpKind::Patrol),

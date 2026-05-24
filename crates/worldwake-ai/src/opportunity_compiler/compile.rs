@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::PlannerOpKind;
+use crate::belief_status::belief_status_tag_for_claim;
 use crate::decision_trace::OpportunityCompilerLoad;
 use crate::effect_schema_index::EffectSchemaIndex;
 use crate::opportunity_compiler::{
@@ -26,6 +27,11 @@ pub fn compile_opportunities(
     {
         return (Vec::new(), load);
     }
+    let required_actions_for_transfer: Vec<PlannerOpKind> = action_index
+        .planner_ops_producing(EffectFactKey::CommodityTransfer)
+        .iter()
+        .copied()
+        .collect();
 
     let current_tick = belief_view.current_tick();
     let floor = belief_view
@@ -118,13 +124,20 @@ pub fn compile_opportunities(
             opportunities.push(Opportunity {
                 key,
                 perceived_at: current_tick,
-                source_belief: source_belief(entity, commodity, &state),
+                source_belief: source_belief(
+                    belief_view,
+                    agent,
+                    entity,
+                    commodity,
+                    &state,
+                    current_tick,
+                ),
                 possible_effects: vec![EffectFactKey::CommodityTransfer],
                 possible_information: vec![
                     ClaimTopic::EntityLocation { subject: entity },
                     ClaimTopic::CommodityAvailability { commodity, place },
                 ],
-                required_actions: vec![PlannerOpKind::MoveCargo],
+                required_actions: required_actions_for_transfer.clone(),
                 legal_status,
                 social_exposure: if risks.is_empty() {
                     SocialExposureBand::Public
@@ -147,6 +160,12 @@ pub fn compile_opportunities(
     if opportunities.len() > cap {
         load.cap_truncated = u32::try_from(opportunities.len() - cap).unwrap_or(u32::MAX);
         opportunities.truncate(cap);
+    }
+    for opportunity in &opportunities {
+        *load
+            .compiled_by_status
+            .entry(opportunity.source_belief.status)
+            .or_insert(0) += 1;
     }
     load.compiled_count = u32::try_from(opportunities.len()).unwrap_or(u32::MAX);
 
@@ -209,18 +228,59 @@ fn penalize(salience: Permille, penalty: Permille) -> Permille {
 }
 
 fn source_belief(
+    belief_view: &dyn RuntimeBeliefView,
+    agent: EntityId,
     entity: EntityId,
     commodity: CommodityKind,
     state: &worldwake_core::BelievedEntityState,
+    tick: Tick,
 ) -> BeliefRef {
+    let claim_key = BeliefClaimKey {
+        subject: entity,
+        aspect: EntityBeliefAspect::Inventory(commodity),
+    };
     BeliefRef {
-        claim_key: BeliefClaimKey {
-            subject: entity,
-            aspect: EntityBeliefAspect::Inventory(commodity),
-        },
+        claim_key,
         claim_held_at_tick: state.last_observed_tick().unwrap_or(Tick(0)),
-        status: BeliefStatusTag::Probable,
+        status: source_belief_status(belief_view, agent, &claim_key, tick),
     }
+}
+
+fn source_belief_status(
+    belief_view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    claim_key: &BeliefClaimKey,
+    tick: Tick,
+) -> BeliefStatusTag {
+    let Some(claims) = belief_view
+        .agent_belief_store(agent)
+        .and_then(|store| store.get_entity_claims(&claim_key.subject))
+    else {
+        return BeliefStatusTag::Stale;
+    };
+
+    let mut first_matching = None;
+    let mut first_active = None;
+    let mut active_count = 0u8;
+    for claim in claims
+        .iter()
+        .filter(|claim| claim.aspect == claim_key.aspect)
+    {
+        first_matching.get_or_insert(claim);
+        if claim.refuted_at_tick.is_none() {
+            first_active.get_or_insert(claim);
+            active_count = active_count.saturating_add(1);
+            if active_count > 1 {
+                return BeliefStatusTag::Disputed;
+            }
+        }
+    }
+
+    first_active
+        .or(first_matching)
+        .map_or(BeliefStatusTag::Stale, |claim| {
+            belief_status_tag_for_claim(belief_view, agent, claim, tick)
+        })
 }
 
 fn confirmed_empty_for_any_inventory(
@@ -247,10 +307,12 @@ fn confirmed_empty_for_any_inventory(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
     use worldwake_core::{
-        AgentBeliefStore, BelievedEntityState, CauseRef, CognitiveProfile, LawAbidingProfile,
-        LearnedOpportunityMemory, OpportunityEntry, PerceptionProfile, PerceptionSource,
-        RiskWeightProfile, SurveyMemory, SurveyRecord, VisibilitySpec, WitnessData,
+        AgentBeliefStore, BelievedEntityState, CauseRef, ClaimId, ClaimValue, CognitiveProfile,
+        EntityBeliefClaim, LawAbidingProfile, LearnedOpportunityMemory, OpportunityEntry,
+        PerceptionProfile, PerceptionSource, RiskWeightProfile, SurveyMemory, SurveyRecord,
+        VisibilitySpec, WitnessData,
     };
     use worldwake_sim::PerAgentBeliefView;
 
@@ -271,6 +333,49 @@ mod tests {
             .last_known_inventory
             .insert(commodity, Quantity(u32::from(quantity)));
         state
+    }
+
+    fn inventory_claim(
+        claim_id: u64,
+        subject: EntityId,
+        commodity: CommodityKind,
+        quantity: u16,
+        confidence: u16,
+        acquired_tick: Tick,
+    ) -> EntityBeliefClaim {
+        EntityBeliefClaim {
+            claim_id: ClaimId(claim_id),
+            subject,
+            aspect: EntityBeliefAspect::Inventory(commodity),
+            value: ClaimValue::Quantity(Quantity(u32::from(quantity))),
+            source: PerceptionSource::DirectObservation,
+            acquired_tick,
+            claimed_event_tick: Some(acquired_tick),
+            confidence: Permille::new(confidence).unwrap(),
+            refuted_at_tick: None,
+        }
+    }
+
+    fn store_with_inventory_claim(
+        subject: EntityId,
+        commodity: CommodityKind,
+        quantity: u16,
+        confidence: u16,
+        acquired_tick: Tick,
+    ) -> AgentBeliefStore {
+        let mut store = AgentBeliefStore::new();
+        store
+            .known_entities
+            .insert(subject, belief(subject, commodity, quantity));
+        store.record_entity_claim(inventory_claim(
+            1,
+            subject,
+            commodity,
+            quantity,
+            confidence,
+            acquired_tick,
+        ));
+        store
     }
 
     fn view_with_store(
@@ -319,6 +424,26 @@ mod tests {
             by_effect: BTreeMap::from([(
                 EffectFactKey::CommodityTransfer,
                 vec![worldwake_core::ActionDefId(0)],
+            )]),
+            by_effect_op: BTreeMap::from([(
+                EffectFactKey::CommodityTransfer,
+                BTreeSet::from([PlannerOpKind::MoveCargo]),
+            )]),
+        }
+    }
+
+    fn multi_op_index() -> EffectSchemaIndex {
+        EffectSchemaIndex {
+            by_effect: BTreeMap::from([(
+                EffectFactKey::CommodityTransfer,
+                vec![
+                    worldwake_core::ActionDefId(0),
+                    worldwake_core::ActionDefId(1),
+                ],
+            )]),
+            by_effect_op: BTreeMap::from([(
+                EffectFactKey::CommodityTransfer,
+                BTreeSet::from([PlannerOpKind::Harvest, PlannerOpKind::Trade]),
             )]),
         }
     }
@@ -511,5 +636,285 @@ mod tests {
 
         assert_eq!(load.learned_memory_damped, 1);
         assert_eq!(opportunities[0].salience, Permille::new_unchecked(300));
+    }
+
+    fn compile_single_status(store: AgentBeliefStore, tick: Tick) -> BeliefStatusTag {
+        let (world, agent) = view_with_store(
+            store,
+            CognitiveProfile::default(),
+            PerceptionProfile::default(),
+            RiskWeightProfile::default(),
+            LawAbidingProfile::default(),
+            SurveyMemory::default(),
+            LearnedOpportunityMemory::default(),
+        );
+        let view = PerAgentBeliefView::from_world_at_tick(agent, tick, &world);
+        let (opportunities, load) = compile_opportunities(agent, &view, &index());
+
+        assert_eq!(load.compiled_count, 1);
+        assert_eq!(opportunities.len(), 1);
+        opportunities[0].source_belief.status
+    }
+
+    #[test]
+    fn compile_opportunities_emits_certain_status_for_high_confidence_observation() {
+        let status = compile_single_status(
+            store_with_inventory_claim(entity(2), CommodityKind::Bread, 3, 950, Tick(10)),
+            Tick(10),
+        );
+
+        assert_eq!(status, BeliefStatusTag::Certain);
+    }
+
+    #[test]
+    fn compile_opportunities_emits_probable_status_for_threshold_observation() {
+        let status = compile_single_status(
+            store_with_inventory_claim(entity(2), CommodityKind::Bread, 3, 75, Tick(10)),
+            Tick(10),
+        );
+
+        assert_eq!(status, BeliefStatusTag::Probable);
+    }
+
+    #[test]
+    fn compile_opportunities_emits_stale_status_for_decayed_observation() {
+        let status = compile_single_status(
+            store_with_inventory_claim(entity(2), CommodityKind::Bread, 3, 60, Tick(10)),
+            Tick(12),
+        );
+
+        assert_eq!(status, BeliefStatusTag::Stale);
+    }
+
+    #[test]
+    fn compile_opportunities_emits_disputed_status_for_competing_inventory_claims() {
+        let subject = entity(2);
+        let mut store = store_with_inventory_claim(subject, CommodityKind::Bread, 3, 780, Tick(10));
+        let mut competing = inventory_claim(2, subject, CommodityKind::Bread, 4, 780, Tick(10));
+        competing.source = PerceptionSource::Report {
+            from: entity(90),
+            chain_len: 1,
+        };
+        store.record_entity_claim(competing);
+
+        let status = compile_single_status(store, Tick(10));
+
+        assert_eq!(status, BeliefStatusTag::Disputed);
+    }
+
+    #[test]
+    fn compile_opportunities_emits_contradicted_status_for_refuted_claim() {
+        let subject = entity(2);
+        let mut store = AgentBeliefStore::new();
+        store
+            .known_entities
+            .insert(subject, belief(subject, CommodityKind::Bread, 3));
+        let mut claim = inventory_claim(1, subject, CommodityKind::Bread, 3, 950, Tick(10));
+        claim.refuted_at_tick = Some(Tick(11));
+        store.record_entity_claim(claim);
+
+        let status = compile_single_status(store, Tick(11));
+
+        assert_eq!(status, BeliefStatusTag::Contradicted);
+    }
+
+    #[test]
+    fn compile_opportunities_records_per_status_distribution() {
+        let mut store = AgentBeliefStore::new();
+        for (slot, confidence) in [(2, 950), (3, 60)] {
+            let subject = entity(slot);
+            store
+                .known_entities
+                .insert(subject, belief(subject, CommodityKind::Bread, 3));
+            store.record_entity_claim(inventory_claim(
+                u64::from(slot),
+                subject,
+                CommodityKind::Bread,
+                3,
+                confidence,
+                Tick(10),
+            ));
+        }
+        let (world, agent) = view_with_store(
+            store,
+            CognitiveProfile::default(),
+            PerceptionProfile::default(),
+            RiskWeightProfile::default(),
+            LawAbidingProfile::default(),
+            SurveyMemory::default(),
+            LearnedOpportunityMemory::default(),
+        );
+        let view = PerAgentBeliefView::from_world_at_tick(agent, Tick(12), &world);
+
+        let (_opportunities, load) = compile_opportunities(agent, &view, &index());
+
+        assert_eq!(load.compiled_count, 2);
+        assert_eq!(load.compiled_by_status.len(), 2);
+        assert_eq!(
+            load.compiled_by_status.get(&BeliefStatusTag::Certain),
+            Some(&1)
+        );
+        assert_eq!(
+            load.compiled_by_status.get(&BeliefStatusTag::Stale),
+            Some(&1)
+        );
+        assert_eq!(
+            load.compiled_by_status.values().sum::<u32>(),
+            load.compiled_count
+        );
+    }
+
+    #[test]
+    fn compile_opportunities_emits_same_keys_across_status_variations() {
+        let mut mixed = AgentBeliefStore::new();
+        let mut certain = AgentBeliefStore::new();
+        for slot in 2..5 {
+            let subject = entity(slot);
+            mixed
+                .known_entities
+                .insert(subject, belief(subject, CommodityKind::Bread, 3));
+            certain
+                .known_entities
+                .insert(subject, belief(subject, CommodityKind::Bread, 3));
+            mixed.record_entity_claim(inventory_claim(
+                u64::from(slot),
+                subject,
+                CommodityKind::Bread,
+                3,
+                if slot == 2 { 60 } else { 950 },
+                Tick(10),
+            ));
+            certain.record_entity_claim(inventory_claim(
+                u64::from(slot),
+                subject,
+                CommodityKind::Bread,
+                3,
+                950,
+                Tick(10),
+            ));
+        }
+
+        let (mixed_world, mixed_agent) = view_with_store(
+            mixed,
+            CognitiveProfile::default(),
+            PerceptionProfile::default(),
+            RiskWeightProfile::default(),
+            LawAbidingProfile::default(),
+            SurveyMemory::default(),
+            LearnedOpportunityMemory::default(),
+        );
+        let mixed_view =
+            PerAgentBeliefView::from_world_at_tick(mixed_agent, Tick(12), &mixed_world);
+        let (mixed_opportunities, _) = compile_opportunities(mixed_agent, &mixed_view, &index());
+
+        let (certain_world, certain_agent) = view_with_store(
+            certain,
+            CognitiveProfile::default(),
+            PerceptionProfile::default(),
+            RiskWeightProfile::default(),
+            LawAbidingProfile::default(),
+            SurveyMemory::default(),
+            LearnedOpportunityMemory::default(),
+        );
+        let certain_view =
+            PerAgentBeliefView::from_world_at_tick(certain_agent, Tick(12), &certain_world);
+        let (certain_opportunities, _) =
+            compile_opportunities(certain_agent, &certain_view, &index());
+
+        let mixed_keys = mixed_opportunities
+            .iter()
+            .map(|opportunity| opportunity.key)
+            .collect::<BTreeSet<_>>();
+        let certain_keys = certain_opportunities
+            .iter()
+            .map(|opportunity| opportunity.key)
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(mixed_keys, certain_keys);
+    }
+
+    #[test]
+    fn compile_opportunities_cap_truncation_is_deterministic_under_status_tie_break() {
+        let mut store = AgentBeliefStore::new();
+        for slot in 2..6 {
+            let subject = entity(slot);
+            store
+                .known_entities
+                .insert(subject, belief(subject, CommodityKind::Bread, 3));
+            store.record_entity_claim(inventory_claim(
+                u64::from(slot),
+                subject,
+                CommodityKind::Bread,
+                3,
+                if slot % 2 == 0 { 60 } else { 950 },
+                Tick(10),
+            ));
+        }
+        let cognitive = CognitiveProfile {
+            compile_opportunity_cap: 2,
+            ..CognitiveProfile::default()
+        };
+        let (world, agent) = view_with_store(
+            store,
+            cognitive,
+            PerceptionProfile::default(),
+            RiskWeightProfile::default(),
+            LawAbidingProfile::default(),
+            SurveyMemory::default(),
+            LearnedOpportunityMemory::default(),
+        );
+        let view = PerAgentBeliefView::from_world_at_tick(agent, Tick(12), &world);
+
+        let (opportunities, load) = compile_opportunities(agent, &view, &index());
+
+        assert_eq!(load.compiled_count, 2);
+        assert_eq!(load.cap_truncated, 2);
+        assert_eq!(
+            load.compiled_by_status.values().sum::<u32>(),
+            load.compiled_count
+        );
+        assert_eq!(
+            opportunities
+                .iter()
+                .map(|opportunity| opportunity.key.anchor)
+                .collect::<Vec<_>>(),
+            vec![
+                OpportunityAnchor::Entity(entity(2)),
+                OpportunityAnchor::Entity(entity(3))
+            ]
+        );
+        assert_eq!(
+            opportunities
+                .iter()
+                .map(|opportunity| opportunity.source_belief.status)
+                .collect::<Vec<_>>(),
+            vec![BeliefStatusTag::Stale, BeliefStatusTag::Certain]
+        );
+    }
+
+    #[test]
+    fn compile_opportunities_emits_derived_required_actions() {
+        let mut store = AgentBeliefStore::new();
+        store
+            .known_entities
+            .insert(entity(2), belief(entity(2), CommodityKind::Bread, 3));
+        let (world, agent) = view_with_store(
+            store,
+            CognitiveProfile::default(),
+            PerceptionProfile::default(),
+            RiskWeightProfile::default(),
+            LawAbidingProfile::default(),
+            SurveyMemory::default(),
+            LearnedOpportunityMemory::default(),
+        );
+        let view = PerAgentBeliefView::from_world(agent, &world);
+
+        let (opportunities, load) = compile_opportunities(agent, &view, &multi_op_index());
+
+        assert_eq!(load.compiled_count, 1);
+        assert_eq!(
+            opportunities[0].required_actions,
+            vec![PlannerOpKind::Trade, PlannerOpKind::Harvest]
+        );
     }
 }

@@ -1,15 +1,15 @@
 use crate::{
     AgendaEntry, AgendaEntryKey, AgendaOrigin, AgendaPhase, AgendaState, GoalKind, GoalOffer,
     KillCondition, PartialPlanSegment, PlanTerminalKind, RevivalTrigger,
-    enterprise::restock_gap_at_destination, goal_switching::compare_goal_switch, ranking,
+    belief_status::belief_status_tag_for_claim, enterprise::restock_gap_at_destination,
+    goal_switching::compare_goal_switch, ranking,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     AgendaProfile, ArtifactLegalEffectTag, AskWitnessMemoryKey, BeliefStatusTag, BlockerKey,
-    CommodityKind, Discrepancy, DiscrepancyMemory, EntityBeliefClaim, EntityId, EntityKind,
-    ExpectationId, ExpectationState, GoalKey, IntentionAbandonCondition, IntentionResumeCondition,
+    CommodityKind, Discrepancy, DiscrepancyMemory, EntityId, EntityKind, ExpectationId,
+    ExpectationState, GoalKey, IntentionAbandonCondition, IntentionResumeCondition,
     OpportunityAnchor, OpportunityKey, Permille, Quantity, SlotKind, TellTopic, Tick,
-    effective_claim_confidence,
 };
 use worldwake_sim::{GoalBeliefView, RuntimeBeliefView};
 
@@ -483,28 +483,6 @@ fn belief_status_matches(
     claims
         .iter()
         .any(|claim| belief_status_tag_for_claim(view, agent, claim, tick) == target_status)
-}
-
-fn belief_status_tag_for_claim(
-    view: &dyn RuntimeBeliefView,
-    agent: EntityId,
-    claim: &EntityBeliefClaim,
-    tick: Tick,
-) -> BeliefStatusTag {
-    if claim.refuted_at_tick.is_some() {
-        return BeliefStatusTag::Contradicted;
-    }
-
-    let effective = effective_claim_confidence(claim, tick, &view.belief_confidence_policy(agent));
-    let threshold = view.claim_confidence_threshold(agent).value();
-    let certain_floor = threshold.saturating_mul(2).min(1000);
-    if effective >= certain_floor {
-        BeliefStatusTag::Certain
-    } else if effective >= threshold {
-        BeliefStatusTag::Probable
-    } else {
-        BeliefStatusTag::Stale
-    }
 }
 
 pub(crate) fn classify_rejection(

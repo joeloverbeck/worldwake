@@ -9,12 +9,12 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use worldwake_core::{
     ActionDefId, ActionDomain, ArtifactActionability, ArtifactCredibility, ArtifactExistence,
-    ArtifactLegalEffect, ArtifactVisibility, BelievedArtifactState, BlockingFact, CommodityKind,
-    EntityId, FrameAssumption, FrameClearReason, GoalKey, GoalPlanningBudget, HypothesisKind,
-    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, MethodSchemaId,
-    MotiveSourceRef, OmissionReason, OpportunityAnchor, OpportunityKey, PatrolRoute,
-    PerceptionSource, Permille, PunishmentFineSelectionTrace, RepairKind, SuspensionReason,
-    TellTopic, Tick,
+    ArtifactLegalEffect, ArtifactVisibility, BeliefStatusTag, BelievedArtifactState, BlockingFact,
+    CommodityKind, EntityId, FrameAssumption, FrameClearReason, GoalKey, GoalPlanningBudget,
+    HypothesisKind, InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag,
+    MethodSchemaId, MotiveSourceRef, OmissionReason, OpportunityAnchor, OpportunityKey,
+    PatrolRoute, PerceptionSource, Permille, PunishmentFineSelectionTrace, RepairKind,
+    SuspensionReason, TellTopic, Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionStartFailureReason, BindingStrictness, ResolvedRequestTrace,
@@ -1002,9 +1002,7 @@ pub struct RootCandidateTrace {
     pub source: CandidateSource,
 }
 
-#[derive(
-    Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize,
-)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct OpportunityCompilerLoad {
     /// Number of opportunities emitted after salience filtering and cap truncation.
     pub compiled_count: u32,
@@ -1014,6 +1012,8 @@ pub struct OpportunityCompilerLoad {
     pub learned_memory_damped: u32,
     /// Number of viable opportunities dropped because they exceeded the per-agent cap.
     pub cap_truncated: u32,
+    /// Per-source-status count for emitted opportunities after cap truncation.
+    pub compiled_by_status: BTreeMap<BeliefStatusTag, u32>,
 }
 
 /// Final per-expansion status for one candidate after all pre-successor filters.
@@ -1610,9 +1610,9 @@ impl DecisionTraceSink {
     }
 
     pub fn record(&mut self, trace: AgentDecisionTrace) {
-        if let Some(load) = trace.opportunity_compiler_load {
+        if let Some(load) = trace.opportunity_compiler_load.as_ref() {
             self.opportunity_compiler_loads
-                .insert((trace.agent, trace.tick), load);
+                .insert((trace.agent, trace.tick), load.clone());
         }
         if let Some(admissions) = trace.snapshot_admissions.as_ref() {
             self.snapshot_admissions
@@ -3302,9 +3302,10 @@ mod tests {
             salience_floored: 1,
             learned_memory_damped: 2,
             cap_truncated: 1,
+            compiled_by_status: BTreeMap::new(),
         };
         let mut trace = dead_trace(agent, tick);
-        trace.opportunity_compiler_load = Some(load);
+        trace.opportunity_compiler_load = Some(load.clone());
 
         sink.record(trace);
 

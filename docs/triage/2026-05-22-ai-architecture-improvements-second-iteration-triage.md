@@ -28,10 +28,11 @@ is genuine and unclaimed.
   for belief-backed breaches; plan-repair golden coverage proves the S165 repair seam.
   Substrate (S137 repair context + S139 goal) exists. Highest-leverage.
   **FND-14/15/16/17/20/21/29.**
-- **`specs/S166-opportunity-compiler-source-fidelity.md`** (Proposal 2, **narrowed**) —
-  derive `source_belief.status` from the real belief (not hard-coded `Probable`,
-  `compile.rs:222`) and `required_actions` from `EffectSchemaIndex` (not hard-coded
-  `MoveCargo`, `compile.rs:127`). Absorbs Proposal 5's source-faithfulness intent.
+- **`archive/specs/S166-opportunity-compiler-source-fidelity.md`** (Proposal 2,
+  **narrowed**, completed 2026-05-24) — derived `source_belief.status` from the real
+  belief and `required_actions` from `EffectSchemaIndex`; added compiler-load and
+  scenario-diagnostics status distribution proof. Absorbs Proposal 5's
+  source-faithfulness intent.
   **FND-3/15/16/27/29.**
 - **`archive/specs/S167-cognitive-archetype-behavioral-proof.md`** (Proposal 4,
   completed 2026-05-24) — added the missing behavioral-divergence golden

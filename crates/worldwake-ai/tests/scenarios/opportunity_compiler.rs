@@ -7,8 +7,8 @@ use worldwake_ai::opportunity_compiler::{BelievedLegalStatus, RiskFact, compile_
 use worldwake_ai::{EffectSchemaIndex, OpportunityAnchor};
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
 use worldwake_core::{
-    AcquisitionQuantity, ClaimId, ClaimValue, CommodityKind, CommodityPurpose, EntityBeliefAspect,
-    EntityBeliefClaim, GoalKey, GoalKind, HomeostaticNeeds, LawAbidingProfile,
+    AcquisitionQuantity, BeliefStatusTag, ClaimId, ClaimValue, CommodityKind, CommodityPurpose,
+    EntityBeliefAspect, EntityBeliefClaim, GoalKey, GoalKind, HomeostaticNeeds, LawAbidingProfile,
     LearnedOpportunityMemory, MetabolismProfile, OpportunityEntry, OpportunityKey,
     PerceptionProfile, PerceptionSource, Permille, Quantity, RiskWeightProfile, Seed, Tick,
     UtilityProfile, hash_event_log,
@@ -249,6 +249,7 @@ fn agent_tick_trace_carries_compiled_opportunities_and_load() {
     assert_eq!(
         trace
             .opportunity_compiler_load
+            .as_ref()
             .expect("load should be recorded")
             .compiled_count,
         1
@@ -319,6 +320,81 @@ fn learned_opportunity_memory_damps_repeated_bread_opportunity() {
     assert!(damped.salience < baseline.salience);
 }
 
+// Scenario 462: Opportunity Compiler Status Diagnostics
+// Systems: AI, Perception
+// GoalKinds: AcquireCommodity
+// ActionDomains: AI
+// Principles: P14, P15, P16, P29
+// Setup: A starving agent has two inventory beliefs for local bread lots, one fresh and one decayed below the confidence threshold.
+// Proves: The live compiler load carries at least two opportunity source-status buckets instead of collapsing all compiled opportunities to Probable.
+// Chain: mixed belief freshness -> compile_opportunities -> OpportunityCompilerLoad.
+#[test]
+fn mixed_freshness_status_distribution_reaches_scenario_diagnostics() {
+    let mut h = GoldenHarness::new(Seed([166; 32]));
+    let agent = starving_agent(&mut h, "Status Compiler");
+    let (fresh_lot, stale_lot) = {
+        let mut txn = new_txn(&mut h.world, 0);
+        let fresh_lot = txn
+            .create_item_lot_with_owner(CommodityKind::Bread, Quantity(3), VILLAGE_SQUARE, None)
+            .unwrap();
+        let stale_lot = txn
+            .create_item_lot_with_owner(CommodityKind::Bread, Quantity(4), VILLAGE_SQUARE, None)
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+        (fresh_lot, stale_lot)
+    };
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        &[fresh_lot, stale_lot],
+        Tick(10),
+        PerceptionSource::DirectObservation,
+    );
+    let mut store = h
+        .world
+        .get_component_agent_belief_store(agent)
+        .cloned()
+        .expect("seeded actor should have belief store");
+    store.record_entity_claim(EntityBeliefClaim {
+        claim_id: ClaimId(1660),
+        subject: fresh_lot,
+        aspect: EntityBeliefAspect::Inventory(CommodityKind::Bread),
+        value: ClaimValue::Quantity(Quantity(3)),
+        source: PerceptionSource::DirectObservation,
+        acquired_tick: Tick(10),
+        claimed_event_tick: Some(Tick(10)),
+        confidence: Permille::new(1000).unwrap(),
+        refuted_at_tick: None,
+    });
+    store.record_entity_claim(EntityBeliefClaim {
+        claim_id: ClaimId(1661),
+        subject: stale_lot,
+        aspect: EntityBeliefAspect::Inventory(CommodityKind::Bread),
+        value: ClaimValue::Quantity(Quantity(4)),
+        source: PerceptionSource::DirectObservation,
+        acquired_tick: Tick(10),
+        claimed_event_tick: Some(Tick(10)),
+        confidence: Permille::new(60).unwrap(),
+        refuted_at_tick: None,
+    });
+    let mut txn = new_txn(&mut h.world, 10);
+    txn.set_component_agent_belief_store(agent, store).unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    let view = PerAgentBeliefView::from_world_at_tick(agent, Tick(12), &h.world);
+    let (_opportunities, load) = compile_opportunities(agent, &view, &compile_index(&h));
+    assert_eq!(load.compiled_by_status.len(), 2);
+    assert_eq!(
+        load.compiled_by_status.values().sum::<u32>(),
+        load.compiled_count
+    );
+    assert_eq!(
+        load.compiled_by_status.get(&BeliefStatusTag::Stale),
+        Some(&1)
+    );
+}
+
 // Scenario 402: Opportunity Compiler Default Replay Bound
 // Systems: AI, Replay
 // GoalKinds: AcquireCommodity, ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
@@ -341,7 +417,7 @@ fn survival_baseline_replay_is_deterministic_and_compiler_load_is_bounded() {
             .traces();
         let max_compiled = traces
             .iter()
-            .filter_map(|trace| trace.opportunity_compiler_load)
+            .filter_map(|trace| trace.opportunity_compiler_load.as_ref())
             .map(|load| load.compiled_count)
             .max()
             .unwrap_or(0);

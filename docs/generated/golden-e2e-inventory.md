@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden scenario source files: 58
-- Files contributing `golden_*` tests: 58
-- Total `golden_*` tests: 286
+- Golden scenario source files: 59
+- Files contributing `golden_*` tests: 59
+- Total `golden_*` tests: 289
 
 ## Per-Scenario-File Inventory
 
@@ -18,6 +18,7 @@ Do not hand-edit it.
 | `artifact_lifecycle.rs` | 5 |
 | `belief_wall_trap.rs` | 11 |
 | `cognitive_archetypes.rs` | 7 |
+| `cognitive_archetypes_divergence.rs` | 2 |
 | `contention_inspectability.rs` | 5 |
 | `cross_goal_blocker_scoping.rs` | 8 |
 | `decision_history_events.rs` | 1 |
@@ -33,7 +34,7 @@ Do not hand-edit it.
 | `need_projection.rs` | 1 |
 | `office_vacancy.rs` | 2 |
 | `offices.rs` | 12 |
-| `opportunity_compiler.rs` | 5 |
+| `opportunity_compiler.rs` | 6 |
 | `partial_plan_terminals.rs` | 4 |
 | `perception_exposure.rs` | 7 |
 | `perception_omission.rs` | 3 |
@@ -130,6 +131,11 @@ Do not hand-edit it.
 - `cognitive_archetypes_emit_one_personality_assigned_event_per_agent`
 - `cognitive_archetypes_explicit_override_pins_archetype_over_policy`
 - `cognitive_archetypes_save_load_preserves_component_and_resolved_profiles`
+
+### `cognitive_archetypes_divergence.rs`
+
+- `forward`
+- `counterfactual_symmetry`
 
 ### `contention_inspectability.rs`
 
@@ -278,6 +284,7 @@ Do not hand-edit it.
 - `agent_tick_trace_carries_compiled_opportunities_and_load`
 - `effect_schema_index_miss_emits_no_opportunity`
 - `learned_opportunity_memory_damps_repeated_bread_opportunity`
+- `mixed_freshness_status_distribution_reaches_scenario_diagnostics`
 - `survival_baseline_replay_is_deterministic_and_compiler_load_is_bounded`
 
 ### `partial_plan_terminals.rs`

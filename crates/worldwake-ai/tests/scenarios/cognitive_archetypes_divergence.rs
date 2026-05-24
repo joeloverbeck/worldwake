@@ -354,7 +354,7 @@ fn agent_name_map(def: &ScenarioDef) -> BTreeMap<&str, &AgentDef> {
         .collect()
 }
 
-// Scenario 454: S167 Archetype Route Preference Drives Plan Divergence
+// Scenario 463: S167 Archetype Route Preference Drives Plan Divergence
 // Systems: Scenario, AI, Travel
 // GoalKinds: AcquireCommodity
 // ActionDomains: Travel, Production
@@ -391,7 +391,7 @@ fn forward() {
     );
 }
 
-// Scenario 455: S167 Archetype Swap Reverses The Route Decision
+// Scenario 464: S167 Archetype Swap Reverses The Route Decision
 // Systems: Scenario, AI, Travel
 // GoalKinds: AcquireCommodity
 // ActionDomains: Travel, Production

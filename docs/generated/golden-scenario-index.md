@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 218
-- Contributing golden scenario source files: 53
-- Associated tests: 268
+- Scenario blocks: 221
+- Contributing golden scenario source files: 54
+- Associated tests: 271
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -412,6 +412,30 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Setup**: an explicit Fearful agent is spawned and immediately save/load round-tripped through the golden harness.
 
 **Proves**: the stored CognitiveArchetypeComponent and resolved profile values survive the save boundary.
+
+### Scenario 463: S167 Archetype Route Preference Drives Plan Divergence
+
+- Source: `cognitive_archetypes_divergence.rs:357`
+- Systems: Scenario, AI, Travel
+- GoalKinds: AcquireCommodity
+- ActionDomains: Travel, Production
+- Principles: P14B, P20, P22, P31
+
+**Setup**: two same-role agents load the canonical cognitive-archetypes scenario with identical seeded resource beliefs and identical mixed route memory on the direct road.
+
+**Proves**: Greedy and Cautious select the same apple-acquisition goal but different first travel targets because their resolved RoutePreferenceProfile.dangerous_traversal_penalty values price the same direct route differently through selected-plan search provenance.
+
+### Scenario 464: S167 Archetype Swap Reverses The Route Decision
+
+- Source: `cognitive_archetypes_divergence.rs:394`
+- Systems: Scenario, AI, Travel
+- GoalKinds: AcquireCommodity
+- ActionDomains: Travel, Production
+- Principles: P14B, P20, P22, P31
+
+**Setup**: the same canonical scenario is loaded with only the two explicit AgentDef.archetype assignments swapped in test setup.
+
+**Proves**: the direct-vs-neutral first travel target follows the Greedy versus Cautious archetype rather than a fixed authored agent name or scenario rail.
 
 ### Scenario 393: Single-Slot Orchard Emits Arrival-Time Contention Payload
 
@@ -1365,7 +1389,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 400: Opportunity Compiler Effect Index Miss
 
-- Source: `opportunity_compiler.rs:262`
+- Source: `opportunity_compiler.rs:263`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: AI
@@ -1379,7 +1403,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 401: Learned Opportunity Memory Damps Repeated Opportunity
 
-- Source: `opportunity_compiler.rs:281`
+- Source: `opportunity_compiler.rs:282`
 - Systems: AI, Memory
 - GoalKinds: AcquireCommodity
 - ActionDomains: AI
@@ -1391,9 +1415,23 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: learned memory -> compile_opportunities -> damped salience/load.
 
+### Scenario 462: Opportunity Compiler Status Diagnostics
+
+- Source: `opportunity_compiler.rs:323`
+- Systems: AI, Perception
+- GoalKinds: AcquireCommodity
+- ActionDomains: AI
+- Principles: P14, P15, P16, P29
+
+**Setup**: A starving agent has two inventory beliefs for local bread lots, one fresh and one decayed below the confidence threshold.
+
+**Proves**: The live compiler load carries at least two opportunity source-status buckets instead of collapsing all compiled opportunities to Probable.
+
+**Cross-system chain**: mixed belief freshness -> compile_opportunities -> OpportunityCompilerLoad.
+
 ### Scenario 402: Opportunity Compiler Default Replay Bound
 
-- Source: `opportunity_compiler.rs:322`
+- Source: `opportunity_compiler.rs:398`
 - Systems: AI, Replay
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: AI, Needs, Travel

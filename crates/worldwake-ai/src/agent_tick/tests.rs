@@ -7055,6 +7055,10 @@ fn read_phase_runs_opportunity_compiler_before_candidate_generation() {
             crate::opportunity_compiler::EffectFactKey::CommodityTransfer,
             vec![ActionDefId(0)],
         )]),
+        by_effect_op: BTreeMap::from([(
+            crate::opportunity_compiler::EffectFactKey::CommodityTransfer,
+            BTreeSet::from([PlannerOpKind::MoveCargo]),
+        )]),
     };
     let utility = UtilityProfile::default();
     let mut runtime = AgentDecisionRuntime::default();
