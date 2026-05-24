@@ -20,8 +20,8 @@
   "post_ticket_review_audit": "not_required",
   "last_implement_ticket_audit": "done",
   "last_post_ticket_review_audit": "done",
-  "blocked": false,
-  "blocker": null,
+  "blocked": true,
+  "blocker": "S167COGARCBEH-002 live reassessment blocked: archived cognitive-archetypes-divergence scenario plus identical test-side beliefs does not produce Greedy/Cautious decision divergence; isolated replays select the same goals through tick 31 and selected summaries carry zero Greed contribution. User decision required to retarget the ticket/spec or change engine/scenario scope.",
   "dirty_state": "clean",
   "updated_at": "2026-05-24"
 }
