@@ -1,0 +1,45 @@
+# Family-per-matrix-workflow convention: add scenarios to the matrix below; create a
+# new golden-<family>.yml when a new scenario family lands (combat, trade, exploration, …).
+# See docs/plans/2026-04-17-per-family-golden-scenario-workflows-design.md.
+name: Golden Cognitive Archetypes
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+concurrency:
+  group: golden-cognitive-archetypes-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scenario:
+    name: golden-cognitive-archetypes / ${{ matrix.scenario }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: cognitive_archetypes_divergence
+            filter: "scenarios::cognitive_archetypes_divergence::"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.0
+          components: clippy,rustfmt
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: golden-cognitive-archetypes-${{ matrix.scenario }}
+
+      - name: Run golden_ai (${{ matrix.scenario }})
+        run: cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 ${{ matrix.filter }}

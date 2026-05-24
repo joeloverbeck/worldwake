@@ -47,6 +47,7 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Obligation satiation | `obligation_satiation_profile` present | [`obligation.rs`](../crates/worldwake-core/src/obligation.rs) | Landed in [§4.7](#47-landed-row-11) |
 | Diversification / curiosity | `diversification_profile` present | [`diversification.rs`](../crates/worldwake-core/src/diversification.rs) | Landed in [§4.3](#43-landed-row-7) |
 | Experience preferences | `preference_profile` present | [`experience.rs`](../crates/worldwake-core/src/experience.rs), [`experience_recording.rs`](../crates/worldwake-systems/src/experience_recording.rs) | Auxiliary behavior coverage in [`experience_preferences.rs`](../crates/worldwake-ai/tests/scenarios/experience_preferences.rs), [`source_reliability.rs`](../crates/worldwake-ai/tests/scenarios/source_reliability.rs), and [`source_composite.rs`](../crates/worldwake-ai/tests/scenarios/source_composite.rs); no survival-roadmap row currently claims durable Familiar Orchard failure memory |
+| Cognitive archetypes | Per-agent `AgentDef.archetype` set OR `archetype_assignment_policy` authored | [`cognitive_archetype.rs`](../crates/worldwake-core/src/cognitive_archetype.rs), [`scenario/mod.rs`](../crates/worldwake-cli/src/scenario/mod.rs) spawn-time delta application | Landed in [§5.18](#518-landed-auxiliary-cognitive-archetypes-divergence) |
 | Production (facility-backed craft) | Authored recipe set with at least one non-harvest production recipe | [`production_actions.rs`](../crates/worldwake-systems/src/production_actions.rs) | Landed in [§5.8](#58-landed-8-survival-production) |
 | Merchant selling | `merchandise_profile` present | [`trade_actions.rs`](../crates/worldwake-systems/src/trade_actions.rs) | Landed in [§5.9](#59-landed-9-survival-trade) |
 | Trade negotiation | `trade_disposition` present | [`trade_actions.rs`](../crates/worldwake-systems/src/trade_actions.rs) | Landed in [§5.9](#59-landed-9-survival-trade) |
@@ -102,6 +103,7 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-combat.ron` | Combat, Bandit camps |
 | Landed in `survival-escort.ron` | Escort/care coordinated travel under hostile pressure |
 | Landed in `final-integration.ron` | Full gameplay catalog structural coexistence under survival-health, with hostile wound pressure |
+| Landed in `cognitive-archetypes-divergence.ron` | Cognitive archetypes auxiliary behavior proof |
 | Structurally partial outside the landed branch | Broader Report / witness |
 
 The key constraint is that structural activation alone is not a feature landing. `cli-evaluation.ron`, `survival-tell.ron`, and `survival-ask-consult.ron` can expose future substrate without automatically promoting every structurally active row to `Landed`.
@@ -173,6 +175,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 15 | `survival-combat` | Combat + bandit camps | Landed | Highest direct survival risk and adversarial planning pressure |
 | 16 | `survival-escort` | Escort/care | Landed | Coordinated travel after the rest of the hostile world is live |
 | 17 | `final-integration` | Full coexistence stack | Landed | Full catalog structural coexistence now runs under a survival-health contract after every prior row has an honest scenario contract |
+| 18 | `cognitive-archetypes-divergence` | Cognitive archetypes (auxiliary behavior coverage) | Landed | Auxiliary behavior-proof row; not subject to 1440-tick survival-health contract. Owns the FND-31 archetype-decision causal proof. |
 
 ### 4.3 Landed Row 7
 
@@ -684,6 +687,21 @@ The suite is still scenario-like and should remain formalized as auxiliary cover
 - Scenario 132: harvest-to-consume chains at resource-source locations.
 
 Scenario 130 is the comprehensive slow witness: three agents share elevated hunger/thirst pressure, no local food or water, and explicit remote beliefs about Orchard Farm resources. It proves the planner still produces bounded behavioral progress under multi-agent scarcity by starting lawful travel and reaching the remote resource place. Because it is long-running and not `.ron`-authored, it runs through the dedicated `golden-simulation-gaps` CI workflow and is ignored by default local/workspace test runs.
+
+### 5.18 Landed Auxiliary: `cognitive-archetypes-divergence`
+
+**Status**: Landed
+**Source scenario**: [`scenarios/cognitive-archetypes-divergence.ron`](../scenarios/cognitive-archetypes-divergence.ron)
+**Backing goldens**: [`cognitive_archetypes_divergence.rs`](../crates/worldwake-ai/tests/scenarios/cognitive_archetypes_divergence.rs)
+**Depends on**: archived [S152 archetype implementation](../archive/specs/S152-cognitive-archetypes-seeded-diversity.md)
+
+This row is auxiliary behavior coverage, not a survival-coexistence landing. It owns the FND-31 archetype-decision causal proof: two same-role, same-belief agents differing only by `CognitiveArchetype` choose different route plans under identical local facts, with the decision trace exposing selected-plan search provenance and a test-side profile-delta attribution naming the cause.
+
+The committed proof pair is Greedy vs. Cautious. Greedy's lower `RoutePreferenceProfile.dangerous_traversal_penalty` makes the mixed-history Risky Orchard route cheaper, while Cautious prefers the neutral Sheltered Cut route under the same known route facts. The counterfactual archetype-swap replay asserts that the divergence reverses with the archetype assignment, excluding agent-asymmetric scenario seeding or an authored rail.
+
+The row has no `survival_health_contract` and runs on a short tick budget; the proof is decision divergence, counterfactual symmetry, and knowledge legality rather than 1440-tick coexistence. The scenario uses no new mechanics: existing topology, resource-source, profile, and route-aware search substrate author the tension, and the archetype delta flows through ordinary ranking/search.
+
+The dedicated CI lane is landed at [`.github/workflows/golden-cognitive-archetypes.yml`](../.github/workflows/golden-cognitive-archetypes.yml), with the two backing goldens marked ignored by default and run through that workflow's `golden_ai --ignored` matrix entry.
 
 ## 6. Maintenance Workflow
 

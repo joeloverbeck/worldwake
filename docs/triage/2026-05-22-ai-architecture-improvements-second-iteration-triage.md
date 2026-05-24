@@ -33,10 +33,11 @@ is genuine and unclaimed.
   `compile.rs:222`) and `required_actions` from `EffectSchemaIndex` (not hard-coded
   `MoveCargo`, `compile.rs:127`). Absorbs Proposal 5's source-faithfulness intent.
   **FND-3/15/16/27/29.**
-- **`specs/S167-cognitive-archetype-behavioral-proof.md`** (Proposal 4) — add the
-  missing behavioral-divergence golden (different *decisions*, not just S152's
+- **`archive/specs/S167-cognitive-archetype-behavioral-proof.md`** (Proposal 4,
+  completed 2026-05-24) — added the missing behavioral-divergence golden
+  (different *decisions*, not just S152's
   resolved-profile-value tests) + activate archetypes in a canonical `scenarios/*.ron`
-  so coverage (`scenario-coverage.md:83`) no longer shows them absent. **FND-20/22/22A/29/31.**
+  so coverage no longer shows them absent. **FND-20/22/22A/29/31.**
 - **`specs/S168-partial-plan-skeleton-reuse.md`** (Proposal 3, lowest benefit) —
   populate + consume the dead `remaining_skeleton` field (`partial_plan.rs:36,123`) for
   information/budget barriers; revalidate-before-reuse so it never becomes a rail.
