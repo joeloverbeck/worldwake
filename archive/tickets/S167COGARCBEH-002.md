@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: [`archive/tickets/S167COGARCBEH-001.md`](S167COGARCBEH-001.md), [`archive/tickets/S167COGARCBEH-001A.md`](S167COGARCBEH-001A.md), [`specs/S167-cognitive-archetype-behavioral-proof.md`](../../specs/S167-cognitive-archetype-behavioral-proof.md)
+**Deps**: [`archive/tickets/S167COGARCBEH-001.md`](S167COGARCBEH-001.md), [`archive/tickets/S167COGARCBEH-001A.md`](S167COGARCBEH-001A.md), [`archive/specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md)
 
 ## Problem
 
@@ -31,7 +31,7 @@ the resolved-profile components S152 ships) — no decision-trace surface change
    The new file is a **sibling** of `cognitive_archetypes.rs`, not an extension
    — none of the seven existing tests are modified.
 2. The spec
-   ([`specs/S167-cognitive-archetype-behavioral-proof.md`](../../specs/S167-cognitive-archetype-behavioral-proof.md))
+   ([`archive/specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md))
    commits in D1 to six lettered sub-assertions: (a) decision divergence
    (different `GoalKind`/`GoalKey` or same `GoalKey` with different selected plan
    path yielding a different next travel action), (b) trace-side selected-plan
@@ -205,7 +205,7 @@ per-scenario facility/source counts so `scenario-coverage --check` passes.
 - `crates/worldwake-ai/tests/scenarios/mod.rs` (modified)
 - `scenarios/cognitive-archetypes-divergence.ron` (modified)
 - `docs/generated/scenario-coverage.md` (modified)
-- `specs/S167-cognitive-archetype-behavioral-proof.md` (modified to keep D1/D2 wording aligned with the landed one-hop route proof)
+- `archive/specs/S167-cognitive-archetype-behavioral-proof.md` (modified before archival to keep D1/D2 wording aligned with the landed one-hop route proof)
 
 ## Out of Scope
 

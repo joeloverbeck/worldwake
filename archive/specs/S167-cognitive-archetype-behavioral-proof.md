@@ -1,6 +1,6 @@
 # S167: Cognitive Archetype Behavioral Proof Lane
 
-**Status**: DRAFT
+**Status**: COMPLETED
 
 ## Problem Statement
 
@@ -61,8 +61,8 @@ decision-trace surface.
 
 ## Phase and Status
 
-Adjunct Wave: AI Architecture Improvements — First Iteration. Draft, pending ticket
-decomposition.
+Adjunct Wave: AI Architecture Improvements — First Iteration. Completed and archived
+on 2026-05-24.
 
 ## Crates
 
@@ -454,3 +454,41 @@ change).
   at a multi-stage planning tradeoff, `Sociable vs Skeptical` at an
   ask-vs-act tradeoff), each can land as a sibling matrix entry in the
   `golden-cognitive-archetypes` lane without an additional CI workflow file.
+
+## Outcome
+
+Completed on 2026-05-24.
+
+- Authored `scenarios/cognitive-archetypes-divergence.ron` as the canonical
+  archetype-activation scenario.
+- Landed the behavioral-divergence golden in
+  `crates/worldwake-ai/tests/scenarios/cognitive_archetypes_divergence.rs`,
+  proving Greedy vs. Cautious same-goal route-plan divergence and
+  counterfactual symmetry through existing decision-trace and resolved-profile
+  surfaces.
+- Regenerated scenario coverage so the cognitive archetype feature is active
+  for the dedicated scenario.
+- Formalized the auxiliary roadmap row in `docs/scenario-roadmap.md`.
+- Added `.github/workflows/golden-cognitive-archetypes.yml` and marked the two
+  S167 backing goldens ignored by default so the dedicated `golden_ai
+  --ignored` workflow lane executes exactly those tests.
+
+Deviations from the original plan:
+
+- Live reassessment disproved the initial economic-vs-safety selected-goal
+  premise. The landed proof is the narrower FND-31 causal seam: same
+  `AcquireCommodity(Apple, SelfConsume)` goal, different first travel target
+  caused by the archetype-resolved
+  `RoutePreferenceProfile.dangerous_traversal_penalty` delta.
+- The final CI-lane ticket also updated the existing S167 golden tests with
+  `#[ignore]` metadata because the sibling workflow convention invokes ignored
+  golden tests explicitly.
+
+Verification:
+
+- Passed `cargo test -p worldwake-ai --test golden_ai -- --list cognitive_archetypes_divergence`.
+- Passed `cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 scenarios::cognitive_archetypes_divergence::`.
+- Earlier S167 tickets recorded passing `cargo test -p worldwake-ai`, `cargo test --workspace`,
+  scenario coverage regeneration, and `./scripts/verify.sh` for the scenario,
+  golden, and roadmap slices. The final pre-push gate for the completed branch
+  remains `./scripts/verify.sh`.

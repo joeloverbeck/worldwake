@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: [`archive/tickets/S167COGARCBEH-001.md`](S167COGARCBEH-001.md), [`specs/S167-cognitive-archetype-behavioral-proof.md`](../../specs/S167-cognitive-archetype-behavioral-proof.md)
+**Deps**: [`archive/tickets/S167COGARCBEH-001.md`](S167COGARCBEH-001.md), [`archive/specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md)
 
 ## Problem
 
@@ -124,7 +124,7 @@ not expose a stable multi-hop selected terminal for the proof.
 
 ## Landed Files
 
-- `specs/S167-cognitive-archetype-behavioral-proof.md` (modify)
+- `archive/specs/S167-cognitive-archetype-behavioral-proof.md` (modified before archival)
 - `archive/tickets/S167COGARCBEH-002.md` (later modified and archived by the
   completed golden ticket)
 - `scenarios/cognitive-archetypes-divergence.ron` (modify)

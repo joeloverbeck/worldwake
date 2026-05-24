@@ -45,16 +45,16 @@ Recommended priority follows benefit: **S165 → S167 → S166 → S168.**
   belief-backed breaches, authoritative witness-anchor recording, payload
   revalidation coverage, and plan-repair golden coverage for the witness and
   no-witness branches.
+- **S167 — Cognitive Archetype Behavioral Proof Lane** —
+  `archive/specs/S167-cognitive-archetype-behavioral-proof.md` — *Status:
+  COMPLETED 2026-05-24.* Landed the canonical
+  `cognitive-archetypes-divergence.ron` scenario, behavioral-divergence golden,
+  scenario-coverage activation, roadmap row, and dedicated
+  `golden-cognitive-archetypes` workflow lane proving Greedy vs. Cautious
+  route-plan divergence through existing archetype-resolved profile state.
 
 ### Pending
 
-- **S167 — Cognitive Archetype Behavioral Proof Lane** —
-  `specs/S167-cognitive-archetype-behavioral-proof.md` — *Status: DRAFT.* Adds the
-  missing causal proof (FND-31) that archetypes change *decisions*, not merely
-  resolved profile values (which S152 already proves): a behavioral-divergence golden
-  for two same-role/same-belief agents differing only by archetype, plus archetype
-  activation in a canonical `scenarios/*.ron` so `scenario-coverage.md` no longer shows
-  the feature absent. **FND-20, FND-22, FND-22A, FND-29, FND-31.**
 - **S166 — Opportunity Compiler Source Fidelity** —
   `specs/S166-opportunity-compiler-source-fidelity.md` — *Status: DRAFT.* Derives the
   compiled opportunity's `source_belief.status` from the real belief (not the

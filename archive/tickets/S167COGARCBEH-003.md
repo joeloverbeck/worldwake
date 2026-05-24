@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: [`archive/tickets/S167COGARCBEH-001.md`](S167COGARCBEH-001.md), [`archive/tickets/S167COGARCBEH-002.md`](S167COGARCBEH-002.md), [`specs/S167-cognitive-archetype-behavioral-proof.md`](../../specs/S167-cognitive-archetype-behavioral-proof.md)
+**Deps**: [`archive/tickets/S167COGARCBEH-001.md`](S167COGARCBEH-001.md), [`archive/tickets/S167COGARCBEH-002.md`](S167COGARCBEH-002.md), [`archive/specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md)
 
 ## Problem
 
@@ -28,7 +28,7 @@ existing entry contract template.
    Entry Contract Template at lines 115-151 defines the canonical shape for
    landed entries.
 2. The spec
-   ([`specs/S167-cognitive-archetype-behavioral-proof.md`](../../specs/S167-cognitive-archetype-behavioral-proof.md))
+   ([`archive/specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md))
    D4 commits to four update points: catalog row in §2, ordering table row in
    §4.2, landed entry in §5 (auxiliary-coverage classification), Status Summary
    update in §3. The auxiliary classification mirrors the §5.17 entries for

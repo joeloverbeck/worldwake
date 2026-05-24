@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: [`specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md)
+**Deps**: [`archive/specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md)
 
 ## Problem
 
@@ -34,7 +34,7 @@ to active.
    `cognitive_archetype.rs:58-63`) is randomized and deliberately not used here
    — explicit per-agent assignment is the deterministic path.
 2. The spec
-   ([`specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md))
+   ([`archive/specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md))
    commits in D2 to a dedicated `scenarios/cognitive-archetypes-divergence.ron`
    with two same-role/same-place/same-belief agents differing only by archetype,
    and to `Greedy vs Cautious` as the archetype pair. The portfolio-weight

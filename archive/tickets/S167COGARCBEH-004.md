@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: [`archive/tickets/S167COGARCBEH-002.md`](S167COGARCBEH-002.md), [`specs/S167-cognitive-archetype-behavioral-proof.md`](../../specs/S167-cognitive-archetype-behavioral-proof.md)
+**Deps**: [`archive/tickets/S167COGARCBEH-002.md`](S167COGARCBEH-002.md), [`archive/specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md)
 
 ## Problem
 
@@ -32,7 +32,7 @@ The convention for per-family golden workflows is established
    matrix below; create a new golden-<family>.yml when a new scenario
    family lands."
 2. The spec
-   ([`specs/S167-cognitive-archetype-behavioral-proof.md`](../../specs/S167-cognitive-archetype-behavioral-proof.md))
+   ([`archive/specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md))
    D5 commits to a new `.github/workflows/golden-cognitive-archetypes.yml`
    modeled on `golden-drive-escalation.yml`. The matrix entry must
    reference S167COGARCBEH-002's new test module (`cognitive_archetypes_divergence`).
