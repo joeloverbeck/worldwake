@@ -1,6 +1,8 @@
 use crate::{
     GoalOffer, PlanTerminalKind, PlannedStep, PlannerOpKind,
-    htn::{BeliefPredicate, EntityTemplate, PayloadTemplate},
+    htn::{
+        BeliefPredicate, EntityTemplate, LocationTemplate, PayloadTemplate, PayloadValueTemplate,
+    },
 };
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
@@ -112,6 +114,7 @@ pub fn budget_exhausted_partial_plan_segment(
     goal: GoalOffer,
     expansions_used: u32,
     budget_total: u32,
+    remaining_skeleton: Option<Vec<PlannedSkeletonStep>>,
     created_tick: Tick,
     local_counter: u16,
     cognitive: &CognitiveProfile,
@@ -120,7 +123,7 @@ pub fn budget_exhausted_partial_plan_segment(
         PartialPlanSegmentSeed {
             goal,
             completed_prefix: Vec::new(),
-            remaining_skeleton: None,
+            remaining_skeleton: remaining_skeleton.and_then(filter_preservable_skeleton),
             terminal_barrier: PlanTerminalKind::SearchBudgetExhausted {
                 budget_consumed: expansions_used.min(u32::from(u16::MAX)) as u16,
                 budget_total: budget_total.min(u32::from(u16::MAX)) as u16,
@@ -135,6 +138,60 @@ pub fn budget_exhausted_partial_plan_segment(
         cognitive,
     )
     .expect("budget exhaustion always has a profile-backed resume condition")
+}
+
+#[must_use]
+pub fn filter_preservable_skeleton(
+    steps: Vec<PlannedSkeletonStep>,
+) -> Option<Vec<PlannedSkeletonStep>> {
+    let filtered = steps
+        .into_iter()
+        .filter(|step| {
+            skeleton_op_is_preservable(step.op)
+                && payload_template_is_preservable(&step.target_template)
+        })
+        .collect::<Vec<_>>();
+    (!filtered.is_empty()).then_some(filtered)
+}
+
+const fn skeleton_op_is_preservable(op: PlannerOpKind) -> bool {
+    !matches!(op, PlannerOpKind::Attack | PlannerOpKind::Defend)
+}
+
+fn payload_template_is_preservable(payload: &PayloadTemplate) -> bool {
+    match payload {
+        PayloadTemplate::FromContext => true,
+        PayloadTemplate::Explicit(payload) => !payload_value_template_has_fixed_entity(payload),
+    }
+}
+
+fn payload_value_template_has_fixed_entity(payload: &PayloadValueTemplate) -> bool {
+    match payload {
+        PayloadValueTemplate::Trade { .. } | PayloadValueTemplate::Craft { .. } => false,
+        PayloadValueTemplate::Attack { target }
+        | PayloadValueTemplate::ClaimBounty { bounty: target } => fixed_entity(*target).is_some(),
+        PayloadValueTemplate::EscortToSafety {
+            escortee,
+            destination,
+        } => fixed_entity(*escortee).is_some() || location_template_has_fixed_entity(destination),
+    }
+}
+
+fn location_template_has_fixed_entity(location: &LocationTemplate) -> bool {
+    match location {
+        LocationTemplate::LastKnownTargetPlace { target }
+        | LocationTemplate::BountyIssuerPlace { bounty: target }
+        | LocationTemplate::OfficePlace {
+            institution: target,
+        }
+        | LocationTemplate::EscorteeHome { escortee: target }
+        | LocationTemplate::StagingPlaceForConfrontation { target } => {
+            fixed_entity(*target).is_some()
+        }
+        LocationTemplate::NearestSellerOf { .. }
+        | LocationTemplate::AgentHome
+        | LocationTemplate::KnownWorkstationFor { .. } => false,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -278,12 +335,15 @@ mod tests {
         BarrierFact, CoordinationBarrierBlockerRecord, PartialPlanSegment, PartialPlanSegmentId,
         PartialPlanSegmentSeed, PlannedSkeletonStep, budget_exhausted_partial_plan_segment,
         build_partial_plan_segment, coordination_barrier_blocking_fact,
-        record_coordination_barrier_blocker, resume_conditions_for_barrier_fact,
-        terminal_to_discrepancy,
+        filter_preservable_skeleton, record_coordination_barrier_blocker,
+        resume_conditions_for_barrier_fact, terminal_to_discrepancy,
     };
     use crate::{
         GoalOffer, PlanTerminalKind, PlannedStep, PlannerOpKind, PlanningEntityRef,
-        htn::{BeliefPredicate, CommodityTemplate, EntityTemplate, PayloadTemplate},
+        htn::{
+            BeliefPredicate, CommodityTemplate, EntityTemplate, PayloadTemplate,
+            PayloadValueTemplate,
+        },
     };
     use std::collections::BTreeSet;
     use worldwake_core::{
@@ -343,6 +403,29 @@ mod tests {
             expected_pre: vec![BeliefPredicate::SellerKnown {
                 commodity: CommodityTemplate::Fixed(CommodityKind::Bread),
             }],
+        }
+    }
+
+    fn trade_skeleton_step() -> PlannedSkeletonStep {
+        PlannedSkeletonStep {
+            op: PlannerOpKind::Trade,
+            target_template: PayloadTemplate::Explicit(PayloadValueTemplate::Trade {
+                commodity: CommodityTemplate::Fixed(CommodityKind::Bread),
+                quantity: worldwake_core::Quantity(1),
+            }),
+            expected_pre: vec![BeliefPredicate::SellerKnown {
+                commodity: CommodityTemplate::Fixed(CommodityKind::Bread),
+            }],
+        }
+    }
+
+    fn fixed_target_skeleton_step() -> PlannedSkeletonStep {
+        PlannedSkeletonStep {
+            op: PlannerOpKind::ClaimBounty,
+            target_template: PayloadTemplate::Explicit(PayloadValueTemplate::ClaimBounty {
+                bounty: EntityTemplate::Fixed(entity(80)),
+            }),
+            expected_pre: Vec::new(),
         }
     }
 
@@ -600,6 +683,7 @@ mod tests {
 
         assert_eq!(segment.id, PartialPlanSegmentId::new(Tick(42), 3));
         assert_eq!(segment.completed_prefix, vec![step]);
+        assert_eq!(segment.remaining_skeleton, None);
         assert_eq!(
             segment.resume_conditions,
             vec![IntentionResumeCondition::BeliefStatusChanged {
@@ -612,6 +696,37 @@ mod tests {
             vec![IntentionAbandonCondition::PatienceExhausted]
         );
         assert_eq!(segment.causal_links, vec![EventId(9)]);
+    }
+
+    #[test]
+    fn build_partial_plan_segment_preserves_seeded_skeleton() {
+        let cognitive = CognitiveProfile {
+            search_exhaustion_backoff_ticks: 17,
+            ..CognitiveProfile::default()
+        };
+        let skeleton = vec![trade_skeleton_step()];
+        let segment = build_partial_plan_segment(
+            PartialPlanSegmentSeed {
+                goal: goal_offer(),
+                completed_prefix: Vec::new(),
+                remaining_skeleton: Some(skeleton.clone()),
+                terminal_barrier: PlanTerminalKind::ResourceBarrier {
+                    commodity: CommodityKind::Bread,
+                    place: entity(20),
+                },
+                barrier_fact: BarrierFact::DepletedResource {
+                    commodity: CommodityKind::Bread,
+                    place: entity(20),
+                },
+                created_tick: Tick(42),
+                local_counter: 3,
+                causal_links: Vec::new(),
+            },
+            &cognitive,
+        )
+        .expect("resource barrier should produce a resumable segment");
+
+        assert_eq!(segment.remaining_skeleton, Some(skeleton));
     }
 
     #[test]
@@ -641,8 +756,16 @@ mod tests {
             search_exhaustion_backoff_ticks: 23,
             ..CognitiveProfile::default()
         };
-        let segment =
-            budget_exhausted_partial_plan_segment(goal_offer(), 77, 88, Tick(12), 4, &cognitive);
+        let skeleton = vec![trade_skeleton_step()];
+        let segment = budget_exhausted_partial_plan_segment(
+            goal_offer(),
+            77,
+            88,
+            Some(skeleton.clone()),
+            Tick(12),
+            4,
+            &cognitive,
+        );
 
         assert_eq!(
             segment.terminal_barrier,
@@ -660,6 +783,46 @@ mod tests {
         assert_eq!(
             segment.resume_conditions,
             vec![IntentionResumeCondition::TickElapsed(23)]
+        );
+        assert_eq!(segment.remaining_skeleton, Some(skeleton));
+    }
+
+    #[test]
+    fn budget_exhausted_partial_plan_segment_drops_empty_skeleton() {
+        let segment = budget_exhausted_partial_plan_segment(
+            goal_offer(),
+            77,
+            88,
+            Some(Vec::new()),
+            Tick(12),
+            4,
+            &CognitiveProfile::default(),
+        );
+
+        assert_eq!(segment.remaining_skeleton, None);
+    }
+
+    #[test]
+    fn filter_preservable_skeleton_excludes_combat_and_fixed_identity_steps() {
+        let preserved = trade_skeleton_step();
+        let attack = PlannedSkeletonStep {
+            op: PlannerOpKind::Attack,
+            target_template: PayloadTemplate::FromContext,
+            expected_pre: Vec::new(),
+        };
+        let fixed_target = fixed_target_skeleton_step();
+
+        assert_eq!(
+            filter_preservable_skeleton(vec![
+                attack.clone(),
+                preserved.clone(),
+                fixed_target.clone()
+            ]),
+            Some(vec![preserved])
+        );
+        assert_eq!(
+            filter_preservable_skeleton(vec![attack, fixed_target]),
+            None
         );
     }
 }

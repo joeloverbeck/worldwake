@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: None — golden tests + replay equivalence checks. New scenario RON files; new test files in `crates/worldwake-ai/tests/`.
-**Deps**: `archive/tickets/S168PARPLASKE-001.md` (`revalidate_skeleton_step`); `S168PARPLASKE-002` (populated `remaining_skeleton`); `S168PARPLASKE-003` (`search_plan_seeded` + `PartialPlanResumeTrace`); `specs/S168-partial-plan-skeleton-reuse.md` (Validation and Falsification section).
+**Deps**: `archive/tickets/S168PARPLASKE-001.md` (`revalidate_skeleton_step`); `archive/tickets/S168PARPLASKE-002.md` (budget-exhausted populated `remaining_skeleton`); `S168PARPLASKE-006` (information-barrier segment production); `S168PARPLASKE-003` (`search_plan_seeded` + `PartialPlanResumeTrace`); `specs/S168-partial-plan-skeleton-reuse.md` (Validation and Falsification section).
 
 ## Problem
 
@@ -15,7 +15,7 @@ S168's Validation and Falsification section (FND-31) declares four proof obligat
 3. **Replay/save-load equivalence**: both goldens replay identically; the budget-exhaustion save round-trips with the now-populated skeleton.
 4. **No-regression**: survival/integration goldens unaffected (resume behavior is equivalent or strictly better-bounded).
 
-The focused tests in 001-003 prove the function-level contracts: revalidation correctness, population correctness, resume routing, trace emit, seeded-search internal fallback. They do not prove the end-to-end causal chain — "an agent that suspended at an information barrier and saw the barrier satisfied resumes its remembered pursuit via seeded search and the world reaches the same lawful state as full replan would." That requires golden E2E coverage.
+The focused tests in 001-003 and 006 prove the function-level contracts: revalidation correctness, population correctness, information-barrier segment production, resume routing, trace emit, seeded-search internal fallback. They do not prove the end-to-end causal chain — "an agent that suspended at an information barrier and saw the barrier satisfied resumes its remembered pursuit via seeded search and the world reaches the same lawful state as full replan would." That requires golden E2E coverage.
 
 This ticket delivers both goldens, the replay/save-load equivalence checks, and a no-regression survival sweep.
 
@@ -38,7 +38,7 @@ This ticket delivers both goldens, the replay/save-load equivalence checks, and 
    - **no skeleton for combat/target-identity steps**: provable via ticket 002's filter tests; the golden doesn't need a separate assertion.
 8. **No-regression scope**. The spec says "survival/integration goldens unaffected (resume behavior is equivalent or strictly better-bounded)." This is satisfied by running the existing survival/integration suite and confirming no failures, plus a focused check on any existing test that exercises `try_resume_partial_plan` (enumerated in ticket 003's Assumption Reassessment).
 9. **Existing test coverage to extend**:
-   - The negative-result of "no reuse" path before ticket 002 should be re-validated to confirm fallback equivalence: the same agent in the same scenario without skeleton population (or with the skeleton manually nulled in a test variant) reaches the same final state. Confirms the optimization is lawful (FND-12 causal-equivalence contract).
+   - The negative-result of "no reuse" should be re-validated to confirm fallback equivalence: the same agent in the same scenario without information-barrier skeleton population (or with the skeleton manually nulled in a test variant) reaches the same final state. Confirms the optimization is lawful (FND-12 causal-equivalence contract).
 10. **Adjacent contradictions**. None known. The goldens are downstream of the foundation work; if 001-003 land correctly, the golden chain is observable.
 
 ## Architecture Check
@@ -67,7 +67,7 @@ Create a new RON scenario (likely `crates/worldwake-ai/tests/scenarios/<descript
 
 - Spawns an agent with a commodity-acquisition goal whose seller's location is unknown.
 - Includes a lawful witness who can be questioned (companion goal target).
-- Includes an information-barrier-triggering condition such that the agent's planning suspends with a populated `remaining_skeleton` (validated by ticket 002).
+- Includes an information-barrier-triggering condition such that the agent's planning suspends with a populated `remaining_skeleton` (validated by ticket 006, with construction filtering from ticket 002).
 - After N ticks, the witness arrives (or the agent reaches the witness) and the barrier is satisfied.
 - The resume should then trigger; the skeleton revalidates `Reusable`; seeded search proceeds.
 
@@ -132,7 +132,8 @@ After the new goldens land, regenerate `docs/generated/golden-e2e-inventory.md` 
 
 ## Out of Scope
 
-- Skeleton population — ticket 002.
+- Budget-exhausted skeleton population — ticket 002.
+- Information-barrier segment production — ticket 006.
 - Revalidation function — ticket 001.
 - Seeded search + resume integration + trace struct — ticket 003.
 - Resource/jurisdiction/coordination barrier goldens — spec Non-Goals.

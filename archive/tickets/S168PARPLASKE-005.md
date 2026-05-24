@@ -8,7 +8,7 @@
 
 ## Problem
 
-`tickets/S168PARPLASKE-002.md` was drafted as if the planner already exposed a remaining high-level skeleton at the suspension boundary. Live reassessment on 2026-05-24 disproved that premise:
+The now-archived `archive/tickets/S168PARPLASKE-002.md` was drafted as if the planner already exposed a remaining high-level skeleton at the suspension boundary. Live reassessment on 2026-05-24 disproved that premise:
 
 1. `PlanSearchResult::BudgetExhausted` currently carries only `expansions_used`; it does not carry the remaining strategic/search shape.
 2. `write_budget_exhausted_partial_plan_segments` can therefore only construct `remaining_skeleton: None` unless a new planner-owned carrier is added first.
@@ -76,7 +76,7 @@ Ticket 002 will thread this source into `budget_exhausted_partial_plan_segment`;
 - `crates/worldwake-ai/src/search/mod.rs` (modified — `PartialPlanSkeletonSource`, metadata field)
 - `crates/worldwake-ai/src/search/strategic.rs` (modified — selected-method skeleton derivation and focused tests)
 - `crates/worldwake-ai/src/agent_tick/planning.rs` (modified — `CandidatePlanSearch` source carriage and focused test)
-- `tickets/S168PARPLASKE-002.md` (modified — dependency and reassessment truth-sync)
+- `archive/tickets/S168PARPLASKE-002.md` (then active; modified — dependency and reassessment truth-sync)
 - `.codex/run-state/implement-spec-tickets.json` (modified — queue retargeting)
 
 ## Out of Scope
@@ -127,7 +127,7 @@ Completed on 2026-05-24.
 - Added a planner-owned `PartialPlanSkeletonSource` carrier and attached it to `SearchTraceMetadata`.
 - Derived preservable skeleton steps from selected method action subgoals while the planner method referent is still live.
 - Carried the source through `CandidatePlanSearch` so ticket 002 can populate `PartialPlanSegment.remaining_skeleton` without synthesizing a skeleton after the fact.
-- Updated `tickets/S168PARPLASKE-002.md` to depend on this prerequisite and to record the FND-12/FND-27 reassessment correction.
+- Updated S168PARPLASKE-002 (now `archive/tickets/S168PARPLASKE-002.md`) to depend on this prerequisite and to record the FND-12/FND-27 reassessment correction.
 
 ## Deviations
 

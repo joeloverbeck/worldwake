@@ -33,14 +33,13 @@ targets, payloads) is rebuilt through ordinary search rather than replayed from 
 skeleton. The earlier scope was right to defer replay; the present scope adds the
 seeding path that S149's deferral pointed to.
 
-A second drift to flag for D1: the information-barrier suspension path in
-`agenda_manager.rs:147-180` currently spawns *companion goals* without persisting a
-`PartialPlanSegment` in production code (test helpers `information_barrier_segment` /
-`coordination_barrier_segment` exist at `agenda_manager.rs:1698, 1719` but are
-`#[cfg(test)]`-only). The only runtime suspension constructor today is the
-budget-exhausted one. Making the field live at information-barrier suspensions
-therefore also requires wiring a new constructor (D1.b below), not only populating an
-existing one.
+Live reassessment during S168PARPLASKE-002 corrected the D1 information-barrier
+producer boundary. `agenda_manager.rs::spawn_information_barrier_companions` consumes
+already-suspended entries with a `PartialPlanSegment`; it cannot be the first producer
+because it skips entries whose segment is absent. Making the field live at
+information-barrier suspensions therefore requires a producer at the selected/completed
+information-barrier plan boundary, while the companion-spawn path remains a consumer.
+That corrected producer is tracked by `tickets/S168PARPLASKE-006.md`.
 
 Accepted in the triage of `reports/ai-architecture-improvements-second-iteration.md`
 (Proposal 3), explicitly the **lowest-benefit** of the accepted set — an optimization
@@ -62,8 +61,9 @@ decomposition.
 
 - `worldwake-ai` — `partial_plan.rs` (populate `remaining_skeleton` at the
   budget-exhausted suspension site; the skeleton-revalidation function may live here
-  or in a sibling module), `agenda_manager.rs` (a new info-barrier suspension
-  constructor wired from the companion-spawning path; `try_resume_partial_plan`
+  or in a sibling module), `agenda_manager.rs` / `agent_tick/planning.rs` (a corrected
+  info-barrier suspension producer that feeds the existing companion consumer;
+  `try_resume_partial_plan`
   consumes the skeleton when present and valid, else falls back to the existing
   `Pending` re-entry; emit `PartialPlanResumeTrace`), `agent_tick/planning.rs` (new
   `search_plan_seeded` tactical-search entry point parallel to
@@ -139,18 +139,19 @@ meaningful remainder keep `None`. The caller
 `write_budget_exhausted_partial_plan_segments` in `agent_tick/planning.rs:1114` must
 also thread the skeleton from the partial search frontier through the seed.
 
-### D1.b. Add an info-barrier suspension constructor
+### D1.b. Add an info-barrier suspension producer
 
-The information-barrier suspension path in `agenda_manager.rs:147-180` currently spawns
-companion goals without persisting a `PartialPlanSegment` in production code. Add a new
-info-barrier suspension constructor that calls `build_partial_plan_segment`
-(`partial_plan.rs:94`) from the companion-spawning path with a populated
+Information-barrier companion spawning in `agenda_manager.rs` is a consumer of
+already-suspended `PartialPlanSegment`s, not the producer. Add the info-barrier
+producer at the selected/completed barrier-plan boundary where the implementation still
+has both the `PlannedPlan` terminal (`PlanTerminalKind::InformationBarrier { … }`) and
+the planner-owned skeleton source. The producer should build a `PartialPlanSegment`
+through `build_partial_plan_segment` (`partial_plan.rs:94`) with populated
 `remaining_skeleton`, the appropriate `PlanTerminalKind::InformationBarrier { … }`
-terminal, and the corresponding `BarrierFact`. Combat- and target-identity-bound steps
-are excluded as for D1.a. The test helpers `information_barrier_segment` and
-`coordination_barrier_segment` (`agenda_manager.rs:1698, 1719`) are the shape
-reference; the production constructor wires the same shape into the actual suspension
-path.
+terminal, and the corresponding `BarrierFact`, then suspend the matching agenda entry
+so `spawn_information_barrier_companions` can consume it. Combat- and
+target-identity-bound steps are excluded as for D1.a. The corrected producer seam is
+owned by `tickets/S168PARPLASKE-006.md`.
 
 ### D2. Skeleton revalidation
 
@@ -214,8 +215,8 @@ repair orchestration with no trace exports).
 4. **Stored state vs. derived read-model.** No new authoritative type.
    `remaining_skeleton` is an already-serialized field of the authoritative
    `PartialPlanSegment`; this spec changes its *content* at the in-scope sites — for
-   the budget-exhausted constructor (D1.a), from `None` to populated; for the new
-   info-barrier suspension constructor (D1.b), populated from inception — and adds
+   the budget-exhausted constructor (D1.a), from `None` to populated; for the corrected
+   info-barrier suspension producer (D1.b), populated from inception — and adds
    derived revalidation/seeding logic. The skeleton is a planning cache (FND-27), not
    promoted to truth.
 5. **Planner-formalism analysis.** Plain GOAP; the skeleton is search seeding/control

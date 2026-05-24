@@ -4,11 +4,11 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `crates/worldwake-ai/src/agent_tick/planning.rs` (new `search_plan_seeded` tactical-search entry); `crates/worldwake-ai/src/agenda_manager.rs` (`try_resume_partial_plan` calls revalidation + invokes seeded search + emits trace); `crates/worldwake-ai/src/decision_trace.rs` (new `PartialPlanResumeTrace` struct).
-**Deps**: `archive/tickets/S168PARPLASKE-001.md` (`revalidate_skeleton_step` + `SkeletonRevalidationContext` + `SkeletonRevalidationVerdict`); `S168PARPLASKE-002` (populated `remaining_skeleton` to consume); `specs/S168-partial-plan-skeleton-reuse.md` (D3, D4).
+**Deps**: `archive/tickets/S168PARPLASKE-001.md` (`revalidate_skeleton_step` + `SkeletonRevalidationContext` + `SkeletonRevalidationVerdict`); `archive/tickets/S168PARPLASKE-002.md` (budget-exhausted populated `remaining_skeleton` to consume); `S168PARPLASKE-006` (information-barrier producer for end-to-end reuse paths); `specs/S168-partial-plan-skeleton-reuse.md` (D3, D4).
 
 ## Problem
 
-Ticket 001 produced the revalidation function. Ticket 002 populated `remaining_skeleton` at the in-scope suspension sites. This ticket consumes both: `try_resume_partial_plan` reads the populated skeleton, calls `revalidate_skeleton_step` to gate reuse, and on `Reusable` invokes a new tactical-search entry point `search_plan_seeded` that walks the skeleton's high-level ops as search-control bias while rebuilding tactical detail (bindings, durations, costs) through ordinary search.
+Ticket 001 produced the revalidation function. Ticket 002 populated `remaining_skeleton` for budget-exhausted segments, and ticket 006 owns the corrected information-barrier producer. This ticket consumes populated skeletons generically: `try_resume_partial_plan` reads the populated skeleton, calls `revalidate_skeleton_step` to gate reuse, and on `Reusable` invokes a new tactical-search entry point `search_plan_seeded` that walks the skeleton's high-level ops as search-control bias while rebuilding tactical detail (bindings, durations, costs) through ordinary search.
 
 On `Invalid` or `None`, the existing `Pending` full-replan re-entry (`agenda_manager.rs:135`) is preserved unchanged — the seeded path is a strict optimization over the existing fallback (FND-12: performance compresses computation, never causality).
 
@@ -29,7 +29,7 @@ D4's `PartialPlanResumeTrace` struct lives in `decision_trace.rs` (parallel to `
    - `try_resume_partial_plan` → `search_plan_seeded` (new) → planned plan or fallback.
    - `try_resume_partial_plan` → `PartialPlanResumeTrace` emit (new, decision_trace sink).
 4. **Phase distinction (precision rule 1)**. The seeded path replaces the *plan search* phase only. Candidate generation, ranking, suppression, filtering, and authoritative outcome are unchanged. Spec is explicit: the seeded path does not replay actions; it rebuilds tactical detail through ordinary search.
-5. **Live `GoalKind` / operator surface under test**. Ticket 003's resume-integration tests should exercise an info-barrier suspension on a goal whose skeleton is preservable (e.g., commodity-acquisition where the skeleton's ops are not combat / target-identity-bound). The exact `GoalKind` used in the focused tests can mirror what ticket 002's tests use for filter coverage. The reusable + invalid verdict paths must both be exercised.
+5. **Live `GoalKind` / operator surface under test**. Ticket 003's resume-integration tests should exercise a suspended segment whose skeleton is preservable (e.g., commodity-acquisition where the skeleton's ops are not combat / target-identity-bound). The exact `GoalKind` used in the focused tests can mirror what ticket 002's tests use for filter coverage; end-to-end information-barrier production is owned by ticket 006. The reusable + invalid verdict paths must both be exercised.
 6. **Heuristic removal discipline (precision rule 12)**. This ticket does NOT remove any existing heuristic — it adds a substrate (seeded search) and a new code path. The existing `Pending` full-replan re-entry remains as the fallback when the verdict is `Invalid` or the skeleton is `None`. No regression risk in unrelated scenarios because the fallback is bit-for-bit unchanged.
 7. **Ordering contract (precision rule 4)**. The verdict-then-emit ordering: revalidation runs first; the trace is emitted with the verdict; on `Reusable`, the trace also names the seeded ops *before* search runs (so a search-time bug that crashes doesn't lose the trace context). Confirm this ordering in the implementation.
 8. **ControlSource / runtime intent (precision rule 11)**. This ticket does not manipulate `ControlSource`. The skeleton's revisability is governed by the existing `resume_attempt_count`/patience-limit machinery (unchanged) — the verdict-driven discard simply increments retry attempts when the skeleton is invalid.
@@ -130,7 +130,8 @@ In `crates/worldwake-ai/src/agent_tick/planning.rs` `#[cfg(test)]`:
 ## Out of Scope
 
 - Validation goldens (info-barrier suspend → satisfy → resume; assumption stale → full replan; negative no-skeleton-as-rail) — ticket 004.
-- Skeleton population at construction sites — ticket 002.
+- Budget-exhausted skeleton population — ticket 002.
+- Information-barrier segment production — ticket 006.
 - `revalidate_skeleton_step` function definition — ticket 001.
 - Resource/jurisdiction/coordination barrier skeleton reuse — spec Non-Goals.
 - Combat plan / target-identity-bound skeleton preservation — spec Non-Goals (filtered at ticket 002's construction sites).

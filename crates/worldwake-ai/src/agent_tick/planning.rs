@@ -1102,10 +1102,10 @@ fn write_budget_exhausted_partial_plan_segments(
         let PlanSearchResult::BudgetExhausted { expansions_used } = plan.result else {
             continue;
         };
-        let _preserved_skeleton_steps = plan
+        let remaining_skeleton = plan
             .skeleton_source
             .as_ref()
-            .map(|source| source.remaining_skeleton.len());
+            .map(|source| source.remaining_skeleton.clone());
         let Some(candidate) = ranked_candidates.iter().find(|candidate| {
             candidate.offer.key == plan.opportunity.goal_key
                 && candidate.offer.anchor == plan.opportunity.anchor
@@ -1122,6 +1122,7 @@ fn write_budget_exhausted_partial_plan_segments(
             candidate.offer.clone(),
             u32::from(expansions_used),
             u32::from(cognitive.max_node_expansions),
+            remaining_skeleton,
             tick,
             written
                 .try_into()
@@ -3133,6 +3134,21 @@ mod tests {
             trace_metadata: SearchTraceMetadata::default(),
             binding_rejections: Vec::new(),
             expansion_summaries: Vec::new(),
+        }
+    }
+
+    fn searched_plan_with_skeleton(
+        opportunity: OpportunityKey,
+        result: PlanSearchResult,
+        source: PartialPlanSkeletonSource,
+    ) -> CandidatePlanSearch {
+        CandidatePlanSearch {
+            skeleton_source: Some(source.clone()),
+            trace_metadata: SearchTraceMetadata {
+                skeleton_source: Some(source),
+                ..SearchTraceMetadata::default()
+            },
+            ..searched_plan(opportunity, result)
         }
     }
 
@@ -6882,10 +6898,20 @@ mod tests {
             GoalPriorityClass::Medium,
             50,
         )];
-        let plans = vec![searched_plan(
+        let skeleton = vec![crate::PlannedSkeletonStep {
+            op: PlannerOpKind::Trade,
+            target_template: crate::htn::PayloadTemplate::FromContext,
+            expected_pre: vec![crate::htn::BeliefPredicate::SellerKnown {
+                commodity: crate::htn::CommodityTemplate::Fixed(CommodityKind::Bread),
+            }],
+        }];
+        let plans = vec![searched_plan_with_skeleton(
             opportunity,
             PlanSearchResult::BudgetExhausted {
                 expansions_used: 12,
+            },
+            PartialPlanSkeletonSource {
+                remaining_skeleton: skeleton.clone(),
             },
         )];
         let mut cognitive = cognitive(&ProfileFixture {
@@ -6930,6 +6956,7 @@ mod tests {
             segment.abandon_conditions,
             vec![worldwake_core::IntentionAbandonCondition::PatienceExhausted]
         );
+        assert_eq!(segment.remaining_skeleton, Some(skeleton));
     }
 
     #[test]
