@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `crates/worldwake-ai/src/partial_plan.rs` (thread skeleton through `build_partial_plan_segment` + `budget_exhausted_partial_plan_segment`); `crates/worldwake-ai/src/agent_tick/planning.rs` (caller wires remaining skeleton through the seed); `crates/worldwake-ai/src/agenda_manager.rs` (new info-barrier suspension constructor wired from companion-spawning path).
-**Deps**: `specs/S168-partial-plan-skeleton-reuse.md` (D1.a, D1.b); `archive/specs/S149-partial-plan-segments-and-typed-terminals.md` (owns `PartialPlanSegmentSeed` shape).
+**Deps**: `archive/tickets/S168PARPLASKE-005.md` (planner-owned preservable skeleton source); `specs/S168-partial-plan-skeleton-reuse.md` (D1.a, D1.b); `archive/specs/S149-partial-plan-segments-and-typed-terminals.md` (owns `PartialPlanSegmentSeed` shape).
 
 ## Problem
 
@@ -17,7 +17,7 @@ This ticket makes the field live at the two in-scope suspension sites:
 
 Both sites filter combat- and target-identity-bound steps from the preserved skeleton per the spec's exclusion (FND-21 risk: stale binding is more dangerous than replan).
 
-This ticket compiles independently of ticket 001 (revalidation) and ticket 003 (resume consumption) — the populated field is just data; no consumer required.
+This ticket compiles independently of ticket 001 (revalidation) and ticket 003 (resume consumption), but it depends on `archive/tickets/S168PARPLASKE-005.md` for the lawful planner-owned source of the skeleton. The populated field is just data once that source exists; no resume consumer is required here.
 
 ## Assumption Reassessment (2026-05-24)
 
@@ -40,6 +40,12 @@ This ticket compiles independently of ticket 001 (revalidation) and ticket 003 (
    - `agenda_manager.rs::abandoning_information_barrier_primary_cancels_companion:2167` — ensure the new segment is also abandoned when the primary is canceled (the existing `remove_companions_for_primary` path may or may not cover this; verify and extend if needed).
 5. **Filter logic for excluded steps**. The spec excludes "combat- and target-identity-bound steps." This is a new filter that lives at the population sites. Reassessment: the filter operates on `PlannedSkeletonStep.target_template: PayloadTemplate` and `op: PlannerOpKind`; combat is identified by op kind, target-identity-bound is identified by `target_template` not being `FromContext` (i.e., the template carries a resolved `EntityId` rather than a context-resolved binding). Confirm by reading `PayloadTemplate` variants before implementing.
 6. **Adjacent contradictions**. The D1.b constructor wires into the companion-spawning path, which may have abandon-condition implications: if the primary is canceled, the new segment must be cleaned up alongside the companion. Classification: required consequence of D1.b — the new segment shares lifecycle with the companion it accompanies.
+
+## Reassessment Update (2026-05-24)
+
+1. Live reassessment found the drafted D1.a source claim was too strong: `PlanSearchResult::BudgetExhausted` currently carries only `expansions_used`, so `write_budget_exhausted_partial_plan_segments` has no lawful remaining skeleton to thread yet.
+2. Under FND-12/FND-27, this ticket must not synthesize a skeleton after the fact. `archive/tickets/S168PARPLASKE-005.md` now owns the prerequisite planner/search carrier that preserves the high-level shape while the planning referent is still live.
+3. Ticket 002 resumes only after ticket 005 lands. Its D1.a implementation should consume the carrier from ticket 005, apply the construction filter, and pass the result into `PartialPlanSegmentSeed.remaining_skeleton`.
 
 ## Architecture Check
 

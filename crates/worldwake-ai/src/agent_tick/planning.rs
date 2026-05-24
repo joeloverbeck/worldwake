@@ -24,7 +24,8 @@ use crate::plan_step_expectations::{
     expire_plan_step_expectations, persist_expectation_store_update, write_plan_step_expectations,
 };
 use crate::search::{
-    PlanSearchResult, SearchTraceMetadata, search_plan_with_trace_metadata_and_source,
+    PartialPlanSkeletonSource, PlanSearchResult, SearchTraceMetadata,
+    search_plan_with_trace_metadata_and_source,
 };
 use crate::{
     AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime,
@@ -62,6 +63,7 @@ pub(crate) struct CandidatePlanSearch {
     pub opportunity: OpportunityKey,
     pub result: PlanSearchResult,
     pub perceived_cost: Option<u32>,
+    pub skeleton_source: Option<PartialPlanSkeletonSource>,
     pub trace_metadata: SearchTraceMetadata,
     pub binding_rejections: Vec<BindingRejection>,
     pub expansion_summaries: Vec<crate::decision_trace::SearchExpansionSummary>,
@@ -840,6 +842,7 @@ pub(super) fn build_candidate_plans_with_sources(
             opportunity,
             result,
             perceived_cost,
+            skeleton_source: trace_metadata.skeleton_source.clone(),
             trace_metadata,
             binding_rejections: rejections,
             expansion_summaries: expansions,
@@ -1099,6 +1102,10 @@ fn write_budget_exhausted_partial_plan_segments(
         let PlanSearchResult::BudgetExhausted { expansions_used } = plan.result else {
             continue;
         };
+        let _preserved_skeleton_steps = plan
+            .skeleton_source
+            .as_ref()
+            .map(|source| source.remaining_skeleton.len());
         let Some(candidate) = ranked_candidates.iter().find(|candidate| {
             candidate.offer.key == plan.opportunity.goal_key
                 && candidate.offer.anchor == plan.opportunity.anchor
@@ -2907,7 +2914,7 @@ mod tests {
         feasibility::FeasibilityHint,
         goal_schema::{FrontierExhaustionStrategy, GoalDispatchKeySchemaExt},
         plan_selection::SelectionCandidatePlan,
-        search::SearchTraceMetadata,
+        search::{PartialPlanSkeletonSource, SearchTraceMetadata},
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -3122,10 +3129,40 @@ mod tests {
             opportunity,
             result,
             perceived_cost: None,
+            skeleton_source: None,
             trace_metadata: SearchTraceMetadata::default(),
             binding_rejections: Vec::new(),
             expansion_summaries: Vec::new(),
         }
+    }
+
+    #[test]
+    fn candidate_plan_search_retains_partial_plan_skeleton_source() {
+        let opportunity = consume_opportunity(CommodityKind::Bread, OpportunityAnchor::None);
+        let source = PartialPlanSkeletonSource {
+            remaining_skeleton: vec![crate::PlannedSkeletonStep {
+                op: PlannerOpKind::Trade,
+                target_template: crate::htn::PayloadTemplate::FromContext,
+                expected_pre: vec![crate::htn::BeliefPredicate::SellerKnown {
+                    commodity: crate::htn::CommodityTemplate::Fixed(CommodityKind::Bread),
+                }],
+            }],
+        };
+
+        let plan = CandidatePlanSearch {
+            opportunity,
+            result: PlanSearchResult::BudgetExhausted { expansions_used: 1 },
+            perceived_cost: None,
+            skeleton_source: Some(source.clone()),
+            trace_metadata: SearchTraceMetadata {
+                skeleton_source: Some(source.clone()),
+                ..SearchTraceMetadata::default()
+            },
+            binding_rejections: Vec::new(),
+            expansion_summaries: Vec::new(),
+        };
+
+        assert_eq!(plan.skeleton_source, Some(source));
     }
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
@@ -5147,6 +5184,7 @@ mod tests {
                         estimated_travel_ticks: 4,
                     }],
                 }),
+                skeleton_source: None,
                 strategic_budget: Some(crate::decision_trace::StrategicBudgetTrace {
                     stages_count: 1,
                     budget_total: 6,

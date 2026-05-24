@@ -8,9 +8,9 @@ mod transition;
 use crate::goal_schema::GoalDispatchKeySchemaExt;
 use crate::opportunity_compiler::PerceivedOpportunityIndex;
 use crate::{
-    GoalKindPlannerExt, GoalOffer, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpSemantics,
-    PlanningEntityRef, PlanningSnapshot, PlanningState, PlanningStateCacheCounters,
-    shared_collections::SharedVec,
+    GoalKindPlannerExt, GoalOffer, PlanTerminalKind, PlannedPlan, PlannedSkeletonStep, PlannedStep,
+    PlannerOpSemantics, PlanningEntityRef, PlanningSnapshot, PlanningState,
+    PlanningStateCacheCounters, shared_collections::SharedVec,
 };
 #[cfg(test)]
 use candidates::search_candidate_from_planner;
@@ -51,9 +51,15 @@ use worldwake_sim::{
     InventoryBeliefView, RecipeRegistry, SpatialBeliefView, get_affordances_for_defs,
 };
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PartialPlanSkeletonSource {
+    pub(crate) remaining_skeleton: Vec<PlannedSkeletonStep>,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct SearchTraceMetadata {
     pub(crate) strategic_plan: Option<strategic::StrategicPlan>,
+    pub(crate) skeleton_source: Option<PartialPlanSkeletonSource>,
     pub(crate) strategic_budget: Option<crate::decision_trace::StrategicBudgetTrace>,
     pub(crate) method_trace: Option<crate::decision_trace::MethodPlanAttemptTrace>,
     pub(crate) goal_budget: GoalPlanningBudget,
@@ -67,6 +73,7 @@ impl Default for SearchTraceMetadata {
     fn default() -> Self {
         Self {
             strategic_plan: None,
+            skeleton_source: None,
             strategic_budget: None,
             method_trace: None,
             goal_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
@@ -625,6 +632,7 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
             .as_ref()
             .filter(|plan| !plan.steps.is_empty())
             .cloned(),
+        skeleton_source: strategic_result.skeleton_source.clone(),
         strategic_budget: strategic_result.budget_trace,
         method_trace: strategic_result.method_trace,
         goal_budget: effective_budget,
