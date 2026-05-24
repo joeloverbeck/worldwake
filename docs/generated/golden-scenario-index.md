@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 217
+- Scenario blocks: 218
 - Contributing golden scenario source files: 53
-- Associated tests: 267
+- Associated tests: 268
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1681,21 +1681,33 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Proves**: localized repair chooses RebindTarget and preserves the prefix before the replacement step.
 
-### Scenario 409: S137 Stale Belief Attempts Insert Verification
+### Scenario 409: S165 Stale Belief Inserts Verification
 
 - Source: `plan_repair.rs:288`
+- Systems: AI
+- GoalKinds: AcquireCommodity, AskWitness
+- ActionDomains: PlanRepair
+- Principles: P14, P15, P16, P21, P29A
+
+**Setup**: stale belief-backed breach with one co-located witness verification candidate and no rival repair candidates.
+
+**Proves**: InsertVerification selects the AskWitness step and the authoritative RepairApplied payload can record that witness anchor.
+
+### Scenario 461: S165 Stale Belief Without Witness Falls Through
+
+- Source: `plan_repair.rs:371`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
 - Principles: P15, P16, P21
 
-**Setup**: stale belief-backed breach with no replacement candidates; the S139 epistemic-subgoal substrate is intentionally absent.
+**Setup**: stale belief-backed breach with no lawful co-located witness verification candidate.
 
-**Proves**: InsertVerification is tried and rejected with NoEpistemicSubstrate, rather than silently skipping the epistemic repair axis.
+**Proves**: InsertVerification records NoEpistemicSubstrate and repair falls through to a typed InformationBarrier.
 
 ### Scenario 410: S137 Recently Failed Repair Kind Is Skipped
 
-- Source: `plan_repair.rs:340`
+- Source: `plan_repair.rs:436`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1707,7 +1719,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 411: S137 Commodity Availability Changed Clears Blocker Structurally
 
-- Source: `plan_repair.rs:391`
+- Source: `plan_repair.rs:487`
 - Systems: AI, Core
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1719,7 +1731,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 412: S137 Repair Budget Exhaustion Falls Through To Full Replan
 
-- Source: `plan_repair.rs:466`
+- Source: `plan_repair.rs:562`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1731,7 +1743,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 413: S137 Abandon Produces Empty Progress Barrier
 
-- Source: `plan_repair.rs:521`
+- Source: `plan_repair.rs:617`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1743,7 +1755,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 414: S137 Phase 11 Approved Repair Gate Witness
 
-- Source: `plan_repair.rs:564`
+- Source: `plan_repair.rs:660`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair

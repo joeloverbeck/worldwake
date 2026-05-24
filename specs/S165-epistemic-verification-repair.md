@@ -273,13 +273,13 @@ summary path.
 
 ### D8. Test migration
 
-Replace the three "without_s139" assertions. The unit/scenario tests must now assert:
+Replace the stale "without_s139" assertions. The unit/scenario tests must now assert:
 (a) an epistemic breach with a lawful co-located witness yields a `Repaired` outcome
 whose plan contains an `ask_witness` step toward that witness AND whose `RepairApplied`
 event records `substitute_target = Some(witness)`; (b) an epistemic breach with **no**
 lawful co-located witness yields `NoEpistemicSubstrate` and falls through to
-`DowngradeToTypedBarrier` (typed `InformationBarrier`); (c) a non-epistemic breach
-(e.g. `PriorStep` provider) still yields `NoEpistemicSubstrate`.
+`DowngradeToTypedBarrier` (typed `InformationBarrier`); (c) a no-candidate repair
+context still yields `NoEpistemicSubstrate`.
 
 ## FND-01 Section H
 
@@ -319,12 +319,13 @@ lawful co-located witness yields `NoEpistemicSubstrate` and falls through to
    lawful co-located knowledge of; (c) a verification step appearing without
    preconditions, duration, or cost; (d) the repaired plan reading world truth for the
    breach subject; (e) a multi-step (travel-bearing) verification spliced into a single
-   repair candidate. Checks: focused repair/seam tests (D8), one golden proving
-   Scenario D end-to-end (stale belief → mismatch → spliced co-located `ask_witness` →
-   lawful evidence → resume or lawful abandonment with discrepancy retained, and the
-   authoritative `RepairApplied` event records the witness), and a replay/save-load
-   equivalence check on that golden. The existing 1440-tick survival goldens must not
-   regress (verification fires only on belief-backed breaches).
+   repair candidate. Checks: focused repair/seam tests (D8), the existing plan-repair
+   golden owner proving Scenario D's repair seam (stale belief → mismatch → spliced
+   co-located `ask_witness`, authoritative `RepairApplied` witness anchor, and
+   no-witness typed barrier), and the existing S139 `AskWitness` golden proving lawful
+   evidence import and deterministic replay through `PerceptionSource::Report`. The
+   existing 1440-tick survival goldens must not regress (verification fires only on
+   belief-backed breaches).
 
 ## SystemFn Integration
 
@@ -372,18 +373,19 @@ differently on the same breach.
 
 ## Validation and Falsification (FND-31)
 
-- **Golden**: `golden_epistemic_verification_repair.rs` — agent acts on a stale
-  belief-backed plan, the link breaks at the revalidation seam, a co-located
-  `ask_witness` verification candidate is built and selected, the action executes,
-  evidence imports with `Report` provenance, the authoritative `RepairApplied` event
-  records `substitute_target = Some(witness)`, and the agent resumes or abandons with
-  the discrepancy retained until the carrier updates the belief. Plus a no-witness
-  branch proving fall-through to a typed `InformationBarrier`.
+- **Golden**: `crates/worldwake-ai/tests/scenarios/plan_repair.rs` — the existing
+  plan-repair golden owner proves the S165 repair seam: a stale belief-backed breach
+  selects a co-located `ask_witness` verification step, the authoritative
+  `RepairApplied` event records `substitute_target = Some(witness)`, and the no-witness
+  branch falls through to a typed `InformationBarrier`. The already-landed S139 golden
+  `golden_ask_witness_refreshes_stale_report` continues to prove action execution,
+  `Report` provenance import, and deterministic replay for the `ask_witness` effect
+  sink.
 - **Focused**: D8 unit/scenario tests, including the authoritative-anchor assertion.
 - **Negative cases**: no belief-without-carrier correction; no verification toward a
   non-co-located or unknown witness; verification step always carries duration/cost;
   no travel-bearing step spliced into a single repair candidate.
-- **Replay/save-load equivalence**: the golden replays identically;
+- **Replay/save-load equivalence**: the S139 effect-sink golden replays identically;
   `SAVE_FORMAT_VERSION` is unchanged.
 - **No-regression**: 1440-tick survival goldens unaffected.
 
@@ -400,5 +402,5 @@ differently on the same breach.
   step-construction path; if `extract_ask_witness_candidates` keeps a parallel inline
   construction, the two can drift (FND-28). The refactor must route both through the
   extracted constructor.
-- **Stale test fossils.** The three "without_s139" tests must be migrated, not
+- **Stale test fossils.** The "without_s139" tests must be migrated, not
   deleted-and-skipped, so the closed gap stays proven.

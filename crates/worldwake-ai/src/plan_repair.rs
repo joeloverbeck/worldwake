@@ -490,7 +490,7 @@ mod tests {
         let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
 
         let RepairOutcome::Failed { tried } = outcome else {
-            panic!("staged repair search should fail until ticket 007 wires replacement");
+            panic!("repair search should fail when the budget expires before a repair succeeds");
         };
         assert_eq!(repair_budget(&cognitive), 2);
         assert_eq!(tried.len(), 3);
@@ -537,7 +537,7 @@ mod tests {
         let outcome = attempt_repair_then_replan(&context, &cognitive, &memory);
 
         let RepairOutcome::Failed { tried } = outcome else {
-            panic!("staged repair search should fail until ticket 007 wires replacement");
+            panic!("repair search should fail when retry suppression and budget prevent success");
         };
         assert_eq!(
             tried[0],
@@ -546,7 +546,7 @@ mod tests {
     }
 
     #[test]
-    fn insert_verification_returns_no_epistemic_substrate_without_s139() {
+    fn insert_verification_returns_no_epistemic_substrate_without_candidate() {
         let prefix = vec![step()];
         let suffix = vec![step()];
         let entry = discrepancy_entry(DiscrepancyClearing::TtlExpiry);
@@ -556,7 +556,7 @@ mod tests {
         let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
 
         let RepairOutcome::Failed { tried } = outcome else {
-            panic!("staged repair search should fail until ticket 007 wires replacement");
+            panic!("repair search should fail when no verification candidate is supplied");
         };
         assert_eq!(
             tried[2],

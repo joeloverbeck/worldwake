@@ -285,30 +285,114 @@ fn merchant_moved_breach_rebinds_to_sibling() {
     assert_eq!(payload.substitute_target, Some(sibling));
 }
 
-// Scenario 409: S137 Stale Belief Attempts Insert Verification
+// Scenario 409: S165 Stale Belief Inserts Verification
 // Systems: AI
-// GoalKinds: AcquireCommodity
+// GoalKinds: AcquireCommodity, AskWitness
 // ActionDomains: PlanRepair
-// Principles: P15, P16, P21
-// Setup: stale belief-backed breach with no replacement candidates; the S139
-//        epistemic-subgoal substrate is intentionally absent.
-// Proves: InsertVerification is tried and rejected with NoEpistemicSubstrate,
-//         rather than silently skipping the epistemic repair axis.
+// Principles: P14, P15, P16, P21, P29A
+// Setup: stale belief-backed breach with one co-located witness verification
+//        candidate and no rival repair candidates.
+// Proves: InsertVerification selects the AskWitness step and the
+//         authoritative RepairApplied payload can record that witness anchor.
 // Cross-system chain: belief-backed causal link -> ordered repair attempts ->
-//                     rejected repair trace payload.
+//                     AskWitness repair step -> RepairApplied payload shape.
 #[test]
-fn stale_belief_breach_attempts_insert_verification_without_s139() {
+fn stale_belief_breach_inserts_ask_witness_verification() {
     let goal = goal_key();
     let target = entity(7);
+    let witness = entity(12);
     let prefix = vec![planned_step(10, entity(3), None)];
     let suffix = Vec::new();
     let broken_link = stale_belief_link(target, entity(8), 1);
+    let verification = PlannedStep {
+        targets: vec![PlanningEntityRef::Authoritative(witness)],
+        target_place: Some(entity(8)),
+        op_kind: PlannerOpKind::AskWitness,
+        ..planned_step(12, witness, None)
+    };
+    let candidates = [RepairPlanCandidate {
+        kind: RepairKind::InsertVerification,
+        provider: CausalProvider::Belief {
+            claim_key: BeliefClaimKey {
+                subject: target,
+                aspect: EntityBeliefAspect::Location,
+            },
+        },
+        fact: broken_link.fact,
+        step: verification.clone(),
+        reusable_suffix_index: None,
+    }];
     let entry = discrepancy_entry(DiscrepancyClearing::BeliefUpdate {
         claim_key: BeliefClaimKey {
             subject: target,
             aspect: EntityBeliefAspect::Location,
         },
     });
+    let ctx = context(
+        goal,
+        broken_link,
+        breach_signature(goal, target),
+        &prefix,
+        &suffix,
+        &candidates,
+        &entry,
+    );
+
+    let outcome = attempt_repair_then_replan(
+        &ctx,
+        &cognitive(5, Permille::new(1000).unwrap()),
+        &RepairMemory::default(),
+    );
+
+    let RepairOutcome::Repaired { kind, new_plan, .. } = outcome else {
+        panic!("supplied verification candidate should repair the stale belief breach");
+    };
+    assert_eq!(kind, RepairKind::InsertVerification);
+    assert_eq!(new_plan.steps, vec![prefix[0].clone(), verification]);
+
+    let payload = emit_decision_payload(
+        EventTag::RepairApplied,
+        DecisionEventPayload::RepairApplied(RepairAppliedPayload {
+            agent: entity(1),
+            goal_key: goal,
+            step_index: 1,
+            repair_kind: kind,
+            substitute_target: Some(witness),
+            substitute_recipe: None,
+        }),
+    );
+    let DecisionEventPayload::RepairApplied(payload) = payload else {
+        panic!("expected RepairApplied payload");
+    };
+    assert_eq!(payload.repair_kind, RepairKind::InsertVerification);
+    assert_eq!(payload.substitute_target, Some(witness));
+}
+
+// Scenario 461: S165 Stale Belief Without Witness Falls Through
+// Systems: AI
+// GoalKinds: AcquireCommodity
+// ActionDomains: PlanRepair
+// Principles: P15, P16, P21
+// Setup: stale belief-backed breach with no lawful co-located witness
+//        verification candidate.
+// Proves: InsertVerification records NoEpistemicSubstrate and repair falls
+//         through to a typed InformationBarrier.
+// Cross-system chain: belief-backed causal link -> rejected verification ->
+//                     DowngradeToTypedBarrier plan terminal.
+#[test]
+fn stale_belief_breach_without_witness_falls_through_to_information_barrier() {
+    let goal = goal_key();
+    let target = entity(7);
+    let prefix = vec![planned_step(10, entity(3), None)];
+    let suffix = Vec::new();
+    let broken_link = stale_belief_link(target, entity(8), 1);
+    let mut entry = discrepancy_entry(DiscrepancyClearing::BeliefUpdate {
+        claim_key: BeliefClaimKey {
+            subject: target,
+            aspect: EntityBeliefAspect::Location,
+        },
+    });
+    entry.discrepancy = Discrepancy::MissingObservation;
     let ctx = context(
         goal,
         broken_link,
@@ -325,15 +409,27 @@ fn stale_belief_breach_attempts_insert_verification_without_s139() {
         &RepairMemory::default(),
     );
 
-    let RepairOutcome::Repaired { rejected, .. } = outcome else {
+    let RepairOutcome::Repaired {
+        kind,
+        new_plan,
+        rejected,
+    } = outcome
+    else {
         panic!("visible prefix should eventually downgrade after insert-verification rejection");
     };
+    assert_eq!(kind, RepairKind::DowngradeToTypedBarrier);
+    assert_eq!(
+        new_plan.terminal_kind,
+        worldwake_ai::PlanTerminalKind::InformationBarrier {
+            topic: worldwake_core::TellTopic::EntityBelief { subject: target },
+        }
+    );
     assert!(
         rejected.contains(&(
             RepairKind::InsertVerification,
             RepairFailure::NoEpistemicSubstrate
         )),
-        "InsertVerification should short-circuit honestly while S139 is absent; rejected={rejected:?}"
+        "InsertVerification should honestly fall through without a witness candidate; rejected={rejected:?}"
     );
 }
 
