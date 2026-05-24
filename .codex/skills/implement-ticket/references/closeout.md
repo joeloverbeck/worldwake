@@ -131,6 +131,7 @@ For reassessment-only rejection:
 - If a modified doc or reference file is generator-owned, record the generator command in `## Verification Result` and phrase the closeout as regenerated fallout, not as a manual doc edit.
 - If several cited golden scenarios were lawful but only a subset truthfully exposed the new trace contract, narrow the ticket to the surviving proof surface(s) and record the rejected candidates as reassessment deviations instead of forcing parallel assertions onto non-emitting scenarios.
 - If the verification command that motivated the ticket remained the same but the final blocking culprit shifted during implementation, make sure the ticket's recorded reassessment/outcome explains that progression rather than implying the original blocker remained the only live cause throughout.
+- When replacing a drafted new golden, fixture, or scenario with a stronger existing proof split, record the substitution explicitly instead of treating it as a waiver. Name the drafted proof request, the existing proof seams and commands that covered the invariant, any newly added focused lower-layer proof, why a duplicate golden would be weaker or redundant, and any remaining gap or follow-up owner.
 
 ### Minimal active-ticket close-out shape
 
