@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-ai` plan revalidation (`plan_revalidation.rs`), if a fix is required
-**Deps**: S165EPIVERREP-003
+**Deps**: archive/tickets/S165EPIVERREP-003.md
 
 ## Problem
 

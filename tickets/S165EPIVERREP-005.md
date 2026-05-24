@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` decision trace (`decision_trace.rs`), `worldwake-cli` observer
-**Deps**: S165EPIVERREP-003
+**Deps**: archive/tickets/S165EPIVERREP-003.md
 
 ## Problem
 
