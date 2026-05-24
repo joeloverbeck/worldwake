@@ -213,10 +213,11 @@ ensures any future consumer reads a truthful value.
 ### D3. Trace and diagnostics for derived status distribution
 
 Extend `OpportunityCompilerLoad` in `crates/worldwake-ai/src/decision_trace.rs:1008`
-with `compiled_by_status: BTreeMap<BeliefStatusTag, u32>`, populated as each
-opportunity is emitted in `compile_opportunities`. `BeliefStatusTag` derives `Copy +
-Ord + Hash + Serialize + Deserialize` (`decision_event_payload.rs:280`), so the map
-is determinism-safe.
+with `compiled_by_status: BTreeMap<BeliefStatusTag, u32>`, populated from the final
+post-filter, post-cap emitted opportunities in `compile_opportunities` so the map
+partitions the live `compiled_count` value. `BeliefStatusTag` derives `Copy + Ord +
+Hash + Serialize + Deserialize` (`decision_event_payload.rs:280`), so the map is
+determinism-safe.
 
 Mirror the new field on `ScenarioDiagnosticsReport` in
 `crates/worldwake-ai/src/scenario_diagnostics/mod.rs` alongside the existing
@@ -227,11 +228,13 @@ distributions. Specific shape and aggregator selection is delegated to the
 implementing ticket so it matches whatever distribution convention the report
 currently applies for `BeliefStatusTag`-keyed maps.
 
-Add a focused diagnostics assertion: across an acquisition scenario with mixed
+Add focused diagnostics assertions: across an acquisition scenario with mixed
 belief freshness (e.g., one direct-observation claim + one decayed-past-threshold
-claim seeded by the test), the reported `compiled_by_status` distribution must
-contain at least two distinct tags. Without this assertion the post-fix
-`all-Probable` regression cannot be detected.
+claim seeded by the test), the live `OpportunityCompilerLoad::compiled_by_status`
+distribution must contain at least two distinct tags, and the
+`ScenarioDiagnosticsReport` mirror must aggregate per-status buckets from compiler
+loads. Without these assertions the post-fix `all-Probable` regression cannot be
+detected.
 
 ### D4. Consolidate `belief_status_tag_for_claim` into a shared helper
 
@@ -341,8 +344,9 @@ threaded through `RuntimeBeliefView`.
   tie-breaker order does not silently reshuffle).
 - **Negative cases**: no opportunity over-asserts certainty; no phantom action
   family; the `compiled_by_status` distribution under mixed-freshness inputs
-  contains at least two distinct tags (proves the all-`Probable` regression cannot
-  recur silently).
+  contains at least two distinct tags at the compiler-load seam and is mirrored by
+  scenario diagnostics (proves the all-`Probable` regression cannot recur
+  silently).
 - **No-regression**: acquisition/survival goldens unaffected; the AI crate test
   suite passes (covers D4's two existing call sites).
 

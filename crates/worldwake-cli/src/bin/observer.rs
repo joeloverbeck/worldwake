@@ -4407,6 +4407,12 @@ fn render_scenario_diagnostics_text(
         &report.performance.opportunity_compiled_count,
         options,
     )?;
+    render_percentile_bucket_map(
+        out,
+        "Opportunity compiled by status",
+        &report.performance.opportunity_compiled_by_status,
+        options,
+    )?;
     render_percentile_bucket(
         out,
         "Opportunity salience floored",
@@ -4466,6 +4472,23 @@ fn render_metric_map<K: std::fmt::Debug + Ord>(
         writeln!(out, "| ...others ({remaining}) | {remaining_count} |")?;
     }
     writeln!(out)
+}
+
+fn render_percentile_bucket_map<K: std::fmt::Debug + Ord>(
+    out: &mut impl FmtWrite,
+    title: &str,
+    map: &BTreeMap<K, worldwake_core::PercentileBucket>,
+    options: &DiagnosticsRenderOptions,
+) -> std::fmt::Result {
+    writeln!(out, "#### {title}\n")?;
+    if map.is_empty() {
+        writeln!(out, "No entries.\n")?;
+        return Ok(());
+    }
+    for (key, bucket) in map {
+        render_percentile_bucket(out, &format!("{key:?}"), bucket, options)?;
+    }
+    Ok(())
 }
 
 fn render_percentile_bucket(
@@ -8222,6 +8245,16 @@ mod tests {
             },
             performance: worldwake_ai::scenario_diagnostics::PerformanceMetrics {
                 opportunity_compiled_count: PercentileBucket::from_sorted(&[8, 12]),
+                opportunity_compiled_by_status: BTreeMap::from([
+                    (
+                        BeliefStatusTag::Certain,
+                        PercentileBucket::from_sorted(&[3, 5]),
+                    ),
+                    (
+                        BeliefStatusTag::Stale,
+                        PercentileBucket::from_sorted(&[1, 2]),
+                    ),
+                ]),
                 opportunity_salience_floored: PercentileBucket::from_sorted(&[1, 2]),
                 opportunity_learned_memory_damped: PercentileBucket::from_sorted(&[0, 1]),
                 opportunity_cap_truncated: PercentileBucket::from_sorted(&[0, 3]),
@@ -9138,6 +9171,7 @@ mod tests {
             salience_floored: 0,
             learned_memory_damped: 0,
             cap_truncated: 0,
+            compiled_by_status: BTreeMap::new(),
         });
         let mut sink = DecisionTraceSink::new();
         sink.record(trace);

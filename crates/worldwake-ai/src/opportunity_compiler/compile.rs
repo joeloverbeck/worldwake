@@ -161,6 +161,12 @@ pub fn compile_opportunities(
         load.cap_truncated = u32::try_from(opportunities.len() - cap).unwrap_or(u32::MAX);
         opportunities.truncate(cap);
     }
+    for opportunity in &opportunities {
+        *load
+            .compiled_by_status
+            .entry(opportunity.source_belief.status)
+            .or_insert(0) += 1;
+    }
     load.compiled_count = u32::try_from(opportunities.len()).unwrap_or(u32::MAX);
 
     (opportunities, load)
@@ -713,6 +719,52 @@ mod tests {
     }
 
     #[test]
+    fn compile_opportunities_records_per_status_distribution() {
+        let mut store = AgentBeliefStore::new();
+        for (slot, confidence) in [(2, 950), (3, 60)] {
+            let subject = entity(slot);
+            store
+                .known_entities
+                .insert(subject, belief(subject, CommodityKind::Bread, 3));
+            store.record_entity_claim(inventory_claim(
+                u64::from(slot),
+                subject,
+                CommodityKind::Bread,
+                3,
+                confidence,
+                Tick(10),
+            ));
+        }
+        let (world, agent) = view_with_store(
+            store,
+            CognitiveProfile::default(),
+            PerceptionProfile::default(),
+            RiskWeightProfile::default(),
+            LawAbidingProfile::default(),
+            SurveyMemory::default(),
+            LearnedOpportunityMemory::default(),
+        );
+        let view = PerAgentBeliefView::from_world_at_tick(agent, Tick(12), &world);
+
+        let (_opportunities, load) = compile_opportunities(agent, &view, &index());
+
+        assert_eq!(load.compiled_count, 2);
+        assert_eq!(load.compiled_by_status.len(), 2);
+        assert_eq!(
+            load.compiled_by_status.get(&BeliefStatusTag::Certain),
+            Some(&1)
+        );
+        assert_eq!(
+            load.compiled_by_status.get(&BeliefStatusTag::Stale),
+            Some(&1)
+        );
+        assert_eq!(
+            load.compiled_by_status.values().sum::<u32>(),
+            load.compiled_count
+        );
+    }
+
+    #[test]
     fn compile_opportunities_emits_same_keys_across_status_variations() {
         let mut mixed = AgentBeliefStore::new();
         let mut certain = AgentBeliefStore::new();
@@ -817,6 +869,10 @@ mod tests {
 
         assert_eq!(load.compiled_count, 2);
         assert_eq!(load.cap_truncated, 2);
+        assert_eq!(
+            load.compiled_by_status.values().sum::<u32>(),
+            load.compiled_count
+        );
         assert_eq!(
             opportunities
                 .iter()

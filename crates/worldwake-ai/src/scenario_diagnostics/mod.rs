@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
-    CognitiveArchetype, Discrepancy, GoalKind, MethodSchemaId, PercentileBucket, Permille, Tick,
-    TopicScope,
+    BeliefStatusTag, CognitiveArchetype, Discrepancy, GoalKind, MethodSchemaId, PercentileBucket,
+    Permille, Tick, TopicScope,
 };
 
 use crate::{PlanTerminalKindDiscriminant, SlotKind};
@@ -89,6 +89,7 @@ pub struct CoordinationMetrics {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PerformanceMetrics {
     pub opportunity_compiled_count: PercentileBucket,
+    pub opportunity_compiled_by_status: BTreeMap<BeliefStatusTag, PercentileBucket>,
     pub opportunity_salience_floored: PercentileBucket,
     pub opportunity_learned_memory_damped: PercentileBucket,
     pub opportunity_cap_truncated: PercentileBucket,
@@ -140,7 +141,8 @@ mod tests {
     use crate::{PlanTerminalKindDiscriminant, SlotKind};
     use std::collections::BTreeMap;
     use worldwake_core::{
-        CognitiveArchetype, Discrepancy, GoalKind, PercentileBucket, Permille, Tick, TopicScope,
+        BeliefStatusTag, CognitiveArchetype, Discrepancy, GoalKind, PercentileBucket, Permille,
+        Tick, TopicScope,
     };
 
     #[test]
@@ -271,6 +273,16 @@ mod tests {
             },
             performance: PerformanceMetrics {
                 opportunity_compiled_count: PercentileBucket::from_sorted(&[8, 13]),
+                opportunity_compiled_by_status: BTreeMap::from([
+                    (
+                        BeliefStatusTag::Certain,
+                        PercentileBucket::from_sorted(&[2, 3]),
+                    ),
+                    (
+                        BeliefStatusTag::Stale,
+                        PercentileBucket::from_sorted(&[1, 4]),
+                    ),
+                ]),
                 opportunity_salience_floored: PercentileBucket::from_sorted(&[1, 2]),
                 opportunity_learned_memory_damped: PercentileBucket::from_sorted(&[0, 1]),
                 opportunity_cap_truncated: PercentileBucket::from_sorted(&[0, 2]),

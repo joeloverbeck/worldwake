@@ -86,6 +86,7 @@ struct ScenarioDiagnosticsBuilder {
     dead_claimant_cleanup_count: u64,
 
     opportunity_compiled_values: Vec<u64>,
+    opportunity_compiled_by_status_values: BTreeMap<BeliefStatusTag, Vec<u64>>,
     opportunity_salience_floored_values: Vec<u64>,
     opportunity_learned_memory_damped_values: Vec<u64>,
     opportunity_cap_truncated_values: Vec<u64>,
@@ -185,9 +186,15 @@ impl ScenarioDiagnosticsBuilder {
             planning.candidates.omitted_violation_detection.len(),
         );
 
-        if let Some(load) = trace.opportunity_compiler_load {
+        if let Some(load) = trace.opportunity_compiler_load.as_ref() {
             self.opportunity_compiled_values
                 .push(u64::from(load.compiled_count));
+            for (&status, &count) in &load.compiled_by_status {
+                self.opportunity_compiled_by_status_values
+                    .entry(status)
+                    .or_default()
+                    .push(u64::from(count));
+            }
             self.opportunity_salience_floored_values
                 .push(u64::from(load.salience_floored));
             self.opportunity_learned_memory_damped_values
@@ -518,6 +525,11 @@ impl ScenarioDiagnosticsBuilder {
                 opportunity_compiled_count: bucket_from_unsorted(
                     &mut self.opportunity_compiled_values,
                 ),
+                opportunity_compiled_by_status: self
+                    .opportunity_compiled_by_status_values
+                    .into_iter()
+                    .map(|(status, mut values)| (status, bucket_from_unsorted(&mut values)))
+                    .collect(),
                 opportunity_salience_floored: bucket_from_unsorted(
                     &mut self.opportunity_salience_floored_values,
                 ),
@@ -1188,6 +1200,20 @@ mod tests {
             PercentileBucket::from_sorted(&[5])
         );
         assert_eq!(
+            report
+                .performance
+                .opportunity_compiled_by_status
+                .get(&BeliefStatusTag::Certain),
+            Some(&PercentileBucket::from_sorted(&[3]))
+        );
+        assert_eq!(
+            report
+                .performance
+                .opportunity_compiled_by_status
+                .get(&BeliefStatusTag::Stale),
+            Some(&PercentileBucket::from_sorted(&[2]))
+        );
+        assert_eq!(
             report.performance.opportunity_salience_floored,
             PercentileBucket::from_sorted(&[1])
         );
@@ -1319,6 +1345,10 @@ mod tests {
                 salience_floored: 1,
                 learned_memory_damped: 2,
                 cap_truncated: 3,
+                compiled_by_status: BTreeMap::from([
+                    (BeliefStatusTag::Certain, 3),
+                    (BeliefStatusTag::Stale, 2),
+                ]),
             }),
             snapshot_admissions: None,
             snapshot_cache_counters: Some(SnapshotCacheCounters {

@@ -6266,6 +6266,44 @@
       "max": 16,
       "mean": 15
     },
+    "opportunity_compiled_by_status": {
+      "Certain": {
+        "n": 2536,
+        "min": 1,
+        "p50": 16,
+        "p95": 16,
+        "p99": 16,
+        "max": 16,
+        "mean": 15
+      },
+      "Probable": {
+        "n": 667,
+        "min": 1,
+        "p50": 1,
+        "p95": 2,
+        "p99": 2,
+        "max": 3,
+        "mean": 1
+      },
+      "Stale": {
+        "n": 189,
+        "min": 1,
+        "p50": 2,
+        "p95": 4,
+        "p99": 4,
+        "max": 4,
+        "mean": 1
+      },
+      "Disputed": {
+        "n": 2,
+        "min": 1,
+        "p50": 1,
+        "p95": 1,
+        "p99": 1,
+        "max": 1,
+        "mean": 1
+      }
+    },
     "opportunity_salience_floored": {
       "n": 2549,
       "min": 0,
