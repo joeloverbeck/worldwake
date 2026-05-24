@@ -271,8 +271,11 @@ authoritative resolved-profile components.
 
 ## Verification Result
 
-1. Passed `cargo test -p worldwake-ai --test golden_ai scenarios::cognitive_archetypes_divergence -- --nocapture` (2 passed; proves the two landed golden tests directly).
+Outcome amended: 2026-05-24.
+
+1. Passed `cargo test -p worldwake-ai --test golden_ai scenarios::cognitive_archetypes_divergence -- --nocapture` (2 passed at original closeout; S167COGARCBEH-004 later marked these tests ignored so the dedicated workflow can run them).
 2. Passed `cargo test -p worldwake-ai` (package suite passed, including the existing seven `cognitive_archetypes.rs` tests).
 3. Passed `cargo test --workspace` (workspace suite passed before the full scripted gate).
 4. Passed `cargo run -p worldwake-cli --bin scenario-coverage -- --write` (regenerated the coverage doc after fixture tightening).
 5. Passed `./scripts/verify.sh` after regeneration (fmt check, workspace tests, repository shell checks, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and scenario coverage check).
+6. Passed `cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 scenarios::cognitive_archetypes_divergence::` after S167COGARCBEH-004 landed the dedicated CI metadata and workflow lane.

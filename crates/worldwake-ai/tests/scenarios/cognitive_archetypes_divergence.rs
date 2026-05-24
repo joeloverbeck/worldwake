@@ -370,6 +370,7 @@ fn agent_name_map(def: &ScenarioDef) -> BTreeMap<&str, &AgentDef> {
 // Cross-system chain: AgentDef.archetype -> RoutePreferenceProfile ->
 //                     route-aware search cost -> SelectedPlanTrace.
 #[test]
+#[ignore = "CI-only: archetype divergence golden; run via golden-cognitive-archetypes workflow"]
 fn forward() {
     let def = load_s167_def();
     let agents = agent_name_map(&def);
@@ -403,6 +404,7 @@ fn forward() {
 // Cross-system chain: swapped AgentDef.archetype -> swapped
 //                     RoutePreferenceProfile -> reversed selected route.
 #[test]
+#[ignore = "CI-only: archetype divergence golden; run via golden-cognitive-archetypes workflow"]
 fn counterfactual_symmetry() {
     let forward = observe_run(&load_s167_def());
     let swapped = observe_run(&swapped_archetype_def());

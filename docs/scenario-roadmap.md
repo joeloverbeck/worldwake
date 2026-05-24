@@ -701,7 +701,7 @@ The committed proof pair is Greedy vs. Cautious. Greedy's lower `RoutePreference
 
 The row has no `survival_health_contract` and runs on a short tick budget; the proof is decision divergence, counterfactual symmetry, and knowledge legality rather than 1440-tick coexistence. The scenario uses no new mechanics: existing topology, resource-source, profile, and route-aware search substrate author the tension, and the archetype delta flows through ordinary ranking/search.
 
-The dedicated CI lane remains active follow-up work in [`S167COGARCBEH-004`](../tickets/S167COGARCBEH-004.md); this row does not claim that workflow path has landed yet.
+The dedicated CI lane is landed at [`.github/workflows/golden-cognitive-archetypes.yml`](../.github/workflows/golden-cognitive-archetypes.yml), with the two backing goldens marked ignored by default and run through that workflow's `golden_ai --ignored` matrix entry.
 
 ## 6. Maintenance Workflow
 

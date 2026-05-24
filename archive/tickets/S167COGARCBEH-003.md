@@ -47,11 +47,10 @@ existing entry contract template.
    `simulation_gaps.rs` (auxiliary simulation-gap coverage only). The new
    archetype row follows this pattern — it owns the FND-31 archetype-decision
    causal proof, not a survival-coexistence landing.
-5. Live reassessment found that `.github/workflows/golden-cognitive-archetypes.yml`
-   does not exist yet because S167COGARCBEH-004 is still active and owns that
-   CI lane. This ticket must not claim the workflow as landed or require the
-   workflow path to resolve; it may cite the active follow-up as the CI-lane
-   owner if the roadmap entry mentions CI visibility.
+5. Live reassessment at the time of this ticket found that
+   `.github/workflows/golden-cognitive-archetypes.yml` did not exist yet because
+   S167COGARCBEH-004 owned that CI lane. Outcome amended 2026-05-24:
+   S167COGARCBEH-004 later landed the workflow at that path.
 
 ## Architecture Check
 
@@ -138,9 +137,8 @@ legality, not 1440-tick coexistence. The scenario uses no new mechanics:
 existing substrate primitives author the route-choice tension, and the
 archetype delta flows through ordinary route-aware ranking/search.
 
-The dedicated CI lane is tracked by active follow-up
-[`S167COGARCBEH-004`](../../tickets/S167COGARCBEH-004.md) and is not claimed as
-landed by this row.
+The dedicated CI lane is landed at
+[`.github/workflows/golden-cognitive-archetypes.yml`](../../.github/workflows/golden-cognitive-archetypes.yml).
 ```
 
 ### 4. Updated Status Summary in §3
@@ -157,9 +155,8 @@ Added the new auxiliary row to the §3 status table.
 - Authoring the scenario file — completed in
   [`archive/tickets/S167COGARCBEH-001.md`](S167COGARCBEH-001.md).
 - Authoring the golden test — owned by S167COGARCBEH-002.
-- CI workflow file — owned by S167COGARCBEH-004. Because that ticket is still
-  active, this ticket must not require
-  `.github/workflows/golden-cognitive-archetypes.yml` to exist yet.
+- CI workflow file — landed later by S167COGARCBEH-004 at
+  [`.github/workflows/golden-cognitive-archetypes.yml`](../../.github/workflows/golden-cognitive-archetypes.yml).
 - Coverage doc regeneration — completed in
   [`archive/tickets/S167COGARCBEH-001.md`](S167COGARCBEH-001.md).
 - Any change to `scenario_coverage.rs`'s `FEATURES` table or the
@@ -212,7 +209,8 @@ Added the new auxiliary row to the §3 status table.
    feature name appears in both files and the text matches.
 2. Passed `test -f scenarios/cognitive-archetypes-divergence.ron && test -f
    crates/worldwake-ai/tests/scenarios/cognitive_archetypes_divergence.rs &&
-   test -f tickets/S167COGARCBEH-004.md` — verify cited S167 source/proof/owner
+   test -f tickets/S167COGARCBEH-004.md` — verified cited S167 source/proof/owner
+   while S167COGARCBEH-004 was still active
    paths resolve.
 3. Passed `git diff --check -- docs/scenario-roadmap.md
    archive/tickets/S167COGARCBEH-003.md` — scoped Markdown whitespace hygiene.
@@ -233,18 +231,24 @@ Completed on 2026-05-24.
   auxiliary entry for `cognitive-archetypes-divergence`.
 - Truth-synced this ticket's draft wording: the landed causal reason is the
   Greedy vs. Cautious route-preference penalty delta, not a portfolio economic
-  weight trade, and the dedicated CI lane remains active follow-up work in
-  S167COGARCBEH-004 rather than a landed workflow file.
+  weight trade, and the dedicated CI lane was left to S167COGARCBEH-004.
+
+Outcome amended: 2026-05-24.
+
+- S167COGARCBEH-004 landed the dedicated CI lane at
+  [`.github/workflows/golden-cognitive-archetypes.yml`](../../.github/workflows/golden-cognitive-archetypes.yml).
 
 ## Deviations
 
-- The roadmap entry cites active `tickets/S167COGARCBEH-004.md` as the CI-lane
-  owner instead of linking `.github/workflows/golden-cognitive-archetypes.yml`,
-  because that workflow is intentionally not created until S167COGARCBEH-004.
+- The roadmap entry originally cited active `tickets/S167COGARCBEH-004.md` as the
+  CI-lane owner because the workflow was intentionally not created until
+  S167COGARCBEH-004. Outcome amended 2026-05-24: the roadmap now links the landed
+  workflow file.
 
 ## Verification Result
 
 - Passed `grep -n "Cognitive archetypes\|CognitiveArchetypes" docs/scenario-roadmap.md crates/worldwake-cli/src/bin/scenario_coverage.rs`.
-- Passed `test -f scenarios/cognitive-archetypes-divergence.ron && test -f crates/worldwake-ai/tests/scenarios/cognitive_archetypes_divergence.rs && test -f tickets/S167COGARCBEH-004.md`.
+- Passed `test -f scenarios/cognitive-archetypes-divergence.ron && test -f crates/worldwake-ai/tests/scenarios/cognitive_archetypes_divergence.rs && test -f tickets/S167COGARCBEH-004.md` before S167COGARCBEH-004 was archived.
+- Passed post-S167COGARCBEH-004 stale-reference repair for the landed workflow path.
 - Passed `git diff --check -- docs/scenario-roadmap.md archive/tickets/S167COGARCBEH-003.md`.
 - Waived `scripts/verify.sh` for this per-ticket closeout because the landed diff is non-generated Markdown only; the implement-spec-tickets final branch phase still owns the full pre-PR gate before push.

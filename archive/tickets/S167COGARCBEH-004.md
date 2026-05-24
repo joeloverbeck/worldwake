@@ -1,10 +1,10 @@
 # S167COGARCBEH-004: Dedicated CI workflow lane for archetype golden
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: [`archive/tickets/S167COGARCBEH-002.md`](../archive/tickets/S167COGARCBEH-002.md), [`specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md)
+**Deps**: [`archive/tickets/S167COGARCBEH-002.md`](S167COGARCBEH-002.md), [`specs/S167-cognitive-archetype-behavioral-proof.md`](../../specs/S167-cognitive-archetype-behavioral-proof.md)
 
 ## Problem
 
@@ -32,7 +32,7 @@ The convention for per-family golden workflows is established
    matrix below; create a new golden-<family>.yml when a new scenario
    family lands."
 2. The spec
-   ([`specs/S167-cognitive-archetype-behavioral-proof.md`](../specs/S167-cognitive-archetype-behavioral-proof.md))
+   ([`specs/S167-cognitive-archetype-behavioral-proof.md`](../../specs/S167-cognitive-archetype-behavioral-proof.md))
    D5 commits to a new `.github/workflows/golden-cognitive-archetypes.yml`
    modeled on `golden-drive-escalation.yml`. The matrix entry must
    reference S167COGARCBEH-002's new test module (`cognitive_archetypes_divergence`).
@@ -70,12 +70,12 @@ The convention for per-family golden workflows is established
    this lane's initial state. Copying its shape minimizes
    convention-drift across the family-lane set.
 
-## Verification Layers
+## Verified Layers
 
-1. CI lane invocation correctness -> the workflow lane runs on the next
-   PR after landing and the matrix entry's `filter` value picks up the
-   two tests authored in S167COGARCBEH-002. Verified by inspecting the
-   workflow run output on the PR that lands this ticket.
+1. CI lane invocation correctness -> locally verified with the exact workflow
+   command after adding the required ignored-test metadata:
+   `cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 scenarios::cognitive_archetypes_divergence::`
+   executed exactly the two S167 tests.
 2. Workflow file shape conformance -> manual diff against
    `golden-drive-escalation.yml` confirms parallel structure: triggers,
    concurrency, jobs, matrix, steps, toolchain pin, test invocation.
@@ -83,11 +83,11 @@ The convention for per-family golden workflows is established
    template's Verification Layers are not applicable — no decision
    trace, action trace, or event-log delta is involved.
 
-## What to Change
+## Landed Changes
 
-### 1. Create `.github/workflows/golden-cognitive-archetypes.yml`
+### 1. Created `.github/workflows/golden-cognitive-archetypes.yml`
 
-Copy `.github/workflows/golden-drive-escalation.yml` and adapt:
+Copied `.github/workflows/golden-drive-escalation.yml` and adapted:
 
 ```yaml
 # Family-per-matrix-workflow convention: add scenarios to the matrix below; create a
@@ -125,7 +125,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: <copy-from-sibling-lane-at-write-time>
+          toolchain: 1.93.0
           components: clippy,rustfmt
 
       - name: Cache cargo artifacts
@@ -137,32 +137,32 @@ jobs:
         run: cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 ${{ matrix.filter }}
 ```
 
-Important: replace `<copy-from-sibling-lane-at-write-time>` with the
-current toolchain value used by `golden-drive-escalation.yml` (currently
-`1.93.0`, but verify at write time — the project may have advanced).
+The landed toolchain value is `1.93.0`, copied from
+`golden-drive-escalation.yml` at implementation time.
 
-### 2. Verify the test filter resolves
+### 2. Verified the test filter resolves
 
-After the workflow lands, the next PR run should execute exactly the two
-tests authored in S167COGARCBEH-002
+The exact workflow command executes the two tests authored in S167COGARCBEH-002
 (`scenarios::cognitive_archetypes_divergence::forward` and
 `scenarios::cognitive_archetypes_divergence::counterfactual_symmetry`).
-Confirm by inspecting the workflow run logs on the PR. If the filter does
-not match, narrow it to the exact module path observed in
-`cargo test -p worldwake-ai --test golden_ai -- --list | grep
-cognitive_archetypes_divergence`.
+The first attempted workflow-shaped run executed zero tests because those
+tests were not marked ignored yet; this ticket corrected that S167 golden
+metadata so the lane is non-empty.
 
-## Files to Touch
+## Landed Files
 
 - `.github/workflows/golden-cognitive-archetypes.yml` (new)
+- `crates/worldwake-ai/tests/scenarios/cognitive_archetypes_divergence.rs`
+  (updated only the two `#[ignore]` metadata annotations so the
+  workflow's `--ignored` invocation executes the S167 golden tests)
 
 ## Out of Scope
 
 - Authoring the scenario file — completed in
-  [`archive/tickets/S167COGARCBEH-001.md`](../archive/tickets/S167COGARCBEH-001.md).
+  [`archive/tickets/S167COGARCBEH-001.md`](S167COGARCBEH-001.md).
 - Authoring the golden test — owned by S167COGARCBEH-002.
 - Adding scenario-roadmap entry for this auxiliary proof row — completed in
-  [`archive/tickets/S167COGARCBEH-003.md`](../archive/tickets/S167COGARCBEH-003.md).
+  [`archive/tickets/S167COGARCBEH-003.md`](S167COGARCBEH-003.md).
 - Adding additional archetype pairs as matrix entries — reserved for
   future specs per the spec's Follow-ups section (`Bold vs Methodical`,
   `Sociable vs Skeptical`, etc.). Those land as additional matrix
@@ -171,17 +171,19 @@ cognitive_archetypes_divergence`.
 - Changing the toolchain version used by sibling lanes — this ticket
   matches whatever value is current at write time.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests That Passed Or Remain PR-Owned
 
-1. The new workflow runs successfully on the PR that lands it AND on the
-   PR that subsequently lands S167COGARCBEH-002's tests (verifying the
-   matrix `filter` resolves to the intended test set).
-2. The two cognitive-archetypes-divergence tests appear in the workflow's
-   output on a passing run.
-3. Existing suite: all sibling `golden-*.yml` lanes continue to run
-   unchanged.
+1. Passed locally with the exact workflow command: the matrix `filter`
+   resolves to the intended test set and executes the two S167 tests.
+2. Passed locally: both `cognitive_archetypes_divergence` tests appear in
+   the exact workflow command output.
+3. Waived PR-only workflow-run inspection until the branch is pushed and
+   GitHub Actions runs the new lane; the local command covers the same
+   Cargo invocation and filter.
+4. Passed by diff inspection: sibling `golden-*.yml` lanes were not
+   modified.
 
 ### Invariants
 
@@ -195,24 +197,57 @@ cognitive_archetypes_divergence`.
 3. The toolchain version matches the value in sibling lanes at write
    time (not hardcoded to `1.93.0` if the project has advanced).
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Test Surfaces
 
-1. `None — CI-infrastructure ticket; verification is the workflow's own
-   pass/fail status on the PR that lands it and the PR that lands
-   S167COGARCBEH-002's tests.`
+1. No new tests were added. The existing S167 golden tests gained
+   `#[ignore]` metadata so the dedicated CI lane's `--ignored` command
+   actually runs them.
 
-### Commands
+### Commands Run
 
-1. `diff .github/workflows/golden-cognitive-archetypes.yml
-   .github/workflows/golden-drive-escalation.yml` — confirm the diff is
-   limited to: workflow name, concurrency group name, matrix scenario
-   name and filter, cache key, run-step display name. Anything else is
-   convention drift and warrants review.
-2. After landing: inspect the workflow run on the PR via GitHub Actions
-   UI; confirm the matrix entry runs and the two
-   `cognitive_archetypes_divergence` tests appear in the test output.
-3. `scripts/verify.sh` (full pre-PR gate; does not exercise GitHub
-   Actions itself but catches local regressions in the test that the
-   workflow will run).
+1. Passed `cargo test -p worldwake-ai --test golden_ai -- --list cognitive_archetypes_divergence`
+   (listed `scenarios::cognitive_archetypes_divergence::forward` and
+   `scenarios::cognitive_archetypes_divergence::counterfactual_symmetry`).
+2. The first `cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 scenarios::cognitive_archetypes_divergence::`
+   run executed zero tests, exposing the missing ignored-test metadata.
+3. Passed `cargo fmt --all`.
+4. Passed `cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 scenarios::cognitive_archetypes_divergence::`
+   (2 passed).
+5. Passed `diff -u .github/workflows/golden-drive-escalation.yml .github/workflows/golden-cognitive-archetypes.yml`
+   by inspection; the diff is limited to workflow name, concurrency group,
+   matrix scenario/filter, and cache key.
+6. Waived `scripts/verify.sh` for this per-ticket closeout because the
+   `implement-spec-tickets` harness owns the full pre-PR gate before the
+   final branch push.
+
+## Outcome
+
+Completed on 2026-05-24.
+
+- Added `.github/workflows/golden-cognitive-archetypes.yml` as a
+  per-family golden workflow lane matching the live
+  `golden-drive-escalation.yml` structure and Rust toolchain pin.
+- Set the lane matrix to
+  `scenarios::cognitive_archetypes_divergence::`.
+- Added ignored-test metadata to the two S167 cognitive archetype golden
+  tests so the workflow's `--ignored` command executes the intended tests
+  instead of passing with zero tests.
+
+## Deviations
+
+- The ticket originally listed only the workflow file as touched. Live
+  verification showed the drafted workflow command executed zero tests
+  until the two S167 golden tests were marked ignored, matching the
+  repository's existing per-family golden lane convention.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --test golden_ai -- --list cognitive_archetypes_divergence`.
+- Passed `cargo fmt --all`.
+- Passed `cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 scenarios::cognitive_archetypes_divergence::`.
+- Passed workflow diff inspection against `.github/workflows/golden-drive-escalation.yml`.
+- Waived `scripts/verify.sh` for this ticket closeout because the
+  `implement-spec-tickets` harness owns the final pre-push verification
+  gate for the S167 family.
