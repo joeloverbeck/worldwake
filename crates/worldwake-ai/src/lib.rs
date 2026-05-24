@@ -33,6 +33,7 @@ pub mod motive_source_mapping;
 pub mod opportunity_compiler;
 pub mod opportunity_expectation_failure;
 pub mod partial_plan;
+pub mod partial_plan_revalidation;
 pub mod perf_telemetry;
 pub mod plan_guard;
 pub mod plan_guard_build;
@@ -82,13 +83,14 @@ pub use decision_trace::{
     CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace, CandidateTrace,
     CausalLinkCapHit, CompetitionDiscount, DecisionOutcome, DecisionTraceSink, DesireFullyBlocked,
     ExecutionFailureReason, ExecutionTrace, ExhaustionTraceEntry, GoalHistoryEntry,
-    GoalSwitchSummary, GoalTraceStatus, InterruptTrace, PatrolRouteSnapshotTrace,
-    PayloadOverrideFailureReason, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
-    PlannedStepSummary, PlanningPipelineTrace, PlanningStateCacheCounters,
-    PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
-    PrerequisiteExclusionReason, PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace,
-    PursuitDiagnostic, PursuitInvalidationReason, PursuitOmissionReason, RankedGoalSummary,
-    RejectedMethodTrace, RepairAttemptTrace, RootCandidateFilterReason, RootCandidateOutcome,
+    GoalSwitchSummary, GoalTraceStatus, InterruptTrace, PartialPlanResumeDecision,
+    PartialPlanResumeTrace, PatrolRouteSnapshotTrace, PayloadOverrideFailureReason,
+    PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace, PlannedStepSummary,
+    PlanningPipelineTrace, PlanningStateCacheCounters, PoliticalCandidateOmission,
+    PoliticalCandidateOmissionReason, PoliticalGoalFamily, PrerequisiteExclusionReason,
+    PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace, PursuitDiagnostic,
+    PursuitInvalidationReason, PursuitOmissionReason, RankedGoalSummary, RejectedMethodTrace,
+    RepairAttemptTrace, RootCandidateFilterReason, RootCandidateOutcome,
     RootCandidatePayloadStatus, RootCandidateSkipReason, RootCandidateTrace,
     RootOperatorOmissionDetail, RootOperatorOmissionReason, RootOperatorOmissionTrace,
     SameGoalPlanningStopReason, SameGoalPlanningTrace, SelectedPlanReplacementKind,
@@ -126,8 +128,12 @@ pub use partial_plan::{
     BarrierFact, CoordinationBarrierBlockerRecord, PartialPlanSegment, PartialPlanSegmentId,
     PartialPlanSegmentSeed, PlannedSkeletonStep, budget_exhausted_partial_plan_segment,
     build_partial_plan_segment, coordination_barrier_blocking_fact,
-    record_coordination_barrier_blocker, resume_conditions_for_barrier_fact,
-    terminal_to_discrepancy,
+    information_barrier_partial_plan_segment, record_coordination_barrier_blocker,
+    resume_conditions_for_barrier_fact, terminal_to_discrepancy,
+};
+pub use partial_plan_revalidation::{
+    SkeletonRevalidationContext, SkeletonRevalidationReason, SkeletonRevalidationVerdict,
+    revalidate_skeleton_step,
 };
 pub use plan_guard::{ExpectationKind, Invalidator, PlanExpectation, PlanGuard, RequiredFact};
 pub use plan_guard_build::{

@@ -24,7 +24,8 @@ use crate::plan_step_expectations::{
     expire_plan_step_expectations, persist_expectation_store_update, write_plan_step_expectations,
 };
 use crate::search::{
-    PlanSearchResult, SearchTraceMetadata, search_plan_with_trace_metadata_and_source,
+    PartialPlanSkeletonSource, PlanSearchResult, SearchTraceMetadata, search_plan_seeded,
+    search_plan_with_trace_metadata_and_source,
 };
 use crate::{
     AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime,
@@ -62,6 +63,7 @@ pub(crate) struct CandidatePlanSearch {
     pub opportunity: OpportunityKey,
     pub result: PlanSearchResult,
     pub perceived_cost: Option<u32>,
+    pub skeleton_source: Option<PartialPlanSkeletonSource>,
     pub trace_metadata: SearchTraceMetadata,
     pub binding_rejections: Vec<BindingRejection>,
     pub expansion_summaries: Vec<crate::decision_trace::SearchExpansionSummary>,
@@ -760,31 +762,64 @@ pub(super) fn build_candidate_plans_with_sources(
             }
             _ => *cognitive,
         };
-        let result = search_plan_with_trace_metadata_and_source(
-            &snapshot,
-            &ranked.offer,
-            semantics_table,
-            action_defs,
-            action_handlers,
-            &effective_cognitive,
-            execution_budget,
-            recipe_registry,
-            blocked_memory,
-            current_tick,
-            if collect_rejections {
-                Some(&mut rejections)
-            } else {
-                None
-            },
-            if collect_expansion_summaries {
-                Some(&mut expansions)
-            } else {
-                None
-            },
-            Some(&mut trace_metadata),
-            candidate_source,
-            opportunity_index,
-        );
+        let seeded_skeleton = ranked
+            .partial_plan_segment
+            .as_ref()
+            .and_then(|segment| segment.remaining_skeleton.as_deref());
+        let result = if let Some(skeleton) = seeded_skeleton {
+            search_plan_seeded(
+                skeleton,
+                &snapshot,
+                &ranked.offer,
+                semantics_table,
+                action_defs,
+                action_handlers,
+                &effective_cognitive,
+                execution_budget,
+                recipe_registry,
+                blocked_memory,
+                current_tick,
+                if collect_rejections {
+                    Some(&mut rejections)
+                } else {
+                    None
+                },
+                if collect_expansion_summaries {
+                    Some(&mut expansions)
+                } else {
+                    None
+                },
+                Some(&mut trace_metadata),
+                candidate_source,
+                opportunity_index,
+            )
+        } else {
+            search_plan_with_trace_metadata_and_source(
+                &snapshot,
+                &ranked.offer,
+                semantics_table,
+                action_defs,
+                action_handlers,
+                &effective_cognitive,
+                execution_budget,
+                recipe_registry,
+                blocked_memory,
+                current_tick,
+                if collect_rejections {
+                    Some(&mut rejections)
+                } else {
+                    None
+                },
+                if collect_expansion_summaries {
+                    Some(&mut expansions)
+                } else {
+                    None
+                },
+                Some(&mut trace_metadata),
+                candidate_source,
+                opportunity_index,
+            )
+        };
         let mut result = match result {
             PlanSearchResult::Found(plan)
                 if plan.steps.first().is_some_and(|step| {
@@ -840,6 +875,7 @@ pub(super) fn build_candidate_plans_with_sources(
             opportunity,
             result,
             perceived_cost,
+            skeleton_source: trace_metadata.skeleton_source.clone(),
             trace_metadata,
             binding_rejections: rejections,
             expansion_summaries: expansions,
@@ -1099,6 +1135,10 @@ fn write_budget_exhausted_partial_plan_segments(
         let PlanSearchResult::BudgetExhausted { expansions_used } = plan.result else {
             continue;
         };
+        let remaining_skeleton = plan
+            .skeleton_source
+            .as_ref()
+            .map(|source| source.remaining_skeleton.clone());
         let Some(candidate) = ranked_candidates.iter().find(|candidate| {
             candidate.offer.key == plan.opportunity.goal_key
                 && candidate.offer.anchor == plan.opportunity.anchor
@@ -1115,6 +1155,7 @@ fn write_budget_exhausted_partial_plan_segments(
             candidate.offer.clone(),
             u32::from(expansions_used),
             u32::from(cognitive.max_node_expansions),
+            remaining_skeleton,
             tick,
             written
                 .try_into()
@@ -1133,6 +1174,21 @@ fn write_budget_exhausted_partial_plan_segments(
         written += 1;
     }
     written
+}
+
+fn write_information_barrier_partial_plan_segment(
+    _agenda_state: &mut AgendaState,
+    _ranked_candidates: &OrderedRanked<'_>,
+    _selected_plan: &PlannedPlan,
+    _plans: &[CandidatePlanSearch],
+    _tick: Tick,
+    _cognitive: &CognitiveProfile,
+) -> bool {
+    // S168PARPLASKE-006 producer disabled — see tickets/S168PARPLASKE-007.
+    // The D7 chain (suspend → spawn companion → resume) has unproven end-to-end
+    // behavior; producer activation trapped agents in 5+ gated goldens. Skeleton
+    // reuse via the budget-exhausted producer is unaffected.
+    false
 }
 
 fn frontier_exhaustion_entry(
@@ -2197,6 +2253,28 @@ fn plan_and_validate_next_step_with_opportunity_index(
                         cognitive.decision_history_alternatives,
                         prepared_frame.as_ref(),
                     );
+                    if write_information_barrier_partial_plan_segment(
+                        agenda_state,
+                        ranked_candidates,
+                        &selected_plan,
+                        &plans.plans,
+                        tick,
+                        cognitive,
+                    ) {
+                        runtime.current_plan = None;
+                        runtime.current_step_index = 0;
+                        runtime.step_in_flight = false;
+                        runtime.materialization_bindings.clear();
+                        facility_intents.intents.clear();
+                        *jc = None;
+                        runtime.accepted_repair = None;
+                        runtime.pending_repair_context = None;
+                        runtime.last_priority_class = ranked_candidates
+                            .iter()
+                            .find(|candidate| candidate.key == selected_plan.opportunity)
+                            .map(|candidate| candidate.priority_class);
+                        return (None, None);
+                    }
                     let current_place = SpatialBeliefView::effective_place(&refreshed_view, agent)
                         .expect("plan adoption expects actor to have an effective place");
                     adopt_selected_plan(
@@ -2735,6 +2813,54 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
                     });
                 }
 
+                if write_information_barrier_partial_plan_segment(
+                    agenda_state,
+                    ranked_candidates,
+                    &selected_plan,
+                    &plans.plans,
+                    tick,
+                    cognitive,
+                ) {
+                    runtime.current_plan = None;
+                    runtime.current_step_index = 0;
+                    runtime.step_in_flight = false;
+                    runtime.materialization_bindings.clear();
+                    facility_intents.intents.clear();
+                    *jc = None;
+                    runtime.accepted_repair = None;
+                    runtime.pending_repair_context = None;
+                    runtime.last_priority_class = ranked_candidates
+                        .iter()
+                        .find(|candidate| candidate.key == selected_plan.opportunity)
+                        .map(|candidate| candidate.priority_class);
+                    runtime.dirty = DirtySet::default();
+                    let view =
+                        runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
+                    let next_step = current_step(runtime).cloned();
+                    let next_step_valid = next_step.as_ref().map(|step| {
+                        revalidate_next_step(
+                            &view,
+                            agent,
+                            step,
+                            &runtime.materialization_bindings,
+                            action_defs,
+                            action_handlers,
+                        )
+                    });
+                    return (
+                        next_step,
+                        next_step_valid,
+                        plan_continued,
+                        Some(plan_search_trace),
+                        Some(selection_trace),
+                        portfolio_trace,
+                        snapshot_admissions,
+                        snapshot_cache_counters,
+                        planning_state_cache_counters,
+                        pending_tracker_increments,
+                    );
+                }
+
                 let current_place = SpatialBeliefView::effective_place(&refreshed_view, agent)
                     .expect("plan adoption expects actor to have an effective place");
                 adopt_selected_plan(
@@ -2890,6 +3016,7 @@ mod tests {
         planning_time_target_belief_presence, record_exhausted_goals, selected_plan_value,
         summarize_ranked_goal, summarize_selected_plan, summarize_snapshot_continuation,
         write_budget_exhausted_partial_plan_segments,
+        write_information_barrier_partial_plan_segment,
     };
     use crate::{
         AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
@@ -2907,7 +3034,7 @@ mod tests {
         feasibility::FeasibilityHint,
         goal_schema::{FrontierExhaustionStrategy, GoalDispatchKeySchemaExt},
         plan_selection::SelectionCandidatePlan,
-        search::SearchTraceMetadata,
+        search::{PartialPlanSkeletonSource, SearchTraceMetadata},
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -2967,6 +3094,17 @@ mod tests {
             goal,
             Vec::new(),
             PlanTerminalKind::GoalSatisfied,
+        )
+    }
+
+    fn information_barrier_plan(opportunity: OpportunityKey, subject: EntityId) -> PlannedPlan {
+        PlannedPlan::new(
+            opportunity,
+            opportunity.goal_key,
+            Vec::new(),
+            PlanTerminalKind::InformationBarrier {
+                topic: TellTopic::EntityBelief { subject },
+            },
         )
     }
 
@@ -3122,10 +3260,55 @@ mod tests {
             opportunity,
             result,
             perceived_cost: None,
+            skeleton_source: None,
             trace_metadata: SearchTraceMetadata::default(),
             binding_rejections: Vec::new(),
             expansion_summaries: Vec::new(),
         }
+    }
+
+    fn searched_plan_with_skeleton(
+        opportunity: OpportunityKey,
+        result: PlanSearchResult,
+        source: PartialPlanSkeletonSource,
+    ) -> CandidatePlanSearch {
+        CandidatePlanSearch {
+            skeleton_source: Some(source.clone()),
+            trace_metadata: SearchTraceMetadata {
+                skeleton_source: Some(source),
+                ..SearchTraceMetadata::default()
+            },
+            ..searched_plan(opportunity, result)
+        }
+    }
+
+    #[test]
+    fn candidate_plan_search_retains_partial_plan_skeleton_source() {
+        let opportunity = consume_opportunity(CommodityKind::Bread, OpportunityAnchor::None);
+        let source = PartialPlanSkeletonSource {
+            remaining_skeleton: vec![crate::PlannedSkeletonStep {
+                op: PlannerOpKind::Trade,
+                target_template: crate::htn::PayloadTemplate::FromContext,
+                expected_pre: vec![crate::htn::BeliefPredicate::SellerKnown {
+                    commodity: crate::htn::CommodityTemplate::Fixed(CommodityKind::Bread),
+                }],
+            }],
+        };
+
+        let plan = CandidatePlanSearch {
+            opportunity,
+            result: PlanSearchResult::BudgetExhausted { expansions_used: 1 },
+            perceived_cost: None,
+            skeleton_source: Some(source.clone()),
+            trace_metadata: SearchTraceMetadata {
+                skeleton_source: Some(source.clone()),
+                ..SearchTraceMetadata::default()
+            },
+            binding_rejections: Vec::new(),
+            expansion_summaries: Vec::new(),
+        };
+
+        assert_eq!(plan.skeleton_source, Some(source));
     }
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
@@ -5147,6 +5330,7 @@ mod tests {
                         estimated_travel_ticks: 4,
                     }],
                 }),
+                skeleton_source: None,
                 strategic_budget: Some(crate::decision_trace::StrategicBudgetTrace {
                     stages_count: 1,
                     budget_total: 6,
@@ -6844,10 +7028,20 @@ mod tests {
             GoalPriorityClass::Medium,
             50,
         )];
-        let plans = vec![searched_plan(
+        let skeleton = vec![crate::PlannedSkeletonStep {
+            op: PlannerOpKind::Trade,
+            target_template: crate::htn::PayloadTemplate::FromContext,
+            expected_pre: vec![crate::htn::BeliefPredicate::SellerKnown {
+                commodity: crate::htn::CommodityTemplate::Fixed(CommodityKind::Bread),
+            }],
+        }];
+        let plans = vec![searched_plan_with_skeleton(
             opportunity,
             PlanSearchResult::BudgetExhausted {
                 expansions_used: 12,
+            },
+            PartialPlanSkeletonSource {
+                remaining_skeleton: skeleton.clone(),
             },
         )];
         let mut cognitive = cognitive(&ProfileFixture {
@@ -6892,6 +7086,43 @@ mod tests {
             segment.abandon_conditions,
             vec![worldwake_core::IntentionAbandonCondition::PatienceExhausted]
         );
+        assert_eq!(segment.remaining_skeleton, Some(skeleton));
+    }
+
+    #[test]
+    fn write_information_barrier_partial_plan_segment_is_disabled() {
+        // S168PARPLASKE-006 producer disabled — see tickets/S168PARPLASKE-007.
+        // The producer is intentionally a no-op; the agenda is left untouched so
+        // the selected plan adopts normally through the standard path.
+        let subject = place_entity(42);
+        let opportunity = consume_opportunity(CommodityKind::Bread, OpportunityAnchor::None);
+        let ranked = vec![ranked_goal_with_score(
+            opportunity,
+            GoalPriorityClass::Medium,
+            50,
+        )];
+        let selected_plan = information_barrier_plan(opportunity, subject);
+        let plans = vec![searched_plan(
+            opportunity,
+            PlanSearchResult::Found(Box::new(selected_plan.clone())),
+        )];
+        let mut agenda_state = AgendaState::default();
+        agenda_state
+            .pending
+            .insert(ranked[0].key, ranked[0].clone());
+
+        let written = write_information_barrier_partial_plan_segment(
+            &mut agenda_state,
+            &ordered(&ranked),
+            &selected_plan,
+            &plans,
+            Tick(31),
+            &CognitiveProfile::default(),
+        );
+
+        assert!(!written);
+        assert!(agenda_state.pending.contains_key(&opportunity));
+        assert!(!agenda_state.suspended.contains_key(&opportunity));
     }
 
     #[test]

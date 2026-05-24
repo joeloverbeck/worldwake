@@ -8,9 +8,9 @@ mod transition;
 use crate::goal_schema::GoalDispatchKeySchemaExt;
 use crate::opportunity_compiler::PerceivedOpportunityIndex;
 use crate::{
-    GoalKindPlannerExt, GoalOffer, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpSemantics,
-    PlanningEntityRef, PlanningSnapshot, PlanningState, PlanningStateCacheCounters,
-    shared_collections::SharedVec,
+    GoalKindPlannerExt, GoalOffer, PlanTerminalKind, PlannedPlan, PlannedSkeletonStep, PlannedStep,
+    PlannerOpSemantics, PlanningEntityRef, PlanningSnapshot, PlanningState,
+    PlanningStateCacheCounters, shared_collections::SharedVec,
 };
 #[cfg(test)]
 use candidates::search_candidate_from_planner;
@@ -51,9 +51,15 @@ use worldwake_sim::{
     InventoryBeliefView, RecipeRegistry, SpatialBeliefView, get_affordances_for_defs,
 };
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PartialPlanSkeletonSource {
+    pub(crate) remaining_skeleton: Vec<PlannedSkeletonStep>,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct SearchTraceMetadata {
     pub(crate) strategic_plan: Option<strategic::StrategicPlan>,
+    pub(crate) skeleton_source: Option<PartialPlanSkeletonSource>,
     pub(crate) strategic_budget: Option<crate::decision_trace::StrategicBudgetTrace>,
     pub(crate) method_trace: Option<crate::decision_trace::MethodPlanAttemptTrace>,
     pub(crate) goal_budget: GoalPlanningBudget,
@@ -67,6 +73,7 @@ impl Default for SearchTraceMetadata {
     fn default() -> Self {
         Self {
             strategic_plan: None,
+            skeleton_source: None,
             strategic_budget: None,
             method_trace: None,
             goal_budget: GoalPlanningBudget::TRAVEL_PURCHASE,
@@ -588,11 +595,97 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
     recipes: &RecipeRegistry,
     blocked: &BlockerMemory,
     current_tick: Tick,
+    binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
+    expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
+    trace_metadata: Option<&mut SearchTraceMetadata>,
+    candidate_source: crate::decision_trace::CandidateSource,
+    opportunity_index: &PerceivedOpportunityIndex,
+) -> PlanSearchResult {
+    search_plan_inner(
+        snapshot,
+        goal,
+        semantics_table,
+        registry,
+        handlers,
+        cognitive,
+        execution_budget,
+        recipes,
+        blocked,
+        current_tick,
+        binding_rejections,
+        expansion_summaries,
+        trace_metadata,
+        candidate_source,
+        opportunity_index,
+        None,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    clippy::trivially_copy_pass_by_ref
+)]
+pub(crate) fn search_plan_seeded(
+    skeleton: &[PlannedSkeletonStep],
+    snapshot: &PlanningSnapshot,
+    goal: &GoalOffer,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+    cognitive: &CognitiveProfile,
+    execution_budget: &ExecutionBudget,
+    recipes: &RecipeRegistry,
+    blocked: &BlockerMemory,
+    current_tick: Tick,
+    binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
+    expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
+    trace_metadata: Option<&mut SearchTraceMetadata>,
+    candidate_source: crate::decision_trace::CandidateSource,
+    opportunity_index: &PerceivedOpportunityIndex,
+) -> PlanSearchResult {
+    search_plan_inner(
+        snapshot,
+        goal,
+        semantics_table,
+        registry,
+        handlers,
+        cognitive,
+        execution_budget,
+        recipes,
+        blocked,
+        current_tick,
+        binding_rejections,
+        expansion_summaries,
+        trace_metadata,
+        candidate_source,
+        opportunity_index,
+        Some(skeleton),
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    clippy::trivially_copy_pass_by_ref
+)]
+fn search_plan_inner(
+    snapshot: &PlanningSnapshot,
+    goal: &GoalOffer,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+    cognitive: &CognitiveProfile,
+    execution_budget: &ExecutionBudget,
+    recipes: &RecipeRegistry,
+    blocked: &BlockerMemory,
+    current_tick: Tick,
     mut binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
     mut expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
     mut trace_metadata: Option<&mut SearchTraceMetadata>,
     candidate_source: crate::decision_trace::CandidateSource,
     opportunity_index: &PerceivedOpportunityIndex,
+    skeleton_seed: Option<&[PlannedSkeletonStep]>,
 ) -> PlanSearchResult {
     if unsupported_goal(&goal.key.kind) {
         return PlanSearchResult::Unsupported;
@@ -625,6 +718,7 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
             .as_ref()
             .filter(|plan| !plan.steps.is_empty())
             .cloned(),
+        skeleton_source: strategic_result.skeleton_source.clone(),
         strategic_budget: strategic_result.budget_trace,
         method_trace: strategic_result.method_trace,
         goal_budget: effective_budget,
@@ -1031,6 +1125,20 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
             );
             for (index, (_, _, _, preferred)) in successors.iter_mut().enumerate() {
                 *preferred = preferred_indices.contains(&index);
+            }
+        }
+        if let Some(seed) = skeleton_seed
+            && let Some(expected_step) = seed.get(usize::from(depth))
+        {
+            for (index, (_, _, _, preferred)) in successors.iter_mut().enumerate() {
+                if successor_operators
+                    .get(index)
+                    .and_then(|_| successor_candidates.get(index))
+                    .and_then(|candidate| semantics_table.get(&candidate.def_id))
+                    .is_some_and(|semantics| semantics.op_kind == expected_step.op)
+                {
+                    *preferred = true;
+                }
             }
         }
 

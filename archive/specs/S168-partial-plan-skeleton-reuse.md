@@ -1,12 +1,12 @@
 # S168: Partial-Plan Skeleton Reuse
 
-**Status**: DRAFT
+**Status**: COMPLETED
 
 ## Problem Statement
 
 `PartialPlanSegment` already carries `remaining_skeleton: Option<Vec<PlannedSkeletonStep>>`
-(`crates/worldwake-ai/src/partial_plan.rs:36`) and a `PlannedSkeletonStep` type
-(`partial_plan.rs:45`), the intended substrate for resuming a barrier-suspended pursuit
+(`crates/worldwake-ai/src/partial_plan.rs:33`) and a `PlannedSkeletonStep` type
+(`partial_plan.rs:44`), the intended substrate for resuming a barrier-suspended pursuit
 from a remembered high-level plan instead of re-deliberating from scratch. But the field
 is **dead**:
 
@@ -24,6 +24,23 @@ reasoning (FND-20) and a thinner expression of revisable commitment than the
 architecture already models (FND-21): commitment persists as an agenda entry, but the
 *plan shape* the agent had worked out is forgotten.
 
+S149 itself flagged this as a deliberate deferral: it "does not replay
+`remaining_skeleton` directly, because the live skeleton carrier still lacks resolved
+`ActionDefId`s, authoritative targets, payloads, and planner context"
+(archived `S149` line 11). S168 resolves that constraint by treating the skeleton as a
+*search seed* (D3), not an action-dispatch surface — tactical detail (`ActionDefId`s,
+targets, payloads) is rebuilt through ordinary search rather than replayed from the
+skeleton. The earlier scope was right to defer replay; the present scope adds the
+seeding path that S149's deferral pointed to.
+
+Live reassessment during S168PARPLASKE-002 corrected the D1 information-barrier
+producer boundary. `agenda_manager.rs::spawn_information_barrier_companions` consumes
+already-suspended entries with a `PartialPlanSegment`; it cannot be the first producer
+because it skips entries whose segment is absent. Making the field live at
+information-barrier suspensions therefore requires a producer at the selected/completed
+information-barrier plan boundary, while the companion-spawn path remains a consumer.
+That corrected producer landed in `archive/tickets/S168PARPLASKE-006.md`.
+
 Accepted in the triage of `reports/ai-architecture-improvements-second-iteration.md`
 (Proposal 3), explicitly the **lowest-benefit** of the accepted set — an optimization
 over an already-working resume path, not a correctness fix. Scoped tightly to avoid
@@ -37,17 +54,20 @@ never becomes a rail.
 
 ## Phase and Status
 
-Adjunct Wave: AI Architecture Improvements — First Iteration. Draft, pending ticket
-decomposition.
+Adjunct Wave: AI Architecture Improvements — First Iteration. Completed and archived.
 
 ## Crates
 
-- `worldwake-ai` — `partial_plan.rs` (populate `remaining_skeleton` at the in-scope
-  suspension sites; a skeleton-revalidation function), `agenda_manager.rs`
-  (`try_resume_partial_plan` consumes the skeleton when present and valid, else falls
-  back to the existing `Pending` re-entry), `agent_tick/planning.rs` (skeleton-seeded
-  tactical search entry), `plan_repair.rs` / `decision_trace.rs` (trace the
-  skeleton-reuse vs full-replan decision and the revalidation outcome).
+- `worldwake-ai` — `partial_plan.rs` (populate `remaining_skeleton` at the
+  budget-exhausted suspension site; the skeleton-revalidation function may live here
+  or in a sibling module), `agenda_manager.rs` / `agent_tick/planning.rs` (a corrected
+  info-barrier suspension producer that feeds the existing companion consumer;
+  `try_resume_partial_plan` / its traced internal variant consume the skeleton when
+  present and valid, else fall back to the existing `Pending` re-entry; emit
+  `PartialPlanResumeTrace`), `search/mod.rs` / `agent_tick/planning.rs` (new
+  `search_plan_seeded` tactical-search entry point parallel to
+  `search_plan_with_trace_metadata_and_source`), `decision_trace.rs` (new
+  `PartialPlanResumeTrace` struct parallel to `RepairAttemptTrace`).
 - `worldwake-core` — no new authoritative type. `PartialPlanSegment` /
   `PlannedSkeletonStep` already exist and already serialize.
 
@@ -99,6 +119,7 @@ decomposition.
 
 | Principle | How satisfied |
 |-----------|---------------|
+| FND-12 (Performance compresses computation, never causality) | Skeleton reuse is a derived planning cache with an explicit causal-equivalence contract (Section H.6): full replan from the same beliefs must produce a lawful equivalent plan; revalidation gates reuse; the skeleton can be deleted without changing world meaning. |
 | FND-20 (Resource-bounded reasoning) | Resume reuses remembered planning work instead of full re-deliberation, within existing budgets/patience. |
 | FND-21 (Revisable commitments) | Commitment persists as a remembered skeleton, but every reuse is gated by belief revalidation; a broken assumption discards it. |
 | FND-26 (Systems interact through state) | Skeleton reuse seeds search; action legality stays with GOAP/dispatch. No privileged cross-system command. |
@@ -107,30 +128,79 @@ decomposition.
 
 ## Deliverables
 
-### D1. Skeleton population at in-scope suspensions
+### D1.a. Populate `remaining_skeleton` at the budget-exhausted suspension site
 
-At information-barrier and search-budget suspension construction, populate
-`remaining_skeleton` with the compact high-level op sequence remaining beyond the
-completed prefix (when one exists), excluding combat/target-identity-bound steps.
-Update `budget_exhausted_partial_plan_segment` and the information-barrier suspension
-path accordingly. Sites with no meaningful remainder keep `None`.
+In `budget_exhausted_partial_plan_segment` (`partial_plan.rs:118`, which currently
+passes `remaining_skeleton: None` to `build_partial_plan_segment` at line 123), thread
+a populated `Some(Vec<PlannedSkeletonStep>)` when a meaningful remainder exists beyond
+the completed prefix, excluding combat- and target-identity-bound steps. Sites with no
+meaningful remainder keep `None`. The caller
+`write_budget_exhausted_partial_plan_segments` in `agent_tick/planning.rs:1114` must
+also thread the skeleton from the partial search frontier through the seed.
+
+### D1.b. Add an info-barrier suspension producer
+
+Information-barrier companion spawning in `agenda_manager.rs` is a consumer of
+already-suspended `PartialPlanSegment`s, not the producer. Add the info-barrier
+producer at the selected/completed barrier-plan boundary where the implementation still
+has both the `PlannedPlan` terminal (`PlanTerminalKind::InformationBarrier { … }`) and
+the planner-owned skeleton source. The producer should build a `PartialPlanSegment`
+through `build_partial_plan_segment` (`partial_plan.rs:94`) with populated
+`remaining_skeleton`, the appropriate `PlanTerminalKind::InformationBarrier { … }`
+terminal, and the corresponding `BarrierFact`, then suspend the matching agenda entry
+so `spawn_information_barrier_companions` can consume it. Combat- and
+target-identity-bound steps are excluded as for D1.a. The corrected producer seam
+landed in `archive/tickets/S168PARPLASKE-006.md`.
 
 ### D2. Skeleton revalidation
 
-A function that checks a `remaining_skeleton` against current lawful beliefs using S114
-guard/expectation semantics, returning a verdict: `Reusable` (seed search) or
-`Invalid(reason)` (fall back to full replan). No world-truth read; belief-backed only.
+A new function `revalidate_skeleton_step` (in `worldwake-ai`, alongside
+`agenda_manager.rs` or in a sibling module — implementer's choice) that checks each
+`PlannedSkeletonStep` against current lawful beliefs and the stored `GoalOffer` context
+needed to resolve goal-relative templates, then returns a verdict: `Reusable` (seed
+search) or `Invalid(reason)` (fall back to full replan).
 
-### D3. Resume consumption
+Implementation specifics:
 
-`try_resume_partial_plan` (and the planning entry it feeds) consumes a `Reusable`
-skeleton to seed tactical search; on `Invalid` or `None` it preserves the existing
-`Pending` full-replan re-entry unchanged.
+- Evaluate `expected_pre: Vec<BeliefPredicate>` (`partial_plan.rs:44-49`) directly
+  against the belief view.
+- Optionally reuse S114's `RequiredFact` belief-read helpers
+  (`believed_target_location`, `believed_commodity_stock`, etc. via
+  `RuntimeBeliefView`) where the skeleton step carries guard-shaped facts.
+- Do **not** route through `classify_revalidation` (`plan_revalidation.rs:46-102`) —
+  that path requires a fully-instantiated `PlannedStep` (`ActionDefId`, resolved
+  bindings, handler binding) which a `PlannedSkeletonStep` (fields `op: PlannerOpKind`,
+  `target_template: PayloadTemplate`, `expected_pre: Vec<BeliefPredicate>`) does not
+  carry by construction.
+- No world-truth read; belief-backed only.
+
+### D3. Resume consumption — `search_plan_seeded`
+
+`try_resume_partial_plan` / its traced internal variant (`agenda_manager.rs`) calls D2
+on the `remaining_skeleton` when present. On `Reusable`, the resumed pending entry
+keeps the skeleton; the later planning pass in `agent_tick/planning.rs` invokes the
+new tactical-search entry point `search_plan_seeded(skeleton, …)` in `search/mod.rs`,
+parallel to the existing `search_plan_with_trace_metadata_and_source`. The seeded
+entry walks the skeleton's high-level ops as search-control bias and rebuilds tactical
+bindings, durations, and costs through ordinary search; if any op cannot be satisfied,
+it falls back internally to unconstrained search rather than returning failure. On
+`Invalid` or `None`, `try_resume_partial_plan` preserves its existing `Pending`
+full-replan re-entry and clears the unusable skeleton so the planning pass runs the
+ordinary unseeded search path.
+
+A separate function (rather than an optional parameter on the existing search entry)
+is chosen because the seeded path has distinct control flow — ops walk before
+expansion, with internal fallback — and conflating the two would complicate the
+unseeded entry's tracing and termination contract.
 
 ### D4. Trace
 
-Record the reuse-vs-replan decision, the revalidation verdict, and (on reuse) the
-skeleton ops seeded, through the existing decision-trace/partial-plan surfaces.
+Define a new `PartialPlanResumeTrace` struct in `decision_trace.rs` parallel to
+`RepairAttemptTrace`, carrying the reuse-vs-replan decision, the per-step revalidation
+verdict, and (on reuse) the seeded skeleton ops. Emit from the traced
+`agenda_manager.rs` resume decision point into the existing decision-trace sink.
+`plan_repair.rs` is not on the emit path (it is pure repair orchestration with no
+trace exports).
 
 ## FND-01 Section H
 
@@ -144,9 +214,11 @@ skeleton ops seeded, through the existing decision-trace/partial-plan surfaces.
    clamp introduced.
 4. **Stored state vs. derived read-model.** No new authoritative type.
    `remaining_skeleton` is an already-serialized field of the authoritative
-   `PartialPlanSegment`; this spec changes its *content* (from always-`None` at the
-   in-scope sites to a populated skeleton) and adds derived revalidation/seeding logic.
-   The skeleton is a planning cache (FND-27), not promoted to truth.
+   `PartialPlanSegment`; this spec changes its *content* at the in-scope sites — for
+   the budget-exhausted constructor (D1.a), from `None` to populated; for the corrected
+   info-barrier suspension producer (D1.b), populated from inception — and adds
+   derived revalidation/seeding logic. The skeleton is a planning cache (FND-27), not
+   promoted to truth.
 5. **Planner-formalism analysis.** Plain GOAP; the skeleton is search seeding/control
    derived from the agent's prior bounded lookahead. Not an HTN method and not a
    method-required leaf. Action legality remains in tactical search/dispatch.
@@ -183,8 +255,14 @@ belief view. No cross-system call.
 
 ## Profile-Driven Parameters
 
-No new parameters. Reuses existing patience/attempt limits and `CognitiveProfile`
-search budgets.
+No new parameters. Existing sources:
+
+- **Patience / attempt limits**: `IntentionFrame.patience_limit` (S149) and
+  `PartialPlanSegment.resume_attempt_count` / `last_resume_attempt_tick`
+  (`partial_plan.rs:39-40`), enforced by `try_resume_partial_plan`
+  (`agenda_manager.rs:128-130`).
+- **Search budgets**: `CognitiveProfile` (existing tactical-search budgets; consumed
+  by the seeded entry point identically to the unseeded one).
 
 ## Authoritative-to-AI Impact Analysis
 
@@ -223,3 +301,45 @@ search budgets.
 - **Low realized benefit.** This is an optimization; if profiling shows resume replans
   are rare or cheap, the population scope can be narrowed further at ticket time
   without affecting the other Adjunct Wave specs.
+
+## Outcome
+
+Completed: 2026-05-24
+
+S168 landed the partial-plan skeleton reuse path through the archived ticket family:
+`archive/tickets/S168PARPLASKE-001.md` through
+`archive/tickets/S168PARPLASKE-006.md`. The implementation added belief-backed
+skeleton revalidation, a planner-owned skeleton source carrier, budget-exhausted and
+information-barrier skeleton population, seeded tactical search consumption, and
+`PartialPlanResumeTrace` coverage for reuse versus fallback. Pre-push verification
+also fixed downstream CLI and visualizer test-fixture constructors so every
+`AgentDecisionTrace` construction initializes the new `partial_plan_resumes` carrier.
+
+Deviations from the draft:
+
+- Live reassessment disproved `spawn_information_barrier_companions` as the first
+  information-barrier producer because it consumes already-suspended entries. The
+  corrected selected/completed barrier-plan producer landed in
+  `archive/tickets/S168PARPLASKE-006.md`.
+- `search_plan_seeded` remained a tactical-search seed/fallback path, not direct
+  action replay. Concrete action definitions, bindings, durations, and payloads are
+  still rebuilt through ordinary search.
+- Golden coverage landed in the existing generated partial-plan terminal harness
+  rather than full autonomous commodity-purchase scenarios, keeping proof at the
+  S168-owned resume/revalidation boundary.
+
+Verification:
+
+- Passed focused revalidation, skeleton-source, budget-exhaustion population,
+  information-barrier producer, seeded-search, and resume-trace tests recorded in the
+  archived S168 tickets.
+- Passed S168 generated golden coverage:
+  `golden_s168_information_barrier_resume_reuses_skeleton`,
+  `golden_s168_information_barrier_resume_falls_back_when_skeleton_invalid`, and
+  `golden_s168_populated_skeleton_survives_save_load_before_resume`.
+- Passed broader no-regression gates recorded by the final S168 tickets, including
+  `cargo test -p worldwake-ai` and generated golden inventory/documentation checks.
+- During final pre-push verification, `./scripts/verify.sh` first exposed missing
+  `partial_plan_resumes` initializers in `crates/worldwake-cli/src/bin/observer.rs` and
+  `crates/worldwake-visualizer/src/trace_buffers.rs`; those were corrected before the
+  final verification rerun.

@@ -60,16 +60,13 @@ Recommended priority follows benefit: **S165 → S167 → S166 → S168.**
   distribution proof. Narrowed from the report's "canonical substrate" ambition to
   source fidelity only; absorbs Proposal 5. **FND-3, FND-15, FND-16, FND-27,
   FND-29.**
-
-### Pending
-
 - **S168 — Partial-Plan Skeleton Reuse** —
-  `specs/S168-partial-plan-skeleton-reuse.md` — *Status: DRAFT.* Populates and
-  consumes the dead `remaining_skeleton` field (`partial_plan.rs:36,123`) for
+  `archive/specs/S168-partial-plan-skeleton-reuse.md` — *Status: COMPLETED
+  2026-05-24.* Populates and consumes the dead `remaining_skeleton` field for
   information and search-budget barriers, with mandatory belief revalidation before
-  reuse so a skeleton seeds search but never authorizes a stale action. Lowest benefit
-  of the wave (an optimization over already-working resume). **FND-20, FND-21, FND-26,
-  FND-27, FND-29.**
+  reuse so a skeleton seeds tactical search but never authorizes a stale action. Lowest
+  benefit of the wave (an optimization over already-working resume). **FND-20, FND-21,
+  FND-26, FND-27, FND-29.**
 
 ## Excluded from this order (by directive)
 

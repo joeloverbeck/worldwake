@@ -7,21 +7,22 @@
 //! `PartialPlanSegment`s with the right resume/abandon conditions and survive
 //! inside suspended agenda entries.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use crate::golden_harness::{GoldenHarness, VILLAGE_SQUARE, seed_agent};
-use worldwake_ai::htn::{BeliefPredicate, EntityTemplate};
+use crate::golden_harness::{GoldenHarness, VILLAGE_SQUARE, seed_agent, seed_owner_belief};
+use worldwake_ai::htn::{BeliefPredicate, EntityTemplate, PayloadTemplate};
 use worldwake_ai::{
-    AgendaEntry, AgendaPhase, AgendaState, BarrierFact, FeasibilityHint, GoalOffer,
-    GoalPriorityClass, PartialPlanSegment, PartialPlanSegmentSeed, PlanTerminalKind,
-    PlanTerminalKindDiscriminant, build_partial_plan_segment, terminal_to_discrepancy,
-    try_resume_partial_plan,
+    AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime, BarrierFact, FeasibilityHint,
+    GoalOffer, GoalPriorityClass, PartialPlanResumeDecision, PartialPlanSegment,
+    PartialPlanSegmentSeed, PlanTerminalKind, PlanTerminalKindDiscriminant, PlannedSkeletonStep,
+    PlannerOpKind, SkeletonRevalidationReason, SkeletonRevalidationVerdict,
+    build_partial_plan_segment, terminal_to_discrepancy, try_resume_partial_plan,
 };
 use worldwake_core::{
     AcquisitionQuantity, AffordanceKey, BeliefStatusTag, BlockerMemory, BlockerScope,
     CommodityKind, Discrepancy, EntityId, EventId, GoalKey, GoalKind, HomeostaticNeeds,
     IntentionAbandonCondition, IntentionResumeCondition, MetabolismProfile, OpportunityAnchor,
-    Permille, Seed, Tick, UtilityProfile,
+    PerceptionSource, Permille, Seed, Tick, UtilityProfile,
 };
 use worldwake_sim::PerAgentBeliefView;
 
@@ -103,6 +104,64 @@ fn suspended_entry(mut segment: PartialPlanSegment, anchor_slot: u32) -> AgendaE
     segment.goal = entry.offer.clone();
     entry.partial_plan_segment = Some(segment);
     entry
+}
+
+fn skeleton_step(op: PlannerOpKind, expected_pre: Vec<BeliefPredicate>) -> PlannedSkeletonStep {
+    PlannedSkeletonStep {
+        op,
+        target_template: PayloadTemplate::FromContext,
+        expected_pre,
+    }
+}
+
+fn information_barrier_segment_with_skeleton(
+    subject: EntityId,
+    remaining_skeleton: Vec<PlannedSkeletonStep>,
+    local_counter: u16,
+) -> PartialPlanSegment {
+    let mut segment = segment(
+        PlanTerminalKind::InformationBarrier {
+            topic: worldwake_core::TellTopic::EntityBelief { subject },
+        },
+        BarrierFact::MissingBelief(BeliefPredicate::TargetLastSeenKnown {
+            target: EntityTemplate::Fixed(subject),
+        }),
+        local_counter,
+    );
+    segment.remaining_skeleton = Some(remaining_skeleton);
+    segment.resume_conditions = vec![IntentionResumeCondition::BeliefStatusChanged {
+        subject,
+        target_status: BeliefStatusTag::Certain,
+    }];
+    segment
+}
+
+fn inject_suspended_runtime(harness: &mut GoldenHarness, agent: EntityId, entry: AgendaEntry) {
+    harness.driver.set_runtime(
+        agent,
+        AgentDecisionRuntime {
+            agenda_state: AgendaState {
+                suspended: BTreeMap::from([(entry.key, entry)]),
+                ..AgendaState::default()
+            },
+            ..AgentDecisionRuntime::default()
+        },
+    );
+}
+
+fn first_partial_plan_resume_trace(
+    harness: &GoldenHarness,
+    agent: EntityId,
+) -> &worldwake_ai::PartialPlanResumeTrace {
+    harness
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .traces_for(agent)
+        .into_iter()
+        .flat_map(|trace| trace.partial_plan_resumes.iter())
+        .next()
+        .expect("resuming a suspended partial plan should emit a resume trace")
 }
 
 fn terminal_cases() -> Vec<(
@@ -346,6 +405,224 @@ fn golden_s149_partial_plan_resume_and_patience_abandon_lifecycle() {
 
     assert_eq!(abandoned, None);
     assert!(state.suspended.is_empty());
+}
+
+// Scenario 465: S168 Information Barrier Resume Reuses Skeleton
+// Systems: AI
+// GoalKinds: AcquireCommodity
+// ActionDomains: Planning, Agenda
+// Principles: P12, P20, P21, P29
+// Setup: fixture seeds a suspended information-barrier agenda entry with a
+//        populated, preservable skeleton and a lawful belief-status update for
+//        the barrier subject; no rival agenda entries are inserted.
+// Proves: on resume, revalidation marks the skeleton reusable, the pending
+//         entry keeps the skeleton for seeded tactical search, and the decision
+//         trace records ReusedSeededSearch with the seeded ops.
+// Cross-system chain: information-barrier segment -> belief-backed resume gate
+//                     -> skeleton revalidation -> decision trace.
+#[test]
+fn golden_s168_information_barrier_resume_reuses_skeleton() {
+    let mut harness = GoldenHarness::new(Seed([168; 32]));
+    let agent = seed_agent(
+        &mut harness.world,
+        &mut harness.event_log,
+        "S168 reuse planner",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let subject = entity(900);
+    seed_owner_belief(
+        &mut harness.world,
+        &mut harness.event_log,
+        agent,
+        subject,
+        Some(agent),
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    let skeleton = vec![skeleton_step(PlannerOpKind::Sleep, Vec::new())];
+    let entry = suspended_entry(
+        information_barrier_segment_with_skeleton(subject, skeleton.clone(), 10),
+        910,
+    );
+
+    inject_suspended_runtime(&mut harness, agent, entry);
+    harness.driver.enable_tracing();
+    harness.step_once();
+
+    let trace = first_partial_plan_resume_trace(&harness, agent);
+    assert_eq!(
+        trace.decision,
+        PartialPlanResumeDecision::ReusedSeededSearch
+    );
+    assert_eq!(
+        trace.per_step_verdicts,
+        vec![SkeletonRevalidationVerdict::Reusable]
+    );
+    assert_eq!(trace.seeded_ops, Some(vec![PlannerOpKind::Sleep]));
+    let runtime = harness
+        .driver
+        .runtime(agent)
+        .expect("agent runtime should survive the tick");
+    let retained_skeleton = runtime
+        .agenda_state
+        .pending
+        .values()
+        .chain(runtime.agenda_state.committed.iter())
+        .filter_map(|entry| entry.partial_plan_segment.as_ref())
+        .find_map(|segment| segment.remaining_skeleton.as_ref());
+    assert_eq!(retained_skeleton, Some(&skeleton));
+}
+
+// Scenario 466: S168 Information Barrier Resume Falls Back On Invalid Skeleton
+// Systems: AI
+// GoalKinds: AcquireCommodity
+// ActionDomains: Planning, Agenda
+// Principles: P14, P20, P21, P29
+// Setup: fixture satisfies the information-barrier resume gate while leaving a
+//        load-bearing seller-known skeleton predicate unknown; no seller or
+//        sale-lot belief is present.
+// Proves: the resume trace records FallbackToReplanInvalid with the concrete
+//         invalidation reason and clears the unusable skeleton before the
+//         ordinary pending replan path continues.
+// Cross-system chain: information-barrier segment -> belief-backed resume gate
+//                     -> skeleton revalidation failure -> full-replan fallback.
+#[test]
+fn golden_s168_information_barrier_resume_falls_back_when_skeleton_invalid() {
+    let mut harness = GoldenHarness::new(Seed([169; 32]));
+    let agent = seed_agent(
+        &mut harness.world,
+        &mut harness.event_log,
+        "S168 fallback planner",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let subject = entity(901);
+    seed_owner_belief(
+        &mut harness.world,
+        &mut harness.event_log,
+        agent,
+        subject,
+        Some(agent),
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    let entry = suspended_entry(
+        information_barrier_segment_with_skeleton(
+            subject,
+            vec![skeleton_step(
+                PlannerOpKind::Trade,
+                vec![BeliefPredicate::SellerKnown {
+                    commodity: worldwake_ai::htn::CommodityTemplate::Fixed(CommodityKind::Bread),
+                }],
+            )],
+            11,
+        ),
+        911,
+    );
+
+    inject_suspended_runtime(&mut harness, agent, entry);
+    harness.driver.enable_tracing();
+    harness.step_once();
+
+    let trace = first_partial_plan_resume_trace(&harness, agent);
+    assert_eq!(
+        trace.decision,
+        PartialPlanResumeDecision::FallbackToReplanInvalid(
+            SkeletonRevalidationReason::BeliefUnknown
+        )
+    );
+    assert_eq!(
+        trace.per_step_verdicts,
+        vec![SkeletonRevalidationVerdict::Invalid(
+            SkeletonRevalidationReason::BeliefUnknown
+        )]
+    );
+    assert_eq!(trace.seeded_ops, None);
+    let runtime = harness
+        .driver
+        .runtime(agent)
+        .expect("agent runtime should survive the tick");
+    assert!(
+        runtime
+            .agenda_state
+            .pending
+            .values()
+            .chain(runtime.agenda_state.committed.iter())
+            .filter_map(|entry| entry.partial_plan_segment.as_ref())
+            .all(|segment| segment.remaining_skeleton.is_none()),
+        "invalid skeletons must be cleared before ordinary replan"
+    );
+}
+
+// Scenario 467: S168 Populated Skeleton Survives Save Load Before Resume
+// Systems: AI, SaveLoad
+// GoalKinds: AcquireCommodity
+// ActionDomains: Planning, Agenda
+// Principles: P4, P12, P20, P21
+// Setup: fixture saves and reloads a harness whose driver runtime contains a
+//        suspended information-barrier segment with a populated skeleton before
+//        any resume tick runs.
+// Proves: the populated skeleton survives the enclosing simulation+runtime
+//         save/load boundary and the reloaded runtime emits the same reuse
+//         decision on the next tick as the original.
+// Cross-system chain: partial-plan segment -> AgentDecisionRuntime save payload
+//                     -> SimulationState save/load -> resume trace.
+#[test]
+fn golden_s168_populated_skeleton_survives_save_load_before_resume() {
+    let mut harness = GoldenHarness::new(Seed([170; 32]));
+    let agent = seed_agent(
+        &mut harness.world,
+        &mut harness.event_log,
+        "S168 save-load planner",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let subject = entity(902);
+    seed_owner_belief(
+        &mut harness.world,
+        &mut harness.event_log,
+        agent,
+        subject,
+        Some(agent),
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    let skeleton = vec![skeleton_step(PlannerOpKind::Sleep, Vec::new())];
+    let entry = suspended_entry(
+        information_barrier_segment_with_skeleton(subject, skeleton.clone(), 12),
+        912,
+    );
+    inject_suspended_runtime(&mut harness, agent, entry);
+
+    let mut reloaded = harness.save_load_roundtrip();
+    let reloaded_skeleton = reloaded
+        .driver
+        .runtime(agent)
+        .and_then(|runtime| runtime.agenda_state.suspended.values().next())
+        .and_then(|entry| entry.partial_plan_segment.as_ref())
+        .and_then(|segment| segment.remaining_skeleton.as_ref());
+    assert_eq!(reloaded_skeleton, Some(&skeleton));
+
+    harness.driver.enable_tracing();
+    reloaded.driver.enable_tracing();
+    harness.step_once();
+    reloaded.step_once();
+
+    let original_trace = first_partial_plan_resume_trace(&harness, agent);
+    let reloaded_trace = first_partial_plan_resume_trace(&reloaded, agent);
+    assert_eq!(reloaded_trace.decision, original_trace.decision);
+    assert_eq!(
+        reloaded_trace.per_step_verdicts,
+        original_trace.per_step_verdicts
+    );
+    assert_eq!(reloaded_trace.seeded_ops, original_trace.seeded_ops);
 }
 
 // Scenario 442: S149 Coordination Barrier Uses Blocker Memory

@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden scenario source files: 59
 - Files contributing `golden_*` tests: 59
-- Total `golden_*` tests: 289
+- Total `golden_*` tests: 292
 
 ## Per-Scenario-File Inventory
 
@@ -35,7 +35,7 @@ Do not hand-edit it.
 | `office_vacancy.rs` | 2 |
 | `offices.rs` | 12 |
 | `opportunity_compiler.rs` | 6 |
-| `partial_plan_terminals.rs` | 4 |
+| `partial_plan_terminals.rs` | 7 |
 | `perception_exposure.rs` | 7 |
 | `perception_omission.rs` | 3 |
 | `place_dirtiness.rs` | 9 |
@@ -292,6 +292,9 @@ Do not hand-edit it.
 - `golden_s149_typed_terminal_segments_carry_resume_and_failure_shape`
 - `golden_s149_suspended_agenda_entries_preserve_partial_plan_segments`
 - `golden_s149_partial_plan_resume_and_patience_abandon_lifecycle`
+- `golden_s168_information_barrier_resume_reuses_skeleton`
+- `golden_s168_information_barrier_resume_falls_back_when_skeleton_invalid`
+- `golden_s168_populated_skeleton_survives_save_load_before_resume`
 - `golden_s149_coordination_barrier_records_blocker_memory_not_discrepancy`
 
 ### `perception_exposure.rs`

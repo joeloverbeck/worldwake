@@ -1,17 +1,20 @@
 #![allow(dead_code)]
 
 use crate::{
-    GoalKindPlannerExt, GoalOffer, PlanningSnapshot, PlanningState,
+    GoalKindPlannerExt, GoalOffer, PlannedSkeletonStep, PlannerOpKind, PlanningSnapshot,
+    PlanningState,
     decision_trace::{
         MethodPlanAttemptTrace, RejectedMethodTrace, StrategicBudgetTrace, StrategicFallbackReason,
         SubgoalAttemptOutcome, SubgoalAttemptResult,
     },
     htn::{
         ArtifactTemplate, ClaimRequirement, CommodityTemplate, EntityCriterion, EntityTemplate,
-        LocationTemplate, MethodSchema, MethodSelection, PayloadTemplate, PayloadValueTemplate,
-        RecipeTemplate, SubgoalTemplate, build_method_registry, select_method_with_recipes,
+        LocationTemplate, MethodPrecondition, MethodSchema, MethodSelection, PayloadTemplate,
+        PayloadValueTemplate, RecipeTemplate, SubgoalTemplate, build_method_registry,
+        select_method_with_recipes,
     },
     planning_snapshot::AdmissionSource,
+    search::PartialPlanSkeletonSource,
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
@@ -33,6 +36,7 @@ pub(crate) struct StrategicPlan {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct StrategicSearchResult {
     pub plan: Option<StrategicPlan>,
+    pub skeleton_source: Option<PartialPlanSkeletonSource>,
     pub budget_trace: Option<StrategicBudgetTrace>,
     pub stages_count: u16,
     pub method_trace: Option<MethodPlanAttemptTrace>,
@@ -112,6 +116,7 @@ pub(crate) fn plan_with_budget_trace(
     if root_goal_satisfaction_allowed(goal, &state) && goal.key.kind.is_satisfied(&state) {
         return StrategicSearchResult {
             plan: Some(StrategicPlan { steps: Vec::new() }),
+            skeleton_source: None,
             budget_trace: None,
             stages_count: 0,
             method_trace: None,
@@ -122,6 +127,7 @@ pub(crate) fn plan_with_budget_trace(
     let Some(actor_place) = state.effective_place(actor) else {
         return StrategicSearchResult {
             plan: None,
+            skeleton_source: None,
             budget_trace: None,
             stages_count: 0,
             method_trace: None,
@@ -162,6 +168,7 @@ pub(crate) fn plan_with_budget_trace(
         if goal_places.contains(&actor_place) {
             return StrategicSearchResult {
                 plan: Some(StrategicPlan { steps: Vec::new() }),
+                skeleton_source: stage_build.skeleton_source,
                 budget_trace: None,
                 stages_count: 0,
                 method_trace: stage_build.method_trace,
@@ -171,6 +178,7 @@ pub(crate) fn plan_with_budget_trace(
             .or_else(|| social_query_plan(snapshot, actor_place, query_commodity));
         return StrategicSearchResult {
             plan,
+            skeleton_source: stage_build.skeleton_source,
             budget_trace: None,
             stages_count: 0,
             method_trace: stage_build.method_trace,
@@ -183,6 +191,7 @@ pub(crate) fn plan_with_budget_trace(
     if stages.is_empty() || matches_local_goal_stage(&stages, actor_place) {
         return StrategicSearchResult {
             plan: Some(StrategicPlan { steps: local_steps }),
+            skeleton_source: stage_build.skeleton_source,
             budget_trace: None,
             stages_count: stages.len().min(usize::from(u16::MAX)) as u16,
             method_trace: stage_build.method_trace,
@@ -207,6 +216,7 @@ pub(crate) fn plan_with_budget_trace(
         if node.stage_index >= stages.len() {
             return StrategicSearchResult {
                 plan: Some(StrategicPlan { steps: node.steps }),
+                skeleton_source: stage_build.skeleton_source,
                 budget_trace: Some(strategic_budget_trace(
                     stages.len(),
                     search_budget,
@@ -255,6 +265,7 @@ pub(crate) fn plan_with_budget_trace(
 
     StrategicSearchResult {
         plan: None,
+        skeleton_source: stage_build.skeleton_source,
         budget_trace: Some(strategic_budget_trace(
             stages.len(),
             search_budget,
@@ -361,6 +372,7 @@ fn social_query_commodity(
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct StageBuildResult {
     stages: Vec<StrategicStage>,
+    skeleton_source: Option<PartialPlanSkeletonSource>,
     method_trace: Option<MethodPlanAttemptTrace>,
 }
 
@@ -410,6 +422,7 @@ fn build_stages(
         if !stages.is_empty() {
             return StageBuildResult {
                 stages,
+                skeleton_source: skeleton_source_for_method(method),
                 method_trace: Some(method_trace(method, &goal.motive_sources, rejected_methods)),
             };
         }
@@ -442,12 +455,93 @@ fn build_stages(
 
     StageBuildResult {
         stages,
+        skeleton_source: None,
         method_trace: Some(fallback_method_trace(
             method_selection.selected,
             &goal.motive_sources,
             rejected_methods,
         )),
     }
+}
+
+fn skeleton_source_for_method(method: &MethodSchema) -> Option<PartialPlanSkeletonSource> {
+    let expected_pre = method
+        .preconditions
+        .iter()
+        .filter_map(|precondition| match precondition {
+            MethodPrecondition::BeliefHolds(predicate) => Some(predicate.clone()),
+            MethodPrecondition::MotiveSourcePresent(_) | MethodPrecondition::LocationKnown(_) => {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    let remaining_skeleton = method
+        .subgoals
+        .iter()
+        .filter_map(|subgoal| match &subgoal.template {
+            SubgoalTemplate::PerformAction(op, payload)
+                if skeleton_op_is_preservable(*op) && payload_template_is_preservable(payload) =>
+            {
+                Some(PlannedSkeletonStep {
+                    op: *op,
+                    target_template: payload.clone(),
+                    expected_pre: expected_pre.clone(),
+                })
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    (!remaining_skeleton.is_empty()).then_some(PartialPlanSkeletonSource { remaining_skeleton })
+}
+
+fn skeleton_op_is_preservable(op: PlannerOpKind) -> bool {
+    !matches!(op, PlannerOpKind::Attack | PlannerOpKind::Defend)
+}
+
+fn payload_template_is_preservable(payload: &PayloadTemplate) -> bool {
+    match payload {
+        PayloadTemplate::FromContext => true,
+        PayloadTemplate::Explicit(payload) => !payload_value_template_has_fixed_entity(payload),
+    }
+}
+
+fn payload_value_template_has_fixed_entity(payload: &PayloadValueTemplate) -> bool {
+    match payload {
+        PayloadValueTemplate::Trade { .. } | PayloadValueTemplate::Craft { .. } => false,
+        PayloadValueTemplate::Attack { target }
+        | PayloadValueTemplate::ClaimBounty { bounty: target } => {
+            entity_template_has_fixed_entity(*target)
+        }
+        PayloadValueTemplate::EscortToSafety {
+            escortee,
+            destination,
+        } => {
+            entity_template_has_fixed_entity(*escortee)
+                || location_template_has_fixed_entity(destination)
+        }
+    }
+}
+
+fn location_template_has_fixed_entity(location: &LocationTemplate) -> bool {
+    match location {
+        LocationTemplate::LastKnownTargetPlace { target }
+        | LocationTemplate::StagingPlaceForConfrontation { target }
+        | LocationTemplate::BountyIssuerPlace { bounty: target }
+        | LocationTemplate::OfficePlace {
+            institution: target,
+        }
+        | LocationTemplate::EscorteeHome { escortee: target } => {
+            entity_template_has_fixed_entity(*target)
+        }
+        LocationTemplate::NearestSellerOf { .. }
+        | LocationTemplate::KnownWorkstationFor { .. }
+        | LocationTemplate::AgentHome => false,
+    }
+}
+
+fn entity_template_has_fixed_entity(template: EntityTemplate) -> bool {
+    matches!(template, EntityTemplate::Fixed(_))
 }
 
 fn rejected_method_traces(method_selection: &MethodSelection<'_>) -> Vec<RejectedMethodTrace> {
@@ -2238,6 +2332,84 @@ mod tests {
             ]),
             "method trace should preserve the selected method's per-subgoal authority labels"
         );
+    }
+
+    #[test]
+    fn skeleton_source_for_method_preserves_template_only_action_steps() {
+        let expected = crate::htn::BeliefPredicate::SellerKnown {
+            commodity: crate::htn::CommodityTemplate::GoalCommodity,
+        };
+        let payload =
+            crate::htn::PayloadTemplate::Explicit(crate::htn::PayloadValueTemplate::Trade {
+                commodity: crate::htn::CommodityTemplate::GoalCommodity,
+                quantity: Quantity(3),
+            });
+        let method = crate::htn::MethodSchema {
+            id: worldwake_core::MethodSchemaId(101),
+            goal_kind: worldwake_core::GoalKindDiscriminant::RestockCommodity,
+            preconditions: vec![crate::htn::MethodPrecondition::BeliefHolds(
+                expected.clone(),
+            )],
+            subgoals: vec![
+                crate::htn::MethodSubgoal::stage_hint(crate::htn::SubgoalTemplate::TravelTo(
+                    crate::htn::LocationTemplate::NearestSellerOf {
+                        commodity: crate::htn::CommodityTemplate::GoalCommodity,
+                    },
+                )),
+                crate::htn::MethodSubgoal::stage_hint(crate::htn::SubgoalTemplate::PerformAction(
+                    crate::PlannerOpKind::Trade,
+                    payload.clone(),
+                )),
+            ],
+            explanation_template: crate::htn::ExplanationTemplateId(101),
+            motive_bias: Vec::new(),
+            planning_budget_hint: None,
+        };
+
+        let source = super::skeleton_source_for_method(&method)
+            .expect("template-only trade action should be preservable");
+
+        assert_eq!(
+            source.remaining_skeleton,
+            vec![crate::PlannedSkeletonStep {
+                op: crate::PlannerOpKind::Trade,
+                target_template: payload,
+                expected_pre: vec![expected],
+            }]
+        );
+    }
+
+    #[test]
+    fn skeleton_source_for_method_excludes_combat_and_fixed_target_steps() {
+        let fixed_target = entity(44);
+        let method = crate::htn::MethodSchema {
+            id: worldwake_core::MethodSchemaId(102),
+            goal_kind: worldwake_core::GoalKindDiscriminant::FulfillBounty,
+            preconditions: Vec::new(),
+            subgoals: vec![
+                crate::htn::MethodSubgoal::stage_hint(crate::htn::SubgoalTemplate::PerformAction(
+                    crate::PlannerOpKind::Attack,
+                    crate::htn::PayloadTemplate::Explicit(
+                        crate::htn::PayloadValueTemplate::Attack {
+                            target: crate::htn::EntityTemplate::BountyTarget,
+                        },
+                    ),
+                )),
+                crate::htn::MethodSubgoal::stage_hint(crate::htn::SubgoalTemplate::PerformAction(
+                    crate::PlannerOpKind::ClaimBounty,
+                    crate::htn::PayloadTemplate::Explicit(
+                        crate::htn::PayloadValueTemplate::ClaimBounty {
+                            bounty: crate::htn::EntityTemplate::Fixed(fixed_target),
+                        },
+                    ),
+                )),
+            ],
+            explanation_template: crate::htn::ExplanationTemplateId(102),
+            motive_bias: Vec::new(),
+            planning_budget_hint: None,
+        };
+
+        assert_eq!(super::skeleton_source_for_method(&method), None);
     }
 
     #[test]
