@@ -6,6 +6,7 @@
 pub mod agenda_manager;
 pub mod agenda_types;
 pub mod agent_tick;
+pub(crate) mod belief_status;
 pub mod candidate_generation;
 pub mod decision_runtime;
 pub mod decision_trace;

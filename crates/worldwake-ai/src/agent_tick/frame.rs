@@ -2,15 +2,17 @@ use crate::{
     AgentDecisionRuntime, DirtySet, FrameRuntimeSnapshot, PatrolRouteSnapshotTrace, PlannedStep,
     PlannerOpKind, authoritative_target, classify_frame_plan_relation, has_active_frame_travel,
 };
-use crate::{GoalPriorityClass, ranking::OrderedRanked};
+use crate::{
+    GoalPriorityClass, belief_status::belief_status_tag_for_claim, ranking::OrderedRanked,
+};
 use worldwake_core::{
     ArtifactExistence, ArtifactLegalEffectTag, BeliefStatusTag, Blocker, BlockerKey, BlockerMemory,
     BlockingFact, CognitiveProfile, CommodityKind, ContentionIntents, Discrepancy,
-    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EntityBeliefClaim, EntityId,
-    FrameAssumption, FrameClearReason, FrameState, HomeostaticNeedId, IntentionAbandonCondition,
+    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EntityId, FrameAssumption,
+    FrameClearReason, FrameState, HomeostaticNeedId, IntentionAbandonCondition,
     IntentionAbandonConditionDiscriminant, IntentionDomain, IntentionFrame,
     IntentionResumeCondition, OpportunityAnchor, Permille, Quantity, SourceKey, SuspensionReason,
-    Tick, effective_claim_confidence,
+    Tick,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -703,28 +705,6 @@ fn belief_status_matches(
     claims
         .iter()
         .any(|claim| belief_status_tag_for_claim(view, agent, claim, tick) == target_status)
-}
-
-fn belief_status_tag_for_claim(
-    view: &dyn RuntimeBeliefView,
-    agent: EntityId,
-    claim: &EntityBeliefClaim,
-    tick: Tick,
-) -> BeliefStatusTag {
-    if claim.refuted_at_tick.is_some() {
-        return BeliefStatusTag::Contradicted;
-    }
-
-    let effective = effective_claim_confidence(claim, tick, &view.belief_confidence_policy(agent));
-    let threshold = view.claim_confidence_threshold(agent).value();
-    let certain_floor = threshold.saturating_mul(2).min(1000);
-    if effective >= certain_floor {
-        BeliefStatusTag::Certain
-    } else if effective >= threshold {
-        BeliefStatusTag::Probable
-    } else {
-        BeliefStatusTag::Stale
-    }
 }
 
 pub(super) fn push_causal_link_bounded(
