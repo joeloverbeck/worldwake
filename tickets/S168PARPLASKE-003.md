@@ -4,11 +4,11 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `crates/worldwake-ai/src/agent_tick/planning.rs` (new `search_plan_seeded` tactical-search entry); `crates/worldwake-ai/src/agenda_manager.rs` (`try_resume_partial_plan` calls revalidation + invokes seeded search + emits trace); `crates/worldwake-ai/src/decision_trace.rs` (new `PartialPlanResumeTrace` struct).
-**Deps**: `archive/tickets/S168PARPLASKE-001.md` (`revalidate_skeleton_step` + `SkeletonRevalidationContext` + `SkeletonRevalidationVerdict`); `archive/tickets/S168PARPLASKE-002.md` (budget-exhausted populated `remaining_skeleton` to consume); `S168PARPLASKE-006` (information-barrier producer for end-to-end reuse paths); `specs/S168-partial-plan-skeleton-reuse.md` (D3, D4).
+**Deps**: `archive/tickets/S168PARPLASKE-001.md` (`revalidate_skeleton_step` + `SkeletonRevalidationContext` + `SkeletonRevalidationVerdict`); `archive/tickets/S168PARPLASKE-002.md` (budget-exhausted populated `remaining_skeleton` to consume); `archive/tickets/S168PARPLASKE-006.md` (information-barrier producer for end-to-end reuse paths); `specs/S168-partial-plan-skeleton-reuse.md` (D3, D4).
 
 ## Problem
 
-Ticket 001 produced the revalidation function. Ticket 002 populated `remaining_skeleton` for budget-exhausted segments, and ticket 006 owns the corrected information-barrier producer. This ticket consumes populated skeletons generically: `try_resume_partial_plan` reads the populated skeleton, calls `revalidate_skeleton_step` to gate reuse, and on `Reusable` invokes a new tactical-search entry point `search_plan_seeded` that walks the skeleton's high-level ops as search-control bias while rebuilding tactical detail (bindings, durations, costs) through ordinary search.
+Ticket 001 produced the revalidation function. Ticket 002 populated `remaining_skeleton` for budget-exhausted segments, and ticket 006 produced selected-plan information-barrier segments. This ticket consumes populated skeletons generically: `try_resume_partial_plan` reads the populated skeleton, calls `revalidate_skeleton_step` to gate reuse, and on `Reusable` invokes a new tactical-search entry point `search_plan_seeded` that walks the skeleton's high-level ops as search-control bias while rebuilding tactical detail (bindings, durations, costs) through ordinary search.
 
 On `Invalid` or `None`, the existing `Pending` full-replan re-entry (`agenda_manager.rs:135`) is preserved unchanged — the seeded path is a strict optimization over the existing fallback (FND-12: performance compresses computation, never causality).
 

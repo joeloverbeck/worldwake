@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use worldwake_core::{
     AffordanceKey, BeliefStatusTag, Blocker, BlockerClearingCondition, BlockerMemory, BlockerScope,
     BlockingFact, CognitiveProfile, CommodityKind, Discrepancy, EntityId, EventId,
-    IntentionAbandonCondition, IntentionResumeCondition, Tick,
+    IntentionAbandonCondition, IntentionResumeCondition, TellTopic, Tick,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -141,6 +141,30 @@ pub fn budget_exhausted_partial_plan_segment(
 }
 
 #[must_use]
+pub fn information_barrier_partial_plan_segment(
+    goal: GoalOffer,
+    topic: TellTopic,
+    remaining_skeleton: Option<Vec<PlannedSkeletonStep>>,
+    created_tick: Tick,
+    local_counter: u16,
+    cognitive: &CognitiveProfile,
+) -> Option<PartialPlanSegment> {
+    build_partial_plan_segment(
+        PartialPlanSegmentSeed {
+            goal,
+            completed_prefix: Vec::new(),
+            remaining_skeleton: remaining_skeleton.and_then(filter_preservable_skeleton),
+            terminal_barrier: PlanTerminalKind::InformationBarrier { topic },
+            barrier_fact: information_barrier_fact_for_topic(topic)?,
+            created_tick,
+            local_counter,
+            causal_links: Vec::new(),
+        },
+        cognitive,
+    )
+}
+
+#[must_use]
 pub fn filter_preservable_skeleton(
     steps: Vec<PlannedSkeletonStep>,
 ) -> Option<Vec<PlannedSkeletonStep>> {
@@ -261,6 +285,17 @@ pub fn record_coordination_barrier_blocker(
     true
 }
 
+fn information_barrier_fact_for_topic(topic: TellTopic) -> Option<BarrierFact> {
+    match topic {
+        TellTopic::EntityBelief { subject } => Some(BarrierFact::MissingBelief(
+            BeliefPredicate::TargetLastSeenKnown {
+                target: EntityTemplate::Fixed(subject),
+            },
+        )),
+        TellTopic::SocialObservation { .. } | TellTopic::InstitutionalClaim { .. } => None,
+    }
+}
+
 #[must_use]
 pub fn resume_conditions_for_barrier_fact(
     fact: &BarrierFact,
@@ -335,8 +370,9 @@ mod tests {
         BarrierFact, CoordinationBarrierBlockerRecord, PartialPlanSegment, PartialPlanSegmentId,
         PartialPlanSegmentSeed, PlannedSkeletonStep, budget_exhausted_partial_plan_segment,
         build_partial_plan_segment, coordination_barrier_blocking_fact,
-        filter_preservable_skeleton, record_coordination_barrier_blocker,
-        resume_conditions_for_barrier_fact, terminal_to_discrepancy,
+        filter_preservable_skeleton, information_barrier_partial_plan_segment,
+        record_coordination_barrier_blocker, resume_conditions_for_barrier_fact,
+        terminal_to_discrepancy,
     };
     use crate::{
         GoalOffer, PlanTerminalKind, PlannedStep, PlannerOpKind, PlanningEntityRef,
@@ -350,7 +386,7 @@ mod tests {
         ActionDefId, AffordanceKey, BeliefStatusTag, BlockerMemory, BlockerScope, BlockingFact,
         CognitiveProfile, CommodityKind, CommodityPurpose, Discrepancy, EntityId, EventId, GoalKey,
         GoalKind, IntentionAbandonCondition, IntentionResumeCondition, OpportunityAnchor, Permille,
-        Tick,
+        TellTopic, Tick,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -800,6 +836,56 @@ mod tests {
         );
 
         assert_eq!(segment.remaining_skeleton, None);
+    }
+
+    #[test]
+    fn information_barrier_partial_plan_segment_preserves_filtered_skeleton() {
+        let subject = entity(44);
+        let skeleton = vec![
+            PlannedSkeletonStep {
+                op: PlannerOpKind::Trade,
+                target_template: PayloadTemplate::FromContext,
+                expected_pre: vec![BeliefPredicate::TargetLastSeenKnown {
+                    target: EntityTemplate::Fixed(subject),
+                }],
+            },
+            PlannedSkeletonStep {
+                op: PlannerOpKind::Attack,
+                target_template: PayloadTemplate::FromContext,
+                expected_pre: Vec::new(),
+            },
+        ];
+
+        let segment = information_barrier_partial_plan_segment(
+            goal_offer(),
+            TellTopic::EntityBelief { subject },
+            Some(skeleton.clone()),
+            Tick(31),
+            2,
+            &CognitiveProfile::default(),
+        )
+        .expect("entity-belief information barrier should build a segment");
+
+        assert_eq!(
+            segment.terminal_barrier,
+            PlanTerminalKind::InformationBarrier {
+                topic: TellTopic::EntityBelief { subject },
+            }
+        );
+        assert_eq!(
+            segment.barrier_fact,
+            BarrierFact::MissingBelief(BeliefPredicate::TargetLastSeenKnown {
+                target: EntityTemplate::Fixed(subject),
+            })
+        );
+        assert_eq!(
+            segment.resume_conditions,
+            vec![IntentionResumeCondition::BeliefStatusChanged {
+                subject,
+                target_status: BeliefStatusTag::Certain,
+            }]
+        );
+        assert_eq!(segment.remaining_skeleton, Some(vec![skeleton[0].clone()]));
     }
 
     #[test]

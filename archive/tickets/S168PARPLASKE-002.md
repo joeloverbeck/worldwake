@@ -10,12 +10,12 @@
 
 Before this ticket, `PartialPlanSegment.remaining_skeleton: Option<Vec<PlannedSkeletonStep>>` was serialized but the budget-exhausted production constructor always populated it as `None`. `archive/tickets/S168PARPLASKE-005.md` added the lawful planner-owned `PartialPlanSkeletonSource`, so this ticket threads that already-derived skeleton source into budget-exhausted `PartialPlanSegment` construction.
 
-Live reassessment corrected the original D1.b wording: `spawn_information_barrier_companions` consumes already-suspended information-barrier `PartialPlanSegment`s; it is not a lawful producer because it skips entries without a segment. The information-barrier production seam remains real S168 work, but it now belongs to `tickets/S168PARPLASKE-006.md`, not this budget-exhausted population ticket.
+Live reassessment corrected the original D1.b wording: `spawn_information_barrier_companions` consumes already-suspended information-barrier `PartialPlanSegment`s; it is not a lawful producer because it skips entries without a segment. The information-barrier production seam remained real S168 work and later landed in `archive/tickets/S168PARPLASKE-006.md`, not this budget-exhausted population ticket.
 
 ## Assumption Reassessment (2026-05-24)
 
 1. **Codebase shape**. `build_partial_plan_segment` passes `PartialPlanSegmentSeed.remaining_skeleton` through unchanged. `budget_exhausted_partial_plan_segment` was the budget-exhausted construction boundary and used `remaining_skeleton: None`. `write_budget_exhausted_partial_plan_segments` already carried `CandidatePlanSearch.skeleton_source` from ticket 005 but did not pass it into the constructor.
-2. **Corrected D1.b boundary**. `spawn_information_barrier_companions` iterates `state.suspended`, reads `entry.partial_plan_segment`, and continues when it is absent. Because the companion function consumes a segment to discover the information-barrier topic, it cannot also be the first producer of that segment without circular control flow. `tickets/S168PARPLASKE-006.md` owns the corrected producer boundary.
+2. **Corrected D1.b boundary**. `spawn_information_barrier_companions` iterates `state.suspended`, reads `entry.partial_plan_segment`, and continues when it is absent. Because the companion function consumes a segment to discover the information-barrier topic, it cannot also be the first producer of that segment without circular control flow. `archive/tickets/S168PARPLASKE-006.md` owns the corrected producer boundary.
 3. **Mixed-layer boundary**. This ticket changes only the AI-internal `PartialPlanSegmentSeed.remaining_skeleton` value at the budget-exhausted writer boundary. It adds no authoritative type and does not change save format.
 4. **Filter boundary**. Combat and fixed-target-identity skeleton steps are filtered at `partial_plan.rs` construction time. Ticket 005 already avoids producing such sources in normal planner flow, but the segment constructor now enforces the invariant for direct callers too.
 5. **Proof split**. Focused unit tests prove constructor pass-through, construction filtering, budget-exhausted writer threading, and bincode round-trip of populated skeleton content. Cross-system information-barrier reuse and fallback goldens remain downstream of tickets 003, 004, and 006.
@@ -44,14 +44,14 @@ Live reassessment corrected the original D1.b wording: `spawn_information_barrie
 
 - `crates/worldwake-ai/src/partial_plan.rs`
 - `crates/worldwake-ai/src/agent_tick/planning.rs`
-- `tickets/S168PARPLASKE-006.md`
+- `archive/tickets/S168PARPLASKE-006.md`
 - `specs/S168-partial-plan-skeleton-reuse.md`
 - `tickets/S168PARPLASKE-003.md`
 - `tickets/S168PARPLASKE-004.md`
 
 ## Out of Scope
 
-- Information-barrier partial-plan production — `tickets/S168PARPLASKE-006.md`.
+- Information-barrier partial-plan production — `archive/tickets/S168PARPLASKE-006.md`.
 - `revalidate_skeleton_step` — archived ticket 001.
 - `search_plan_seeded`, resume consumption, and `PartialPlanResumeTrace` — ticket 003.
 - Validation goldens — ticket 004.
@@ -79,11 +79,11 @@ Completed on 2026-05-24.
 - Populated budget-exhausted partial-plan segments from the planner-owned `PartialPlanSkeletonSource` added by S168PARPLASKE-005.
 - Added construction-boundary filtering so combat and fixed-target-identity skeleton steps are not preserved.
 - Proved constructor pass-through, filtering, bincode round-trip, and budget-exhausted writer threading with focused tests.
-- Split the disproved information-barrier producer path into `tickets/S168PARPLASKE-006.md` and truth-synced S168 plus downstream tickets 003 and 004.
+- Split the disproved information-barrier producer path into the now-archived `archive/tickets/S168PARPLASKE-006.md` and truth-synced S168 plus downstream tickets 003 and 004.
 
 ## Deviations
 
-- The drafted D1.b agenda-companion producer was disproved by live code. `spawn_information_barrier_companions` needs an existing information-barrier segment before it can spawn a companion. `tickets/S168PARPLASKE-006.md` now owns the corrected information-barrier producer.
+- The drafted D1.b agenda-companion producer was disproved by live code. `spawn_information_barrier_companions` needs an existing information-barrier segment before it can spawn a companion. The corrected information-barrier producer later landed in `archive/tickets/S168PARPLASKE-006.md`.
 
 ## Verification Result
 

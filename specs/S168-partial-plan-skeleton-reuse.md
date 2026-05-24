@@ -39,7 +39,7 @@ already-suspended entries with a `PartialPlanSegment`; it cannot be the first pr
 because it skips entries whose segment is absent. Making the field live at
 information-barrier suspensions therefore requires a producer at the selected/completed
 information-barrier plan boundary, while the companion-spawn path remains a consumer.
-That corrected producer is tracked by `tickets/S168PARPLASKE-006.md`.
+That corrected producer landed in `archive/tickets/S168PARPLASKE-006.md`.
 
 Accepted in the triage of `reports/ai-architecture-improvements-second-iteration.md`
 (Proposal 3), explicitly the **lowest-benefit** of the accepted set — an optimization
@@ -150,8 +150,8 @@ through `build_partial_plan_segment` (`partial_plan.rs:94`) with populated
 `remaining_skeleton`, the appropriate `PlanTerminalKind::InformationBarrier { … }`
 terminal, and the corresponding `BarrierFact`, then suspend the matching agenda entry
 so `spawn_information_barrier_companions` can consume it. Combat- and
-target-identity-bound steps are excluded as for D1.a. The corrected producer seam is
-owned by `tickets/S168PARPLASKE-006.md`.
+target-identity-bound steps are excluded as for D1.a. The corrected producer seam
+landed in `archive/tickets/S168PARPLASKE-006.md`.
 
 ### D2. Skeleton revalidation
 

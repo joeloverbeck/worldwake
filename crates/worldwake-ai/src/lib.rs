@@ -127,8 +127,8 @@ pub use partial_plan::{
     BarrierFact, CoordinationBarrierBlockerRecord, PartialPlanSegment, PartialPlanSegmentId,
     PartialPlanSegmentSeed, PlannedSkeletonStep, budget_exhausted_partial_plan_segment,
     build_partial_plan_segment, coordination_barrier_blocking_fact,
-    record_coordination_barrier_blocker, resume_conditions_for_barrier_fact,
-    terminal_to_discrepancy,
+    information_barrier_partial_plan_segment, record_coordination_barrier_blocker,
+    resume_conditions_for_barrier_fact, terminal_to_discrepancy,
 };
 pub use partial_plan_revalidation::{
     SkeletonRevalidationContext, SkeletonRevalidationReason, SkeletonRevalidationVerdict,

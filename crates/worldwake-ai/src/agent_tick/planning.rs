@@ -31,12 +31,13 @@ use crate::{
     AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime,
     DirtySet, ExhaustionEntry, ExhaustionRetryState, ExpectationFailureCause,
     ExpectationFailurePhase, KillCondition, OpportunityExpectationFailureIncident, OpportunityKey,
-    PendingRepairContext, PlanValue, PlannedPlan, PlannedStep, PlannerOpSemantics,
-    PlanningStateCacheCounters, RevivalTrigger, authoritative_target,
+    PendingRepairContext, PlanTerminalKind, PlanValue, PlannedPlan, PlannedStep,
+    PlannerOpSemantics, PlanningStateCacheCounters, RevivalTrigger, authoritative_target,
     budget_exhausted_partial_plan_segment,
     build_planning_snapshot_with_blocked_facility_uses_and_route_preference,
-    planner_ops::committed_source_for_offer, planner_ops::expectation_kind_for_offer,
-    ranking::OrderedRanked, revalidate_next_step, select_best_plan,
+    information_barrier_partial_plan_segment, planner_ops::committed_source_for_offer,
+    planner_ops::expectation_kind_for_offer, ranking::OrderedRanked, revalidate_next_step,
+    select_best_plan,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
@@ -1143,6 +1144,74 @@ fn write_budget_exhausted_partial_plan_segments(
     written
 }
 
+fn write_information_barrier_partial_plan_segment(
+    agenda_state: &mut AgendaState,
+    ranked_candidates: &OrderedRanked<'_>,
+    selected_plan: &PlannedPlan,
+    plans: &[CandidatePlanSearch],
+    tick: Tick,
+    cognitive: &CognitiveProfile,
+) -> bool {
+    let PlanTerminalKind::InformationBarrier { topic } = selected_plan.terminal_kind else {
+        return false;
+    };
+    if matches!(
+        selected_plan.goal.kind,
+        GoalKind::AskWitness { .. } | GoalKind::ShareBelief { .. }
+    ) {
+        return false;
+    }
+    let Some(candidate) = ranked_candidates.iter().find(|candidate| {
+        candidate.offer.key == selected_plan.opportunity.goal_key
+            && candidate.offer.anchor == selected_plan.opportunity.anchor
+    }) else {
+        return false;
+    };
+    let remaining_skeleton = plans
+        .iter()
+        .find(|plan| plan.opportunity == selected_plan.opportunity)
+        .and_then(|plan| plan.skeleton_source.as_ref())
+        .map(|source| source.remaining_skeleton.clone());
+    let Some(segment) = information_barrier_partial_plan_segment(
+        candidate.offer.clone(),
+        topic,
+        remaining_skeleton,
+        tick,
+        next_partial_plan_segment_counter(agenda_state, tick),
+        cognitive,
+    ) else {
+        return false;
+    };
+
+    let mut entry = candidate.clone();
+    entry.phase = AgendaPhase::Suspended;
+    entry.last_reconsidered_tick = tick;
+    entry.revival_trigger = None;
+    entry.kill_condition = KillCondition::External;
+    entry.partial_plan_segment = Some(segment);
+    agenda_state.pending.remove(&entry.key);
+    if agenda_state
+        .committed
+        .as_ref()
+        .is_some_and(|committed| committed.key == entry.key)
+    {
+        agenda_state.committed = None;
+    }
+    agenda_state.suspended.insert(entry.key, entry);
+    true
+}
+
+fn next_partial_plan_segment_counter(agenda_state: &AgendaState, tick: Tick) -> u16 {
+    agenda_state
+        .suspended
+        .values()
+        .filter_map(|entry| entry.partial_plan_segment.as_ref())
+        .filter(|segment| segment.created_tick == tick)
+        .map(|segment| segment.id.local_counter)
+        .max()
+        .map_or(0, |counter| counter.saturating_add(1))
+}
+
 fn frontier_exhaustion_entry(
     goal_kind: &GoalKind,
     invalidation_conditions: Vec<crate::ExhaustionInvalidationCondition>,
@@ -2205,6 +2274,28 @@ fn plan_and_validate_next_step_with_opportunity_index(
                         cognitive.decision_history_alternatives,
                         prepared_frame.as_ref(),
                     );
+                    if write_information_barrier_partial_plan_segment(
+                        agenda_state,
+                        ranked_candidates,
+                        &selected_plan,
+                        &plans.plans,
+                        tick,
+                        cognitive,
+                    ) {
+                        runtime.current_plan = None;
+                        runtime.current_step_index = 0;
+                        runtime.step_in_flight = false;
+                        runtime.materialization_bindings.clear();
+                        facility_intents.intents.clear();
+                        *jc = None;
+                        runtime.accepted_repair = None;
+                        runtime.pending_repair_context = None;
+                        runtime.last_priority_class = ranked_candidates
+                            .iter()
+                            .find(|candidate| candidate.key == selected_plan.opportunity)
+                            .map(|candidate| candidate.priority_class);
+                        return (None, None);
+                    }
                     let current_place = SpatialBeliefView::effective_place(&refreshed_view, agent)
                         .expect("plan adoption expects actor to have an effective place");
                     adopt_selected_plan(
@@ -2743,6 +2834,54 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
                     });
                 }
 
+                if write_information_barrier_partial_plan_segment(
+                    agenda_state,
+                    ranked_candidates,
+                    &selected_plan,
+                    &plans.plans,
+                    tick,
+                    cognitive,
+                ) {
+                    runtime.current_plan = None;
+                    runtime.current_step_index = 0;
+                    runtime.step_in_flight = false;
+                    runtime.materialization_bindings.clear();
+                    facility_intents.intents.clear();
+                    *jc = None;
+                    runtime.accepted_repair = None;
+                    runtime.pending_repair_context = None;
+                    runtime.last_priority_class = ranked_candidates
+                        .iter()
+                        .find(|candidate| candidate.key == selected_plan.opportunity)
+                        .map(|candidate| candidate.priority_class);
+                    runtime.dirty = DirtySet::default();
+                    let view =
+                        runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
+                    let next_step = current_step(runtime).cloned();
+                    let next_step_valid = next_step.as_ref().map(|step| {
+                        revalidate_next_step(
+                            &view,
+                            agent,
+                            step,
+                            &runtime.materialization_bindings,
+                            action_defs,
+                            action_handlers,
+                        )
+                    });
+                    return (
+                        next_step,
+                        next_step_valid,
+                        plan_continued,
+                        Some(plan_search_trace),
+                        Some(selection_trace),
+                        portfolio_trace,
+                        snapshot_admissions,
+                        snapshot_cache_counters,
+                        planning_state_cache_counters,
+                        pending_tracker_increments,
+                    );
+                }
+
                 let current_place = SpatialBeliefView::effective_place(&refreshed_view, agent)
                     .expect("plan adoption expects actor to have an effective place");
                 adopt_selected_plan(
@@ -2898,6 +3037,7 @@ mod tests {
         planning_time_target_belief_presence, record_exhausted_goals, selected_plan_value,
         summarize_ranked_goal, summarize_selected_plan, summarize_snapshot_continuation,
         write_budget_exhausted_partial_plan_segments,
+        write_information_barrier_partial_plan_segment,
     };
     use crate::{
         AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
@@ -2975,6 +3115,17 @@ mod tests {
             goal,
             Vec::new(),
             PlanTerminalKind::GoalSatisfied,
+        )
+    }
+
+    fn information_barrier_plan(opportunity: OpportunityKey, subject: EntityId) -> PlannedPlan {
+        PlannedPlan::new(
+            opportunity,
+            opportunity.goal_key,
+            Vec::new(),
+            PlanTerminalKind::InformationBarrier {
+                topic: TellTopic::EntityBelief { subject },
+            },
         )
     }
 
@@ -6957,6 +7108,148 @@ mod tests {
             vec![worldwake_core::IntentionAbandonCondition::PatienceExhausted]
         );
         assert_eq!(segment.remaining_skeleton, Some(skeleton));
+    }
+
+    #[test]
+    fn write_information_barrier_partial_plan_segment_suspends_selected_goal_with_skeleton() {
+        let subject = place_entity(42);
+        let opportunity = consume_opportunity(CommodityKind::Bread, OpportunityAnchor::None);
+        let ranked = vec![ranked_goal_with_score(
+            opportunity,
+            GoalPriorityClass::Medium,
+            50,
+        )];
+        let skeleton = vec![crate::PlannedSkeletonStep {
+            op: PlannerOpKind::Trade,
+            target_template: crate::htn::PayloadTemplate::FromContext,
+            expected_pre: vec![crate::htn::BeliefPredicate::TargetLastSeenKnown {
+                target: crate::htn::EntityTemplate::Fixed(subject),
+            }],
+        }];
+        let selected_plan = information_barrier_plan(opportunity, subject);
+        let plans = vec![searched_plan_with_skeleton(
+            opportunity,
+            PlanSearchResult::Found(Box::new(selected_plan.clone())),
+            PartialPlanSkeletonSource {
+                remaining_skeleton: skeleton.clone(),
+            },
+        )];
+        let mut agenda_state = AgendaState::default();
+        agenda_state
+            .pending
+            .insert(ranked[0].key, ranked[0].clone());
+
+        let written = write_information_barrier_partial_plan_segment(
+            &mut agenda_state,
+            &ordered(&ranked),
+            &selected_plan,
+            &plans,
+            Tick(31),
+            &CognitiveProfile::default(),
+        );
+
+        assert!(written);
+        assert!(!agenda_state.pending.contains_key(&opportunity));
+        let suspended = agenda_state
+            .suspended
+            .get(&opportunity)
+            .expect("information-barrier goal should be suspended with a segment");
+        assert_eq!(suspended.phase, AgendaPhase::Suspended);
+        let segment = suspended.partial_plan_segment.as_ref().unwrap();
+        assert_eq!(segment.goal, ranked[0].offer);
+        assert_eq!(
+            segment.terminal_barrier,
+            PlanTerminalKind::InformationBarrier {
+                topic: TellTopic::EntityBelief { subject },
+            }
+        );
+        assert_eq!(segment.remaining_skeleton, Some(skeleton));
+        assert_eq!(
+            segment.resume_conditions,
+            vec![
+                worldwake_core::IntentionResumeCondition::BeliefStatusChanged {
+                    subject,
+                    target_status: worldwake_core::BeliefStatusTag::Certain,
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn write_information_barrier_partial_plan_segment_allows_missing_skeleton_source() {
+        let subject = place_entity(42);
+        let opportunity = consume_opportunity(CommodityKind::Bread, OpportunityAnchor::None);
+        let ranked = vec![ranked_goal_with_score(
+            opportunity,
+            GoalPriorityClass::Medium,
+            50,
+        )];
+        let selected_plan = information_barrier_plan(opportunity, subject);
+        let plans = vec![searched_plan(
+            opportunity,
+            PlanSearchResult::Found(Box::new(selected_plan.clone())),
+        )];
+        let mut agenda_state = AgendaState::default();
+        agenda_state
+            .pending
+            .insert(ranked[0].key, ranked[0].clone());
+
+        let written = write_information_barrier_partial_plan_segment(
+            &mut agenda_state,
+            &ordered(&ranked),
+            &selected_plan,
+            &plans,
+            Tick(31),
+            &CognitiveProfile::default(),
+        );
+
+        assert!(written);
+        let segment = agenda_state
+            .suspended
+            .get(&opportunity)
+            .and_then(|entry| entry.partial_plan_segment.as_ref())
+            .expect("information-barrier segment should still be lawful without a source");
+        assert_eq!(segment.remaining_skeleton, None);
+    }
+
+    #[test]
+    fn write_information_barrier_partial_plan_segment_does_not_suspend_ask_witness_companion() {
+        let subject = place_entity(42);
+        let witness = place_entity(43);
+        let opportunity = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::AskWitness {
+                witness,
+                topic: TellTopic::EntityBelief { subject },
+            }),
+            anchor: OpportunityAnchor::Entity(witness),
+        };
+        let ranked = vec![ranked_goal_with_score(
+            opportunity,
+            GoalPriorityClass::Medium,
+            50,
+        )];
+        let selected_plan = information_barrier_plan(opportunity, subject);
+        let plans = vec![searched_plan(
+            opportunity,
+            PlanSearchResult::Found(Box::new(selected_plan.clone())),
+        )];
+        let mut agenda_state = AgendaState::default();
+        agenda_state
+            .pending
+            .insert(ranked[0].key, ranked[0].clone());
+
+        let written = write_information_barrier_partial_plan_segment(
+            &mut agenda_state,
+            &ordered(&ranked),
+            &selected_plan,
+            &plans,
+            Tick(31),
+            &CognitiveProfile::default(),
+        );
+
+        assert!(!written);
+        assert!(agenda_state.pending.contains_key(&opportunity));
+        assert!(!agenda_state.suspended.contains_key(&opportunity));
     }
 
     #[test]
