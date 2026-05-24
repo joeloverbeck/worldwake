@@ -5,14 +5,14 @@
   "starting_branch": "main",
   "current_branch": "implement-S168-partial-plan-skeleton-reuse",
   "base_head": "6219274ef7924aaa044694d0584bf5e5f8746035",
-  "last_ticket": "archive/tickets/S168PARPLASKE-005.md",
+  "last_ticket": "archive/tickets/S168PARPLASKE-002.md",
   "last_result": "completed_archived",
-  "last_work_commit": "dfe50a0e8568381e9fa95e3a0a11308776e866e8",
+  "last_work_commit": "539fb5c7d52cd2b382f7a908b0e148a28fd9de8c",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S168PARPLASKE-002.md",
+  "next_target": "tickets/S168PARPLASKE-006.md",
   "queue": [
-    "tickets/S168PARPLASKE-002.md",
+    "tickets/S168PARPLASKE-006.md",
     "tickets/S168PARPLASKE-003.md",
     "tickets/S168PARPLASKE-004.md"
   ],
