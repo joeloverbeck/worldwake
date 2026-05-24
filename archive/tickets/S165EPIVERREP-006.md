@@ -25,7 +25,7 @@ the no-witness branch still falls through to a typed `InformationBarrier`.
    `NoEpistemicSubstrate`; after tickets 001-003 a lawful co-located witness yields
    `Repaired` with an `ask_witness` step.
 2. Spec deliverable D8 + Validation/Falsification section
-   (`specs/S165-epistemic-verification-repair.md`). Golden inventory is regenerated with
+   (`archive/specs/S165-epistemic-verification-repair.md`). Golden inventory is regenerated with
    `python3 scripts/golden_inventory.py --write --check-docs` per `tickets/README.md`.
 3. Coverage classification (precision rule 3): this ticket adds **golden/E2E coverage**
    (new `golden_epistemic_verification_repair.rs`) plus migrates two focused/scenario
@@ -122,7 +122,7 @@ published.
 
 - `crates/worldwake-ai/src/plan_repair.rs` (modify — migrate inline test)
 - `crates/worldwake-ai/tests/scenarios/plan_repair.rs` (modify — migrate scenario test)
-- `specs/S165-epistemic-verification-repair.md` (modify — truth-sync D8 and validation
+- `archive/specs/S165-epistemic-verification-repair.md` (modify — truth-sync D8 and validation
   proof surfaces)
 - `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-scenario-index.md`,
   `docs/generated/golden-scenario-details/`, `docs/generated/golden-coverage-matrix.md`

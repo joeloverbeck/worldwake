@@ -26,7 +26,7 @@ rejection, the missing-affordance cause.
    `RepairApplied(RepairAppliedPayload)`), so adding fields does **not** bump
    `SAVE_FORMAT_VERSION` (confirmed: `SAVE_FORMAT_VERSION = 100`,
    `crates/worldwake-sim/src/save_load.rs:7`).
-2. Spec deliverable D7 (`specs/S165-epistemic-verification-repair.md`).
+2. Spec deliverable D7 (`archive/specs/S165-epistemic-verification-repair.md`).
 3. Construction sites (struct-literal grep) — all must supply the new field: runtime
    emission at `crates/worldwake-ai/src/agent_tick/execution.rs:144` and `:585`; observer
    at `crates/worldwake-cli/src/bin/observer.rs:8640`; test/aggregator helpers at
@@ -77,7 +77,7 @@ pre-ticket field set.
 - `crates/worldwake-ai/src/agent_tick/execution.rs` (modified)
 - `crates/worldwake-ai/src/scenario_diagnostics/aggregator.rs` (modified)
 - `crates/worldwake-cli/src/bin/observer.rs` (modified)
-- `specs/S165-epistemic-verification-repair.md` (modified)
+- `archive/specs/S165-epistemic-verification-repair.md` (modified)
 
 ## Out of Scope
 

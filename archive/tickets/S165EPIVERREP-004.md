@@ -23,7 +23,7 @@ spliced step and added focused coverage; no rejection fix was required.
    (`crates/worldwake-systems/src/epistemic_actions.rs:27`; validator fn at
    `epistemic_actions.rs:155`). `plan_revalidation.rs` calls `requested_affordance_matches`,
    which delegates to the handler's override validator for untargeted synthesized payloads.
-2. Spec deliverable D6 (`specs/S165-epistemic-verification-repair.md`).
+2. Spec deliverable D6 (`archive/specs/S165-epistemic-verification-repair.md`).
 3. Shared boundary under audit: the payload-revalidation contract between the spliced
    `RepairPlanCandidate.step` (ticket 003) and `validate_ask_witness_payload_override`.
    The spliced payload is the same `AskWitnessPayload` shape the organic planner produces,

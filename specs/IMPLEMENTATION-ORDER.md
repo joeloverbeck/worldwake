@@ -36,16 +36,18 @@ S168 (partial-plan skeleton reuse)          ── independent; activates dead f
 All four are independent and may be implemented in any order or in parallel.
 Recommended priority follows benefit: **S165 → S167 → S166 → S168.**
 
+### Completed
+
+- **S165 — Epistemic Verification Repair** —
+  `archive/specs/S165-epistemic-verification-repair.md` — *Status: COMPLETED
+  2026-05-24.* Replaced the permanently-failing `RepairKind::InsertVerification`
+  placeholder with a co-located `AskWitness` verification repair path for
+  belief-backed breaches, authoritative witness-anchor recording, payload
+  revalidation coverage, and plan-repair golden coverage for the witness and
+  no-witness branches.
+
 ### Pending
 
-- **S165 — Epistemic Verification Repair** — `specs/S165-epistemic-verification-repair.md`
-  — *Status: DRAFT.* Replaces the permanently-failing
-  `RepairKind::InsertVerification` placeholder (`plan_repair.rs:131`) with a real
-  verification subplan: splice a lawful `AskWitness`/`ExploreLocation` step for
-  belief-backed breaches, or fall through to the typed `InformationBarrier` when no
-  verification affordance is lawful. Closes the never-owned bridge between completed
-  S137 and S139. Golden proves FOUNDATIONS Scenario D. Highest-leverage.
-  **FND-14, FND-15, FND-16, FND-17, FND-20, FND-21, FND-29.**
 - **S167 — Cognitive Archetype Behavioral Proof Lane** —
   `specs/S167-cognitive-archetype-behavioral-proof.md` — *Status: DRAFT.* Adds the
   missing causal proof (FND-31) that archetypes change *decisions*, not merely

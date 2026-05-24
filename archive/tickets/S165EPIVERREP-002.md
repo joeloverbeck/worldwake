@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-ai` plan repair (`plan_repair.rs`)
-**Deps**: specs/S165-epistemic-verification-repair.md (D4)
+**Deps**: archive/specs/S165-epistemic-verification-repair.md (D4)
 
 ## Problem
 
@@ -26,7 +26,7 @@ the seam (ticket 003) supplies one, the arm consumes it.
    (`plan_repair.rs:125-130`). `attempt_candidate_repair` (`plan_repair.rs:145`) looks up
    `context.replacement_candidates` for a candidate whose `kind` matches and composes the
    plan via `plan_from_parts`; it returns `None` when no matching candidate exists.
-2. Spec deliverable D4 (`specs/S165-epistemic-verification-repair.md`).
+2. Spec deliverable D4 (`archive/specs/S165-epistemic-verification-repair.md`).
 3. Existing tests exercising this arm:
    `insert_verification_returns_no_epistemic_substrate_without_s139`
    (`crates/worldwake-ai/src/plan_repair.rs:546`) and

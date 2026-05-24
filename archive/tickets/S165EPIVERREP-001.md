@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` candidate generation (`candidate_generation.rs`)
-**Deps**: specs/S165-epistemic-verification-repair.md (D2)
+**Deps**: archive/specs/S165-epistemic-verification-repair.md (D2)
 
 ## Problem
 
@@ -27,7 +27,7 @@ construction path that can drift from the emitter (FND-28).
    witnesses and known beliefs, gates each by confidence/cooldown/testimony reliability,
    and pushes one `GoalOffer` per `(witness, topic)` (cap
    `ASK_WITNESS_EMISSION_CAP_PER_TOPIC`). It emits **goals**, not `PlannedStep`s.
-2. Spec deliverable D2 (`specs/S165-epistemic-verification-repair.md`). The repair-facing
+2. Spec deliverable D2 (`archive/specs/S165-epistemic-verification-repair.md`). The repair-facing
    output is a `PlannedStep` (`RepairPlanCandidate.step: PlannedStep`,
    `crates/worldwake-ai/src/plan_repair.rs:24`), distinct from the emitter's `GoalOffer`
    output. The shareable surface is therefore the **lawfulness gate + payload synthesis**,
@@ -92,7 +92,7 @@ testimony suppression diagnostics, and per-topic emission cap.
 ## Landed Files
 
 - `crates/worldwake-ai/src/candidate_generation.rs` (modified)
-- `specs/S165-epistemic-verification-repair.md` (modified — D2 signature truth-sync)
+- `archive/specs/S165-epistemic-verification-repair.md` (modified — D2 signature truth-sync)
 
 ## Out of Scope
 

@@ -1,6 +1,6 @@
 # S165: Epistemic Verification Repair
 
-**Status**: DRAFT
+**Status**: COMPLETED
 
 ## Problem Statement
 
@@ -65,8 +65,8 @@ diagnostic trace.
 
 ## Phase and Status
 
-Adjunct Wave: AI Architecture Improvements — First Iteration. Draft, pending
-ticket decomposition.
+Adjunct Wave: AI Architecture Improvements — First Iteration. Completed and archived
+after tickets S165EPIVERREP-001 through S165EPIVERREP-006 landed.
 
 ## Crates
 
@@ -404,3 +404,38 @@ differently on the same breach.
   extracted constructor.
 - **Stale test fossils.** The "without_s139" tests must be migrated, not
   deleted-and-skipped, so the closed gap stays proven.
+
+## Outcome
+
+Completed: 2026-05-24
+
+S165 landed the co-located witness bridge for `RepairKind::InsertVerification`.
+Implementation added the repair-facing `AskWitness` step constructor, seam-side
+epistemic-breach candidate construction, `InsertVerification` candidate selection,
+payload revalidation coverage, authoritative witness-anchor recording through
+`RepairAppliedPayload.substitute_target`, diagnostic `RepairAttemptTrace` witness-anchor
+coverage, and migrated plan-repair golden coverage for both the witness branch and
+no-witness fall-through.
+
+Deviations from the draft:
+
+1. The witness-subject was not added as a new authoritative `RepairAppliedPayload` field;
+   the landed design uses the existing witness anchor plus `goal_key`, with the subject
+   recorded by the executed `ask_witness` action event when the step runs. No
+   `SAVE_FORMAT_VERSION` bump was needed.
+2. Scenario D coverage landed in the existing plan-repair golden owner
+   (`crates/worldwake-ai/tests/scenarios/plan_repair.rs`) rather than a new
+   `golden_epistemic_verification_repair.rs` integration target. The existing S139
+   `golden_ask_witness_refreshes_stale_report` remains the replay proof for the
+   `ask_witness` effect sink and `Report` provenance import.
+
+Verification:
+
+1. Passed `cargo test -p worldwake-ai --lib candidate_generation`.
+2. Passed `cargo test -p worldwake-ai --lib plan_repair`.
+3. Passed `cargo test -p worldwake-ai --lib agent_tick::execution`.
+4. Passed `cargo test -p worldwake-ai --lib plan_revalidation`.
+5. Passed `cargo test -p worldwake-ai --test golden_ai plan_repair`.
+6. Passed `cargo test -p worldwake-ai --test golden_ai golden_ask_witness_refreshes_stale_report`.
+7. Passed `python3 scripts/golden_inventory.py --write --check-docs`.
+8. Passed `cargo test -p worldwake-ai`.

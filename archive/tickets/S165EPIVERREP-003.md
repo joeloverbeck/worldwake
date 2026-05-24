@@ -31,7 +31,7 @@ where the belief view and place context are available, and passed in as a
    `discrepancy_entry` (`DiscrepancyClearing`, `crates/worldwake-core/src/discrepancy.rs:78`)
    are present in `PlanRepairContext`.
 2. Spec deliverables D1 (breach-classification predicate), D3 (seam construction), D5
-   (authoritative anchor) — `specs/S165-epistemic-verification-repair.md`.
+   (authoritative anchor) — `archive/specs/S165-epistemic-verification-repair.md`.
 3. Shared boundary under audit: `PlanRepairContext` / `RepairPlanCandidate` (the seam↔
    `plan_repair` data contract from S137) and the `RepairApplied` event payload
    (`RepairAppliedPayload.substitute_target`, `crates/worldwake-core/src/decision_event_payload.rs:440`)

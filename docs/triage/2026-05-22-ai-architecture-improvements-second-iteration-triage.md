@@ -22,10 +22,12 @@ is genuine and unclaimed.
 
 ## Accepted
 
-- **`specs/S165-epistemic-verification-repair.md`** (Proposal 1) — wire
-  `InsertVerification` to splice a lawful `AskWitness`/`ExploreLocation` verification
-  subplan for belief-backed breaches; golden proves FOUNDATIONS Scenario D. Substrate
-  (S137 repair context + S139 goal) exists. Highest-leverage. **FND-14/15/16/17/20/21/29.**
+- **`archive/specs/S165-epistemic-verification-repair.md`** (Proposal 1, completed
+  2026-05-24) — wired
+  `InsertVerification` to splice a lawful co-located `AskWitness` verification step
+  for belief-backed breaches; plan-repair golden coverage proves the S165 repair seam.
+  Substrate (S137 repair context + S139 goal) exists. Highest-leverage.
+  **FND-14/15/16/17/20/21/29.**
 - **`specs/S166-opportunity-compiler-source-fidelity.md`** (Proposal 2, **narrowed**) —
   derive `source_belief.status` from the real belief (not hard-coded `Probable`,
   `compile.rs:222`) and `required_actions` from `EffectSchemaIndex` (not hard-coded
