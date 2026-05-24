@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `crates/worldwake-ai/src/agent_tick/planning.rs`, `crates/worldwake-ai/src/partial_plan.rs`, and `crates/worldwake-ai/src/lib.rs`.
-**Deps**: `archive/tickets/S168PARPLASKE-002.md` (budget-exhausted skeleton population and construction filter); `archive/tickets/S168PARPLASKE-005.md` (planner-owned skeleton source carrier); `specs/S168-partial-plan-skeleton-reuse.md` (D1.b corrected producer boundary).
+**Deps**: `archive/tickets/S168PARPLASKE-002.md` (budget-exhausted skeleton population and construction filter); `archive/tickets/S168PARPLASKE-005.md` (planner-owned skeleton source carrier); `archive/specs/S168-partial-plan-skeleton-reuse.md` (D1.b corrected producer boundary).
 
 ## Problem
 

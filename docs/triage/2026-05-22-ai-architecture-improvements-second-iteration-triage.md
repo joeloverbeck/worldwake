@@ -39,10 +39,10 @@ is genuine and unclaimed.
   (different *decisions*, not just S152's
   resolved-profile-value tests) + activate archetypes in a canonical `scenarios/*.ron`
   so coverage no longer shows them absent. **FND-20/22/22A/29/31.**
-- **`specs/S168-partial-plan-skeleton-reuse.md`** (Proposal 3, lowest benefit) —
-  populate + consume the dead `remaining_skeleton` field (`partial_plan.rs:36,123`) for
-  information/budget barriers; revalidate-before-reuse so it never becomes a rail.
-  **FND-20/21/26/27/29.**
+- **`archive/specs/S168-partial-plan-skeleton-reuse.md`** (Proposal 3, lowest
+  benefit, completed 2026-05-24) — populated + consumed the dead
+  `remaining_skeleton` field for information/budget barriers; revalidate-before-reuse
+  so it never becomes a rail. **FND-20/21/26/27/29.**
 
 ## Dismissed / deferred
 

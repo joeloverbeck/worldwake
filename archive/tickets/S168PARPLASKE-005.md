@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `crates/worldwake-ai/src/search/mod.rs` (expose a lawful preservable skeleton source from the search result/trace metadata); `crates/worldwake-ai/src/agent_tick/planning.rs` (carry the source beside `CandidatePlanSearch` for later segment population); focused tests.
-**Deps**: `specs/S168-partial-plan-skeleton-reuse.md` (D1.a/D1.b causal-equivalence requirement); `archive/tickets/S168PARPLASKE-001.md` (revalidation contract that later consumes the skeleton); `archive/specs/S149-partial-plan-segments-and-typed-terminals.md` (owns `PartialPlanSegment` and `PlannedSkeletonStep`).
+**Deps**: `archive/specs/S168-partial-plan-skeleton-reuse.md` (D1.a/D1.b causal-equivalence requirement); `archive/tickets/S168PARPLASKE-001.md` (revalidation contract that later consumes the skeleton); `archive/specs/S149-partial-plan-segments-and-typed-terminals.md` (owns `PartialPlanSegment` and `PlannedSkeletonStep`).
 
 ## Problem
 

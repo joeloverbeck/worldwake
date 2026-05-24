@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `crates/worldwake-ai/src/partial_plan.rs` and `crates/worldwake-ai/src/agent_tick/planning.rs`.
-**Deps**: `archive/tickets/S168PARPLASKE-005.md` (planner-owned preservable skeleton source); `specs/S168-partial-plan-skeleton-reuse.md` (D1.a); `archive/specs/S149-partial-plan-segments-and-typed-terminals.md` (owns `PartialPlanSegmentSeed` shape).
+**Deps**: `archive/tickets/S168PARPLASKE-005.md` (planner-owned preservable skeleton source); `archive/specs/S168-partial-plan-skeleton-reuse.md` (D1.a); `archive/specs/S149-partial-plan-segments-and-typed-terminals.md` (owns `PartialPlanSegmentSeed` shape).
 
 ## Problem
 
@@ -45,7 +45,7 @@ Live reassessment corrected the original D1.b wording: `spawn_information_barrie
 - `crates/worldwake-ai/src/partial_plan.rs`
 - `crates/worldwake-ai/src/agent_tick/planning.rs`
 - `archive/tickets/S168PARPLASKE-006.md`
-- `specs/S168-partial-plan-skeleton-reuse.md`
+- `archive/specs/S168-partial-plan-skeleton-reuse.md`
 - `archive/tickets/S168PARPLASKE-003.md`
 - `archive/tickets/S168PARPLASKE-004.md`
 

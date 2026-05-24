@@ -1,6 +1,6 @@
 # S168: Partial-Plan Skeleton Reuse
 
-**Status**: DRAFT
+**Status**: COMPLETED
 
 ## Problem Statement
 
@@ -54,8 +54,7 @@ never becomes a rail.
 
 ## Phase and Status
 
-Adjunct Wave: AI Architecture Improvements — First Iteration. Draft, pending ticket
-decomposition.
+Adjunct Wave: AI Architecture Improvements — First Iteration. Completed and archived.
 
 ## Crates
 
@@ -302,3 +301,39 @@ No new parameters. Existing sources:
 - **Low realized benefit.** This is an optimization; if profiling shows resume replans
   are rare or cheap, the population scope can be narrowed further at ticket time
   without affecting the other Adjunct Wave specs.
+
+## Outcome
+
+Completed: 2026-05-24
+
+S168 landed the partial-plan skeleton reuse path through the archived ticket family:
+`archive/tickets/S168PARPLASKE-001.md` through
+`archive/tickets/S168PARPLASKE-006.md`. The implementation added belief-backed
+skeleton revalidation, a planner-owned skeleton source carrier, budget-exhausted and
+information-barrier skeleton population, seeded tactical search consumption, and
+`PartialPlanResumeTrace` coverage for reuse versus fallback.
+
+Deviations from the draft:
+
+- Live reassessment disproved `spawn_information_barrier_companions` as the first
+  information-barrier producer because it consumes already-suspended entries. The
+  corrected selected/completed barrier-plan producer landed in
+  `archive/tickets/S168PARPLASKE-006.md`.
+- `search_plan_seeded` remained a tactical-search seed/fallback path, not direct
+  action replay. Concrete action definitions, bindings, durations, and payloads are
+  still rebuilt through ordinary search.
+- Golden coverage landed in the existing generated partial-plan terminal harness
+  rather than full autonomous commodity-purchase scenarios, keeping proof at the
+  S168-owned resume/revalidation boundary.
+
+Verification:
+
+- Passed focused revalidation, skeleton-source, budget-exhaustion population,
+  information-barrier producer, seeded-search, and resume-trace tests recorded in the
+  archived S168 tickets.
+- Passed S168 generated golden coverage:
+  `golden_s168_information_barrier_resume_reuses_skeleton`,
+  `golden_s168_information_barrier_resume_falls_back_when_skeleton_invalid`, and
+  `golden_s168_populated_skeleton_survives_save_load_before_resume`.
+- Passed broader no-regression gates recorded by the final S168 tickets, including
+  `cargo test -p worldwake-ai` and generated golden inventory/documentation checks.

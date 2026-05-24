@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `crates/worldwake-ai/src/search/mod.rs` (new `search_plan_seeded` tactical-search entry); `crates/worldwake-ai/src/agent_tick/planning.rs` (resumed reusable skeletons call seeded search during candidate planning); `crates/worldwake-ai/src/agenda_manager.rs` (`try_resume_partial_plan_with_trace` gates skeleton reuse and emits trace while preserving the public `try_resume_partial_plan` wrapper); `crates/worldwake-ai/src/decision_trace.rs` (new `PartialPlanResumeTrace` struct).
-**Deps**: `archive/tickets/S168PARPLASKE-001.md` (`revalidate_skeleton_step` + `SkeletonRevalidationContext` + `SkeletonRevalidationVerdict`); `archive/tickets/S168PARPLASKE-002.md` (budget-exhausted populated `remaining_skeleton` to consume); `archive/tickets/S168PARPLASKE-006.md` (information-barrier producer for end-to-end reuse paths); `specs/S168-partial-plan-skeleton-reuse.md` (D3, D4).
+**Deps**: `archive/tickets/S168PARPLASKE-001.md` (`revalidate_skeleton_step` + `SkeletonRevalidationContext` + `SkeletonRevalidationVerdict`); `archive/tickets/S168PARPLASKE-002.md` (budget-exhausted populated `remaining_skeleton` to consume); `archive/tickets/S168PARPLASKE-006.md` (information-barrier producer for end-to-end reuse paths); `archive/specs/S168-partial-plan-skeleton-reuse.md` (D3, D4).
 
 ## Problem
 
@@ -23,7 +23,7 @@ D4's `PartialPlanResumeTrace` struct lives in `decision_trace.rs` (parallel to `
    - `search_plan_with_trace_metadata_and_source` is imported at `agent_tick/planning.rs:25`. Its current signature takes no skeleton parameter (verified by `/reassess-spec` agent 2).
    - `RepairAttemptTrace` (`decision_trace.rs:197`) is the analog the new `PartialPlanResumeTrace` parallels. Existing trace event types include `FrameTransitionKind::Resumed` at `decision_trace.rs:61` (records agenda frame resumption but does not carry skeleton/revalidation detail).
    - Decision trace sink installation pattern: traces are appended to the per-agent trace via the existing decision-trace surface. Read `RepairAttemptTrace` consumers (~5-10 sites) to confirm the existing emit/observation pattern before authoring the new trace's wiring.
-2. **Spec/doc references**. S168 D3 (`specs/S168-partial-plan-skeleton-reuse.md:176-192`) names `search_plan_seeded` and the search-control-bias semantics. D4 (lines 194-201) names `PartialPlanResumeTrace` and the emit point. The decision to use a separate function (not an optional parameter on `search_plan_with_trace_metadata_and_source`) is explicit in the spec — preserves the unseeded entry's tracing/termination contract.
+2. **Spec/doc references**. S168 D3 (`archive/specs/S168-partial-plan-skeleton-reuse.md`) names `search_plan_seeded` and the search-control-bias semantics. D4 names `PartialPlanResumeTrace` and the emit point. The decision to use a separate function (not an optional parameter on `search_plan_with_trace_metadata_and_source`) is explicit in the spec — preserves the unseeded entry's tracing/termination contract.
 3. **Mixed-layer boundary**. This is a cross-module AI ticket but stays AI-internal. Shared boundaries under audit:
    - `try_resume_partial_plan` → `revalidate_skeleton_step(SkeletonRevalidationContext { actor, goal: &segment.goal, step, view })` (ticket 001) → verdict.
    - `try_resume_partial_plan_with_trace` → `PartialPlanResumeTrace` emit (new, decision_trace sink).
