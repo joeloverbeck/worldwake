@@ -24,7 +24,7 @@ use crate::plan_step_expectations::{
     expire_plan_step_expectations, persist_expectation_store_update, write_plan_step_expectations,
 };
 use crate::search::{
-    PartialPlanSkeletonSource, PlanSearchResult, SearchTraceMetadata,
+    PartialPlanSkeletonSource, PlanSearchResult, SearchTraceMetadata, search_plan_seeded,
     search_plan_with_trace_metadata_and_source,
 };
 use crate::{
@@ -763,31 +763,64 @@ pub(super) fn build_candidate_plans_with_sources(
             }
             _ => *cognitive,
         };
-        let result = search_plan_with_trace_metadata_and_source(
-            &snapshot,
-            &ranked.offer,
-            semantics_table,
-            action_defs,
-            action_handlers,
-            &effective_cognitive,
-            execution_budget,
-            recipe_registry,
-            blocked_memory,
-            current_tick,
-            if collect_rejections {
-                Some(&mut rejections)
-            } else {
-                None
-            },
-            if collect_expansion_summaries {
-                Some(&mut expansions)
-            } else {
-                None
-            },
-            Some(&mut trace_metadata),
-            candidate_source,
-            opportunity_index,
-        );
+        let seeded_skeleton = ranked
+            .partial_plan_segment
+            .as_ref()
+            .and_then(|segment| segment.remaining_skeleton.as_deref());
+        let result = if let Some(skeleton) = seeded_skeleton {
+            search_plan_seeded(
+                skeleton,
+                &snapshot,
+                &ranked.offer,
+                semantics_table,
+                action_defs,
+                action_handlers,
+                &effective_cognitive,
+                execution_budget,
+                recipe_registry,
+                blocked_memory,
+                current_tick,
+                if collect_rejections {
+                    Some(&mut rejections)
+                } else {
+                    None
+                },
+                if collect_expansion_summaries {
+                    Some(&mut expansions)
+                } else {
+                    None
+                },
+                Some(&mut trace_metadata),
+                candidate_source,
+                opportunity_index,
+            )
+        } else {
+            search_plan_with_trace_metadata_and_source(
+                &snapshot,
+                &ranked.offer,
+                semantics_table,
+                action_defs,
+                action_handlers,
+                &effective_cognitive,
+                execution_budget,
+                recipe_registry,
+                blocked_memory,
+                current_tick,
+                if collect_rejections {
+                    Some(&mut rejections)
+                } else {
+                    None
+                },
+                if collect_expansion_summaries {
+                    Some(&mut expansions)
+                } else {
+                    None
+                },
+                Some(&mut trace_metadata),
+                candidate_source,
+                opportunity_index,
+            )
+        };
         let mut result = match result {
             PlanSearchResult::Found(plan)
                 if plan.steps.first().is_some_and(|step| {

@@ -46,7 +46,7 @@ Live reassessment corrected the original D1.b wording: `spawn_information_barrie
 - `crates/worldwake-ai/src/agent_tick/planning.rs`
 - `archive/tickets/S168PARPLASKE-006.md`
 - `specs/S168-partial-plan-skeleton-reuse.md`
-- `tickets/S168PARPLASKE-003.md`
+- `archive/tickets/S168PARPLASKE-003.md`
 - `tickets/S168PARPLASKE-004.md`
 
 ## Out of Scope

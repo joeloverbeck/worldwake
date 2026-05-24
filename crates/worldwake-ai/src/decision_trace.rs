@@ -40,6 +40,7 @@ use crate::planning_snapshot::{AdmissionSource, PlanningSnapshot};
 use crate::ranking::RankedGoalComparison;
 use crate::side_benefit::SideBenefit;
 use crate::source_composite::SourceCompositeRank;
+use crate::{PartialPlanSegmentId, SkeletonRevalidationReason, SkeletonRevalidationVerdict};
 // ── Frame Transition Trace ──────────────────────────────────────
 
 /// One lifecycle event recorded for an `IntentionFrame` during a tick.
@@ -105,6 +106,7 @@ pub struct AgentDecisionTrace {
     pub snapshot_cache_counters: Option<SnapshotCacheCounters>,
     pub planning_state_cache_counters: Option<PlanningStateCacheCounters>,
     pub repair_attempts: Vec<RepairAttemptTrace>,
+    pub partial_plan_resumes: Vec<PartialPlanResumeTrace>,
     pub causal_link_cap_hits: Vec<CausalLinkCapHit>,
 }
 
@@ -201,6 +203,23 @@ pub struct RepairAttemptTrace {
     pub rejected: Vec<(RepairKind, RepairFailure)>,
     pub budget_consumed: u16,
     pub budget_total: u16,
+}
+
+/// Diagnostic record for one suspended partial-plan resume decision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PartialPlanResumeTrace {
+    pub segment_id: PartialPlanSegmentId,
+    pub decision: PartialPlanResumeDecision,
+    pub per_step_verdicts: Vec<SkeletonRevalidationVerdict>,
+    pub seeded_ops: Option<Vec<PlannerOpKind>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PartialPlanResumeDecision {
+    ReusedSeededSearch,
+    FallbackToReplanInvalid(SkeletonRevalidationReason),
+    FallbackToReplanNoSkeleton,
+    Abandoned,
 }
 
 /// Diagnostic record emitted when causal-link construction hits the per-step cap.
@@ -2981,6 +3000,7 @@ mod tests {
             snapshot_cache_counters: None,
             planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
+            partial_plan_resumes: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,
@@ -3075,6 +3095,7 @@ mod tests {
             snapshot_cache_counters: None,
             planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
+            partial_plan_resumes: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Dead,
         }
@@ -3141,6 +3162,7 @@ mod tests {
             snapshot_cache_counters: None,
             planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
+            partial_plan_resumes: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,
@@ -3205,6 +3227,7 @@ mod tests {
             snapshot_cache_counters: None,
             planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
+            partial_plan_resumes: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,
@@ -5880,6 +5903,7 @@ mod tests {
             snapshot_cache_counters: None,
             planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
+            partial_plan_resumes: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,

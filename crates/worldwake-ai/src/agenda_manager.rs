@@ -1,8 +1,9 @@
 use crate::{
     AgendaEntry, AgendaEntryKey, AgendaOrigin, AgendaPhase, AgendaState, GoalKind, GoalOffer,
-    KillCondition, PartialPlanSegment, PlanTerminalKind, RevivalTrigger,
+    KillCondition, PartialPlanResumeDecision, PartialPlanResumeTrace, PartialPlanSegment,
+    PlanTerminalKind, RevivalTrigger, SkeletonRevalidationContext, SkeletonRevalidationVerdict,
     belief_status::belief_status_tag_for_claim, enterprise::restock_gap_at_destination,
-    goal_switching::compare_goal_switch, ranking,
+    goal_switching::compare_goal_switch, ranking, revalidate_skeleton_step,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
@@ -90,6 +91,17 @@ pub fn try_resume_partial_plan(
     tick: Tick,
     patience_limit: u32,
 ) -> Option<ResumedPlan> {
+    try_resume_partial_plan_with_trace(state, actor, belief_view, tick, patience_limit, None)
+}
+
+pub(crate) fn try_resume_partial_plan_with_trace(
+    state: &mut AgendaState,
+    actor: EntityId,
+    belief_view: &dyn RuntimeBeliefView,
+    tick: Tick,
+    patience_limit: u32,
+    mut resume_traces: Option<&mut Vec<PartialPlanResumeTrace>>,
+) -> Option<ResumedPlan> {
     let keys: Vec<_> = state.suspended.keys().copied().collect();
     for key in keys {
         let Some(segment) = state
@@ -110,6 +122,13 @@ pub fn try_resume_partial_plan(
                 patience_limit,
             )
         }) {
+            record_partial_plan_resume_trace(
+                resume_traces.as_deref_mut(),
+                &segment,
+                PartialPlanResumeDecision::Abandoned,
+                Vec::new(),
+                None,
+            );
             state.suspended.remove(&key);
             remove_companions_for_primary(state, key);
             continue;
@@ -128,10 +147,29 @@ pub fn try_resume_partial_plan(
         segment.resume_attempt_count = segment.resume_attempt_count.saturating_add(1);
         segment.last_resume_attempt_tick = Some(tick);
         if u32::from(segment.resume_attempt_count) > patience_limit {
+            record_partial_plan_resume_trace(
+                resume_traces.as_deref_mut(),
+                &segment,
+                PartialPlanResumeDecision::Abandoned,
+                Vec::new(),
+                None,
+            );
             remove_companions_for_primary(state, key);
             continue;
         }
 
+        let (decision, per_step_verdicts, seeded_ops) =
+            classify_partial_plan_resume(actor, belief_view, &segment);
+        record_partial_plan_resume_trace(
+            resume_traces.as_deref_mut(),
+            &segment,
+            decision,
+            per_step_verdicts,
+            seeded_ops,
+        );
+        if !matches!(decision, PartialPlanResumeDecision::ReusedSeededSearch) {
+            segment.remaining_skeleton = None;
+        }
         entry.phase = AgendaPhase::Pending;
         entry.last_reconsidered_tick = tick;
         entry.partial_plan_segment = Some(segment.clone());
@@ -142,6 +180,69 @@ pub fn try_resume_partial_plan(
         });
     }
     None
+}
+
+fn classify_partial_plan_resume(
+    actor: EntityId,
+    belief_view: &dyn RuntimeBeliefView,
+    segment: &PartialPlanSegment,
+) -> (
+    PartialPlanResumeDecision,
+    Vec<SkeletonRevalidationVerdict>,
+    Option<Vec<crate::PlannerOpKind>>,
+) {
+    let Some(skeleton) = segment.remaining_skeleton.as_ref() else {
+        return (
+            PartialPlanResumeDecision::FallbackToReplanNoSkeleton,
+            Vec::new(),
+            None,
+        );
+    };
+
+    let per_step_verdicts = skeleton
+        .iter()
+        .map(|step| {
+            revalidate_skeleton_step(SkeletonRevalidationContext {
+                actor,
+                goal: &segment.goal,
+                step,
+                view: belief_view,
+            })
+        })
+        .collect::<Vec<_>>();
+    if let Some(reason) = per_step_verdicts.iter().find_map(|verdict| match verdict {
+        SkeletonRevalidationVerdict::Reusable => None,
+        SkeletonRevalidationVerdict::Invalid(reason) => Some(*reason),
+    }) {
+        return (
+            PartialPlanResumeDecision::FallbackToReplanInvalid(reason),
+            per_step_verdicts,
+            None,
+        );
+    }
+
+    (
+        PartialPlanResumeDecision::ReusedSeededSearch,
+        per_step_verdicts,
+        Some(skeleton.iter().map(|step| step.op).collect()),
+    )
+}
+
+fn record_partial_plan_resume_trace(
+    resume_traces: Option<&mut Vec<PartialPlanResumeTrace>>,
+    segment: &PartialPlanSegment,
+    decision: PartialPlanResumeDecision,
+    per_step_verdicts: Vec<SkeletonRevalidationVerdict>,
+    seeded_ops: Option<Vec<crate::PlannerOpKind>>,
+) {
+    if let Some(traces) = resume_traces {
+        traces.push(PartialPlanResumeTrace {
+            segment_id: segment.id,
+            decision,
+            per_step_verdicts,
+            seeded_ops,
+        });
+    }
 }
 
 pub fn spawn_information_barrier_companions(
@@ -1052,8 +1153,9 @@ mod tests {
     use crate::agent_tick::portfolio::FeasibilityVerdict;
     use crate::{
         AgendaEntry, AgendaOrigin, AgendaPhase, AgendaState, BarrierFact, FeasibilityHint, GoalKey,
-        GoalKind, GoalOffer, GoalPriorityClass, KillCondition, PartialPlanSegment,
-        PartialPlanSegmentId, PlanTerminalKind, RevivalTrigger,
+        GoalKind, GoalOffer, GoalPriorityClass, KillCondition, PartialPlanResumeDecision,
+        PartialPlanSegment, PartialPlanSegmentId, PlanTerminalKind, PlannedSkeletonStep,
+        PlannerOpKind, RevivalTrigger, SkeletonRevalidationReason, SkeletonRevalidationVerdict,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -1695,6 +1797,14 @@ mod tests {
         }
     }
 
+    fn skeleton_step(expected_pre: Vec<crate::htn::BeliefPredicate>) -> PlannedSkeletonStep {
+        PlannedSkeletonStep {
+            op: PlannerOpKind::Sleep,
+            target_template: crate::htn::PayloadTemplate::FromContext,
+            expected_pre,
+        }
+    }
+
     fn information_barrier_segment(subject: EntityId) -> PartialPlanSegment {
         PartialPlanSegment {
             terminal_barrier: PlanTerminalKind::InformationBarrier {
@@ -1857,6 +1967,146 @@ mod tests {
     }
 
     #[test]
+    fn try_resume_with_reusable_skeleton_emits_reuse_trace_and_keeps_seed() {
+        let mut segment = partial_plan_segment(
+            vec![IntentionResumeCondition::TickElapsed(4)],
+            Vec::new(),
+            0,
+        );
+        segment.remaining_skeleton = Some(vec![skeleton_step(Vec::new())]);
+        let key = OpportunityKey {
+            goal_key: segment.goal.key,
+            anchor: segment.goal.anchor,
+        };
+        let mut state = AgendaState::default();
+        state
+            .suspended
+            .insert(key, suspended_partial_entry(segment.clone()));
+        let mut traces = Vec::new();
+
+        let resumed = super::try_resume_partial_plan_with_trace(
+            &mut state,
+            AGENT,
+            &ResumeBeliefView::default(),
+            Tick(14),
+            3,
+            Some(&mut traces),
+        )
+        .expect("eligible partial segment should resume");
+
+        assert_eq!(
+            resumed
+                .entry
+                .partial_plan_segment
+                .as_ref()
+                .and_then(|segment| segment.remaining_skeleton.as_ref()),
+            segment.remaining_skeleton.as_ref()
+        );
+        assert_eq!(traces.len(), 1);
+        assert_eq!(
+            traces[0].decision,
+            PartialPlanResumeDecision::ReusedSeededSearch
+        );
+        assert_eq!(
+            traces[0].per_step_verdicts,
+            vec![SkeletonRevalidationVerdict::Reusable]
+        );
+        assert_eq!(traces[0].seeded_ops, Some(vec![PlannerOpKind::Sleep]));
+    }
+
+    #[test]
+    fn try_resume_with_invalid_skeleton_falls_back_to_pending_and_emits_reason() {
+        let mut segment = partial_plan_segment(
+            vec![IntentionResumeCondition::TickElapsed(4)],
+            Vec::new(),
+            0,
+        );
+        segment.remaining_skeleton = Some(vec![skeleton_step(vec![
+            crate::htn::BeliefPredicate::BountyExpired {
+                bounty: crate::htn::EntityTemplate::Fixed(TARGET),
+            },
+        ])]);
+        let key = OpportunityKey {
+            goal_key: segment.goal.key,
+            anchor: segment.goal.anchor,
+        };
+        let mut state = AgendaState::default();
+        state
+            .suspended
+            .insert(key, suspended_partial_entry(segment));
+        let mut traces = Vec::new();
+
+        let resumed = super::try_resume_partial_plan_with_trace(
+            &mut state,
+            AGENT,
+            &ResumeBeliefView::default(),
+            Tick(14),
+            3,
+            Some(&mut traces),
+        )
+        .expect("invalid skeleton should still resume through pending fallback");
+
+        assert_eq!(resumed.entry.phase, AgendaPhase::Pending);
+        assert_eq!(
+            resumed
+                .entry
+                .partial_plan_segment
+                .as_ref()
+                .and_then(|segment| segment.remaining_skeleton.as_ref()),
+            None
+        );
+        assert_eq!(
+            traces[0].decision,
+            PartialPlanResumeDecision::FallbackToReplanInvalid(
+                SkeletonRevalidationReason::UnsupportedPredicate
+            )
+        );
+        assert_eq!(
+            traces[0].per_step_verdicts,
+            vec![SkeletonRevalidationVerdict::Invalid(
+                SkeletonRevalidationReason::UnsupportedPredicate
+            )]
+        );
+        assert_eq!(traces[0].seeded_ops, None);
+    }
+
+    #[test]
+    fn try_resume_with_no_skeleton_falls_back_to_pending_and_emits_trace() {
+        let segment = partial_plan_segment(
+            vec![IntentionResumeCondition::TickElapsed(4)],
+            Vec::new(),
+            0,
+        );
+        let key = OpportunityKey {
+            goal_key: segment.goal.key,
+            anchor: segment.goal.anchor,
+        };
+        let mut state = AgendaState::default();
+        state
+            .suspended
+            .insert(key, suspended_partial_entry(segment));
+        let mut traces = Vec::new();
+
+        let resumed = super::try_resume_partial_plan_with_trace(
+            &mut state,
+            AGENT,
+            &ResumeBeliefView::default(),
+            Tick(14),
+            3,
+            Some(&mut traces),
+        )
+        .expect("no-skeleton segment should resume through pending fallback");
+
+        assert_eq!(resumed.entry.phase, AgendaPhase::Pending);
+        assert_eq!(
+            traces[0].decision,
+            PartialPlanResumeDecision::FallbackToReplanNoSkeleton
+        );
+        assert!(traces[0].per_step_verdicts.is_empty());
+        assert_eq!(traces[0].seeded_ops, None);
+    }
+
+    #[test]
     fn try_resume_partial_plan_leaves_suspended_when_resume_condition_is_unsatisfied() {
         let segment = partial_plan_segment(
             vec![IntentionResumeCondition::TickElapsed(4)],
@@ -1871,17 +2121,20 @@ mod tests {
         state
             .suspended
             .insert(key, suspended_partial_entry(segment));
+        let mut traces = Vec::new();
 
-        let resumed = super::try_resume_partial_plan(
+        let resumed = super::try_resume_partial_plan_with_trace(
             &mut state,
             AGENT,
             &ResumeBeliefView::default(),
             Tick(13),
             3,
+            Some(&mut traces),
         );
 
         assert_eq!(resumed, None);
         assert!(state.suspended.contains_key(&key));
+        assert!(traces.is_empty());
     }
 
     #[test]
@@ -2044,17 +2297,20 @@ mod tests {
         state
             .suspended
             .insert(key, suspended_partial_entry(segment));
+        let mut traces = Vec::new();
 
-        let resumed = super::try_resume_partial_plan(
+        let resumed = super::try_resume_partial_plan_with_trace(
             &mut state,
             AGENT,
             &ResumeBeliefView::default(),
             Tick(14),
             3,
+            Some(&mut traces),
         );
 
         assert_eq!(resumed, None);
         assert!(state.suspended.is_empty());
+        assert_eq!(traces[0].decision, PartialPlanResumeDecision::Abandoned);
     }
 
     #[test]
@@ -2072,17 +2328,20 @@ mod tests {
         state
             .suspended
             .insert(key, suspended_partial_entry(segment));
+        let mut traces = Vec::new();
 
-        let resumed = super::try_resume_partial_plan(
+        let resumed = super::try_resume_partial_plan_with_trace(
             &mut state,
             AGENT,
             &ResumeBeliefView::default(),
             Tick(14),
             3,
+            Some(&mut traces),
         );
 
         assert_eq!(resumed, None);
         assert!(state.suspended.is_empty());
+        assert_eq!(traces[0].decision, PartialPlanResumeDecision::Abandoned);
     }
 
     #[test]

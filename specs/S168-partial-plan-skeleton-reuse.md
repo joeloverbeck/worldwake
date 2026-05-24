@@ -63,9 +63,9 @@ decomposition.
   budget-exhausted suspension site; the skeleton-revalidation function may live here
   or in a sibling module), `agenda_manager.rs` / `agent_tick/planning.rs` (a corrected
   info-barrier suspension producer that feeds the existing companion consumer;
-  `try_resume_partial_plan`
-  consumes the skeleton when present and valid, else falls back to the existing
-  `Pending` re-entry; emit `PartialPlanResumeTrace`), `agent_tick/planning.rs` (new
+  `try_resume_partial_plan` / its traced internal variant consume the skeleton when
+  present and valid, else fall back to the existing `Pending` re-entry; emit
+  `PartialPlanResumeTrace`), `search/mod.rs` / `agent_tick/planning.rs` (new
   `search_plan_seeded` tactical-search entry point parallel to
   `search_plan_with_trace_metadata_and_source`), `decision_trace.rs` (new
   `PartialPlanResumeTrace` struct parallel to `RepairAttemptTrace`).
@@ -177,16 +177,17 @@ Implementation specifics:
 
 ### D3. Resume consumption — `search_plan_seeded`
 
-`try_resume_partial_plan` (`agenda_manager.rs:86-145`) calls D2 on the
-`remaining_skeleton` when present. On `Reusable`, it invokes a new tactical-search
-entry point `search_plan_seeded(skeleton, …)` in `agent_tick/planning.rs`, parallel to
-the existing `search_plan_with_trace_metadata_and_source` (imported at
-`agent_tick/planning.rs:25`). The seeded entry walks the skeleton's high-level ops as
-search-control bias and rebuilds tactical bindings, durations, and costs through
-ordinary search; if any op cannot be satisfied, it falls back internally to
-unconstrained search rather than returning failure. On `Invalid` or `None`,
-`try_resume_partial_plan` preserves its existing `Pending` full-replan re-entry
-(`agenda_manager.rs:135`) unchanged.
+`try_resume_partial_plan` / its traced internal variant (`agenda_manager.rs`) calls D2
+on the `remaining_skeleton` when present. On `Reusable`, the resumed pending entry
+keeps the skeleton; the later planning pass in `agent_tick/planning.rs` invokes the
+new tactical-search entry point `search_plan_seeded(skeleton, …)` in `search/mod.rs`,
+parallel to the existing `search_plan_with_trace_metadata_and_source`. The seeded
+entry walks the skeleton's high-level ops as search-control bias and rebuilds tactical
+bindings, durations, and costs through ordinary search; if any op cannot be satisfied,
+it falls back internally to unconstrained search rather than returning failure. On
+`Invalid` or `None`, `try_resume_partial_plan` preserves its existing `Pending`
+full-replan re-entry and clears the unusable skeleton so the planning pass runs the
+ordinary unseeded search path.
 
 A separate function (rather than an optional parameter on the existing search entry)
 is chosen because the seeded path has distinct control flow — ops walk before
@@ -196,11 +197,11 @@ unseeded entry's tracing and termination contract.
 ### D4. Trace
 
 Define a new `PartialPlanResumeTrace` struct in `decision_trace.rs` parallel to
-`RepairAttemptTrace` (`decision_trace.rs:197`), carrying the reuse-vs-replan decision,
-the per-step revalidation verdict, and (on reuse) the seeded skeleton ops. Emit from
-`agenda_manager.rs::try_resume_partial_plan` (the resume decision point) into the
-existing decision-trace sink. `plan_repair.rs` is not on the emit path (it is pure
-repair orchestration with no trace exports).
+`RepairAttemptTrace`, carrying the reuse-vs-replan decision, the per-step revalidation
+verdict, and (on reuse) the seeded skeleton ops. Emit from the traced
+`agenda_manager.rs` resume decision point into the existing decision-trace sink.
+`plan_repair.rs` is not on the emit path (it is pure repair orchestration with no
+trace exports).
 
 ## FND-01 Section H
 

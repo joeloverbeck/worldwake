@@ -50,14 +50,14 @@ use crate::{
     AcceptedRepairProvenance, AgendaPhase, AgendaTickPolicy, AgentDecisionRuntime,
     ExpectationFailureCause, ExpectationFailurePhase, KillCondition,
     OpportunityExpectationFailureIncident, PlannerOpSemantics,
-    agenda_manager::goal_post_conditions_already_satisfied,
+    agenda_manager::{goal_post_conditions_already_satisfied, try_resume_partial_plan_with_trace},
     authoritative_target, build_semantics_table,
     effect_schema_index::EffectSchemaIndex,
     failure_handling::{classify_discrepancy, record_failure_classification},
     frame_runtime_snapshot,
     plan_step_expectations::{expire_plan_step_expectations, persist_expectation_store_update},
     ranking::OrderedRanked,
-    tick_agenda, try_resume_partial_plan,
+    tick_agenda,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1288,6 +1288,7 @@ fn process_agent(
     let mut current_facility_intents = original_facility_intents.clone();
     let original_plan_goal = runtime.current_plan.as_ref().map(|plan| plan.goal);
     let mut repair_attempt_traces = Vec::new();
+    let mut partial_plan_resume_traces = Vec::new();
     let active_action = active_action_for_agent(ctx, agent);
     let start_failures = ctx.scheduler.take_action_start_failures_for(agent);
     let mut frame_transitions: Option<Vec<FrameTransitionKind>> =
@@ -1379,6 +1380,7 @@ fn process_agent(
                 snapshot_cache_counters: None,
                 planning_state_cache_counters: None,
                 repair_attempts: Vec::new(),
+                partial_plan_resumes: Vec::new(),
                 causal_link_cap_hits: Vec::new(),
             }));
         }
@@ -1803,12 +1805,13 @@ fn process_agent(
         let patience_limit = current_frame
             .as_ref()
             .map_or(30, |frame| frame.patience_limit);
-        if let Some(resumed) = try_resume_partial_plan(
+        if let Some(resumed) = try_resume_partial_plan_with_trace(
             &mut current_agenda_state,
             agent,
             &view,
             tick,
             patience_limit,
+            tracing.then_some(&mut partial_plan_resume_traces),
         ) {
             ranked_candidates.push(resumed.entry);
             runtime.dirty.insert(crate::DirtySet::REPLAN_SIGNAL);
@@ -2471,6 +2474,7 @@ fn process_agent(
         snapshot_cache_counters,
         planning_state_cache_counters,
         repair_attempts: repair_attempt_traces,
+        partial_plan_resumes: partial_plan_resume_traces,
         causal_link_cap_hits,
     }))
 }

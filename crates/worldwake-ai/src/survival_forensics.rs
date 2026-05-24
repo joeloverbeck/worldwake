@@ -745,6 +745,7 @@ mod tests {
             snapshot_cache_counters: None,
             planning_state_cache_counters: None,
             repair_attempts: Vec::new(),
+            partial_plan_resumes: Vec::new(),
             causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,

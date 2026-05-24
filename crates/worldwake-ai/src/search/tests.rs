@@ -10108,6 +10108,120 @@ fn test_binding_flexible_goal_unaffected() {
 }
 
 #[test]
+fn search_plan_seeded_satisfies_walkable_skeleton() {
+    let (snapshot, goal, registry, handlers) = local_sleep_search_fixture();
+    let skeleton = vec![crate::PlannedSkeletonStep {
+        op: PlannerOpKind::Sleep,
+        target_template: crate::htn::PayloadTemplate::FromContext,
+        expected_pre: Vec::new(),
+    }];
+
+    let result = super::search_plan_seeded(
+        &skeleton,
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &cognitive(&ProfileFixture::default()),
+        &execution_budget(&ProfileFixture::default()),
+        &RecipeRegistry::new(),
+        &BlockerMemory::default(),
+        Tick(0),
+        None,
+        None,
+        None,
+        crate::decision_trace::CandidateSource::Emitter,
+        &crate::opportunity_compiler::PerceivedOpportunityIndex::default(),
+    );
+
+    let plan = result
+        .into_plan()
+        .expect("seeded sleep skeleton should rebuild a lawful plan");
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Sleep);
+}
+
+#[test]
+fn search_plan_seeded_falls_back_internally_when_op_unsatisfiable() {
+    let (snapshot, goal, registry, handlers) = local_sleep_search_fixture();
+    let skeleton = vec![crate::PlannedSkeletonStep {
+        op: PlannerOpKind::Harvest,
+        target_template: crate::htn::PayloadTemplate::FromContext,
+        expected_pre: Vec::new(),
+    }];
+
+    let result = super::search_plan_seeded(
+        &skeleton,
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &cognitive(&ProfileFixture::default()),
+        &execution_budget(&ProfileFixture::default()),
+        &RecipeRegistry::new(),
+        &BlockerMemory::default(),
+        Tick(0),
+        None,
+        None,
+        None,
+        crate::decision_trace::CandidateSource::Emitter,
+        &crate::opportunity_compiler::PerceivedOpportunityIndex::default(),
+    );
+
+    let plan = result
+        .into_plan()
+        .expect("unsatisfied seed should fall back to ordinary search");
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Sleep);
+}
+
+fn local_sleep_search_fixture() -> (
+    PlanningSnapshot,
+    GoalOffer,
+    ActionDefRegistry,
+    worldwake_sim::ActionHandlerRegistry,
+) {
+    let actor = entity(1);
+    let town = entity(10);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, town]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(town, EntityKind::Place);
+    view.effective_places.insert(actor, town);
+    view.entities_at.insert(town, vec![actor]);
+    view.needs.insert(
+        actor,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(300), pm(0), pm(0)),
+    );
+    view.thresholds.insert(actor, DriveThresholds::default());
+
+    let (registry, handlers) = build_registry();
+    let goal = GoalOffer {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::Sleep),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
+        acquisition_quantity: None,
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        0,
+    );
+
+    (snapshot, goal, registry, handlers)
+}
+
+#[test]
 fn test_binding_rejection_trace_populated() {
     let actor = entity(1);
     let corpse_x = entity(2);

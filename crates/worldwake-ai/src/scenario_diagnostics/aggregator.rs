@@ -1364,6 +1364,7 @@ mod tests {
                 invalidations: 1,
             }),
             repair_attempts: Vec::new(),
+            partial_plan_resumes: Vec::new(),
             causal_link_cap_hits: Vec::new(),
         }
     }
