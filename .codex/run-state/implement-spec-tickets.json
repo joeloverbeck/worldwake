@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implement-S165-epistemic-verification-repair",
   "base_head": "836741666ee66207bced620d66dffd5d44913d78",
-  "last_ticket": "archive/tickets/S165EPIVERREP-004.md",
+  "last_ticket": "archive/tickets/S165EPIVERREP-005.md",
   "last_result": "completed_archived",
-  "last_work_commit": "95ba2aa70309d00e09b192515cbf9a7dc2c49b8f",
+  "last_work_commit": "0e5fd145cdf0fe106ac66417664d18ff41d293ea",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S165EPIVERREP-005.md",
+  "next_target": "tickets/S165EPIVERREP-006.md",
   "queue": [
-    "tickets/S165EPIVERREP-005.md",
     "tickets/S165EPIVERREP-006.md"
   ],
   "implement_ticket_audit": "pending",
