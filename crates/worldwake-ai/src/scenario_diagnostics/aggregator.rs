@@ -1380,6 +1380,7 @@ mod tests {
                 step_target: Some(entity(2)),
             },
             chosen_kind,
+            verification_anchor: None,
             rejected: Vec::<(RepairKind, RepairFailure)>::new(),
             budget_consumed: consumed,
             budget_total: total,

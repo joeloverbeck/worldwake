@@ -19,7 +19,7 @@ synthesis), `worldwake-core` (`expectation.rs` `LastSeenRecord` gains
 `worldwake-cli` (`LastSeenRecordDef` + scenario loader), `worldwake-ai`
 (adversarial goldens).
 **Foundations:** FND-7, FND-14, FND-14A, FND-14B, FND-15, FND-16, FND-19, FND-27, FND-31
-**Source:** `reports/ai-architecture-consolidation-fourth-iteration.md` (triage
+**Source:** `archive/reports/ai-architecture-consolidation-fourth-iteration-2026-05-22-exploited.md` (triage
 `docs/triage/2026-05-22-ai-architecture-consolidation-fourth-iteration-triage.md`).
 
 ## Problem Statement

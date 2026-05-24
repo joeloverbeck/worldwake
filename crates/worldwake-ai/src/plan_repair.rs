@@ -128,7 +128,9 @@ fn attempt_kind(
         RepairKind::ReplaceProvider => {
             attempt_candidate_repair(context, kind).ok_or(RepairFailure::NoProviderReplacement)
         }
-        RepairKind::InsertVerification => Err(RepairFailure::NoEpistemicSubstrate),
+        RepairKind::InsertVerification => {
+            attempt_candidate_repair(context, kind).ok_or(RepairFailure::NoEpistemicSubstrate)
+        }
         RepairKind::DowngradeToTypedBarrier => downgrade_to_typed_barrier(context),
         RepairKind::Abandon => Ok(PlannedPlan::new(
             context.opportunity,
@@ -380,9 +382,10 @@ mod tests {
     };
     use crate::{PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind};
     use worldwake_core::{
-        ActionDefId, BreachSignature, CausalLink, CausalProvider, Discrepancy, DiscrepancyClearing,
-        DiscrepancyEntry, EntityId, InvalidatorTag, OpportunityAnchor, OpportunityKey, Permille,
-        PlanningFact, RepairEntry, RepairKind, RepairMemory, Tick,
+        ActionDefId, BeliefClaimKey, BreachSignature, CausalLink, CausalProvider, Discrepancy,
+        DiscrepancyClearing, DiscrepancyEntry, EntityBeliefAspect, EntityId, InvalidatorTag,
+        OpportunityAnchor, OpportunityKey, Permille, PlanningFact, RepairEntry, RepairKind,
+        RepairMemory, Tick,
         test_utils::{sample_blocker_key, sample_goal_key},
     };
 
@@ -487,7 +490,7 @@ mod tests {
         let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
 
         let RepairOutcome::Failed { tried } = outcome else {
-            panic!("staged repair search should fail until ticket 007 wires replacement");
+            panic!("repair search should fail when the budget expires before a repair succeeds");
         };
         assert_eq!(repair_budget(&cognitive), 2);
         assert_eq!(tried.len(), 3);
@@ -534,7 +537,7 @@ mod tests {
         let outcome = attempt_repair_then_replan(&context, &cognitive, &memory);
 
         let RepairOutcome::Failed { tried } = outcome else {
-            panic!("staged repair search should fail until ticket 007 wires replacement");
+            panic!("repair search should fail when retry suppression and budget prevent success");
         };
         assert_eq!(
             tried[0],
@@ -543,7 +546,7 @@ mod tests {
     }
 
     #[test]
-    fn insert_verification_returns_no_epistemic_substrate_without_s139() {
+    fn insert_verification_returns_no_epistemic_substrate_without_candidate() {
         let prefix = vec![step()];
         let suffix = vec![step()];
         let entry = discrepancy_entry(DiscrepancyClearing::TtlExpiry);
@@ -553,7 +556,7 @@ mod tests {
         let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
 
         let RepairOutcome::Failed { tried } = outcome else {
-            panic!("staged repair search should fail until ticket 007 wires replacement");
+            panic!("repair search should fail when no verification candidate is supplied");
         };
         assert_eq!(
             tried[2],
@@ -561,6 +564,46 @@ mod tests {
                 RepairKind::InsertVerification,
                 RepairFailure::NoEpistemicSubstrate
             )
+        );
+    }
+
+    #[test]
+    fn insert_verification_returns_repaired_plan_for_supplied_candidate() {
+        let prefix = vec![step()];
+        let suffix = vec![step()];
+        let entry = discrepancy_entry(DiscrepancyClearing::TtlExpiry);
+        let verification = PlannedStep {
+            targets: vec![crate::PlanningEntityRef::Authoritative(entity(42))],
+            target_place: Some(entity(3)),
+            op_kind: PlannerOpKind::AskWitness,
+            ..step()
+        };
+        let candidates = vec![RepairPlanCandidate {
+            kind: RepairKind::InsertVerification,
+            provider: CausalProvider::Belief {
+                claim_key: BeliefClaimKey {
+                    subject: entity(7),
+                    aspect: EntityBeliefAspect::Location,
+                },
+            },
+            fact: broken_link().fact,
+            step: verification.clone(),
+            reusable_suffix_index: None,
+        }];
+        let mut context = context(&prefix, &suffix, &entry);
+        context.replacement_candidates = &candidates;
+        let cognitive = cognitive(20, Permille::new(1000).unwrap());
+
+        let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
+
+        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome else {
+            panic!("supplied verification candidate should repair plan");
+        };
+        assert_eq!(kind, RepairKind::InsertVerification);
+        assert_eq!(new_plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
+        assert_eq!(
+            new_plan.steps,
+            vec![prefix[0].clone(), verification, suffix[0].clone()]
         );
     }
 

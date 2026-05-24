@@ -499,11 +499,12 @@ mod tests {
     use worldwake_core::{
         ActionDefId, BeliefClaimKey, BelievedEntityState, BodyCostPerTick, CognitiveProfile,
         CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation,
-        DriveThresholds, EntityId, EntityKind, ExpectationKindTag, GoalKey, GoalKind,
-        HomeostaticNeeds, InTransitOnEdge, InvalidatorTag, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, MismatchDetail, OpportunityAnchor, OpportunityKey, PerceptionSource,
-        Permille, PlanInvalidationReason, PursuitProfile, Quantity, RecipeId, ResourceSource, Tick,
-        TickRange, TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
+        DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, ExpectationKindTag,
+        GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, InvalidatorTag, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, MismatchDetail, OpportunityAnchor, OpportunityKey,
+        PerceptionSource, Permille, PlanInvalidationReason, PursuitProfile, Quantity, RecipeId,
+        ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, VisibilitySpec,
+        WorkstationTag, Wound,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
@@ -532,6 +533,7 @@ mod tests {
         entity_beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         pursuit_profiles: BTreeMap<EntityId, PursuitProfile>,
         cognitive_profiles: BTreeMap<EntityId, CognitiveProfile>,
+        epistemic_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
         believed_target_locations: BTreeMap<(EntityId, EntityId), BeliefValue<Option<EntityId>>>,
     }
 
@@ -671,6 +673,13 @@ mod tests {
             _agent: EntityId,
         ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
+        }
+
+        fn epistemic_disposition_profile(
+            &self,
+            agent: EntityId,
+        ) -> Option<EpistemicDispositionProfile> {
+            self.epistemic_profiles.get(&agent).cloned()
         }
     }
 
@@ -971,6 +980,13 @@ mod tests {
             effect_schema: worldwake_sim::EffectSchema::empty(),
         });
         (registry, handlers)
+    }
+
+    fn build_ask_witness_registry() -> (ActionDefRegistry, ActionHandlerRegistry, ActionDefId) {
+        let mut registry = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let ask_id = worldwake_systems::register_ask_witness_action(&mut registry, &mut handlers);
+        (registry, handlers, ask_id)
     }
 
     fn transport_payload_override_is_valid(
@@ -1557,6 +1573,54 @@ mod tests {
         ));
 
         let (registry, handlers) = build_payload_registry();
+        assert!(revalidate_next_step(
+            &view,
+            actor,
+            &step,
+            &MaterializationBindings::new(),
+            &registry,
+            &handlers,
+        ));
+    }
+
+    #[test]
+    fn spliced_ask_witness_payload_revalidates_with_override_validator() {
+        let actor = entity(1);
+        let witness = entity(2);
+        let subject = entity(3);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, witness, subject, place]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(witness, EntityKind::Agent);
+        view.kinds.insert(subject, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(witness, place);
+        view.entities_at.insert(place, vec![actor, witness]);
+        view.epistemic_profiles
+            .insert(actor, EpistemicDispositionProfile::default());
+
+        let (registry, handlers, ask_id) = build_ask_witness_registry();
+        let step = PlannedStep {
+            def_id: ask_id,
+            targets: vec![PlanningEntityRef::Authoritative(witness)],
+            target_place: Some(place),
+            payload_override: Some(ActionPayload::AskWitness(
+                worldwake_sim::AskWitnessPayload {
+                    target: witness,
+                    topic_entity: Some(subject),
+                    topic_commodity: None,
+                },
+            )),
+            op_kind: PlannerOpKind::AskWitness,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
+        };
+
         assert!(revalidate_next_step(
             &view,
             actor,

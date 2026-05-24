@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden scenario source files: 58
 - Files contributing `golden_*` tests: 58
-- Total `golden_*` tests: 285
+- Total `golden_*` tests: 286
 
 ## Per-Scenario-File Inventory
 
@@ -38,7 +38,7 @@ Do not hand-edit it.
 | `perception_exposure.rs` | 7 |
 | `perception_omission.rs` | 3 |
 | `place_dirtiness.rs` | 9 |
-| `plan_repair.rs` | 7 |
+| `plan_repair.rs` | 8 |
 | `planner_pathology.rs` | 2 |
 | `planner_pathology_degenerate.rs` | 1 |
 | `portfolio_five_slots.rs` | 5 |
@@ -318,7 +318,8 @@ Do not hand-edit it.
 ### `plan_repair.rs`
 
 - `merchant_moved_breach_rebinds_to_sibling`
-- `stale_belief_breach_attempts_insert_verification_without_s139`
+- `stale_belief_breach_inserts_ask_witness_verification`
+- `stale_belief_breach_without_witness_falls_through_to_information_barrier`
 - `recently_failed_repair_kind_is_skipped_without_global_suppression`
 - `commodity_availability_changed_clears_blocker_structurally`
 - `repair_budget_exhaustion_falls_through_to_full_replan`

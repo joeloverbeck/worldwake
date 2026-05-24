@@ -8,6 +8,7 @@ use super::{
     emit_decision_event, handle_recoverable_travel_step_blockage, runtime_belief_view,
 };
 use crate::RepairAttemptTrace;
+use crate::candidate_generation::ask_witness_verification_step;
 use crate::failure_handling::exact_target_belief_discrepancy;
 use crate::plan_repair::{
     PlanRepairContext, RepairOutcome, RepairPlanCandidate, attempt_repair_then_replan,
@@ -28,8 +29,8 @@ use worldwake_core::{
     RepairKind, RepairMemory, ReplanTriggeredPayload, Tick, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
-    CommitOutcome, CommittedAction, EntityBeliefView, InputKind, PerAgentBeliefView, Scheduler,
-    TickInputError,
+    ActionDefRegistry, CommitOutcome, CommittedAction, EntityBeliefView, InputKind,
+    PerAgentBeliefView, Scheduler, TickInputError,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -123,6 +124,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                         runtime,
                         repair_memory,
                         ctx.cognitive,
+                        Some((&view, ctx.action_defs, agent)),
                         tick,
                         goal_key,
                         step,
@@ -141,6 +143,9 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                                 .try_into()
                                 .expect("current step index exceeds u16");
                             if let Some(traces) = &mut repair_attempt_traces {
+                                let verification_anchor = verification_anchor_from_repaired_plan(
+                                    kind, step_index, &new_plan,
+                                );
                                 traces.push(RepairAttemptTrace {
                                     breach: breach_signature_for_step(
                                         goal_key,
@@ -148,6 +153,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                                         mismatch_detail,
                                     ),
                                     chosen_kind: Some(kind),
+                                    verification_anchor,
                                     budget_consumed: repair_budget_consumed(&rejected, true),
                                     rejected,
                                     budget_total: repair_budget(ctx.cognitive),
@@ -383,6 +389,11 @@ fn attempt_local_repair_for_invalidated_step(
     runtime: &AgentDecisionRuntime,
     repair_memory: &RepairMemory,
     cognitive: &worldwake_core::CognitiveProfile,
+    verification_context: Option<(
+        &dyn worldwake_sim::GoalBeliefView,
+        &ActionDefRegistry,
+        EntityId,
+    )>,
     tick: Tick,
     goal_key: worldwake_core::GoalKey,
     step: &PlannedStep,
@@ -409,7 +420,17 @@ fn attempt_local_repair_for_invalidated_step(
         .steps
         .get(runtime.current_step_index + 1..)
         .unwrap_or(&[]);
-    let replacement_candidates = repair_candidates_from_reusable_suffix(reusable_suffix);
+    let mut replacement_candidates = repair_candidates_from_reusable_suffix(reusable_suffix);
+    if let Some((view, action_defs, agent)) = verification_context {
+        append_insert_verification_candidate(
+            view,
+            agent,
+            action_defs,
+            broken_link,
+            &discrepancy_entry,
+            &mut replacement_candidates,
+        );
+    }
     let context = PlanRepairContext {
         opportunity: active_plan.opportunity,
         failed_step,
@@ -426,6 +447,80 @@ fn attempt_local_repair_for_invalidated_step(
         cognitive,
         repair_memory,
     ))
+}
+
+fn append_insert_verification_candidate(
+    view: &dyn worldwake_sim::GoalBeliefView,
+    agent: EntityId,
+    action_defs: &ActionDefRegistry,
+    broken_link: CausalLink,
+    discrepancy_entry: &DiscrepancyEntry,
+    candidates: &mut Vec<RepairPlanCandidate>,
+) {
+    let Some(subject) = epistemic_verification_subject(broken_link, discrepancy_entry) else {
+        return;
+    };
+    let Some(actor_place) = view.effective_place(agent) else {
+        return;
+    };
+    let Some(ask_witness_def_id) = ask_witness_action_def_id(action_defs) else {
+        return;
+    };
+
+    let mut witnesses = view.entities_at(actor_place);
+    witnesses.sort_unstable();
+    witnesses.dedup();
+    let Some(step) = witnesses
+        .into_iter()
+        .filter(|witness| *witness != agent)
+        .filter(|witness| view.effective_place(*witness) == Some(actor_place))
+        .find_map(|witness| {
+            ask_witness_verification_step(view, agent, witness, subject, ask_witness_def_id)
+        })
+    else {
+        return;
+    };
+
+    candidates.push(RepairPlanCandidate {
+        kind: RepairKind::InsertVerification,
+        provider: broken_link.provider,
+        fact: broken_link.fact,
+        step,
+        reusable_suffix_index: None,
+    });
+}
+
+fn epistemic_verification_subject(
+    broken_link: CausalLink,
+    discrepancy_entry: &DiscrepancyEntry,
+) -> Option<EntityId> {
+    let provider_subject = match broken_link.provider {
+        CausalProvider::Belief { claim_key } => Some(claim_key.subject),
+        CausalProvider::Observation {
+            observed_entity, ..
+        } => Some(observed_entity),
+        CausalProvider::Record { record_entity, .. } => Some(record_entity),
+        CausalProvider::PriorStep { .. }
+        | CausalProvider::CarriedItem { .. }
+        | CausalProvider::Expectation { .. } => None,
+    }?;
+    let clearing_subject = match discrepancy_entry.clearing_condition {
+        DiscrepancyClearing::BeliefUpdate { claim_key } => Some(claim_key.subject),
+        DiscrepancyClearing::ReobservationOf { target } => Some(target),
+        DiscrepancyClearing::TtlExpiry
+        | DiscrepancyClearing::CommodityAvailabilityChanged { .. }
+        | DiscrepancyClearing::WorldStructureChange => None,
+    }?;
+    (provider_subject == clearing_subject).then_some(provider_subject)
+}
+
+fn ask_witness_action_def_id(
+    action_defs: &ActionDefRegistry,
+) -> Option<worldwake_core::ActionDefId> {
+    action_defs
+        .iter()
+        .find(|def| def.name == "ask_witness")
+        .map(|def| def.id)
 }
 
 fn broken_link_for_step(step: &PlannedStep, failed_step: u16) -> Option<CausalLink> {
@@ -586,6 +681,7 @@ fn repair_attempt_trace_from_failed(
     RepairAttemptTrace {
         breach,
         chosen_kind: None,
+        verification_anchor: None,
         rejected: tried.to_vec(),
         budget_consumed: repair_budget_consumed(tried, false),
         budget_total: repair_budget(cognitive),
@@ -657,7 +753,25 @@ fn substitute_target_from_repaired_plan(
     step_index: u16,
     new_plan: &PlannedPlan,
 ) -> Option<EntityId> {
-    matches!(kind, RepairKind::RebindTarget)
+    matches!(
+        kind,
+        RepairKind::RebindTarget | RepairKind::InsertVerification
+    )
+    .then(|| {
+        new_plan
+            .steps
+            .get(usize::from(step_index))?
+            .primary_target()
+    })
+    .flatten()
+}
+
+fn verification_anchor_from_repaired_plan(
+    kind: RepairKind,
+    step_index: u16,
+    new_plan: &PlannedPlan,
+) -> Option<EntityId> {
+    matches!(kind, RepairKind::InsertVerification)
         .then(|| {
             new_plan
                 .steps
@@ -1313,19 +1427,22 @@ pub(super) fn plan_finished(runtime: &AgentDecisionRuntime) -> bool {
 mod tests {
     use super::{
         apply_repaired_plan_and_emit, attempt_local_repair_for_invalidated_step,
-        breach_signature_for_step, populate_contention_event_refs, record_failed_repair_attempts,
-        repair_attempt_trace_from_failed, repair_budget_consumed,
+        breach_signature_for_step, epistemic_verification_subject, populate_contention_event_refs,
+        record_failed_repair_attempts, repair_attempt_trace_from_failed, repair_budget_consumed,
+        verification_anchor_from_repaired_plan,
     };
     use crate::RepairOutcome;
     use crate::{PlanGuard, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind};
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        ActionDefId, AffordanceKey, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory,
-        BlockingFact, BreachSignature, CausalLink, CausalProvider, CauseRef, ClaimantOutcome,
-        ContentionClaimant, ContentionEventPayload, ContentionResolutionRule, DecisionEventPayload,
-        EntityId, EventLog, EventPayload, EventTag, EventView, GoalKey, GoalKind, InvalidatorTag,
-        MismatchDetail, OpportunityKey, PendingEvent, Permille, PlanningFact, RepairAppliedPayload,
-        RepairKind, RepairMemory, Tick, VisibilitySpec, WitnessData, test_utils::sample_goal_key,
+        ActionDefId, AffordanceKey, BeliefClaimKey, Blocker, BlockerClearingCondition, BlockerKey,
+        BlockerMemory, BlockingFact, BreachSignature, CausalLink, CausalProvider, CauseRef,
+        ClaimantOutcome, ContentionClaimant, ContentionEventPayload, ContentionResolutionRule,
+        DecisionEventPayload, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
+        EntityBeliefAspect, EntityId, EventLog, EventPayload, EventTag, EventView, GoalKey,
+        GoalKind, InvalidatorTag, MismatchDetail, OpportunityKey, PendingEvent, Permille,
+        PlanningFact, RepairAppliedPayload, RepairKind, RepairMemory, Tick, VisibilitySpec,
+        WitnessData, test_utils::sample_goal_key,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -1378,6 +1495,41 @@ mod tests {
         }
     }
 
+    fn belief_target_link(consumer_step_index: u16) -> CausalLink {
+        CausalLink {
+            provider: CausalProvider::Belief {
+                claim_key: BeliefClaimKey {
+                    subject: entity(7),
+                    aspect: EntityBeliefAspect::Location,
+                },
+            },
+            fact: PlanningFact::TargetPresent {
+                target: entity(7),
+                at_place: entity(8),
+            },
+            consumer_step_index,
+            source_tick: Tick(3),
+            confidence: Permille::new(800).unwrap(),
+        }
+    }
+
+    fn repair_discrepancy_entry(clearing_condition: DiscrepancyClearing) -> DiscrepancyEntry {
+        DiscrepancyEntry {
+            scope: BlockerKey {
+                goal_key: sample_goal_key(),
+                place: Some(entity(8)),
+                target: Some(entity(7)),
+                action_def: None,
+            }
+            .into(),
+            discrepancy: Discrepancy::BeliefStale,
+            observed_tick: Tick(9),
+            expires_tick: Tick(10),
+            clearing_condition,
+            source_event: None,
+        }
+    }
+
     fn planned_step(slot: u32, link: Option<CausalLink>) -> PlannedStep {
         PlannedStep {
             def_id: ActionDefId(slot),
@@ -1411,6 +1563,44 @@ mod tests {
 
     fn repair_mismatch() -> MismatchDetail {
         MismatchDetail::GuardInvalidator(InvalidatorTag::TargetMoved)
+    }
+
+    #[test]
+    fn epistemic_verification_subject_accepts_matching_belief_or_observation_breach() {
+        let belief_link = belief_target_link(1);
+        let belief_entry = repair_discrepancy_entry(DiscrepancyClearing::BeliefUpdate {
+            claim_key: BeliefClaimKey {
+                subject: entity(7),
+                aspect: EntityBeliefAspect::Location,
+            },
+        });
+        assert_eq!(
+            epistemic_verification_subject(belief_link, &belief_entry),
+            Some(entity(7))
+        );
+
+        let observation_link = observed_target_link(1);
+        let observation_entry =
+            repair_discrepancy_entry(DiscrepancyClearing::ReobservationOf { target: entity(7) });
+        assert_eq!(
+            epistemic_verification_subject(observation_link, &observation_entry),
+            Some(entity(7))
+        );
+    }
+
+    #[test]
+    fn epistemic_verification_subject_rejects_non_epistemic_or_mismatched_breach() {
+        let non_epistemic = causal_link(1);
+        let entry =
+            repair_discrepancy_entry(DiscrepancyClearing::ReobservationOf { target: entity(7) });
+        assert_eq!(epistemic_verification_subject(non_epistemic, &entry), None);
+
+        let mismatched =
+            repair_discrepancy_entry(DiscrepancyClearing::ReobservationOf { target: entity(99) });
+        assert_eq!(
+            epistemic_verification_subject(belief_target_link(1), &mismatched),
+            None
+        );
     }
 
     fn blocker_memory_for(affordance: AffordanceKey) -> BlockerMemory {
@@ -1516,6 +1706,7 @@ mod tests {
             &runtime,
             &RepairMemory::default(),
             &cognitive,
+            None,
             Tick(9),
             goal_key,
             &failed,
@@ -1591,6 +1782,7 @@ mod tests {
             &runtime,
             &RepairMemory::default(),
             &cognitive,
+            None,
             Tick(9),
             goal_key,
             &failed,
@@ -1641,6 +1833,79 @@ mod tests {
     }
 
     #[test]
+    fn insert_verification_repair_applied_event_records_witness_anchor() {
+        let agent = entity(1);
+        let witness = entity(12);
+        let goal_key = sample_goal_key();
+        let prefix = planned_step(10, None);
+        let verification = planned_step(witness.slot, None);
+        let plan = PlannedPlan::new(
+            opportunity(goal_key),
+            goal_key,
+            vec![prefix, verification],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_plan: Some(plan.clone()),
+            current_step_index: 1,
+            ..crate::AgentDecisionRuntime::default()
+        };
+        let mut event_log = EventLog::new();
+
+        apply_repaired_plan_and_emit(
+            &mut event_log,
+            &mut runtime,
+            Tick(9),
+            agent,
+            goal_key,
+            1,
+            RepairKind::InsertVerification,
+            plan,
+        );
+
+        let events = event_log.events_by_tag(EventTag::RepairApplied);
+        assert_eq!(events.len(), 1);
+        let payload = event_log
+            .get(events[0])
+            .and_then(|event| event.decision_payload())
+            .expect("repair event should carry a payload");
+        assert_eq!(
+            payload,
+            &DecisionEventPayload::RepairApplied(RepairAppliedPayload {
+                agent,
+                goal_key,
+                step_index: 1,
+                repair_kind: RepairKind::InsertVerification,
+                substitute_target: Some(witness),
+                substitute_recipe: None,
+            })
+        );
+    }
+
+    #[test]
+    fn insert_verification_repair_trace_records_witness_anchor() {
+        let witness = entity(12);
+        let goal_key = sample_goal_key();
+        let prefix = planned_step(10, None);
+        let verification = planned_step(witness.slot, None);
+        let plan = PlannedPlan::new(
+            opportunity(goal_key),
+            goal_key,
+            vec![prefix, verification],
+            PlanTerminalKind::GoalSatisfied,
+        );
+
+        assert_eq!(
+            verification_anchor_from_repaired_plan(RepairKind::InsertVerification, 1, &plan),
+            Some(witness)
+        );
+        assert_eq!(
+            verification_anchor_from_repaired_plan(RepairKind::RebindTarget, 1, &plan),
+            None
+        );
+    }
+
+    #[test]
     fn local_repair_failure_records_failed_attempts_in_repair_memory() {
         let goal_key = sample_goal_key();
         let failed = planned_step(11, Some(causal_link(1)));
@@ -1660,6 +1925,7 @@ mod tests {
             &runtime,
             &RepairMemory::default(),
             &cognitive,
+            None,
             Tick(9),
             goal_key,
             &failed,
@@ -1715,6 +1981,7 @@ mod tests {
 
         assert_eq!(trace.breach, signature);
         assert_eq!(trace.chosen_kind, None);
+        assert_eq!(trace.verification_anchor, None);
         assert_eq!(trace.rejected, tried);
         assert_eq!(trace.budget_consumed, 2);
         assert_eq!(trace.budget_total, 6);

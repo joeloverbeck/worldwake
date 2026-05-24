@@ -28,7 +28,7 @@ human player inherits the same omniscience (FND-19).
 ### Evidence (verified against code on 2026-05-21)
 
 The second-iteration audit
-(`reports/ai-architecture-consolidation-second-iteration.md`) flagged this as the
+(`archive/reports/ai-architecture-consolidation-second-iteration-2026-05-22-exploited.md`) flagged this as the
 load-bearing finding. Direct code inspection confirms the following leaks in
 `per_agent_belief_view.rs`:
 

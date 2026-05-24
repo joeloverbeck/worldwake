@@ -1,0 +1,115 @@
+# Implementation Order
+
+**Status**: COMPLETED
+
+This archived order record followed the retired phase-gate dependency graph and
+the first two AI-architecture consolidation waves (S155-S161), which are recorded
+at `archive/specs/IMPLEMENTATION-ORDER-final-2026-05-21.md` and the dated archives
+it references. This file recorded the **third** and **fourth** AI-architecture
+consolidation iterations. Gameplay specs `S60`-`S66` remained authored but were
+**intentionally excluded** from this order until a future directive reopens them.
+
+## Adjunct Wave: AI Architecture Consolidation — Third Iteration
+
+**Source.** `archive/reports/ai-architecture-consolidation-third-iteration-2026-05-22-exploited.md` — the third
+hostile AI-architecture audit (ChatGPT-Pro). The author did not clone the repo
+(GitHub code search + targeted fetches only), so every load-bearing claim was
+re-verified against the actual tree before acceptance, using FND-14A as the lens
+(co-location-gated physical reads are lawful; `knows_entity`-gated social/legal/
+contention reads are not). Verdict: accept the recommended **Option B (moderate
+consolidation)** in narrowed form. The two heaviest "Critical" proposals —
+per-field `SnapshotFieldSource` typing and the capability-trait split of
+`RuntimeBeliefView` — were **rejected** (the planning snapshot has zero direct
+`world.` reads, so it is lawful by construction once the view is lawful; same
+rejection the second iteration made). Findings that did not survive verification
+were dismissed; see
+`docs/triage/2026-05-21-ai-architecture-consolidation-third-iteration-triage.md`.
+
+Accepted work is the genuine, FOUNDATIONS-aligned subset: the deferred social/
+control belief-view path plus residual contention leaks (S162), the player-POV
+FND-19 boundary (S163), and the `EventId(0)` causal-honesty cleanup
+(CAUSEVTHON-001 ticket).
+
+```
+S162 (belief-view source-gate hardening)  ── extends S158; completes deferred social/control + residual contention path
+S163 (CLI player-POV boundary)            ── depends on S162 (player menu inherits the belief view)
+CAUSEVTHON-001 (ticket: explicit no-source-event) ── independent of S162/S163
+```
+
+### Completed
+
+- **CAUSEVTHON-001 — Explicit "no source event" in blocker/discrepancy memory**
+  (ticket) — `archive/tickets/CAUSEVTHON-001-explicit-no-source-event.md` — *Status:
+  COMPLETED on 2026-05-21.* Replaced the implicit `EventId(0)` sentinel on
+  `Blocker.source_event`/`DiscrepancyEntry.source_event` with `Option<EventId>`
+  across producers, persistence stamping, consumers, and tests. Independent.
+  **FND-2, FND-29A.**
+
+### Completed / Archived
+
+- **S162 — Belief-View Source-Gate Hardening** —
+  `archive/specs/S162-belief-view-source-gate-hardening.md` — *Status:
+  COMPLETED.* Closed the
+  confirmed FND-14/14A `PerAgentBeliefView` leaks (`has_control`, `record_data`/
+  `office_data`, the no-gate contention reads, `loyalty_to`/`stock_storage_policy`,
+  `believed_rights`/`can_control`), restored adversarial belief-wall golden proof,
+  and locked the snapshot-through-view invariant. Completed the social/control path S158
+  deferred. **FND-7, FND-14, FND-14A, FND-14B, FND-19, FND-27, FND-31.**
+
+- **S163 — CLI Player-POV Boundary** —
+  `archive/specs/S163-cli-player-pov-boundary.md` — *Status: COMPLETED.* FND-19: routes the
+  player action-menu labels and `handle_cancel` through the lawful belief view,
+  marks `display.rs`/`control.rs` observer/debug-only with an enforceable guard,
+  and adds a player/AI symmetry test. Sequence after archived S162. **FND-14,
+  FND-14A, FND-19.**
+
+## Adjunct Wave: AI Architecture Consolidation — Fourth Iteration
+
+**Source.** `archive/reports/ai-architecture-consolidation-fourth-iteration-2026-05-22-exploited.md` — the fourth
+hostile AI-architecture audit (ChatGPT-Pro). As with prior iterations the author did
+not clone the repo (the leak inventory's "Evidence" column is empty), so every
+load-bearing claim was re-verified against the actual tree. Verdict: **~85% of the
+report is re-litigation of decisions already made and documented in S155/S157/S158/
+S162 (the `&World`-holding view / `RuntimeBeliefView` capability-trait split and
+per-field `SnapshotFieldSource` typing — rejected across the second and third
+iterations; the `believed_rights`/`can_control` self/belief-gated live read —
+S162's deliberate design; `direct_container`/`direct_possessor` — S158-verified
+lawful; `merchandise_profile`/reward encumbrance — third-triage-verified gated) or
+landed as S163 (the CLI player-menu leak).** Stripped of re-litigation, the
+report surfaced **one genuinely new, confirmed leak** — `entity_kind` and the
+last-seen belief synthesis read live `world.entity_kind` for remote entities (S164)
+— plus two latent footguns closed alongside it. See
+`docs/triage/2026-05-22-ai-architecture-consolidation-fourth-iteration-triage.md`.
+
+```
+S163 (CLI player-POV boundary)            ── completed from the third iteration
+S164 (belief-view kind source-gate)       ── completed and archived; touched the shared belief view, independent of S163's CLI work
+```
+
+### Completed And Archived
+
+- **S164 — Belief-View Kind Source-Gate + Faction-Policy Footgun Closure** —
+  `archive/specs/S164-belief-view-kind-source-gate.md` — *Status: COMPLETED.* Closed the residual
+  FND-14/14A entity-kind leak S158/S162's accessor sweep missed (`entity_kind` and
+  the last-seen `believed_kind` synthesis now come from stored belief / a last-seen
+  observed-kind carrier, never live `world.entity_kind`); gated the ungated bandit
+  faction-policy accessors to lawfully known factions; added a `facility_controller_at`
+  remote-control-change confirming test; extended the S162 belief-wall goldens with a
+  remote-kind-divergence scenario. Correctness fix; no new authoritative state.
+  **FND-7, FND-14, FND-14A, FND-14B, FND-15, FND-19, FND-27, FND-31.**
+
+## Excluded from this order (by directive)
+
+- **S60–S66** (gameplay/world-dynamics specs) — authored, but held until core AI
+  architecture is stabilized. Do not schedule against this wave.
+
+## Outcome
+
+- **Completion date**: 2026-05-22
+- **What changed**: The third and fourth AI-architecture consolidation iteration
+  order entries are recorded as completed/archived: CAUSEVTHON-001, S162, S163,
+  and S164 all point at their archived completion records.
+- **Deviations from original plan**: None for this archival record. Gameplay specs
+  S60-S66 remain intentionally excluded until a future directive reopens them.
+- **Verification**: Documentation-only archival; verified the archive destination
+  filename was available before moving this record.
