@@ -26,6 +26,7 @@ use crate::{
     RankedPriorityAdjustment, assess_danger, classify_band,
     decision_trace::{
         CandidateDampingEntry, CandidateDampingReason, CompetitionDiscount,
+        LearnedOpportunityBonusAttribution, RepairMemoryBonusAttribution,
         SourceReliabilityDiscount,
     },
     derive_danger_pressure, derive_pain_pressure,
@@ -272,7 +273,8 @@ pub(crate) fn rank_candidates_with_memories_and_testimony_reliability(
         }
         let provenance = goal_ranking_provenance(candidate, &context);
         let priority_class = ranked_priority_class(candidate, &context, provenance.as_ref());
-        let motive_score = ranked_motive_score(candidate, &context, provenance.as_ref());
+        let (motive_score, learned_opportunity_bonus, repair_memory_bonus) =
+            ranked_motive_score_with_memory(candidate, &context, provenance.as_ref());
         let raw_motive_source_contributions = motive_source_contributions(candidate, &context);
         let source_reliability_discount =
             apply_source_reliability_discount(candidate, &context, motive_score);
@@ -296,6 +298,8 @@ pub(crate) fn rank_candidates_with_memories_and_testimony_reliability(
             provenance,
             source_reliability_discount,
             competition_discount,
+            learned_opportunity_bonus,
+            repair_memory_bonus,
             source_composite,
             crate::feasibility::FeasibilityHint::Uncertain,
         );
@@ -343,11 +347,15 @@ fn ranked_priority_class(
     )
 }
 
-fn ranked_motive_score(
+fn ranked_motive_score_with_memory(
     candidate: &GoalOffer,
     context: &RankingContext<'_>,
     provenance: Option<&RankedGoalProvenance>,
-) -> u32 {
+) -> (
+    u32,
+    Option<LearnedOpportunityBonusAttribution>,
+    Option<RepairMemoryBonusAttribution>,
+) {
     let base = provenance.cloned().map_or_else(
         || motive_score(candidate, context),
         |provenance| match provenance {
@@ -363,7 +371,13 @@ fn ranked_motive_score(
         },
     );
     let base = apply_hygiene_motive_modifiers(candidate, context, base);
-    base.saturating_add(memory_motive_bonus(candidate, context, base))
+    let (memory_bonus, learned_opportunity_bonus, repair_memory_bonus) =
+        memory_motive_bonus(candidate, context, base);
+    (
+        base.saturating_add(memory_bonus),
+        learned_opportunity_bonus,
+        repair_memory_bonus,
+    )
 }
 
 fn scale_contributions_to_total(
@@ -398,26 +412,33 @@ fn memory_motive_bonus(
     candidate: &GoalOffer,
     context: &RankingContext<'_>,
     base_motive: u32,
-) -> u32 {
+) -> (
+    u32,
+    Option<LearnedOpportunityBonusAttribution>,
+    Option<RepairMemoryBonusAttribution>,
+) {
     if base_motive == 0 {
-        return 0;
+        return (0, None, None);
     }
 
-    repair_memory_bonus(candidate, context, base_motive).saturating_add(learned_opportunity_bonus(
-        candidate,
-        context,
-        base_motive,
-    ))
+    let (repair_bonus, repair_memory_bonus) = repair_memory_bonus(candidate, context, base_motive);
+    let (learned_bonus, learned_opportunity_bonus) =
+        learned_opportunity_bonus(candidate, context, base_motive);
+    (
+        repair_bonus.saturating_add(learned_bonus),
+        learned_opportunity_bonus,
+        repair_memory_bonus,
+    )
 }
 
 fn repair_memory_bonus(
     candidate: &GoalOffer,
     context: &RankingContext<'_>,
     base_motive: u32,
-) -> u32 {
+) -> (u32, Option<RepairMemoryBonusAttribution>) {
     let alternate_target = match candidate.anchor {
         OpportunityAnchor::Place(place) | OpportunityAnchor::Entity(place) => place,
-        OpportunityAnchor::None => return 0,
+        OpportunityAnchor::None => return (0, None),
     };
     let signature = worldwake_core::BreachSignature {
         goal_key: candidate.key,
@@ -425,22 +446,32 @@ fn repair_memory_bonus(
         step_target: Some(alternate_target),
     };
     let Some(entry) = context.repair_memory.repairs.get(&signature) else {
-        return 0;
+        return (0, None);
     };
     if entry.expires_tick <= context.current_tick {
-        return 0;
+        return (0, None);
     }
 
-    (base_motive / 10)
+    let bonus = (base_motive / 10)
         .max(1)
-        .saturating_mul(entry.success_count.max(1))
+        .saturating_mul(entry.success_count.max(1));
+    (
+        bonus,
+        Some(RepairMemoryBonusAttribution {
+            signature,
+            entry_success_count: entry.success_count,
+            entry_expires_tick: entry.expires_tick,
+            pre_bonus_motive: base_motive,
+            post_bonus_motive: base_motive.saturating_add(bonus),
+        }),
+    )
 }
 
 fn learned_opportunity_bonus(
     candidate: &GoalOffer,
     context: &RankingContext<'_>,
     base_motive: u32,
-) -> u32 {
+) -> (u32, Option<LearnedOpportunityBonusAttribution>) {
     let opportunity = OpportunityKey {
         goal_key: candidate.key,
         anchor: candidate.anchor,
@@ -450,13 +481,24 @@ fn learned_opportunity_bonus(
         .opportunities
         .get(&opportunity)
     else {
-        return 0;
+        return (0, None);
     };
     if entry.expires_tick <= context.current_tick {
-        return 0;
+        return (0, None);
     }
 
-    (base_motive / 20).max(1)
+    let bonus = (base_motive / 20).max(1);
+    (
+        bonus,
+        Some(LearnedOpportunityBonusAttribution {
+            opportunity,
+            entry_source: entry.source,
+            entry_observed_tick: entry.observed_tick,
+            entry_expires_tick: entry.expires_tick,
+            pre_bonus_motive: base_motive,
+            post_bonus_motive: base_motive.saturating_add(bonus),
+        }),
+    )
 }
 
 fn apply_competition_discount(
@@ -4068,6 +4110,8 @@ mod tests {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
+            learned_opportunity_bonus: None,
+            repair_memory_bonus: None,
             source_composite: Some(composite_rank(source_entity, commodity, composite_permille)),
             feasibility: crate::FeasibilityHint::Uncertain,
             partial_plan_segment: None,
@@ -5879,6 +5923,29 @@ mod tests {
         assert_eq!(baseline[0].offer.anchor, OpportunityAnchor::Place(place_a));
         assert_eq!(boosted[0].offer.anchor, OpportunityAnchor::Place(place_b));
         assert_eq!(expired[0].offer.anchor, OpportunityAnchor::Place(place_a));
+        let attribution = boosted[0]
+            .repair_memory_bonus
+            .as_ref()
+            .expect("live repair-memory bonus is attributed");
+        assert_eq!(
+            attribution.signature,
+            worldwake_core::BreachSignature {
+                goal_key: worldwake_core::GoalKey::from(goal_kind),
+                invalidator: worldwake_core::InvalidatorTag::TargetMoved,
+                step_target: Some(place_b),
+            }
+        );
+        assert_eq!(attribution.entry_success_count, 1);
+        assert_eq!(attribution.entry_expires_tick, Tick(20));
+        assert_eq!(
+            attribution.post_bonus_motive,
+            attribution
+                .pre_bonus_motive
+                .saturating_add((attribution.pre_bonus_motive / 10).max(1))
+        );
+        assert!(attribution.post_bonus_motive > attribution.pre_bonus_motive);
+        assert_eq!(boosted[0].learned_opportunity_bonus, None);
+        assert_eq!(expired[0].repair_memory_bonus, None);
     }
 
     #[test]
@@ -5932,6 +5999,32 @@ mod tests {
 
         assert_eq!(boosted[0].offer.anchor, OpportunityAnchor::Place(place_b));
         assert_eq!(expired[0].offer.anchor, OpportunityAnchor::Place(place_a));
+        let attribution = boosted[0]
+            .learned_opportunity_bonus
+            .as_ref()
+            .expect("live learned-opportunity bonus is attributed");
+        assert_eq!(
+            attribution.opportunity,
+            worldwake_core::OpportunityKey {
+                goal_key: worldwake_core::GoalKey::from(goal_kind),
+                anchor: OpportunityAnchor::Place(place_b),
+            }
+        );
+        assert_eq!(
+            attribution.entry_source,
+            worldwake_core::LearnedOpportunitySource::ReadPhaseInference
+        );
+        assert_eq!(attribution.entry_observed_tick, Tick(3));
+        assert_eq!(attribution.entry_expires_tick, Tick(18));
+        assert_eq!(
+            attribution.post_bonus_motive,
+            attribution
+                .pre_bonus_motive
+                .saturating_add((attribution.pre_bonus_motive / 20).max(1))
+        );
+        assert!(attribution.post_bonus_motive > attribution.pre_bonus_motive);
+        assert_eq!(boosted[0].repair_memory_bonus, None);
+        assert_eq!(expired[0].learned_opportunity_bonus, None);
     }
 
     #[test]
@@ -7201,6 +7294,8 @@ mod tests {
             })),
             source_reliability_discount: None,
             competition_discount: None,
+            learned_opportunity_bonus: None,
+            repair_memory_bonus: None,
             source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
             partial_plan_segment: None,
@@ -7237,6 +7332,8 @@ mod tests {
             })),
             source_reliability_discount: None,
             competition_discount: None,
+            learned_opportunity_bonus: None,
+            repair_memory_bonus: None,
             source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
             partial_plan_segment: None,
@@ -7291,6 +7388,8 @@ mod tests {
             })),
             source_reliability_discount: None,
             competition_discount: None,
+            learned_opportunity_bonus: None,
+            repair_memory_bonus: None,
             source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Likely,
             partial_plan_segment: None,
@@ -7327,6 +7426,8 @@ mod tests {
             })),
             source_reliability_discount: None,
             competition_discount: None,
+            learned_opportunity_bonus: None,
+            repair_memory_bonus: None,
             source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Likely,
             partial_plan_segment: None,
@@ -9829,6 +9930,8 @@ mod tests {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
+            learned_opportunity_bonus: None,
+            repair_memory_bonus: None,
             source_composite: None,
             feasibility,
             partial_plan_segment: None,

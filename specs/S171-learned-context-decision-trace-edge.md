@@ -38,10 +38,12 @@ provenance:
    sibling attribution carrier for the testimony-reliability discount path.
    It records `source_entity`, `commodity`, `failure_ratio_permille`,
    `pre_discount_motive`, `post_discount_motive`. It does **not** record any
-   field from `TestimonyReliabilityEntry::provenance_events: Vec<EventId>`
-   (`crates/worldwake-core/src/testimony_reliability.rs:20-62`, the S170-era
-   provenance ring buffer). The discount lands; the originating testimony
-   events do not surface.
+   provenance from the actual source-reliability entry that the ranking path
+   consults. Live S171LEACONTDEC-002 reassessment corrected the original draft:
+   the discount path reads `SourceReliability.sources: BTreeMap<SourceKey,
+   ReliabilityRecord>`, not `TestimonyReliabilityEntry::provenance_events`.
+   S171LEACONTDEC-004 owns landing a lawful source-reliability provenance
+   producer for this discount axis.
 
 Symmetric precedent exists: `RankedGoalSummary`
 (`crates/worldwake-ai/src/decision_trace.rs:691-715`) already carries
@@ -107,8 +109,11 @@ remain excluded.
 - `worldwake-sim` — save-format version bump only. `SourceReliabilityDiscount`
   is serialized through `AgentDecisionRuntime.agenda_state`, so adding fields
   to that carrier changes the current runtime save shape.
-- `worldwake-core` — **no changes**. The learned stores already carry the
-  provenance fields S170 added; S171 only threads them forward.
+- `worldwake-core` — **changes only if required by S171LEACONTDEC-004**.
+  Learned-opportunity and repair-memory stores already carry the fields that
+  S171LEACONTDEC-002 threads forward. Source-reliability discount provenance
+  requires a lawful carrier on the live `ReliabilityRecord` path; it must not
+  be synthesized from testimony reliability.
 
 ## Dependencies
 
@@ -272,14 +277,14 @@ pub struct SourceReliabilityDiscount {
     pub pre_discount_motive: u32,
     pub post_discount_motive: u32,
     // NEW
-    /// Number of provenance events currently retained in
-    /// `TestimonyReliabilityEntry::provenance_events` for the consulted
-    /// (source, commodity) pair. `0` when the entry exists without any
-    /// recorded provenance (legacy entries during transition; should be
-    /// rare on post-S170 saves).
+    /// Number of provenance events currently retained for the consulted
+    /// source-reliability entry. `0` when the entry exists without lawful
+    /// event provenance or when a projected in-tick discount has no committed
+    /// event id yet.
     pub provenance_event_count: u32,
-    /// Most-recent provenance event id retained in the ring buffer for
-    /// the consulted entry, or `None` when `provenance_event_count == 0`.
+    /// Most-recent provenance event id retained for the consulted
+    /// source-reliability entry, or `None` when
+    /// `provenance_event_count == 0`.
     pub most_recent_provenance_event: Option<EventId>,
 }
 ```
@@ -339,11 +344,11 @@ later projects that agenda entry into `RankedGoalSummary`. The local bindings
 282), and `provenance` (line 273) are already in scope. The two new
 bonus-attribution fields therefore populate by extending the agenda-entry
 carrier and then copying those fields in `summarize_ranked_goal`. The
-`SourceReliabilityDiscount` construction site
-(`apply_source_reliability_discount` at `ranking.rs:492-510`) populates
-the two new D3 fields by reading the matched `TestimonyReliabilityEntry`
-directly — the lookup already returns the `record` (`ranking.rs:504`) and
-`record.provenance_events` is in scope at the construction site.
+`SourceReliabilityDiscount` construction currently remains placeholder-only
+for provenance (`0` / `None`) until S171LEACONTDEC-004 lands the lawful
+source-reliability carrier. The S171LEACONTDEC-002 reassessment proved the
+original `TestimonyReliabilityEntry` read sketch was false for the live
+discount path.
 
 ### D7. Decision-trace formatter additions
 
@@ -395,8 +400,8 @@ A new focused test in `ranking.rs` tests asserts:
   non-zero `u32`, the corresponding `RankedGoalSummary.learned_opportunity_bonus`
   is `Some(_)` with `post_bonus_motive == pre_bonus_motive + bonus`.
 - Symmetrically for `repair_memory_bonus` / `RankedGoalSummary.repair_memory_bonus`.
-- For every `SourceReliabilityDiscount` emitted, if the underlying
-  `TestimonyReliabilityEntry::provenance_events` is non-empty,
+- For every `SourceReliabilityDiscount` emitted after S171LEACONTDEC-004, if
+  the underlying source-reliability entry has lawful event provenance,
   `provenance_event_count > 0` and `most_recent_provenance_event ==
   Some(last_event_id)`.
 
@@ -430,7 +435,7 @@ behaviour changes. The existing golden corpus continues to apply.
 - Attribution carrier absent (`None`) when the underlying bonus was
   non-zero. Forbidden because it is precisely the gap S171 closes.
 - `most_recent_provenance_event` referencing an `EventId` not present in
-  the consulted `TestimonyReliabilityEntry::provenance_events` ring.
+  the consulted source-reliability entry's lawful provenance carrier.
   Forbidden because attribution must be sourced from the actual consulted
   entry, not synthesised.
 - Any score arithmetic change. Forbidden by Design Goal 3 and V2.

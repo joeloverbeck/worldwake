@@ -98,6 +98,8 @@ fn suspended_entry(mut segment: PartialPlanSegment, anchor_slot: u32) -> AgendaE
         None,
         None,
         None,
+        None,
+        None,
         FeasibilityHint::Uncertain,
     );
     entry.phase = AgendaPhase::Suspended;
