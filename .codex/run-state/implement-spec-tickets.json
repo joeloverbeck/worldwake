@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implement-S172-wash-discovery-budget-closure",
   "base_head": "ba71c3bcea7209206b97b581cd9b12b9820589d2",
-  "last_ticket": "archive/tickets/S172WASDISBUD-001.md",
+  "last_ticket": "archive/tickets/S172WASDISBUD-002.md",
   "last_result": "completed_archived",
-  "last_work_commit": "3f4afa7068ab77e2f5f3d0d0ea6bcd4b26796c40",
+  "last_work_commit": "623b9723c2b3e761720d4f900e34afee0dfcf693",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S172WASDISBUD-002.md",
+  "next_target": "tickets/S172WASDISBUD-003.md",
   "queue": [
-    "tickets/S172WASDISBUD-002.md",
     "tickets/S172WASDISBUD-003.md",
     "tickets/S172WASDISBUD-004.md"
   ],
