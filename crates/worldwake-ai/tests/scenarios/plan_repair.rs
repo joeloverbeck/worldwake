@@ -520,7 +520,7 @@ fn commodity_availability_changed_clears_blocker_structurally() {
             place: market,
         },
         baseline_snapshot: None,
-        source_event: None,
+        source: worldwake_core::BlockerSource::Inferred,
     });
     blocker_memory.sweep_cleared(|blocker| {
         blocker.clearing_condition

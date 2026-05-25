@@ -1134,8 +1134,8 @@ fn blocker_memory_already_persisted(
                 return true;
             }
             let mut normalized = *requested;
-            if normalized.source_event.is_none() {
-                normalized.source_event = existing.source_event;
+            if matches!(normalized.source, worldwake_core::BlockerSource::Inferred) {
+                normalized.source = existing.source;
             }
             existing == &normalized
         })
@@ -1149,8 +1149,8 @@ fn blocker_memory_with_source_events(
     let mut updated = memory.clone();
     let mut changed = false;
     for blocker in updated.intents.values_mut() {
-        if blocker.source_event.is_none() {
-            blocker.source_event = Some(source_event);
+        if matches!(blocker.source, worldwake_core::BlockerSource::Inferred) {
+            blocker.source = worldwake_core::BlockerSource::Event(source_event);
             changed = true;
         }
     }
@@ -1483,9 +1483,10 @@ pub(super) fn plan_finished(runtime: &AgentDecisionRuntime) -> bool {
 mod tests {
     use super::{
         apply_repaired_plan_and_emit, attempt_local_repair_for_invalidated_step,
-        breach_signature_for_step, discrepancy_memory_with_source_events,
-        epistemic_verification_subject, populate_contention_event_refs,
-        record_failed_repair_attempts, repair_attempt_trace_from_failed, repair_budget_consumed,
+        blocker_memory_with_source_events, breach_signature_for_step,
+        discrepancy_memory_with_source_events, epistemic_verification_subject,
+        populate_contention_event_refs, record_failed_repair_attempts,
+        repair_attempt_trace_from_failed, repair_budget_consumed,
         verification_anchor_from_repaired_plan,
     };
     use crate::RepairOutcome;
@@ -1644,6 +1645,29 @@ mod tests {
             .get(&entry.scope)
             .expect("entry should remain present");
         assert_eq!(recorded.source, DiscrepancySource::Event(source_event));
+    }
+
+    #[test]
+    fn blocker_memory_with_source_events_promotes_inferred_source() {
+        let source_event = EventId(43);
+        let affordance = AffordanceKey {
+            facility: entity(9),
+            action: ActionDefId(3),
+        };
+        let memory = blocker_memory_for(affordance);
+        let scope = *memory
+            .intents
+            .keys()
+            .next()
+            .expect("test memory should contain a blocker");
+
+        let updated = blocker_memory_with_source_events(&memory, source_event)
+            .expect("inferred source should be promoted");
+
+        assert_eq!(
+            updated.intents[&scope].source,
+            worldwake_core::BlockerSource::Event(source_event)
+        );
     }
 
     fn planned_step(slot: u32, link: Option<CausalLink>) -> PlannedStep {
@@ -2043,7 +2067,7 @@ mod tests {
                 facility: affordance.facility,
             },
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
         memory
     }

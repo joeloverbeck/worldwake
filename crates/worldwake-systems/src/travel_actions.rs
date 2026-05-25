@@ -1021,7 +1021,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::RouteRetraversedSafely(segment),
             baseline_snapshot: None,
-            source_event: Some(EventId(1)),
+            source: worldwake_core::BlockerSource::Event(EventId(1)),
         });
         memory.record(Blocker {
             scope: BlockerScope::RouteSegment(retained_segment),
@@ -1031,7 +1031,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::RouteRetraversedSafely(retained_segment),
             baseline_snapshot: None,
-            source_event: Some(EventId(2)),
+            source: worldwake_core::BlockerSource::Event(EventId(2)),
         });
         let mut txn = new_txn(&mut world, 4);
         txn.set_component_blocker_memory(actor, memory).unwrap();

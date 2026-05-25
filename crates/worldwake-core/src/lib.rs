@@ -151,8 +151,8 @@ pub use belief::{
 };
 pub use belief_claim_key::BeliefClaimKey;
 pub use blocker_memory::{
-    Blocker, BlockerClearingCondition, BlockerDiagnostic, BlockerKey, BlockerMemory, BlockingFact,
-    ClearingBaseline,
+    Blocker, BlockerClearingCondition, BlockerDiagnostic, BlockerKey, BlockerMemory, BlockerSource,
+    BlockingFact, ClearingBaseline,
 };
 pub use blocker_scope::{BlockerScope, RouteSegment};
 pub use canonical::{

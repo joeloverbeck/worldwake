@@ -48,11 +48,13 @@ Item E) a concrete and verified complaint:
    source event" loses information. FND-29 wants the distinction explicit.
 4. **`Blocker`**
    (`crates/worldwake-core/src/blocker_memory.rs:212-221`) carries the same
-   `source_event: Option<EventId>` field as `DiscrepancyEntry`. Over 30
-   runtime construction sites across `candidate_generation.rs`,
-   `failure_handling.rs`, `agenda_manager.rs`, `plan_repair.rs`,
-   `feasibility_probe.rs`, and `observation.rs:653` currently write
-   `source_event: None`. The same FND-22A/FND-29A "conflates no-event-
+   `source_event: Option<EventId>` field as `DiscrepancyEntry`. Runtime
+   construction sites in AI failure handling, active-action/frame/candidate
+   observation paths, coordination-barrier blocker recording, feasibility
+   probing, and trade no-buyer recording, plus broad test fixture fallout,
+   currently write `source_event: None`. Live ticket implementation found the
+   `candidate_generation.rs` hits were test fixture constructors, not runtime
+   extractor producers. The same FND-22A/FND-29A "conflates no-event-
    recorded with no-event-possible" criticism applies symmetrically. The
    third-iteration report named the three "learned" surfaces explicitly and
    silently omitted Blocker; reassessment surfaces this as a symmetric gap.
@@ -147,11 +149,15 @@ any order. Builds on completed S109 (typed discrepancy taxonomy) and S151
     scope, or `source: DiscrepancySource::ReadPhaseInference` with a
     one-line rationale comment where it is not.
   - Runtime Blocker construction sites (per D5 enumeration) across
-    `candidate_generation.rs` (~18 sites in extractor and candidate
-    emission), `failure_handling.rs` (~15 sites), `agenda_manager.rs`,
-    `plan_repair.rs`, `feasibility_probe.rs`. Each writes
-    `source: BlockerSource::Event(id)` where a triggering event id is in
-    scope, or `source: BlockerSource::Inferred` with a one-line rationale.
+    `failure_handling.rs`, `agent_tick/candidates.rs`,
+    `agent_tick/frame.rs`, `agent_tick/observation.rs`,
+    `agent_tick/execution.rs`, `partial_plan.rs`,
+    `feasibility_probe.rs`, and `trade_actions.rs`. Test fixture fallout in
+    `candidate_generation.rs`, `search/tests.rs`, and scenario/golden helper
+    files is mechanical constructor migration, not runtime producer work.
+    Each runtime site writes `source: BlockerSource::Event(id)` where a
+    triggering event id is in scope, or `source: BlockerSource::Inferred`
+    where the blocker is inferred without one discrete triggering event.
 - No `worldwake-systems` changes.
 
 ## Dependencies
@@ -345,15 +351,15 @@ happen during planning generally, not specifically during read-phase
 synthesis — the variant name encodes the right domain semantic per
 FND-3.
 
-Runtime Blocker construction sites span `candidate_generation.rs`
-(~18 sites in extractor and candidate emission paths),
-`failure_handling.rs` (~15 sites), `agenda_manager.rs`,
-`plan_repair.rs`, `feasibility_probe.rs`,
-`agent_tick/observation.rs:653`. Most are currently `source_event: None`
-and become `source: BlockerSource::Inferred` (the planning-time
-inference case). Sites with a concrete triggering event (e.g., a
-contention/escalation event that produced the blocker) become
-`source: BlockerSource::Event(id)`.
+Runtime Blocker construction sites span `failure_handling.rs`,
+`agent_tick/candidates.rs`, `agent_tick/frame.rs`,
+`agent_tick/observation.rs`, `agent_tick/execution.rs`, `partial_plan.rs`,
+`feasibility_probe.rs`, and `trade_actions.rs`. The `candidate_generation.rs`
+and `search/tests.rs` hits found during implementation were test fixture
+constructors, not runtime extractor producers. No-event runtime blockers
+become `source: BlockerSource::Inferred` (the planning-time inference case).
+Sites with a concrete triggering event (e.g., a contention/escalation event
+that produced the blocker) become `source: BlockerSource::Event(id)`.
 
 ### D5. Runtime call-site audit
 
@@ -389,18 +395,20 @@ runtime enumeration as of 2026-05-25:
 
 **Runtime `Blocker { … }` construction:**
 
-- Approximately 30+ sites across `crates/worldwake-ai/src/candidate_generation.rs`
-  (~18 sites in extractor/candidate-emission paths),
-  `crates/worldwake-ai/src/failure_handling.rs` (~15 sites at lines
-  260, 277, 2957–4000s),
-  `crates/worldwake-ai/src/agenda_manager.rs:2750`,
-  `crates/worldwake-ai/src/plan_repair.rs:455`,
-  `crates/worldwake-ai/src/feasibility_probe.rs:772, 822`,
-  `crates/worldwake-ai/src/agent_tick/observation.rs:653`. Most are
+- Runtime sites across `crates/worldwake-ai/src/failure_handling.rs`,
+  `crates/worldwake-ai/src/agent_tick/candidates.rs`,
+  `crates/worldwake-ai/src/agent_tick/frame.rs`,
+  `crates/worldwake-ai/src/agent_tick/observation.rs`,
+  `crates/worldwake-ai/src/agent_tick/execution.rs`,
+  `crates/worldwake-ai/src/partial_plan.rs`,
+  `crates/worldwake-ai/src/feasibility_probe.rs`, and
+  `crates/worldwake-systems/src/trade_actions.rs`. Most no-event cases are
   planning-time inferences (currently `source_event: None`) and become
   `BlockerSource::Inferred`. Sites that already have a real `EventId`
   in scope (e.g., a `ReservationConflict` blocker derived from a
-  contention event) become `BlockerSource::Event(id)`.
+  contention event) become `BlockerSource::Event(id)`. Fixture-only
+  constructor fallout in `candidate_generation.rs`, `search/tests.rs`, and
+  scenario/golden helper files is migrated mechanically.
 
 Each site must supply a real event id or deliberately choose the
 sentinel variant (`ReadPhaseInference` for discrepancies/opportunities,

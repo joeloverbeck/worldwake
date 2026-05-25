@@ -5137,7 +5137,7 @@ fn persist_blocked_memory_commits_changed_component() {
         expires_tick: Tick(7),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
-        source_event: None,
+        source: worldwake_core::BlockerSource::Inferred,
     });
 
     persist_blocked_memory(
@@ -5154,19 +5154,21 @@ fn persist_blocked_memory_commits_changed_component() {
     let persisted = world
         .get_component_blocker_memory(agent)
         .expect("changed blocker memory should be persisted");
-    let source_event = persisted
+    let source = persisted
         .intents
         .values()
         .next()
         .expect("persisted blocker memory should contain entry")
-        .source_event;
-    let source_event = source_event.expect("persisted blocker should carry commit source event");
+        .source;
+    let worldwake_core::BlockerSource::Event(source_event) = source else {
+        panic!("persisted blocker should carry commit source event");
+    };
     assert!(event_log.get(source_event).is_some());
     let mut expected_blocked = blocked.clone();
     expected_blocked
         .intents
         .values_mut()
-        .for_each(|blocker| blocker.source_event = Some(source_event));
+        .for_each(|blocker| blocker.source = worldwake_core::BlockerSource::Event(source_event));
     assert_eq!(persisted, &expected_blocked);
     assert_eq!(event_log.len(), 3);
     let blocker_events = event_log.events_by_tag(EventTag::BlockerRecorded);
@@ -5517,7 +5519,7 @@ fn read_phase_emits_goal_offered_and_goal_suppressed_events_from_candidate_prove
         expires_tick: Tick(10),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
-        source_event: None,
+        source: worldwake_core::BlockerSource::Inferred,
     });
     let mut txn = new_txn(&mut harness.world, 0);
     txn.set_component_blocker_memory(harness.actor, memory)
@@ -8994,7 +8996,7 @@ fn blocker_memory_entries_not_in_discrepancy_trace() {
         expires_tick: Tick(5),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
-        source_event: None,
+        source: worldwake_core::BlockerSource::Inferred,
     });
     let mut txn = new_txn(&mut harness.world, 0);
     txn.set_component_blocker_memory(harness.actor, memory)

@@ -1,29 +1,20 @@
 # S170LEASTAPRO-004: BlockerSource enum + Blocker migration
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
-**Engine Changes**: Yes — agent decision runtime (BlockerMemory), candidate generation, failure handling, save/load
+**Engine Changes**: Yes — `BlockerMemory` persisted shape, AI blocker producers/consumers, source-event promotion, save/load
 **Deps**: `archive/tickets/S170LEASTAPRO-003.md`
 
 ## Problem
 
-`Blocker::source_event: Option<EventId>` at `crates/worldwake-core/src/blocker_memory.rs:220` conflates "no source event recorded" with "no source event possible." Over 90 construction sites across `candidate_generation.rs`, `failure_handling.rs`, `agenda_manager.rs`, `plan_repair.rs`, `feasibility_probe.rs`, and others write `source_event: None`. Most are planning-time inferences with no triggering event; some have real contention/refusal events available. A runtime conditional-promotion pattern at `crates/worldwake-ai/src/agent_tick/execution.rs:1137-1153` opportunistically promotes `None` to `Some(id)`. FND-22A's accountable-origin requirement and FND-29A's queryable-history requirement both fail.
+Before this ticket, `Blocker::source_event: Option<EventId>` at `crates/worldwake-core/src/blocker_memory.rs` conflated "no source event recorded" with "no source event possible." Explicit `Blocker` construction sites across production and tests wrote `source_event: None` for inferred blockers, while event-backed blocker paths wrote `Some(id)`. A runtime conditional-promotion pattern in `crates/worldwake-ai/src/agent_tick/execution.rs` opportunistically promoted `None` to `Some(id)`. FND-22A's accountable-origin requirement and FND-29A's queryable-history requirement both failed.
 
 ## Assumption Reassessment (2026-05-25)
 
 1. `Blocker` at `crates/worldwake-core/src/blocker_memory.rs:212-221` derives `Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize`. The new `BlockerSource` enum must satisfy these. The migration renames `source_event` → `source` AND changes the type from `Option<EventId>` to the enum — atomic.
 2. Spec under audit: `specs/S170-learned-state-provenance-hardening.md` D4. The shared boundary under audit is `Blocker::source_event` → `Blocker::source`: workspace-wide field rename + type change. The rename is scoped to `Blocker` only — `DiscrepancyEntry::source_event` is migrated by ticket 003, and `PartialPlan::source_event` at `crates/worldwake-ai/src/partial_plan.rs:227` (`pub source_event: EventId`, already required and non-Option) is unaffected.
-3. Construction sites for `Blocker { ... }`: 93 total. Distribution by file:
-   - `crates/worldwake-ai/src/candidate_generation.rs` ~18 sites at lines 11647, 11705, 11769, 11830, 11889, 11958, 12072, 12181, 12312, 12386, 12447, 12555, 13561, 17544, 20348, 21257, 21634, 22157 — all in extractor/candidate-emission paths
-   - `crates/worldwake-ai/src/failure_handling.rs` ~17 sites at lines 260, 277, 2957, 2983, 3006, 3029, 3060, 3081, 3111, 3144, 3275, 3307, 3332, 3360, 3955, 3975, 3991
-   - `crates/worldwake-ai/src/agenda_manager.rs:2750`
-   - `crates/worldwake-ai/src/plan_repair.rs:455`
-   - `crates/worldwake-ai/src/feasibility_probe.rs:772, 822`
-   - `crates/worldwake-ai/src/agent_tick/observation.rs:653`
-   - Plus test sites across the workspace (see Files to Touch)
-
-   No spread-syntax usage; no `Default` impl on `Blocker`. Count is load-bearing — Large effort warranted (per Step 2 sub-check (d) rule: ">100 sites with no spread-syntax → Large").
+3. Construction sites for `Blocker { ... }`: 93 total before implementation. Live reassessment corrected the draft distribution: `candidate_generation.rs`, `search/tests.rs`, and several scenario files were test fixture fallout, not runtime extractor producers. Production-owned sites included `failure_handling.rs`, `agent_tick/candidates.rs`, `agent_tick/frame.rs`, `agent_tick/observation.rs`, `agent_tick/execution.rs`, `feasibility_probe.rs`, `partial_plan.rs`, and `trade_actions.rs`. All explicit literals still required migration because the shared field was removed.
 4. Field-read sites (`.source_event`) for Blocker: `crates/worldwake-ai/src/agent_tick/execution.rs:1137-1153` is the runtime conditional-promotion pattern: `if normalized.source_event.is_none() { normalized.source_event = existing.source_event; }` and `if blocker.source_event.is_none() { blocker.source_event = Some(source_event); }`. Test reads at `crates/worldwake-ai/src/agent_tick/tests.rs:5162, 5169`. Inline tests at `crates/worldwake-core/src/blocker_memory.rs:605, 612, 651, 655` (intent-construction + roundtrip assertions). Scenario test reads at `crates/worldwake-ai/tests/scenarios/cross_goal_blocker_scoping.rs:35, 379, 403, 410-411` (overlap with ticket 003's coverage of the same file at different field accesses — coordinate by editing the specific line ranges).
 5. Runtime conditional-promotion at `execution.rs:1137-1153` becomes:
    ```rust
@@ -46,14 +37,14 @@
 2. No backward-compatibility shim. Field rename + type change is wholesale; old `source_event` is removed, not aliased. No `#[serde(default)]`, no `#[serde(alias)]`. Per FND-28's prohibition on backward-compat in live authority paths.
 3. The conditional-promotion runtime pattern (`is_none() → Some(id)`) translates 1:1 to enum-match form. The semantic intent — "upgrade from inference to authentic event when one becomes available" — is preserved without parallel state.
 
-## Verification Layers
+## Verified Layers
 
 1. Accountable origin (FND-22A) → focused unit coverage (round-trip tests for both `BlockerSource::Event(EventId)` and `BlockerSource::Inferred`).
-2. Inferred sentinel at planning-time inference sites (FND-29A) → focused runtime coverage (candidate-generation extractor produces `Blocker` with `source == BlockerSource::Inferred`).
+2. Inferred sentinel at planning-time inference sites (FND-29A) → compile-enforced explicit `BlockerSource::Inferred` at all no-event blocker construction sites plus focused `cargo test -p worldwake-ai`.
 3. Conditional-promotion preserves semantics (FND-28) → focused runtime coverage on `execution.rs:1137-1153` (construct Blocker with `Inferred`, invoke promotion path with a real event id, assert `Event(id)`).
 4. Save/load equivalence (FND-12) → save/load round-trip test for `BlockerMemory` with populated `source` field.
 
-## What to Change
+## Landed Changes
 
 ### 1. Define BlockerSource enum
 
@@ -79,20 +70,17 @@ pub enum BlockerSource {
 
 In `blocker_memory.rs:212-221`, replace `pub source_event: Option<EventId>` with `pub source: BlockerSource`. Field order preserved (last field).
 
-### 3. Update runtime construction sites in candidate_generation.rs
+### 3. Updated explicit `Blocker` construction sites
 
-Approximately 18 sites (lines listed in Assumption Reassessment #3). All are planning-time inferences from belief state. Each writes `source: BlockerSource::Inferred`. Audit each site at edit time for whether any has a concrete event id in scope (e.g., from a contention-event-carrying `BlockingFact::ReservationConflict { contention_event, .. }` payload); those write `BlockerSource::Event(id)`.
+Production and test literals now write either `source: BlockerSource::Inferred` or `source: BlockerSource::Event(id)`. The draft claim that `candidate_generation.rs` had runtime blocker producers was corrected: those were tests compiled by the shared field migration.
 
-### 4. Update runtime construction sites in failure_handling.rs
+### 4. Updated runtime blocker producers
 
-Approximately 17 sites (lines listed in Assumption Reassessment #3). Same audit rule.
+Runtime sites in AI failure handling, active-action/frame/candidate observation paths, coordination-barrier blocker recording, feasibility probing, and trade no-buyer recording now write the explicit source variant. Event-backed paths preserve the event id; planning or read-state inference paths use `BlockerSource::Inferred`.
 
-### 5. Update remaining runtime construction sites
+### 5. Updated remaining constructor fallout
 
-- `crates/worldwake-ai/src/agenda_manager.rs:2750` — audit
-- `crates/worldwake-ai/src/plan_repair.rs:455` — audit
-- `crates/worldwake-ai/src/feasibility_probe.rs:772, 822` — audit
-- `crates/worldwake-ai/src/agent_tick/observation.rs:653` — `apply_pending_facility_intents` infers blocker from observation; write `BlockerSource::Inferred` with a one-line rationale.
+Test fixtures, golden helpers, save/load fixtures, core sample builders, and route/trade/travel tests were updated to the new field shape.
 
 ### 6. Migrate runtime conditional-promotion in execution.rs:1137-1153
 
@@ -110,7 +98,7 @@ if matches!(blocker.source, BlockerSource::Inferred) {
 }
 ```
 
-### 7. Update test construction sites
+### 7. Updated test construction sites
 
 Every `Blocker { ... }` literal in tests across the workspace updates the field name and value. Test files (with per-line guidance below):
 
@@ -126,38 +114,41 @@ Every `Blocker { ... }` literal in tests across the workspace updates the field 
 - `crates/worldwake-systems/src/travel_actions.rs:1024, 1034` — test sites, update.
 - `crates/worldwake-systems/src/trade_actions.rs:3346, 3356` — test sites, update.
 
-### 8. Rewrite preserves-explicit-absent test
+### 8. Rewrote preserves-explicit-absent test
 
 `blocker_memory_preserves_explicit_absent_source_event` at `crates/worldwake-core/src/blocker_memory.rs:602` must be renamed and rewritten as `blocker_memory_preserves_explicit_inferred_source` — assert `BlockerSource::Inferred` round-trips.
 
-### 9. Add focused round-trip test for Event variant
+### 9. Added focused round-trip test for Event variant
 
 In `crates/worldwake-core/src/blocker_memory.rs` test module, add a parallel test asserting `BlockerSource::Event(EventId(42))` round-trips.
 
-### 10. Bump SAVE_FORMAT_VERSION
+### 10. Bumped SAVE_FORMAT_VERSION
 
-In `crates/worldwake-sim/src/save_load.rs:7`, increment by 1 (cascade with tickets 002 and 003).
+In `crates/worldwake-sim/src/save_load.rs`, `SAVE_FORMAT_VERSION` is now 104.
 
-### 11. Update save/load tests
+### 11. Updated save/load tests
 
 `crates/worldwake-sim/src/save_load.rs:637-655` test constructs `Blocker` with `source_event: Some(EventId(6))` and `source_event: Some(EventId(7))`. Update to `source: BlockerSource::Event(EventId(6))` and `source: BlockerSource::Event(EventId(7))`.
 
-### 12. Add focused runtime tests
+### 12. Added focused runtime tests
 
 - In `crates/worldwake-ai/src/agent_tick/execution.rs` test module, add a focused test for the conditional-promotion: construct a `Blocker` with `BlockerSource::Inferred`, invoke the promotion path with a real event id, assert `BlockerSource::Event(source_event)`.
-- In `crates/worldwake-ai/src/candidate_generation.rs` test module, add a focused test asserting that an extractor producing a planning-time blocker emits `Blocker { source: BlockerSource::Inferred, … }`.
+- No new candidate-generation runtime test was added because live reassessment showed no candidate-generation runtime blocker producer; the cited sites were test fixture fallout.
 
-## Files to Touch
+## Landed Files
 
 - `crates/worldwake-core/src/blocker_memory.rs` (modify — new enum, field migration, test updates, new round-trip tests)
-- `crates/worldwake-ai/src/candidate_generation.rs` (modify — ~18 runtime construction sites + new focused test)
-- `crates/worldwake-ai/src/failure_handling.rs` (modify — ~17 runtime sites)
-- `crates/worldwake-ai/src/agenda_manager.rs` (modify — runtime at 2750)
-- `crates/worldwake-ai/src/plan_repair.rs` (modify — runtime at 455)
+- `crates/worldwake-ai/src/candidate_generation.rs` (modify — test fixture constructor fallout)
+- `crates/worldwake-ai/src/failure_handling.rs` (modify — runtime and test constructor fallout)
 - `crates/worldwake-ai/src/feasibility_probe.rs` (modify — runtime at 772, 822)
 - `crates/worldwake-ai/src/agent_tick/observation.rs` (modify — runtime at 653)
+- `crates/worldwake-ai/src/agent_tick/candidates.rs` (modify — runtime exclusive-facility blocker)
+- `crates/worldwake-ai/src/agent_tick/frame.rs` (modify — runtime patience/frame blockers)
 - `crates/worldwake-ai/src/agent_tick/execution.rs` (modify — conditional-promotion at 1137-1153 + new focused test)
 - `crates/worldwake-ai/src/agent_tick/tests.rs` (modify — test sites at 5162, 5169)
+- `crates/worldwake-ai/src/feasibility.rs` (modify — test helper fallout)
+- `crates/worldwake-ai/src/partial_plan.rs` (modify — coordination-barrier event-backed blocker)
+- `crates/worldwake-ai/src/search/tests.rs` (modify — test fixture fallout)
 - `crates/worldwake-ai/tests/scenarios/cross_goal_blocker_scoping.rs` (modify — test sites at 35, 379, plus field-read sites; coordinate with ticket 003)
 - `crates/worldwake-ai/tests/scenarios/contention_inspectability.rs` (modify — test site at 249)
 - `crates/worldwake-ai/tests/scenarios/portfolio_planning.rs` (modify — test site at 163)
@@ -177,14 +168,14 @@ In `crates/worldwake-sim/src/save_load.rs:7`, increment by 1 (cascade with ticke
 - Unifying `BlockerSource`, `DiscrepancySource`, and `LearnedOpportunitySource` into a shared abstract enum (per spec Design Goal 3 — domain-specific sentinel names are intentional)
 - Auditing `BlockingFact::ReservationConflict { contention_event, .. }` payload semantics (separate concern; this ticket uses the payload's `contention_event` opportunistically where in scope, but does not restructure `BlockingFact`)
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests Passed Or Waived
 
 1. New: `blocker_with_event_source_roundtrips` — bincode round-trip of `Blocker { source: BlockerSource::Event(EventId(42)), … }`.
 2. Rewritten: `blocker_memory_preserves_explicit_inferred_source` (was `blocker_memory_preserves_explicit_absent_source_event:602`) — assert `BlockerSource::Inferred` round-trips.
 3. New: focused runtime test for the conditional-promotion at `execution.rs:1137-1153`. When initial source is `Inferred` and a real event id is later in scope, the field is promoted to `Event(id)`.
-4. New: focused candidate-generation test asserting that an extractor producing a planning-time blocker emits `Blocker { source: BlockerSource::Inferred, … }`.
+4. Waived: no candidate-generation runtime blocker-producer test was added because reassessment showed the candidate-generation `Blocker` literals were tests, not extractor output.
 5. Updated: `blocker_memory_roundtrips_through_bincode`, `blocker_memory_roundtrips_non_exact_scope_entries` pass with new field shape.
 6. Existing suite: `cargo test -p worldwake-core blocker`, `cargo test -p worldwake-ai`, `cargo test -p worldwake-sim`, `cargo test -p worldwake-systems`.
 
@@ -195,20 +186,46 @@ In `crates/worldwake-sim/src/save_load.rs:7`, increment by 1 (cascade with ticke
 3. `BlockerMemory` round-trips deterministically with bincode.
 4. The set of blocker entries an agent holds at tick T is unchanged by this migration (per spec Validation invariant) — only the provenance representation changes.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
 1. `crates/worldwake-core/src/blocker_memory.rs` — add `blocker_with_event_source_roundtrips`; rewrite `blocker_memory_preserves_explicit_absent_source_event` as `blocker_memory_preserves_explicit_inferred_source`.
 2. `crates/worldwake-ai/src/agent_tick/execution.rs` test module — add a focused test for the conditional-promotion (mirrors ticket 003's parallel `DiscrepancyEntry` test).
-3. `crates/worldwake-ai/src/candidate_generation.rs` test module — add a focused test asserting an extractor produces `Blocker { source: BlockerSource::Inferred, … }`.
+3. No candidate-generation runtime test added; the drafted target did not exist as a live runtime producer.
 
-### Commands
+### Commands Run
 
 1. `cargo test -p worldwake-core blocker`
 2. `cargo test -p worldwake-ai`
 3. `cargo test -p worldwake-sim`
 4. `cargo test -p worldwake-systems`
-5. `./scripts/verify.sh`
+5. `cargo test --workspace --no-run`
+6. Waived `./scripts/verify.sh` for this per-ticket closeout because the `implement-spec-tickets` harness owns the full pre-push gate after final spec archival.
 
-Merge note: Ticket 002 bumped `SAVE_FORMAT_VERSION` from 101 to 102. Ticket 003 bumped it from 102 to 103, and ticket 004 owns the following bump to 104 when the queue lands in order.
+Merge note: Ticket 002 bumped `SAVE_FORMAT_VERSION` from 101 to 102. Ticket 003 bumped it from 102 to 103, and ticket 004 bumped it to 104.
+
+## Outcome
+
+Completed on 2026-05-25.
+
+- Added `BlockerSource::{Event, Inferred}` and migrated `Blocker::source_event: Option<EventId>` to `Blocker::source: BlockerSource`.
+- Replaced runtime and test `Blocker` construction sites with explicit source variants; event-backed paths preserve real `EventId`s and inferred paths use `BlockerSource::Inferred`.
+- Preserved the existing source-event promotion semantics in `agent_tick/execution.rs` using enum matching instead of `Option` mutation.
+- Bumped `SAVE_FORMAT_VERSION` to 104 and updated save/load fixtures to round-trip `BlockerSource::Event` values.
+- Corrected drafted scope drift: `candidate_generation.rs` and search fixture references were constructor fallout in tests, not runtime blocker producers.
+
+## Deviations
+
+- The drafted candidate-generation runtime proof was waived because the live branch has no candidate-generation runtime `Blocker` producer. The invariant is covered by type-enforced constructor migration, `cargo test --workspace --no-run`, focused core/source-promotion tests, and the full `worldwake-ai` crate suite.
+- `./scripts/verify.sh` is deferred to the final `implement-spec-tickets` pre-push phase.
+
+## Verification Result
+
+- Passed `cargo test --workspace --no-run`
+- Passed `cargo test -p worldwake-core blocker`
+- Passed `cargo test -p worldwake-ai blocker_memory_with_source_events_promotes_inferred_source`
+- Passed `cargo test -p worldwake-sim`
+- Passed `cargo test -p worldwake-systems`
+- Passed `cargo test -p worldwake-ai`
+- Waived `./scripts/verify.sh` because the harness final branch phase owns the pre-push verification gate.

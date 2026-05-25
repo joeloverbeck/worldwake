@@ -11644,7 +11644,7 @@ mod tests {
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         let candidates =
@@ -11702,7 +11702,7 @@ mod tests {
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         let candidates =
@@ -11766,7 +11766,7 @@ mod tests {
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         let candidates =
@@ -11827,7 +11827,7 @@ mod tests {
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         let candidates =
@@ -11886,7 +11886,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         let candidates =
@@ -11955,7 +11955,7 @@ mod tests {
                 expires_tick: Tick(10),
                 clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
                 baseline_snapshot: None,
-                source_event: None,
+                source: worldwake_core::BlockerSource::Inferred,
             });
         }
 
@@ -12069,7 +12069,7 @@ mod tests {
             expires_tick: Tick(600),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         let result = generate_candidates_with_travel_horizon(
@@ -12178,7 +12178,7 @@ mod tests {
             expires_tick: Tick(600),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         let result = generate_candidates_with_travel_horizon(
@@ -12309,7 +12309,7 @@ mod tests {
             expires_tick: Tick(600),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         let result = generate_candidates_with_travel_horizon(
@@ -12383,7 +12383,7 @@ mod tests {
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         let result = generate_candidates_with_travel_horizon(
@@ -12444,7 +12444,7 @@ mod tests {
             expires_tick: Tick(8),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         let result = generate_candidates_with_travel_horizon(
@@ -13558,7 +13558,7 @@ mod tests {
             expires_tick: Tick(10),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         let candidates =
@@ -17541,7 +17541,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         let blocked_candidates =
@@ -20345,7 +20345,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         let result = generate_candidates_with_travel_horizon(
@@ -21254,7 +21254,7 @@ mod tests {
             expires_tick: Tick(100),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         let vm = ViolationMemory::default();
@@ -21631,7 +21631,7 @@ mod tests {
             expires_tick: Tick(200),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         let candidates = generate_candidates_with_travel_horizon(
@@ -22154,7 +22154,7 @@ mod tests {
             expires_tick: Tick(100),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         let candidates =

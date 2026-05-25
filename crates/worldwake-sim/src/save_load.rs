@@ -3,8 +3,8 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-/// S170LEASTAPRO-002 stores learned-opportunity provenance source.
-pub const SAVE_FORMAT_VERSION: u32 = 103;
+/// S170LEASTAPRO-004 stores blocker provenance source.
+pub const SAVE_FORMAT_VERSION: u32 = 104;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -642,7 +642,7 @@ mod tests {
             expires_tick: Tick(25),
             clearing_condition: BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: Some(worldwake_core::EventId(6)),
+            source: worldwake_core::BlockerSource::Event(worldwake_core::EventId(6)),
         });
         blocker_memory.record(Blocker {
             scope: counterparty_scope,
@@ -652,7 +652,7 @@ mod tests {
             expires_tick: Tick(26),
             clearing_condition: BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: Some(worldwake_core::EventId(7)),
+            source: worldwake_core::BlockerSource::Event(worldwake_core::EventId(7)),
         });
         belief_txn
             .set_component_blocker_memory(actor, blocker_memory)
@@ -1368,8 +1368,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_103_after_discrepancy_source() {
-        assert_eq!(SAVE_FORMAT_VERSION, 103);
+    fn save_format_version_is_104_after_blocker_source() {
+        assert_eq!(SAVE_FORMAT_VERSION, 104);
     }
 
     #[test]
@@ -1380,7 +1380,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 103);
+        assert_eq!(SAVE_FORMAT_VERSION, 104);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]

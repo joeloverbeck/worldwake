@@ -651,7 +651,7 @@ pub(super) fn handle_facility_queue_transitions(
                                 worldwake_core::BlockerClearingCondition::TtlOnly,
                             ),
                         baseline_snapshot: None,
-                        source_event: None,
+                        source: worldwake_core::BlockerSource::Inferred,
                     });
                     changed = true;
                 }

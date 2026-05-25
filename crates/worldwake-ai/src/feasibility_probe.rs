@@ -820,7 +820,7 @@ mod tests {
                     expires_tick: Tick(10),
                     clearing_condition: BlockerClearingCondition::TtlOnly,
                     baseline_snapshot: None,
-                    source_event: None,
+                    source: worldwake_core::BlockerSource::Inferred,
                 },
             )]),
         };

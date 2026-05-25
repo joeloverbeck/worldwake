@@ -213,7 +213,7 @@ pub fn sample_blocker() -> Blocker {
         baseline_snapshot: Some(ClearingBaseline::CommodityQuantity {
             quantity: Quantity(2),
         }),
-        source_event: Some(crate::EventId(1)),
+        source: crate::BlockerSource::Event(crate::EventId(1)),
     }
 }
 

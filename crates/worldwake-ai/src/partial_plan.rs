@@ -280,7 +280,7 @@ pub fn record_coordination_barrier_blocker(
             facility: record.affordance.facility,
         },
         baseline_snapshot: None,
-        source_event: Some(record.source_event),
+        source: worldwake_core::BlockerSource::Event(record.source_event),
     });
     true
 }
@@ -630,7 +630,10 @@ mod tests {
         );
         assert_eq!(blocker.observed_tick, Tick(40));
         assert_eq!(blocker.expires_tick, Tick(52));
-        assert_eq!(blocker.source_event, Some(EventId(88)));
+        assert_eq!(
+            blocker.source,
+            worldwake_core::BlockerSource::Event(EventId(88))
+        );
     }
 
     #[test]

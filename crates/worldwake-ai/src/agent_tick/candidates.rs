@@ -92,7 +92,7 @@ pub(super) fn abandon_expired_facility_queues_with_limit(
                 expires_tick: tick + u64::from(structural_block_ticks),
                 clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
                 baseline_snapshot: None,
-                source_event: None,
+                source: worldwake_core::BlockerSource::Inferred,
             });
         }
 

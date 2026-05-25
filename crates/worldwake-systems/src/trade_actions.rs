@@ -1942,9 +1942,11 @@ fn record_sell_blocked_intent(
         .get_component_blocker_memory(actor)
         .cloned()
         .unwrap_or_default();
-    let source_event = match txn.cause() {
-        CauseRef::Event(event_id) => Some(event_id),
-        CauseRef::SystemTick(_) | CauseRef::Bootstrap | CauseRef::ExternalInput(_) => None,
+    let source = match txn.cause() {
+        CauseRef::Event(event_id) => worldwake_core::BlockerSource::Event(event_id),
+        CauseRef::SystemTick(_) | CauseRef::Bootstrap | CauseRef::ExternalInput(_) => {
+            worldwake_core::BlockerSource::Inferred
+        }
     };
     let scope = BlockerScope::exact(
         GoalKey::from(GoalKind::SellCommodity { commodity }),
@@ -1964,7 +1966,7 @@ fn record_sell_blocked_intent(
             worldwake_core::BlockerClearingCondition::TtlOnly,
         ),
         baseline_snapshot: None,
-        source_event,
+        source,
     });
     let _ = txn.set_component_blocker_memory(actor, memory);
 }
@@ -3343,7 +3345,7 @@ mod tests {
                 harness.counterparty,
             ),
             baseline_snapshot: None,
-            source_event: Some(EventId(1)),
+            source: worldwake_core::BlockerSource::Event(EventId(1)),
         });
         memory.record(Blocker {
             scope: BlockerScope::Counterparty(other),
@@ -3353,7 +3355,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::CounterpartyAccepted(other),
             baseline_snapshot: None,
-            source_event: Some(EventId(2)),
+            source: worldwake_core::BlockerSource::Event(EventId(2)),
         });
         let mut txn = new_txn(&mut harness.world, 2);
         txn.set_component_blocker_memory(harness.actor, memory)
