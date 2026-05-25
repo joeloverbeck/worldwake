@@ -382,19 +382,21 @@ matches the granularity of the existing `verification_anchor` and
 `chosen_kind` fields; no separate top-level `verification_provider_selection`
 field is added to `AgentDecisionTrace`. FND-29.
 
-### D10. Goldens
+### D10. Proof surfaces
 
-Three new scenarios under `crates/worldwake-ai/tests/scenarios/`:
+S169's intended coverage is provider-specific positive proof plus a cross-provider negative-omniscience golden. Where the provider-selection seam is private, use focused in-crate seam regressions rather than widening production APIs solely to satisfy an external golden file shape.
 
-1. **`verification_consult_record_repair.rs`** — agent holds a stale
-   `RecordTopic::OfficeRule`-class belief; a co-located record exists; the
-   repair seam splices a `ConsultRecord` verification step; the belief is
-   updated via the authoritative action's effect schema (not by direct
-   write); assert provider selection trace, RepairApplied provider_kind,
-   absence of `NoEpistemicSubstrate`.
+1. **ConsultRecord positive proof** — archive/tickets/S169GENLAWVER-003.md
+   landed this as focused provider tests plus an in-crate repair-seam
+   regression. The proof asserts provider selection, `RepairApplied`
+   `provider_kind`, local-record targeting, and payload-validator parity
+   without adding a test-only API export for an external
+   `verification_consult_record_repair.rs` file.
 2. **`verification_search_place_repair.rs`** — agent has an overdue
    expectation at the actor's current place; the repair seam splices a
-   `SearchPlace` verification step; assertions parallel D10.1.
+   `SearchPlace` verification step; assertions parallel D10.1. The exact
+   proof surface should follow the same private-seam rule used by
+   archive/tickets/S169GENLAWVER-003.md.
 3. **`verification_no_remote_truth.rs`** — negative omniscience test. The
    stale belief is about a record at a *remote* place; no provider builds a
    candidate; `NoEpistemicSubstrate` is the lawful outcome. Assert that no

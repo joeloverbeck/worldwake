@@ -1491,15 +1491,18 @@ mod tests {
     use crate::{PlanGuard, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind};
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        ActionDefId, AffordanceKey, BeliefClaimKey, Blocker, BlockerClearingCondition, BlockerKey,
-        BlockerMemory, BlockingFact, BreachSignature, CausalLink, CausalProvider, CauseRef,
-        ClaimantOutcome, ContentionClaimant, ContentionEventPayload, ContentionResolutionRule,
-        DecisionEventPayload, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
-        EntityBeliefAspect, EntityId, EventLog, EventPayload, EventTag, EventView, GoalKey,
-        GoalKind, InvalidatorTag, MismatchDetail, OpportunityKey, PendingEvent, Permille,
-        PlanningFact, RepairAppliedPayload, RepairKind, RepairMemory, Tick, VisibilitySpec,
-        WitnessData, test_utils::sample_goal_key,
+        ActionDefId, AffordanceKey, AgentBeliefStore, BeliefClaimKey, BelievedRecordDataSnapshot,
+        Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
+        BreachSignature, CausalLink, CausalProvider, CauseRef, ClaimantOutcome, ContentionClaimant,
+        ContentionEventPayload, ContentionResolutionRule, ControlSource, DecisionEventPayload,
+        Discrepancy, DiscrepancyClearing, DiscrepancyEntry, EntityBeliefAspect, EntityId, EventLog,
+        EventPayload, EventTag, EventView, GoalKey, GoalKind, InstitutionalClaim,
+        InstitutionalRecordEntry, InstitutionalSnapshotSource, InvalidatorTag, MismatchDetail,
+        OpportunityKey, PendingEvent, Permille, Place, PlanningFact, RecordData, RecordEntryId,
+        RecordKind, RecordTopic, RepairAppliedPayload, RepairKind, RepairMemory, Tick, Topology,
+        VerificationProviderKind, VisibilitySpec, WitnessData, test_utils::sample_goal_key,
     };
+    use worldwake_sim::{ActionDefRegistry, ActionHandlerRegistry, PerAgentBeliefView};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -1569,6 +1572,22 @@ mod tests {
         }
     }
 
+    fn record_link(record: EntityId, office: EntityId) -> CausalLink {
+        CausalLink {
+            provider: CausalProvider::Record {
+                record_entity: record,
+                topic: RecordTopic::OfficeRule { office },
+            },
+            fact: PlanningFact::ResourceAccess {
+                resource: office,
+                agent_holds_permission: true,
+            },
+            consumer_step_index: 1,
+            source_tick: Tick(3),
+            confidence: Permille::new(800).unwrap(),
+        }
+    }
+
     fn repair_discrepancy_entry(clearing_condition: DiscrepancyClearing) -> DiscrepancyEntry {
         DiscrepancyEntry {
             scope: BlockerKey {
@@ -1619,6 +1638,94 @@ mod tests {
 
     fn repair_mismatch() -> MismatchDetail {
         MismatchDetail::GuardInvalidator(InvalidatorTag::TargetMoved)
+    }
+
+    struct ConsultRecordFixture {
+        world: worldwake_core::World,
+        store: AgentBeliefStore,
+        action_defs: ActionDefRegistry,
+        actor: EntityId,
+        office: EntityId,
+        record: EntityId,
+    }
+
+    fn consult_record_fixture() -> ConsultRecordFixture {
+        let place = entity(100);
+        let mut topology = Topology::new();
+        topology
+            .add_place(
+                place,
+                Place {
+                    name: "Square".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::new(),
+                },
+            )
+            .unwrap();
+        let mut world = worldwake_core::World::new(topology).unwrap();
+        let actor;
+        let office;
+        let record;
+        let record_data;
+        {
+            let mut txn = worldwake_core::WorldTxn::new(
+                &mut world,
+                Tick(1),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::SamePlace,
+                WitnessData::default(),
+            );
+            actor = txn.create_agent("agent", ControlSource::Ai).unwrap();
+            office = txn.create_office("office").unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(office, place).unwrap();
+            record_data = RecordData {
+                record_kind: RecordKind::OfficeRegister,
+                home_place: place,
+                issuer: office,
+                consultation_ticks: 7,
+                max_entries_per_consult: 4,
+                entries: vec![InstitutionalRecordEntry {
+                    entry_id: RecordEntryId(0),
+                    claim: InstitutionalClaim::OfficeHolder {
+                        office,
+                        holder: Some(entity(40)),
+                        effective_tick: Tick(3),
+                    },
+                    recorded_tick: Tick(3),
+                    supersedes: None,
+                }],
+                next_entry_id: 1,
+            };
+            record = txn.create_record(record_data.clone()).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        let mut store = AgentBeliefStore::new();
+        store.record_believed_record_data(
+            record,
+            BelievedRecordDataSnapshot {
+                data: record_data,
+                source: InstitutionalSnapshotSource::RecordConsultation { record },
+                learned_tick: Tick(2),
+                learned_at: Some(place),
+            },
+        );
+        let mut action_defs = ActionDefRegistry::new();
+        let mut action_handlers = ActionHandlerRegistry::new();
+        worldwake_systems::register_consult_record_action(&mut action_defs, &mut action_handlers);
+
+        ConsultRecordFixture {
+            world,
+            store,
+            action_defs,
+            actor,
+            office,
+            record,
+        }
     }
 
     #[test]
@@ -1888,6 +1995,102 @@ mod tests {
                 substitute_target: Some(entity(7)),
                 substitute_recipe: None,
                 provider_kind: worldwake_core::VerificationProviderKind::AskWitness,
+            })
+        );
+    }
+
+    #[test]
+    fn record_breach_inserts_consult_record_verification_and_records_provider() {
+        let fixture = consult_record_fixture();
+        let goal_key = sample_goal_key();
+        let prefix = planned_step(10, None);
+        let failed = planned_step(11, Some(record_link(fixture.record, fixture.office)));
+        let plan = PlannedPlan::new(
+            opportunity(goal_key),
+            goal_key,
+            vec![prefix.clone(), failed.clone()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_plan: Some(plan),
+            current_step_index: 1,
+            ..crate::AgentDecisionRuntime::default()
+        };
+        let view = PerAgentBeliefView::new(fixture.actor, &fixture.world, &fixture.store);
+        let cognitive = cognitive(8, Permille::new(1000).unwrap());
+        let outcome = attempt_local_repair_for_invalidated_step(
+            &runtime,
+            &RepairMemory::default(),
+            &cognitive,
+            Some((&view, &fixture.action_defs, fixture.actor)),
+            Tick(9),
+            goal_key,
+            &failed,
+            worldwake_core::PlanInvalidationReason::ExpectationMismatch { step_index: 1 },
+            Some(repair_mismatch()),
+        )
+        .expect("record-backed causal-link invalidator should attempt localized repair");
+
+        assert_eq!(
+            outcome.verification_provider,
+            Some(VerificationProviderKind::ConsultRecord)
+        );
+        assert_eq!(
+            outcome.verification_rejections,
+            vec![
+                (
+                    VerificationProviderKind::AskWitness,
+                    crate::VerificationRejection::BreachClassMismatch
+                ),
+                (
+                    VerificationProviderKind::SearchPlace,
+                    crate::VerificationRejection::BreachClassMismatch
+                )
+            ]
+        );
+        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome.outcome else {
+            panic!("local record should repair the invalidated step with ConsultRecord");
+        };
+        assert_eq!(kind, RepairKind::InsertVerification);
+        let verification_step = new_plan
+            .steps
+            .get(1)
+            .expect("verification step should be inserted after preserved prefix");
+        assert_eq!(verification_step.op_kind, PlannerOpKind::ConsultRecord);
+        assert_eq!(
+            verification_step.targets,
+            vec![crate::PlanningEntityRef::Authoritative(fixture.record)]
+        );
+
+        let mut event_log = EventLog::new();
+        apply_repaired_plan_and_emit(
+            &mut event_log,
+            &mut runtime,
+            Tick(9),
+            fixture.actor,
+            goal_key,
+            1,
+            kind,
+            *new_plan,
+            Some(VerificationProviderKind::ConsultRecord),
+        );
+
+        let events = event_log.events_by_tag(EventTag::RepairApplied);
+        assert_eq!(events.len(), 1);
+        let payload = event_log
+            .get(events[0])
+            .and_then(|event| event.decision_payload())
+            .expect("repair event should carry a payload");
+        assert_eq!(
+            payload,
+            &DecisionEventPayload::RepairApplied(RepairAppliedPayload {
+                agent: fixture.actor,
+                goal_key,
+                step_index: 1,
+                repair_kind: RepairKind::InsertVerification,
+                substitute_target: Some(fixture.record),
+                substitute_recipe: None,
+                provider_kind: VerificationProviderKind::ConsultRecord,
             })
         );
     }

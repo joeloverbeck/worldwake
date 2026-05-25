@@ -125,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    fn registry_routes_placeholder_providers_as_breach_class_mismatch() {
+    fn registry_routes_search_place_placeholder_as_breach_class_mismatch() {
         let world = worldwake_core::World::new(worldwake_core::Topology::new()).unwrap();
         let store = AgentBeliefStore::new();
         let view = worldwake_sim::PerAgentBeliefView::new(entity(1), &world, &store);
@@ -135,10 +135,6 @@ mod tests {
             record_topic: RecordTopic::RouteSafety,
         };
 
-        assert_eq!(
-            try_build_verification_candidate(VerificationProviderKind::ConsultRecord, &need, &ctx),
-            Err(VerificationRejection::BreachClassMismatch)
-        );
         assert_eq!(
             try_build_verification_candidate(VerificationProviderKind::SearchPlace, &need, &ctx),
             Err(VerificationRejection::BreachClassMismatch)

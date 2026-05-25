@@ -4,11 +4,11 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — test-only ticket
-**Deps**: archive/tickets/S169GENLAWVER-002.md, S169GENLAWVER-003, S169GENLAWVER-004
+**Deps**: archive/tickets/S169GENLAWVER-002.md, archive/tickets/S169GENLAWVER-003.md, S169GENLAWVER-004
 
 ## Problem
 
-archive/tickets/S169GENLAWVER-002.md preserved AskWitness locality through the existing `ask_witness_verification_step` and AskWitness parity lanes; S169GENLAWVER-003 and S169GENLAWVER-004 add focused provider-local remote-target checks for the new ConsultRecord and SearchPlace providers. This ticket adds the cross-provider E2E negative-omniscience golden scenario that exercises the full seam → registry → all-three-providers path with a remote breach, asserting that **no provider** emits a candidate and the repair collapses to the lawful `NoEpistemicSubstrate` outcome — same behavior as pre-S169 for breaches the substrate cannot lawfully repair.
+archive/tickets/S169GENLAWVER-002.md preserved AskWitness locality through the existing `ask_witness_verification_step` and AskWitness parity lanes; archive/tickets/S169GENLAWVER-003.md and S169GENLAWVER-004 add focused provider-local remote-target checks for the new ConsultRecord and SearchPlace providers. This ticket adds the cross-provider E2E negative-omniscience golden scenario that exercises the full seam → registry → all-three-providers path with a remote breach, asserting that **no provider** emits a candidate and the repair collapses to the lawful `NoEpistemicSubstrate` outcome — same behavior as pre-S169 for breaches the substrate cannot lawfully repair.
 
 This is the FND-14B (planner-visible inputs must be belief-backed or local) and FND-31 (validation/falsification: forbidden causal paths absent) capstone for S169. Without it, a future provider regression could silently allow remote-truth verification through one of the three providers, and the per-provider unit tests would not catch the cross-provider integration drift.
 
@@ -16,14 +16,14 @@ This is the FND-14B (planner-visible inputs must be belief-backed or local) and 
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. By this ticket's prerequisites landing, all three providers have real `try_build` implementations: `ask_witness_provider` (archive/tickets/S169GENLAWVER-002.md), `consult_record_provider` (S169GENLAWVER-003), `search_place_provider` (S169GENLAWVER-004). All three are expected to reject remote-target candidates at the locality check.
+1. By this ticket's prerequisites landing, all three providers have real `try_build` implementations: `ask_witness_provider` (archive/tickets/S169GENLAWVER-002.md), `consult_record_provider` (archive/tickets/S169GENLAWVER-003.md), `search_place_provider` (S169GENLAWVER-004). All three are expected to reject remote-target candidates at the locality check.
 2. Test layer: this is an AI golden E2E test exercising the full agent decision cycle (seam → registry → repair → event log). Goldens of this shape live under `crates/worldwake-ai/tests/scenarios/`.
 3. Mixed-layer cross-system boundary under audit: the assertion is "for a breach whose carrier (witness/record/place) is at a remote place, the registry produces no candidate." This invariant spans candidate construction (seam), provider dispatch (registry), repair outcome (plan_repair), and authoritative event emission (event log) — all four layers must agree no verification candidate exists.
 4. Adjacent contradictions classified: none. This ticket is a pure proof-of-invariant addition; if it fails, it surfaces a regression in 002/003/004's locality enforcement.
 
 ## Architecture Check
 
-1. **Cross-provider scope.** Provider-local proof in archive/tickets/S169GENLAWVER-002.md, S169GENLAWVER-003, and S169GENLAWVER-004 verifies each provider's own locality gate at its narrow layer. This ticket's golden verifies the *integration*: that the seam classifies the breach, the registry iterates all three providers, each rejects, the seam emits no candidate, and the repair collapses to `NoEpistemicSubstrate`. Without this, independent provider regressions could conspire to admit remote-truth verification through the registry path.
+1. **Cross-provider scope.** Provider-local proof in archive/tickets/S169GENLAWVER-002.md, archive/tickets/S169GENLAWVER-003.md, and S169GENLAWVER-004 verifies each provider's own locality gate at its narrow layer. This ticket's golden verifies the *integration*: that the seam classifies the breach, the registry iterates all three providers, each rejects, the seam emits no candidate, and the repair collapses to `NoEpistemicSubstrate`. Without this, independent provider regressions could conspire to admit remote-truth verification through the registry path.
 2. **Falsification surface (FND-31).** The golden asserts a *negative*: no `RepairApplied` event with verification-provider semantics is produced. This is harder to assert than positive coverage and is exactly what FND-31's "negative cases that prove forbidden causal or knowledge paths are absent" calls for.
 3. **No new code paths.** This ticket adds no production code. The proof is the test plus the assertions it makes about event-log content.
 
@@ -60,7 +60,7 @@ Three separate `#[test]` functions per case, sharing common scenario setup helpe
 ## Out of Scope
 
 - Any production code changes — this ticket is test-only.
-- Coverage of partial-failure modes (provider raises `PayloadValidationFailed` or `RecentlyFailedAtTarget`) — these are covered by per-provider unit tests in the provider implementation tickets that add those behaviors.
+- Coverage of partial-failure modes such as `PayloadValidationFailed` — these are covered by per-provider unit tests in the provider implementation tickets that add those behaviors. `RecentlyFailedAtTarget` is reserved until a target-scoped verification-memory substrate exists.
 - Replay determinism assertions beyond what `golden_*_replay_is_deterministic` style tests typically include — if needed, add a sibling `_replay_is_deterministic` variant for one of the three cases.
 
 ## Acceptance Criteria
@@ -71,8 +71,8 @@ Three separate `#[test]` functions per case, sharing common scenario setup helpe
 2. `cargo test -p worldwake-ai golden_verification_no_remote_truth_remote_institutional_record` — case B.
 3. `cargo test -p worldwake-ai golden_verification_no_remote_truth_overdue_remote_expectation` — case C.
 4. `cargo test -p worldwake-ai golden_ask_witness` — S165 parity still passes.
-5. `cargo test -p worldwake-ai golden_verification_consult_record_repair` — S169GENLAWVER-003 happy path still passes.
-6. `cargo test -p worldwake-ai golden_verification_search_place_repair` — S169GENLAWVER-004 happy path still passes.
+5. `cargo test -p worldwake-ai record_breach_inserts_consult_record_verification_and_records_provider` — archive/tickets/S169GENLAWVER-003.md seam proof still passes.
+6. `cargo test -p worldwake-ai golden_verification_search_place_repair` — S169GENLAWVER-004 happy path still passes if that ticket lands an external golden; otherwise use its recorded seam-proof command.
 7. Existing suite: `cargo test --workspace`.
 
 ### Invariants

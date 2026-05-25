@@ -12,7 +12,7 @@ S169GENLAWVER-002 landed the registry dispatch and AskWitness provider with `sea
 
 The ticket also adds the second new golden scenario `verification_search_place_repair.rs` proving the end-to-end flow.
 
-S169GENLAWVER-003 (ConsultRecord) and this ticket are parallel-safe — both depend only on -002 and touch independent submodules.
+archive/tickets/S169GENLAWVER-003.md (ConsultRecord) and this ticket are parallel-safe — both depend only on -002 and touch independent submodules.
 
 ## Assumption Reassessment (2026-05-25)
 
@@ -21,9 +21,9 @@ S169GENLAWVER-003 (ConsultRecord) and this ticket are parallel-safe — both dep
 1. `SearchPlace` action def at `crates/worldwake-systems/src/search_actions.rs:25` is a real lawful action with `TargetSpec::ActorPlace`, `DurationExpr::ActorInvestigationDisposition`, `VisibilitySpec::SamePlace`, effect schema `EffectStep::SearchPlace`. The existing payload validator `validate_search_place_payload_override` is registered at line 29 and defined at line 132.
 2. `ExpectationId` exists at `crates/worldwake-core/src/expectation.rs` as `pub struct ExpectationId(pub u64)`. The breach context's `CausalLink.fact` or `discrepancy_entry` may surface an overdue expectation id.
 3. Mixed-layer boundary under audit: provider implementation in `worldwake-ai/src/verification_provider/search_place_provider.rs` consumes `VerificationContext` (belief view, effective place, breach context) and produces a `RepairPlanCandidate`. The `SearchPlace` action handler in `worldwake-systems` is unchanged.
-4. Planner-driven AI ticket: same as S169GENLAWVER-003 — the verification step is a `PlannedStep` spliced into the repaired plan; no new `GoalKind` variants. The motivating semantic is FND-17 (surprise from violated expectation): when an expectation at a place is overdue, the lawful response is to physically inspect the place.
+4. Planner-driven AI ticket: same as archive/tickets/S169GENLAWVER-003.md — the verification step is a `PlannedStep` spliced into the repaired plan; no new `GoalKind` variants. The motivating semantic is FND-17 (surprise from violated expectation): when an expectation at a place is overdue, the lawful response is to physically inspect the place.
 5. Heuristic substrate: the provider's same-place legality is enforced by `need.place == ctx.effective_place`. If the overdue expectation is at a remote place, the provider returns `NoLawfulLocalTarget` — the agent cannot search a place they are not at.
-6. archive/tickets/S169GENLAWVER-002.md did not add `repair_memory` to `VerificationContext`; if this ticket retains the `RecentlyFailedAtTarget` behavior below, it must first extend the context or perform an equivalent seam-side recent-failure check before constructing the provider candidate.
+6. archive/tickets/S169GENLAWVER-002.md and archive/tickets/S169GENLAWVER-003.md did not add target-scoped repair memory to `VerificationContext`, and live `RepairMemory` is keyed by `BreachSignature` plus `RepairKind`, not by provider target. Per `docs/FOUNDATIONS.md` FND-18 and FND-22A, this ticket must not invent a `recently_failed_at(place)` shortcut. `RecentlyFailedAtTarget` remains reserved for a future explicitly specified target-scoped verification memory substrate, if one is needed.
 
 ## Architecture Check
 
@@ -59,12 +59,6 @@ pub fn try_build(
     // Locality: target place must equal actor's effective place.
     if place != ctx.effective_place {
         return Err(VerificationRejection::NoLawfulLocalTarget);
-    }
-
-    // Recently-failed check. If this remains provider-local, add the needed
-    // repair-memory surface to VerificationContext in this ticket.
-    if ctx.repair_memory.recently_failed_at(place) {
-        return Err(VerificationRejection::RecentlyFailedAtTarget);
     }
 
     // Build the SearchPlace PlannedStep.
@@ -107,13 +101,12 @@ New file `crates/worldwake-ai/tests/scenarios/verification_search_place_repair.r
 
 - `crates/worldwake-ai/src/verification_provider/search_place_provider.rs` (modify — replace placeholder with real `try_build`)
 - `crates/worldwake-ai/tests/scenarios/verification_search_place_repair.rs` (new — golden scenario)
-- Likely: `crates/worldwake-ai/src/verification_provider/mod.rs` — if this ticket keeps `RecentlyFailedAtTarget` as a provider-local rejection, extend `VerificationContext` with the repair-memory surface required by the snippet above.
 - Likely: `crates/worldwake-sim/src/belief_view.rs` and `crates/worldwake-sim/src/per_agent_belief_view.rs` — if a new accessor like `expectation_belief` is needed (verify during reassessment per 5h trait accessor propagation rule)
 
 ## Out of Scope
 
 - Negative omniscience cross-provider E2E golden — S169GENLAWVER-005.
-- Real `consult_record_provider::try_build` implementation — S169GENLAWVER-003 (independent, parallel-safe).
+- Real `consult_record_provider::try_build` implementation — archive/tickets/S169GENLAWVER-003.md (independent, parallel-safe).
 - New `GoalKind::SearchPlace` agenda companion variant — explicitly Non-Goal'd by S169 (deferred follow-up).
 - Changes to `SearchPlace` action handler or effect schema in `worldwake-systems` — none needed.
 
@@ -138,7 +131,7 @@ New file `crates/worldwake-ai/tests/scenarios/verification_search_place_repair.r
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/verification_provider/search_place_provider.rs` inline `#[cfg(test)]` — ~5 focused unit tests covering happy path, locality rejection, breach-class mismatch, payload validator parity, recently-failed-at-target.
+1. `crates/worldwake-ai/src/verification_provider/search_place_provider.rs` inline `#[cfg(test)]` — focused unit tests covering happy path, locality rejection, breach-class mismatch, and payload validator parity.
 2. `crates/worldwake-ai/tests/scenarios/verification_search_place_repair.rs` — full E2E golden.
 
 ### Commands
