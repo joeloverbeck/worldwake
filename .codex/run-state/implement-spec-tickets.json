@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implement-S170-learned-state-provenance",
   "base_head": "6507e9e9e49df6e0f13f5c8bbf15712d96acd3be",
-  "last_ticket": "archive/tickets/S170LEASTAPRO-002.md",
+  "last_ticket": "archive/tickets/S170LEASTAPRO-003.md",
   "last_result": "completed_archived",
-  "last_work_commit": "c4dbc8bfcba229a95c11e43cd3ee4515bdb5289c",
+  "last_work_commit": "b100740b06a7da25a8180177682745a06f0dfe44",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S170LEASTAPRO-003.md",
+  "next_target": "tickets/S170LEASTAPRO-004.md",
   "queue": [
-    "tickets/S170LEASTAPRO-003.md",
     "tickets/S170LEASTAPRO-004.md"
   ],
   "implement_ticket_audit": "pending",
