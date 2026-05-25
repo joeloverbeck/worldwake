@@ -350,6 +350,8 @@ pub(super) fn summarize_ranked_goal(ranked: &AgendaEntry) -> RankedGoalSummary {
         provenance: ranked.provenance.clone(),
         source_reliability_discount: ranked.source_reliability_discount.clone(),
         competition_discount: ranked.competition_discount.clone(),
+        learned_opportunity_bonus: None,
+        repair_memory_bonus: None,
         source_composite: ranked.source_composite,
         feasibility: ranked.feasibility,
         acquisition_quantity: ranked.offer.acquisition_quantity,
@@ -5551,6 +5553,8 @@ mod tests {
             failure_ratio_permille: 500,
             pre_discount_motive: 100,
             post_discount_motive: 50,
+            provenance_event_count: 0,
+            most_recent_provenance_event: None,
         });
 
         let summary = summarize_ranked_goal(&ranked);

@@ -1,35 +1,36 @@
 # S171LEACONTDEC-001: Foundation attribution types and trace-struct field extensions
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: None
+**Engine Changes**: Yes — `worldwake-ai` trace/runtime carrier shape plus `worldwake-sim` save-format version bump
 **Deps**: spec `specs/S171-learned-context-decision-trace-edge.md`
 
 ## Problem
 
-The decision-trace surface has no way to record which learned-state entry produced a ranking-time bonus or discount. `RankedGoalSummary` (`crates/worldwake-ai/src/decision_trace.rs:691-715`) carries `source_reliability_discount` and `competition_discount` attribution structs for the two discount axes but no equivalent attribution for the two bonus axes (`learned_opportunity_bonus` / `repair_memory_bonus`). `SourceReliabilityDiscount` (`decision_trace.rs:773-780`) records `failure_ratio_permille` but no link to the `TestimonyReliabilityEntry::provenance_events` ring that produced the ratio. This ticket adds the new attribution types and the field extensions to the existing trace structs so the threading work in S171LEACONTDEC-002 has somewhere to land. Per the spec's FND-22A "experience path" requirement, the stored update is inspectable today (S170) but its consumption at ranking time is not — closing that gap is the spec's central contract.
+Before this ticket, the decision-trace surface had no way to record which learned-state entry produced a ranking-time bonus or discount. `RankedGoalSummary` (`crates/worldwake-ai/src/decision_trace.rs:691-715`) carried `source_reliability_discount` and `competition_discount` attribution structs for the two discount axes but no equivalent attribution for the two bonus axes (`learned_opportunity_bonus` / `repair_memory_bonus`). `SourceReliabilityDiscount` (`decision_trace.rs:773-780`) recorded `failure_ratio_permille` but no link to the `TestimonyReliabilityEntry::provenance_events` ring that produced the ratio. This ticket added the foundation attribution types and field extensions to the existing trace structs so the threading work in S171LEACONTDEC-002 has somewhere to land. Per the spec's FND-22A "experience path" requirement, S170 made the stored update inspectable; S171LEACONTDEC-002 still owns making consumption at ranking time inspectable.
 
 ## Assumption Reassessment (2026-05-25)
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. `RankedGoalSummary` derives only `Clone, Debug` (no `Serialize`/`Deserialize`) per `decision_trace.rs:692`; its `Default` impl at `decision_trace.rs:717` exists, so existing literal construction sites using `..Default::default()` spread will pick up new `None` fields automatically. `SourceReliabilityDiscount` derives `Clone, Debug, Eq, PartialEq, Serialize, Deserialize` per `decision_trace.rs:773`; no `Default` impl exists, so all 8 construction sites must enumerate the new fields explicitly. No existing focused tests assert the absence of attribution fields, so adding `Option<…>` fields and matching `None` defaults is non-breaking at the test boundary.
+1. `RankedGoalSummary` derives only `Clone, Debug` (no `Serialize`/`Deserialize`) per `decision_trace.rs:692`; its `Default` impl at `decision_trace.rs:717` exists, so existing literal construction sites using `..Default::default()` spread will pick up new `None` fields automatically. `SourceReliabilityDiscount` derives `Clone, Debug, Eq, PartialEq, Serialize, Deserialize` per `decision_trace.rs:773`; no `Default` impl exists, so all construction sites must enumerate the new fields explicitly. Live reassessment corrected the draft save premise: `SourceReliabilityDiscount` is embedded in serialized `AgentDecisionRuntime.agenda_state` through `AgendaEntry`, so this ticket must also bump `SAVE_FORMAT_VERSION` and update the non-default runtime roundtrip fixture.
 2. `LearnedOpportunitySource` (`crates/worldwake-core/src/learned_opportunity_memory.rs:5-20`) and `BreachSignature` (`crates/worldwake-core/src/repair_memory.rs:8`) both derive `Copy, Clone, Eq, Hash, Serialize, Deserialize` — they satisfy the bounds the new attribution structs require. `EventId`, `Tick`, `OpportunityKey` are already imported in `decision_trace.rs` (per Verification Agent finding at lines 10-17).
 3. Shared abstraction boundary under audit: `RankedGoalSummary` as the per-decision trace record consumed by both internal trace formatters (at `decision_trace.rs:317-325`, 1794-1802, 2110) and by `observer.rs:1207-1213` (which reads `motive_source_contributions` only and is unaffected by the new attribution fields).
 
 ## Architecture Check
 
 1. Two domain-specific attribution structs (not a unified `BonusAttribution` trait) keep the trace surface symmetric with the existing `SourceReliabilityDiscount` / `CompetitionDiscount` sibling pattern — concrete typed fields per FND-3, no abstract-score-bag, no shared trait coupling the two unrelated learned stores. Per the spec's Design Goal 4: domain-specific attribution types over unified abstraction.
-2. No backwards-compatibility shim: new fields are added directly to existing structs; existing literal construction sites either inherit `None` via `..Default::default()` (RankedGoalSummary) or get explicit `None`/`0`/`None` values (SourceReliabilityDiscount). No `#[serde(default)]` shim because neither outer struct serializes today.
+2. No backwards-compatibility shim: new fields are added directly to existing structs; existing literal construction sites either inherit `None` via `..Default::default()` (RankedGoalSummary) or get explicit `None`/`0`/`None` values (SourceReliabilityDiscount). Because the discount is serialized inside current runtime save state, the current save format advances rather than adding `#[serde(default)]` compatibility for old runtime bytes.
 
-## Verification Layers
+## Verified Layers
 
-1. New type definitions and field additions exist with the spec's exact shapes -> compile-time check (`cargo build --workspace`); no runtime invariant to verify in this ticket.
-2. Existing tests continue to pass -> the spec's V2 contract that motive_score/priority_class/agenda order are byte-identical pre/post is satisfied trivially in this ticket because no runtime data flow is added; existing `cargo test -p worldwake-ai` proves the foundation lands cleanly.
-3. Single-layer ticket — no mixed-layer mapping applies. Threading and trace-text rendering are deferred to S171LEACONTDEC-002 and S171LEACONTDEC-003.
+1. Type definitions and field additions exist with the spec's exact shapes -> compile-time check (`cargo build --workspace`).
+2. Existing tests continue to pass -> the spec's V2 contract that motive_score/priority_class/agenda order are byte-identical pre/post is satisfied by the absence of runtime data-flow changes in this ticket; `cargo test -p worldwake-ai` proves the foundation lands cleanly.
+3. Current save/runtime shape advanced, not backward-compatible -> `SAVE_FORMAT_VERSION` assertions and `agent_decision_runtime_bincode_round_trip_preserves_all_fields` prove the new serialized discount fields roundtrip with non-default values.
+4. Single-layer ticket — no mixed-layer mapping applies. Threading and trace-text rendering remain deferred to S171LEACONTDEC-002 and S171LEACONTDEC-003.
 
-## What to Change
+## Landed Changes
 
 ### 1. Add `LearnedOpportunityBonusAttribution` and `RepairMemoryBonusAttribution`
 
@@ -103,7 +104,7 @@ pub struct RankedGoalSummary {
 }
 ```
 
-Update `impl Default for RankedGoalSummary` at line 717 to set the two new fields to `None`. Sites using `..Default::default()` spread pick up `None` automatically; sites that enumerate fields explicitly must add the two new field lines. The 10 literal-construction sites identified by Step 2:
+Updated `impl Default for RankedGoalSummary` to set the two new fields to `None`. Sites using `..Default::default()` spread picked up `None` automatically; sites that enumerate fields explicitly received the two new field lines. Live compile fallout expanded the drafted list to include additional explicit trace-test and survival-forensics constructors; those were current-ticket shared-shape fallout.
 
 - `crates/worldwake-ai/src/decision_trace.rs:3497, 3510, 3943, 3956, 4956, 4969` (test fixtures)
 - `crates/worldwake-ai/src/agent_tick/planning.rs:342`
@@ -121,7 +122,7 @@ In `crates/worldwake-ai/src/decision_trace.rs:3121-3140`:
 - Add `sample_repair_memory_bonus_attribution()` returning a `RepairMemoryBonusAttribution`.
 - Update `sample_source_reliability_discount` (line 3131) to populate the two new fields with representative values (e.g., `provenance_event_count: 3, most_recent_provenance_event: Some(EventId(42))`).
 
-## Files to Touch
+## Landed Files
 
 - `crates/worldwake-ai/src/decision_trace.rs` (modify) — new type definitions, struct extensions, Default impl update, sample helpers
 - `crates/worldwake-ai/src/ranking.rs` (modify) — update 4 `SourceReliabilityDiscount` construction sites
@@ -131,6 +132,7 @@ In `crates/worldwake-ai/src/decision_trace.rs:3121-3140`:
 - `crates/worldwake-ai/src/scenario_diagnostics/aggregator.rs` (modify) — update 1 `RankedGoalSummary` construction site at line 1424
 - `crates/worldwake-ai/tests/golden_harness/survival_forensics_assertions.rs` (modify) — update 1 `RankedGoalSummary` construction at line 176
 - `crates/worldwake-ai/tests/scenarios/motive_sources.rs` (modify) — update 1 `RankedGoalSummary` construction at line 78
+- `crates/worldwake-sim/src/save_load.rs` (modify) — bump `SAVE_FORMAT_VERSION` and version assertions because `SourceReliabilityDiscount` is serialized through `AgentDecisionRuntime.agenda_state`
 
 ## Out of Scope
 
@@ -138,28 +140,55 @@ In `crates/worldwake-ai/src/decision_trace.rs:3121-3140`:
 - Decision-trace formatter additions (D7 — landed by S171LEACONTDEC-003).
 - Any new behavior or score arithmetic change — this is type-definition-and-construction-site migration only.
 
-## Acceptance Criteria
+## Acceptance Criteria Result
 
-### Tests That Must Pass
+### Tests Passed
 
-1. `cargo build --workspace` succeeds after type additions and all 18 construction-site migrations.
+1. `cargo build --workspace` succeeds after type additions and all construction-site migrations.
 2. Existing focused tests at `ranking.rs:6418-6805` (the 7 `source_reliability_discount_*` tests), `ranking.rs:5826 repair_memory_boosts_matching_alternative_only_while_live`, and `ranking.rs:5883 learned_opportunity_memory_boosts_matching_opportunity_only_while_live` all continue to pass without modification.
 3. Existing suite: `cargo test -p worldwake-ai`.
+4. Save-format assertions in `worldwake-sim` passed with the current version advanced to 105.
 
 ### Invariants
 
 1. `RankedGoalSummary` derives `Clone, Debug` only — no Serialize/Deserialize is added in this ticket.
-2. `SourceReliabilityDiscount` continues to derive `Serialize, Deserialize` — the new fields satisfy the derives (u32 and Option<EventId> are both Serialize/Deserialize-compatible).
+2. `SourceReliabilityDiscount` continues to derive `Serialize, Deserialize`; the new fields satisfy the derives (u32 and Option<EventId> are both Serialize/Deserialize-compatible).
 3. All `RankedGoalSummary` and `SourceReliabilityDiscount` construction sites compile cleanly; no site falls back to silent default through unintended elision.
+4. No old-save compatibility shim is added; the current save format advances once.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Test Changes
 
-1. None — documentation-only ticket at the test boundary; the new sample helpers and the updated `sample_source_reliability_discount` are themselves test infrastructure, not assertions. Existing runtime coverage named in Assumption Reassessment item 1 proves the foundation lands without behavior change.
+1. No new assertion tests were added; the new sample helpers and the updated `sample_source_reliability_discount` are test infrastructure for S171LEACONTDEC-003. Existing runtime coverage named in Assumption Reassessment item 1 proved the foundation lands without behavior change.
 
-### Commands
+### Commands Run
 
 1. `cargo build --workspace`
 2. `cargo test -p worldwake-ai`
-3. `./scripts/verify.sh` — confirms fmt/clippy/full-workspace gates pass before opening the PR.
+3. `cargo test -p worldwake-sim save_load::tests::save_format_version_is_105_after_learned_context_trace_fields`
+4. `cargo test -p worldwake-sim save_load::tests::save_to_bytes_roundtrip_preserves_full_nondefault_state`
+5. Waived `./scripts/verify.sh` for this ticket iteration; the harness reserves that full gate for final branch push after the S171 family lands.
+
+## Verification Result
+
+1. Passed `cargo build --workspace` (2026-05-25).
+2. Passed `cargo test -p worldwake-ai` (2026-05-25).
+3. Passed `cargo test -p worldwake-sim save_load::tests::save_format_version_is_105_after_learned_context_trace_fields` (2026-05-25).
+4. Passed `cargo test -p worldwake-sim save_load::tests::save_to_bytes_roundtrip_preserves_full_nondefault_state` (2026-05-25).
+5. Waived `./scripts/verify.sh` for this ticket iteration; the full gate is reserved for final branch push after the S171 family lands.
+
+## Outcome
+
+Completed 2026-05-25.
+
+Changed:
+- Added `LearnedOpportunityBonusAttribution` and `RepairMemoryBonusAttribution` to `decision_trace.rs`.
+- Extended `RankedGoalSummary` with optional learned-opportunity and repair-memory attribution fields defaulting to `None`.
+- Extended `SourceReliabilityDiscount` with `provenance_event_count` and `most_recent_provenance_event`.
+- Updated explicit `RankedGoalSummary` and `SourceReliabilityDiscount` constructors across AI trace/runtime fixtures and tests.
+- Bumped `SAVE_FORMAT_VERSION` from 104 to 105 because `SourceReliabilityDiscount` is serialized through `AgentDecisionRuntime.agenda_state`.
+
+Deviations:
+- Live reassessment disproved the draft's no-save-shape premise. The ticket absorbed the required current save-format bump instead of adding compatibility shims.
+- S171LEACONTDEC-002 still owns populating the new bonus attribution fields in ranking and must extend the `AgendaEntry` carrier before `summarize_ranked_goal` can project those fields into `RankedGoalSummary`.

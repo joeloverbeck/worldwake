@@ -4,11 +4,11 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `crates/worldwake-ai/src/ranking.rs` (return-shape changes on `learned_opportunity_bonus`, `repair_memory_bonus`, and `memory_motive_bonus`; new attribution threading in the `AgendaEntry::pending` construction path; extended `apply_source_reliability_discount` body)
-**Deps**: S171LEACONTDEC-001 (provides `LearnedOpportunityBonusAttribution`, `RepairMemoryBonusAttribution`, and the extended `SourceReliabilityDiscount` field surface)
+**Deps**: `archive/tickets/S171LEACONTDEC-001.md` (provides `LearnedOpportunityBonusAttribution`, `RepairMemoryBonusAttribution`, and the extended `SourceReliabilityDiscount` field surface)
 
 ## Problem
 
-After S171LEACONTDEC-001 the attribution types and field surfaces exist on `RankedGoalSummary` and `SourceReliabilityDiscount`, but they are populated as `None` / `0` everywhere — the attribution chain from a learned-store mutation (provenance recorded by S170) to a ranking-time decision is still broken. This ticket wires the two bonus functions in `ranking.rs` to return both the bonus value AND a populated attribution carrier, threads those carriers into the `AgendaEntry::pending` construction at `ranking.rs:290-301`, and extends `apply_source_reliability_discount` (`ranking.rs:492-510`) to populate the new `SourceReliabilityDiscount` provenance fields from the matched `TestimonyReliabilityEntry::provenance_events` ring buffer. After this ticket lands, every ranking decision that consults a learned-state entry records *which* entry it consulted — closing the FND-22A "experience path" gap that the spec's central problem statement names.
+After archived `archive/tickets/S171LEACONTDEC-001.md`, the attribution types and field surfaces exist on `RankedGoalSummary` and `SourceReliabilityDiscount`, but they are populated as `None` / `0` everywhere — the attribution chain from a learned-store mutation (provenance recorded by S170) to a ranking-time decision is still broken. Live S171LEACONTDEC-001 reassessment also clarified the projection seam: `ranking.rs` produces `AgendaEntry`, then `agent_tick/planning.rs::summarize_ranked_goal` projects that entry into `RankedGoalSummary`. This ticket wires the two bonus functions in `ranking.rs` to return both the bonus value AND a populated attribution carrier, extends the `AgendaEntry` carrier and `AgendaEntry::pending` construction at `ranking.rs:290-301`, copies those fields in `summarize_ranked_goal`, and extends `apply_source_reliability_discount` (`ranking.rs:492-510`) to populate the new `SourceReliabilityDiscount` provenance fields from the matched `TestimonyReliabilityEntry::provenance_events` ring buffer. After this ticket lands, every ranking decision that consults a learned-state entry records *which* entry it consulted — closing the FND-22A "experience path" gap that the spec's central problem statement names.
 
 ## Assumption Reassessment (2026-05-25)
 
@@ -17,7 +17,7 @@ After S171LEACONTDEC-001 the attribution types and field surfaces exist on `Rank
 1. `learned_opportunity_bonus` at `ranking.rs:439-460` and `repair_memory_bonus` at `ranking.rs:413-437` both currently return `u32` and are called only from `memory_motive_bonus` at `ranking.rs:397-411` via `.saturating_add()` chain — the integer return is consumed immediately at one site, so changing the shape to `(u32, Option<…>)` is a local refactor with one caller to update. Existing tests `repair_memory_boosts_matching_alternative_only_while_live` (line 5826) and `learned_opportunity_memory_boosts_matching_opportunity_only_while_live` (line 5883) assert bonus behavior today; they will be extended in this ticket to assert the new attribution structure per V1.
 2. `apply_source_reliability_discount` at `ranking.rs:492-510` already binds the matched `TestimonyReliabilityEntry` as `record` at line 504 via `source_reliability.sources.get(&SourceKey {…})?`; `record.provenance_events` (per `TestimonyReliabilityEntry` definition at `crates/worldwake-core/src/testimony_reliability.rs:20-62`) is in scope at the `SourceReliabilityDiscount` construction site and can be read directly with no new lookup required.
 3. The `AgendaEntry::pending` construction at `ranking.rs:290-301` already has local bindings `source_reliability_discount` (line 277), `competition_discount` (line 282), and `provenance` (line 273) in scope — the new bonus-attribution fields populate from this same site by extending the `memory_motive_bonus` call to return its tupled attributions alongside the integer.
-4. Shared abstraction boundary under audit: the `RankedGoalSummary` per-decision trace record produced by `ranking.rs:290-301` and consumed by `decision_trace.rs` formatter sites (rendered separately in S171LEACONTDEC-003) and by `observer.rs:1207-1213` (reads `motive_source_contributions` only; unaffected). The contract is that score arithmetic is byte-identical pre/post; only the trace surface gains data.
+4. Shared abstraction boundary under audit: the `AgendaEntry` ranking carrier produced by `ranking.rs:290-301` and the `RankedGoalSummary` per-decision trace record projected by `agent_tick/planning.rs::summarize_ranked_goal`, then consumed by `decision_trace.rs` formatter sites (rendered separately in S171LEACONTDEC-003) and by `observer.rs:1207-1213` (reads `motive_source_contributions` only; unaffected). The contract is that score arithmetic is byte-identical pre/post; only the trace surface gains data.
 5. Per FND-22A: this ticket closes the spec's named gap — the experience path from learned-store mutation event to ranking-time consumption. The store-side provenance was added by S170; this ticket adds the consumption-side trace. No new learned state is introduced.
 6. AI regression layer: candidate-generation/ranking focused/unit coverage. `agent_tick` and golden E2E remain unaffected (V3 — no new goldens needed; score arithmetic unchanged).
 13. No adjacent contradictions exposed by reassessment — the change is bounded to ranking.rs internals and the function-signature impact is local to one caller (`memory_motive_bonus`).
@@ -78,11 +78,11 @@ In `crates/worldwake-ai/src/ranking.rs:397-411`, change the return type to `(u32
 
 ### 3. Thread attributions into `RankedGoalSummary` at the `AgendaEntry::pending` site
 
-At `crates/worldwake-ai/src/ranking.rs:290-301`, `memory_motive_bonus` is called as part of building each candidate's ranked summary. Extend the call to destructure the new tuple; pass the two attribution carriers into `AgendaEntry::pending` (or directly into the `RankedGoalSummary` populated by it) as `learned_opportunity_bonus: <attribution>` and `repair_memory_bonus: <attribution>`. The local bindings `source_reliability_discount`, `competition_discount`, and `provenance` are already in scope at this site.
+At `crates/worldwake-ai/src/ranking.rs:290-301`, `memory_motive_bonus` is called as part of building each candidate's `AgendaEntry`. Extend the call to destructure the new tuple; add matching optional fields to `AgendaEntry` / `AgendaEntry::pending`, pass the two attribution carriers there, and copy them into `RankedGoalSummary` in `agent_tick/planning.rs::summarize_ranked_goal` as `learned_opportunity_bonus: <attribution>` and `repair_memory_bonus: <attribution>`. The local bindings `source_reliability_discount`, `competition_discount`, and `provenance` are already in scope at this site.
 
 ### 4. Extend `apply_source_reliability_discount` to populate provenance fields
 
-In `crates/worldwake-ai/src/ranking.rs:492-510`, the `SourceReliabilityDiscount` construction at the function's return path (the foundation ticket S171LEACONTDEC-001 populates these with `0` / `None` as a placeholder). Replace the placeholders with reads from the matched `record: &TestimonyReliabilityEntry`:
+In `crates/worldwake-ai/src/ranking.rs:492-510`, the `SourceReliabilityDiscount` construction at the function's return path (the foundation ticket `archive/tickets/S171LEACONTDEC-001.md` populates these with `0` / `None` as a placeholder). Replace the placeholders with reads from the matched `record: &TestimonyReliabilityEntry`:
 
 ```rust
 SourceReliabilityDiscount {
@@ -109,6 +109,8 @@ Add a test in `ranking.rs` (alongside the existing `source_reliability_discount_
 
 ## Files to Touch
 
+- `crates/worldwake-ai/src/agenda_types.rs` (modify) — add optional attribution fields to `AgendaEntry` and `AgendaEntry::pending`
+- `crates/worldwake-ai/src/agent_tick/planning.rs` (modify) — copy attribution fields from `AgendaEntry` into `RankedGoalSummary`
 - `crates/worldwake-ai/src/ranking.rs` (modify) — signature changes on three functions, threading at `AgendaEntry::pending` site, populated `SourceReliabilityDiscount` construction, two extended tests, one new focused test
 
 ## Out of Scope

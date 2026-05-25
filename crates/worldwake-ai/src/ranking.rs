@@ -660,6 +660,8 @@ fn source_reliability_failure_discount(
         failure_ratio_permille: failure_ratio,
         pre_discount_motive: motive_score,
         post_discount_motive,
+        provenance_event_count: 0,
+        most_recent_provenance_event: None,
     })
 }
 
@@ -6580,6 +6582,8 @@ mod tests {
                 failure_ratio_permille: 500,
                 pre_discount_motive: 90_000,
                 post_discount_motive: 45_000,
+                provenance_event_count: 0,
+                most_recent_provenance_event: None,
             })
         );
     }
@@ -6874,6 +6878,8 @@ mod tests {
                 failure_ratio_permille: 500,
                 pre_discount_motive: 500_000,
                 post_discount_motive: 250_000,
+                provenance_event_count: 0,
+                most_recent_provenance_event: None,
             })
         );
         assert_eq!(
@@ -6996,6 +7002,8 @@ mod tests {
                 failure_ratio_permille: 500,
                 pre_discount_motive: 90_000,
                 post_discount_motive: 45_000,
+                provenance_event_count: 0,
+                most_recent_provenance_event: None,
             })
         );
     }

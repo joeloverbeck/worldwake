@@ -104,6 +104,9 @@ remain excluded.
     additions); `RankedGoalSummary` field additions; formatter additions
     for observer/CLI output.
 - `worldwake-cli` — **no changes**. Observer reads `RankedGoalSummary.motive_source_contributions` for slot derivation (`bin/observer.rs:1207-1213`); the new attribution fields are not read there. Trace text containing the new attribution summaries flows through observer's existing decision-trace dump path unchanged in shape.
+- `worldwake-sim` — save-format version bump only. `SourceReliabilityDiscount`
+  is serialized through `AgentDecisionRuntime.agenda_state`, so adding fields
+  to that carrier changes the current runtime save shape.
 - `worldwake-core` — **no changes**. The learned stores already carry the
   provenance fields S170 added; S171 only threads them forward.
 
@@ -137,13 +140,13 @@ remain excluded.
    of `SourceReliabilityDiscount` / `CompetitionDiscount`: concrete typed
    fields, `Serialize + Deserialize`, surfaced through `RankedGoalSummary`,
    rendered by the existing observer formatters.
-6. **Save/load equivalence preserved.** `RankedGoalSummary` does not currently
-   derive `Serialize`/`Deserialize` (only `Clone`, `Debug`), so the new
-   attribution fields raise no save/load migration concern. The new
-   attribution structs themselves derive `Serialize`/`Deserialize` (matching
-   the sibling `SourceReliabilityDiscount` / `CompetitionDiscount` precedent)
-   for future-proofing should `RankedGoalSummary` ever be persisted. The
-   underlying learned stores serialise unchanged (S170 fields).
+6. **Save/load equivalence preserved for current data only.**
+   `RankedGoalSummary` does not currently derive `Serialize`/`Deserialize`
+   (only `Clone`, `Debug`), so the new bonus-attribution fields on that trace
+   summary raise no save/load migration concern. `SourceReliabilityDiscount`,
+   however, is serialized through `AgentDecisionRuntime.agenda_state`, so the
+   new source-reliability provenance fields advance the current save format.
+   Per FND-28, no old-save compatibility shim is added.
 
 ## Non-Goals
 
@@ -201,6 +204,9 @@ fields. Section H analyses apply as follows.
     `Vec<LearnedOpportunityBonusAttribution>` / `Option<…>` fields on
     `RankedGoalSummary`. All are per-tick derivations over the learned
     stores; recompute from the stores yields the same result.
+  - *Stored* (versioned runtime carrier changed): the new
+    `SourceReliabilityDiscount` fields are serialized when an agenda entry
+    carrying that discount is saved in `AgentDecisionRuntime.agenda_state`.
   - *Stored* (unchanged): the learned stores themselves
     (`LearnedOpportunityMemory`, `RepairMemory`, `TestimonyReliability`)
     remain the sole authoritative source. No state is duplicated.
@@ -327,11 +333,13 @@ remains the sum of the two bonuses, exactly as today).
 ### D6. Threading attributions into `RankedGoalSummary`
 
 The candidate-ranking site at `ranking.rs:290-301` builds each per-candidate
-`RankedGoalSummary` via `AgendaEntry::pending(...)`; the local bindings
+`AgendaEntry` via `AgendaEntry::pending(...)`; `summarize_ranked_goal`
+later projects that agenda entry into `RankedGoalSummary`. The local bindings
 `source_reliability_discount` (line 277), `competition_discount` (line
 282), and `provenance` (line 273) are already in scope. The two new
-bonus-attribution fields populate from D5's tuple returns at the same
-site. The `SourceReliabilityDiscount` construction site
+bonus-attribution fields therefore populate by extending the agenda-entry
+carrier and then copying those fields in `summarize_ranked_goal`. The
+`SourceReliabilityDiscount` construction site
 (`apply_source_reliability_discount` at `ranking.rs:492-510`) populates
 the two new D3 fields by reading the matched `TestimonyReliabilityEntry`
 directly — the lookup already returns the `record` (`ranking.rs:504`) and

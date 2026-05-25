@@ -4,11 +4,11 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — formatter-only changes in `crates/worldwake-ai/src/decision_trace.rs`. No ranking, planning, or world-state effect.
-**Deps**: S171LEACONTDEC-001 (provides `LearnedOpportunityBonusAttribution`, `RepairMemoryBonusAttribution`, and the extended `SourceReliabilityDiscount` field surface that the new formatters render)
+**Deps**: `archive/tickets/S171LEACONTDEC-001.md` (provides `LearnedOpportunityBonusAttribution`, `RepairMemoryBonusAttribution`, and the extended `SourceReliabilityDiscount` field surface that the new formatters render); S171LEACONTDEC-002 (populates the bonus attribution fields)
 
 ## Problem
 
-After S171LEACONTDEC-001 the attribution carriers exist on `RankedGoalSummary` and after S171LEACONTDEC-002 they're populated when bonuses apply — but the decision-trace text rendered for human inspection still doesn't show them. The existing `format_competition_discount_summary` (`decision_trace.rs:2429`) and `format_source_reliability_discount_summary` (`decision_trace.rs:2440`) suffix the trace with discount details; the two bonus axes have no equivalent formatter. The discount-formatter call sites at `decision_trace.rs:317-325`, `1794-1802`, and `2110` concatenate `_suffix` strings into the candidate's rendered summary. This ticket adds two new formatter functions in the same style, extends the existing `format_source_reliability_discount_summary` to render the new provenance fields, and wires both new formatters into the three suffix-concat sites alongside the existing discount renderers. After this ticket lands, decision traces dumped by the observer pipeline answer "what learned-state entry promoted this candidate?" directly from the rendered text.
+After archived `archive/tickets/S171LEACONTDEC-001.md`, the attribution carriers exist on `RankedGoalSummary`; after S171LEACONTDEC-002 they're populated when bonuses apply — but the decision-trace text rendered for human inspection still doesn't show them. The existing `format_competition_discount_summary` (`decision_trace.rs:2429`) and `format_source_reliability_discount_summary` (`decision_trace.rs:2440`) suffix the trace with discount details; the two bonus axes have no equivalent formatter. The discount-formatter call sites at `decision_trace.rs:317-325`, `1794-1802`, and `2110` concatenate `_suffix` strings into the candidate's rendered summary. This ticket adds two new formatter functions in the same style, extends the existing `format_source_reliability_discount_summary` to render the new provenance fields, and wires both new formatters into the three suffix-concat sites alongside the existing discount renderers. After this ticket lands, decision traces dumped by the observer pipeline answer "what learned-state entry promoted this candidate?" directly from the rendered text.
 
 ## Assumption Reassessment (2026-05-25)
 
@@ -25,7 +25,7 @@ After S171LEACONTDEC-001 the attribution carriers exist on `RankedGoalSummary` a
 
 ## Verification Layers
 
-1. New formatters produce expected strings for representative input -> focused unit tests in `decision_trace.rs::tests` constructing `sample_learned_opportunity_bonus_attribution()` / `sample_repair_memory_bonus_attribution()` (from S171LEACONTDEC-001's D8 fixture additions) and asserting the formatter output contains the expected fields.
+1. New formatters produce expected strings for representative input -> focused unit tests in `decision_trace.rs::tests` constructing `sample_learned_opportunity_bonus_attribution()` / `sample_repair_memory_bonus_attribution()` (from `archive/tickets/S171LEACONTDEC-001.md`'s D8 fixture additions) and asserting the formatter output contains the expected fields.
 2. Extended `format_source_reliability_discount_summary` includes provenance fields when populated -> focused unit test asserts the output contains `provenance_event_count` and `most_recent_provenance_event` when they're non-zero / Some; omits them or renders as `0`/`None` when they're empty.
 3. Suffix-concat sites at lines 317-325, 1794-1802, 2110 thread the new bindings -> existing decision-trace tests at `decision_trace.rs::tests` continue to pass; trace text now contains the new suffixes when attribution is `Some(_)`.
 4. Single-layer ticket — formatter-only; no ranking, planning, or world-state effect. No mixed-layer mapping applies.
@@ -101,7 +101,7 @@ Add tests in `decision_trace.rs::tests` (alongside the existing formatter tests)
 ## Out of Scope
 
 - Any ranking-layer change (D5+D6 — landed by S171LEACONTDEC-002).
-- Type or struct shape changes (D1-D4 — landed by S171LEACONTDEC-001).
+- Type or struct shape changes (D1-D4 — landed by `archive/tickets/S171LEACONTDEC-001.md`).
 - Observer/CLI code changes — observer renders the trace text unchanged through the existing dump pipeline.
 - Trace-format documentation or external trace-consumer migration — the rendered shape gains suffixes but the overall trace contract is forward-compatible.
 

@@ -2790,6 +2790,8 @@ mod tests {
             failure_ratio_permille: 500,
             pre_discount_motive: 700,
             post_discount_motive: 350,
+            provenance_event_count: 0,
+            most_recent_provenance_event: None,
         };
         let ranked = AgendaEntry {
             offer: GoalOffer {
