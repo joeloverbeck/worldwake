@@ -30,7 +30,7 @@
         max_authored_critical_run_ticks: 300,
         max_idle_window_ticks_with_elevated_need: 40,
         elevated_need_floor: 300,
-        required_self_care_families: [Eat, Drink, Sleep, Relieve],
+        required_self_care_families: [Eat, Drink, Sleep, Relieve, Wash],
         critical_run_limits: (
             hunger: 580,
             thirst: 450,

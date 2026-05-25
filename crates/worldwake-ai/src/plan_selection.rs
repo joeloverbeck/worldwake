@@ -77,6 +77,9 @@ pub fn select_best_plan(
     let Some(current_plan) = current.current_plan.clone() else {
         return Some(best_plan);
     };
+    if active_goal != Some(current_plan.goal) {
+        return Some(best_plan);
+    }
     let Some((current_class, current_motive)) =
         candidate_scores.get(&current_plan.opportunity).copied()
     else {
@@ -1236,6 +1239,67 @@ mod tests {
 
         assert_eq!(conservative.goal, current_goal);
         assert_eq!(permissive.goal, challenger_goal);
+    }
+
+    #[test]
+    fn current_plan_is_not_retained_when_active_goal_differs() {
+        let active_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        });
+        let stale_current_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Water,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        });
+        let fallback_plan = plan(active_goal, 1, 3);
+        let stale_current_plan = plan(stale_current_goal, 2, 2);
+        let candidates = vec![
+            ranked(
+                worldwake_core::GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Apple,
+                    purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
+                },
+                GoalPriorityClass::High,
+                900,
+            ),
+            ranked(
+                worldwake_core::GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Water,
+                    purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
+                },
+                GoalPriorityClass::High,
+                800,
+            ),
+        ];
+        let plans = vec![
+            selection_plan(active_goal, Some(fallback_plan.clone())),
+            selection_plan(stale_current_goal, Some(stale_current_plan.clone())),
+        ];
+        let runtime = AgentDecisionRuntime {
+            current_plan: Some(stale_current_plan),
+            dirty: crate::DirtySet::NO_PLAN,
+            last_priority_class: Some(GoalPriorityClass::High),
+            ..AgentDecisionRuntime::default()
+        };
+
+        let selected = select_best_plan(
+            &ordered(&candidates),
+            &plans,
+            Some(active_goal),
+            &runtime,
+            None,
+            selection_policy(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            selected, fallback_plan,
+            "selection must not retain a current plan whose goal no longer matches the committed active goal"
+        );
     }
 
     #[test]

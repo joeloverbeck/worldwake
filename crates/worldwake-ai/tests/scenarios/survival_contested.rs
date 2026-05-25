@@ -18,10 +18,13 @@ use worldwake_cli::scenario::{
     load_scenario_file, spawn_scenario,
     types::{ScenarioDef, SurvivalCriticalRunLimitsDef},
 };
-use worldwake_core::{DriveThresholds, EntityId, GoalKind, Tick};
+use worldwake_core::{
+    DecisionEventPayload, DriveThresholds, EntityId, EventTag, EventView, GoalKind, Tick,
+};
 use worldwake_sim::ActionTraceKind;
 
 const SURVIVAL_TICKS: u32 = 1440;
+const BELIEF_ONLY_TICKS: u32 = 400;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct AgentSurvivalObservation {
@@ -49,6 +52,8 @@ struct SurvivalContestedObservation {
     north_reached_food: bool,
     /// Food-producing places reached by at least one South-side agent (C or D).
     south_reached_food: bool,
+    /// Agents with at least one persisted `WashFacilityUsed` decision payload.
+    wash_facility_users: BTreeSet<String>,
     survival_budget_exhaustions: Vec<BudgetExhaustionObservation>,
     stuck_idle_windows: Vec<StuckIdleWindow>,
 }
@@ -65,6 +70,15 @@ fn load_survival_contested_harness() -> (GoldenHarness, ScenarioDef) {
     harness.driver.enable_tracing();
     harness.enable_action_tracing();
     (harness, def)
+}
+
+fn build_belief_only_wash_harness_contested() -> (GoldenHarness, EntityId, EntityId) {
+    let (mut h, _def) = load_survival_contested_harness();
+    let agent = *named_agents(&h)
+        .get("Agent A")
+        .expect("contested scenario should include Agent A");
+    let remote_basin = configure_belief_only_wash_barrier_agent(&mut h, agent);
+    (h, agent, remote_basin)
 }
 
 fn scenario_place_id(def: &ScenarioDef, place_name: &str) -> EntityId {
@@ -101,13 +115,8 @@ fn is_survival_goal(goal: &GoalKind) -> bool {
     )
 }
 
-/// Survival goals excluding `Wash`.  `Wash` exhausts budget before agents
-/// discover any `WashBasin` (same Travel-pruning issue flagged in scattered;
-/// tracked under `GOAPTRVLSCAL-001`).  Excluded here for parity with
-/// `golden_survival_scattered.rs` so the contested scenario isolates the
-/// contention stressor from the Wash-travel gap.
 fn is_budget_checked_survival_goal(goal: &GoalKind) -> bool {
-    is_survival_goal(goal) && !matches!(goal, GoalKind::Wash)
+    is_survival_goal(goal)
 }
 
 fn food_place_ids(def: &ScenarioDef) -> Vec<EntityId> {
@@ -318,6 +327,11 @@ fn run_survival_contested() -> SurvivalContestedObservation {
         .trace_sink()
         .expect("decision tracing should be enabled");
 
+    let agent_name_by_id = agents
+        .iter()
+        .map(|(name, agent)| (*agent, name.clone()))
+        .collect::<BTreeMap<_, _>>();
+
     let agents = agents
         .into_iter()
         .map(|(name, agent)| {
@@ -347,6 +361,19 @@ fn run_survival_contested() -> SurvivalContestedObservation {
         })
         .collect::<BTreeMap<_, _>>();
 
+    let wash_facility_users = h
+        .event_log
+        .events_by_tag(EventTag::WashFacilityUsed)
+        .iter()
+        .filter_map(|id| h.event_log.get(*id))
+        .filter_map(|record| match record.decision_payload()? {
+            DecisionEventPayload::WashFacilityUsed(payload) => {
+                agent_name_by_id.get(&payload.user).cloned()
+            }
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+
     let mut survival_budget_exhaustions = Vec::new();
     for (agent_name, agent) in named_agents(&h) {
         for trace in decision_sink.traces_for(agent) {
@@ -374,13 +401,14 @@ fn run_survival_contested() -> SurvivalContestedObservation {
         drink_places,
         north_reached_food,
         south_reached_food,
+        wash_facility_users,
         survival_budget_exhaustions,
         stuck_idle_windows,
     }
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 158: Contested Survival Keeps All Four Agents Alive For 1440 Ticks
+// Scenario 470: Contested Survival Keeps All Four Agents Alive For 1440 Ticks
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Needs, Travel, Production, Perception
@@ -429,7 +457,7 @@ fn all_agents_survive_1440_ticks() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 159: Contested Survival Exercises All Five Self-Care Action Families
+// Scenario 471: Contested Survival Exercises All Five Self-Care Action Families
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Needs, Travel, Production
@@ -464,7 +492,7 @@ fn all_agents_perform_survival_actions() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 160: Contested Survival Draws From Both Water Sources Across The Run
+// Scenario 472: Contested Survival Draws From Both Water Sources Across The Run
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Travel, Production, Perception
@@ -508,7 +536,7 @@ fn both_water_sources_are_used() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 161: Contested Survival Has Both Camp Sides Reach A Food Source
+// Scenario 473: Contested Survival Has Both Camp Sides Reach A Food Source
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Exploration, Perception, Travel
@@ -545,7 +573,7 @@ fn both_camp_sides_reach_food() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 162: Contested Survival Avoids Budget Exhaustion On Survival Goals
+// Scenario 474: Contested Survival Avoids Budget Exhaustion On Survival Goals
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Search, Needs, Travel, Production
@@ -559,9 +587,9 @@ fn both_camp_sides_reach_food() {
 // agent and tighter resource capacities over scattered but preserves the
 // same cognitive budget (640 expansions, beam_width 12).
 //
-// Proves: no non-Wash survival-goal planning attempt ends in
-// `BudgetExhausted`.  Wash is excluded for parity with scattered; the
-// Wash-Travel pruning gap is tracked in `GOAPTRVLSCAL-001`.
+// Proves: no survival-goal planning attempt ends in `BudgetExhausted`.
+// Wash is included through the same goal-key inspection convention as Eat,
+// Drink, Sleep, Relieve, and ExploreLocation.
 //
 // Chain: preserved travel-branch cap (4) + 640 planner expansions +
 // chokepoint topology + contention -> survival plans complete within
@@ -579,7 +607,39 @@ fn no_budget_exhaustion_on_survival_goals() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 163: Contested Survival Has No Stuck Idle Windows With Elevated Needs
+// Scenario 475: Contested Survival Persists Wash Facility Commit Payloads
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Needs, Travel, Production
+// GoalKinds: Wash
+// ActionDomains: Needs
+// Places: Spring Basin
+// Principles: 4, 14, 29A, 31
+//
+// Setup: Run the authored survival contested scenario for 1440 ticks and
+// inspect the append-only decision event log for `WashFacilityUsed` payloads.
+//
+// Proves: every authored agent that is required to satisfy Wash commits through
+// the existing generic Wash facility payload surface.  The assertion proves the
+// D5 commit branch without adding a Wash-specific failure-attribution variant.
+//
+// Chain: scenario-authored Wash self-care requirement -> belief-backed basin
+// discovery -> wash action commit -> persisted `WashFacilityUsed` payload keyed
+// by user and basin.
+#[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
+fn wash_facility_payloads_record_every_agent() {
+    let observation = run_survival_contested();
+
+    let expected = observation.agents.keys().cloned().collect::<BTreeSet<_>>();
+    assert_eq!(
+        observation.wash_facility_users, expected,
+        "each contested-scenario agent should emit at least one WashFacilityUsed payload"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 476: Contested Survival Has No Stuck Idle Windows With Elevated Needs
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Needs, Travel, Production, Perception
@@ -630,5 +690,74 @@ fn per_need_critical_run_limit_override_beats_default_for_dirtiness_only() {
         "Agent A",
         &thresholds,
         &runs,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 477: Contested Belief-Only Wash Cannot Target An Unseen Remote Basin
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Belief View, Needs, Perception
+// GoalKinds: Wash
+// ActionDomains: Needs
+// Places: North Camp, Spring Basin
+// Principles: 14, 14B, 16, 31
+//
+// Setup: Load the authored `survival-contested.ron` topology, isolate Agent A
+// at its authored start, clear its belief store, seed only local beliefs, and
+// keep the authored remote `WashBasin` unobserved for 400 ticks.
+//
+// Proves: candidate generation never emits a Wash opportunity for the unseen
+// remote basin and no Wash plan is found or selected. Dirtiness remains
+// unresolved because ignorance is lawful rather than corrected through remote
+// authoritative truth.
+//
+// Chain: authored contested topology -> local-only belief seed -> rising
+// dirtiness without basin belief -> no Wash candidate or selected plan.
+#[test]
+#[ignore = "CI-only: belief-only Wash regression; run via golden-survival workflow"]
+fn no_wash_plan_for_unseen_remote_basin_under_contested_topology() {
+    let (mut h, agent, remote_basin) = build_belief_only_wash_harness_contested();
+    let observation = run_belief_only_wash_barrier(&mut h, agent, remote_basin, BELIEF_ONLY_TICKS);
+
+    assert!(
+        observation.believed_wash_basins.is_empty(),
+        "contested belief-only agent should not know remote basin {}; beliefs={:?}",
+        observation.remote_basin,
+        observation.believed_wash_basins
+    );
+    assert!(
+        observation.generated_wash_opportunities.is_empty(),
+        "contested belief-only agent should emit no Wash candidates for unseen basin {}; opportunities={:?}",
+        observation.remote_basin,
+        observation.generated_wash_opportunities
+    );
+    assert!(
+        observation.found_wash_plan_ticks.is_empty(),
+        "contested belief-only agent should find no Wash plans for unseen basin {}; ticks={:?}",
+        observation.remote_basin,
+        observation.found_wash_plan_ticks
+    );
+    assert!(
+        observation.selected_wash_ticks.is_empty(),
+        "contested belief-only agent should select no Wash plan for unseen basin {}; ticks={:?}",
+        observation.remote_basin,
+        observation.selected_wash_ticks
+    );
+    assert!(
+        observation.dirtiness_drop_ticks.is_empty(),
+        "contested belief-only dirtiness should not be relieved without basin knowledge: {:?}",
+        observation.dirtiness_drop_ticks
+    );
+    assert!(
+        observation.final_dirtiness >= observation.initial_dirtiness,
+        "contested belief-only dirtiness should remain unresolved or rise; initial={} final={}",
+        observation.initial_dirtiness,
+        observation.final_dirtiness
+    );
+    assert!(
+        !observation.committed_actions.contains("wash"),
+        "contested belief-only agent must not commit wash without basin knowledge; actions={:?}",
+        observation.committed_actions
     );
 }

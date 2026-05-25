@@ -22,7 +22,7 @@ Scenarios: 8
 
 ### Scenario 409: S165 Stale Belief Inserts Verification
 
-- Source: `plan_repair.rs:288`
+- Source: `plan_repair.rs:289`
 - Systems: AI
 - GoalKinds: AcquireCommodity, AskWitness
 - ActionDomains: PlanRepair
@@ -37,7 +37,7 @@ Scenarios: 8
 
 ### Scenario 461: S165 Stale Belief Without Witness Falls Through
 
-- Source: `plan_repair.rs:371`
+- Source: `plan_repair.rs:373`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -52,7 +52,7 @@ Scenarios: 8
 
 ### Scenario 410: S137 Recently Failed Repair Kind Is Skipped
 
-- Source: `plan_repair.rs:436`
+- Source: `plan_repair.rs:438`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -67,7 +67,7 @@ Scenarios: 8
 
 ### Scenario 411: S137 Commodity Availability Changed Clears Blocker Structurally
 
-- Source: `plan_repair.rs:487`
+- Source: `plan_repair.rs:489`
 - Systems: AI, Core
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -82,7 +82,7 @@ Scenarios: 8
 
 ### Scenario 412: S137 Repair Budget Exhaustion Falls Through To Full Replan
 
-- Source: `plan_repair.rs:562`
+- Source: `plan_repair.rs:564`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -97,7 +97,7 @@ Scenarios: 8
 
 ### Scenario 413: S137 Abandon Produces Empty Progress Barrier
 
-- Source: `plan_repair.rs:617`
+- Source: `plan_repair.rs:619`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -112,7 +112,7 @@ Scenarios: 8
 
 ### Scenario 414: S137 Phase 11 Approved Repair Gate Witness
 
-- Source: `plan_repair.rs:660`
+- Source: `plan_repair.rs:662`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair

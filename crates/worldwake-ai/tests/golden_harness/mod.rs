@@ -17,7 +17,10 @@ mod timeline;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
-use worldwake_ai::{AgentTickDriver, OpportunityAnchor, OpportunityKey};
+use worldwake_ai::{
+    AgentTickDriver, DecisionOutcome, GoalKind, OpportunityAnchor, OpportunityKey,
+    PlanSearchOutcome,
+};
 use worldwake_core::{
     AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BelievedOfficeDataSnapshot,
     BlockerMemory, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, ClaimId, ClaimValue,
@@ -141,6 +144,19 @@ pub struct StuckIdleWindow {
     pub start_tick: u32,
     pub end_tick: u32,
     pub max_need_at_start: u16,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BeliefOnlyWashBarrierObservation {
+    pub remote_basin: EntityId,
+    pub believed_wash_basins: Vec<EntityId>,
+    pub generated_wash_opportunities: Vec<(Tick, OpportunityKey)>,
+    pub found_wash_plan_ticks: Vec<Tick>,
+    pub selected_wash_ticks: Vec<Tick>,
+    pub dirtiness_drop_ticks: Vec<(Tick, u16, u16)>,
+    pub initial_dirtiness: u16,
+    pub final_dirtiness: u16,
+    pub committed_actions: BTreeSet<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -304,6 +320,189 @@ fn agent_has_contention_claim(harness: &GoldenHarness, agent: EntityId) -> bool 
                     })
                 })
     })
+}
+
+pub fn configure_belief_only_wash_barrier_agent(
+    harness: &mut GoldenHarness,
+    agent: EntityId,
+) -> EntityId {
+    let remote_basin = harness
+        .world
+        .entities()
+        .find(|entity| {
+            harness
+                .world
+                .get_component_workstation_marker(*entity)
+                .is_some_and(|marker| marker.0 == WorkstationTag::WashBasin)
+        })
+        .expect("belief-only Wash barrier scenario should include a WashBasin");
+    assert_ne!(
+        harness.world.effective_place(agent),
+        harness.world.effective_place(remote_basin),
+        "belief-only Wash barrier agent must not start co-located with remote basin {remote_basin}"
+    );
+
+    let mut txn = new_txn(&mut harness.world, 0);
+    txn.set_component_homeostatic_needs(
+        agent,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(850)),
+    )
+    .expect("belief-only Wash barrier should keep needs writable");
+    txn.set_component_metabolism_profile(
+        agent,
+        MetabolismProfile {
+            hunger_rate: pm(0),
+            thirst_rate: pm(0),
+            fatigue_rate: pm(0),
+            bladder_rate: pm(0),
+            dirtiness_rate: pm(1),
+            starvation_tolerance_ticks: nz(1000),
+            dehydration_tolerance_ticks: nz(1000),
+            exhaustion_collapse_ticks: nz(1000),
+            bladder_accident_tolerance_ticks: nz(1000),
+            wilderness_relief_dirtiness_penalty: pm(0),
+            ..MetabolismProfile::default()
+        },
+    )
+    .expect("belief-only Wash barrier should keep metabolism profile writable");
+    txn.set_component_utility_profile(
+        agent,
+        worldwake_core::UtilityProfile {
+            hunger_weight: pm(0),
+            thirst_weight: pm(0),
+            fatigue_weight: pm(0),
+            bladder_weight: pm(0),
+            dirtiness_weight: pm(900),
+            enterprise_weight: pm(0),
+            social_weight: pm(0),
+            activity_awareness_weight: pm(0),
+            ..worldwake_core::UtilityProfile::default()
+        },
+    )
+    .expect("belief-only Wash barrier should keep utility profile writable");
+    txn.set_component_exploration_profile(
+        agent,
+        worldwake_core::ExplorationProfile {
+            curiosity_weight: pm(0),
+            need_activation_threshold: pm(1000),
+            ..worldwake_core::ExplorationProfile::default()
+        },
+    )
+    .expect("belief-only Wash barrier should keep exploration profile writable");
+    txn.set_component_agent_belief_store(agent, AgentBeliefStore::new())
+        .expect("belief-only Wash barrier should keep belief store writable");
+    commit_txn(txn, &mut harness.event_log);
+    seed_actor_local_beliefs(
+        &mut harness.world,
+        &mut harness.event_log,
+        agent,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    remote_basin
+}
+
+pub fn run_belief_only_wash_barrier(
+    harness: &mut GoldenHarness,
+    agent: EntityId,
+    remote_basin: EntityId,
+    ticks: u32,
+) -> BeliefOnlyWashBarrierObservation {
+    let initial_dirtiness = harness
+        .world
+        .get_component_homeostatic_needs(agent)
+        .expect("belief-only Wash barrier agent should have needs")
+        .dirtiness
+        .value();
+    let mut previous_dirtiness = initial_dirtiness;
+    let mut dirtiness_drop_ticks = Vec::new();
+
+    for tick_num in 0..ticks {
+        harness.step_once();
+        let tick = Tick(u64::from(tick_num));
+        let dirtiness = harness
+            .world
+            .get_component_homeostatic_needs(agent)
+            .expect("belief-only Wash barrier agent should keep needs")
+            .dirtiness
+            .value();
+        if dirtiness < previous_dirtiness {
+            dirtiness_drop_ticks.push((tick, previous_dirtiness, dirtiness));
+        }
+        previous_dirtiness = dirtiness;
+    }
+
+    let belief_store = harness
+        .world
+        .get_component_agent_belief_store(agent)
+        .cloned()
+        .unwrap_or_else(AgentBeliefStore::new);
+    let believed_wash_basins = belief_store
+        .iter_known_entities()
+        .filter_map(|(entity, state)| {
+            (state.workstation_tag == Some(WorkstationTag::WashBasin)).then_some(*entity)
+        })
+        .collect::<Vec<_>>();
+
+    let mut generated_wash_opportunities = Vec::new();
+    let mut found_wash_plan_ticks = Vec::new();
+    let mut selected_wash_ticks = Vec::new();
+    for trace in harness
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .traces_for(agent)
+    {
+        let DecisionOutcome::Planning(planning) = &trace.outcome else {
+            continue;
+        };
+        for opportunity in &planning.candidates.generated {
+            if matches!(opportunity.goal_key.kind, GoalKind::Wash) {
+                generated_wash_opportunities.push((trace.tick, *opportunity));
+            }
+        }
+        if planning.planning.attempts.iter().any(|attempt| {
+            matches!(attempt.goal.kind, GoalKind::Wash)
+                && matches!(attempt.outcome, PlanSearchOutcome::Found { .. })
+        }) {
+            found_wash_plan_ticks.push(trace.tick);
+        }
+        if planning
+            .selection
+            .selected_goal_is(worldwake_core::GoalKey::from(GoalKind::Wash))
+        {
+            selected_wash_ticks.push(trace.tick);
+        }
+    }
+
+    assert!(
+        generated_wash_opportunities
+            .iter()
+            .all(|(_, opportunity)| opportunity.anchor != OpportunityAnchor::Entity(remote_basin)),
+        "Wash candidate generation leaked unseen remote basin {remote_basin}: {generated_wash_opportunities:?}"
+    );
+
+    let committed_actions = harness
+        .action_trace_sink()
+        .expect("action tracing should be enabled")
+        .events_for(agent)
+        .iter()
+        .filter(|event| matches!(event.kind, ActionTraceKind::Committed { .. }))
+        .map(|event| event.action_name.clone())
+        .collect::<BTreeSet<_>>();
+
+    BeliefOnlyWashBarrierObservation {
+        remote_basin,
+        believed_wash_basins,
+        generated_wash_opportunities,
+        found_wash_plan_ticks,
+        selected_wash_ticks,
+        dirtiness_drop_ticks,
+        initial_dirtiness,
+        final_dirtiness: previous_dirtiness,
+        committed_actions,
+    }
 }
 
 /// Village Square — central hub, slot 0.

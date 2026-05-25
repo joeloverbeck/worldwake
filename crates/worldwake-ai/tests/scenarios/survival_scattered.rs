@@ -13,15 +13,16 @@ use worldwake_ai::{
 };
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
 use worldwake_core::{
-    AgentBeliefStore, DriveThresholds, EntityBeliefAspect, EntityBeliefClaim, EntityId, GoalKind,
-    PerceptionProfile, PerceptionSource, Tick, build_believed_entity_state,
-    effective_claim_confidence,
+    AgentBeliefStore, DecisionEventPayload, DriveThresholds, EntityBeliefAspect, EntityBeliefClaim,
+    EntityId, EventTag, EventView, GoalKind, PerceptionProfile, PerceptionSource, Tick,
+    build_believed_entity_state, effective_claim_confidence,
 };
 use worldwake_sim::{
     ActionTraceKind, GoalBeliefView, PerAgentBeliefView, belief_view::BeliefStatus,
 };
 
 const SURVIVAL_TICKS: u32 = 1440;
+const BELIEF_ONLY_TICKS: u32 = 400;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct AgentSurvivalObservation {
@@ -45,6 +46,8 @@ struct SurvivalScatteredObservation {
     agents: BTreeMap<String, AgentSurvivalObservation>,
     /// Agent B (isolated at Ravine Shelter) reached any food-producing location.
     isolated_agent_reached_food: bool,
+    /// Agents with at least one persisted `WashFacilityUsed` decision payload.
+    wash_facility_users: BTreeSet<String>,
     survival_budget_exhaustions: Vec<BudgetExhaustionObservation>,
     stuck_idle_windows: Vec<StuckIdleWindow>,
 }
@@ -61,6 +64,15 @@ fn load_survival_scattered_harness() -> (GoldenHarness, ScenarioDef) {
     harness.driver.enable_tracing();
     harness.enable_action_tracing();
     (harness, def)
+}
+
+fn build_belief_only_wash_harness_scattered() -> (GoldenHarness, EntityId, EntityId) {
+    let (mut h, _def) = load_survival_scattered_harness();
+    let agent = *named_agents(&h)
+        .get("Agent A")
+        .expect("scattered scenario should include Agent A");
+    let remote_basin = configure_belief_only_wash_barrier_agent(&mut h, agent);
+    (h, agent, remote_basin)
 }
 
 fn scenario_place_id(def: &ScenarioDef, place_name: &str) -> EntityId {
@@ -113,11 +125,8 @@ fn is_survival_goal(goal: &GoalKind) -> bool {
     )
 }
 
-/// Survival goals excluding Wash.  Wash exhausts budget before the agent
-/// discovers any `WashBasin` (same Travel-pruning issue as Sleep pre-fix,
-/// but Wash legitimately needs Travel).  Tracked in GOAPTRVLSCAL-001.
 fn is_budget_checked_survival_goal(goal: &GoalKind) -> bool {
-    is_survival_goal(goal) && !matches!(goal, GoalKind::Wash)
+    is_survival_goal(goal)
 }
 
 /// Food-producing places in the scattered scenario.
@@ -275,6 +284,11 @@ fn run_survival_scattered() -> SurvivalScatteredObservation {
         .trace_sink()
         .expect("decision tracing should be enabled");
 
+    let agent_name_by_id = agents
+        .iter()
+        .map(|(name, agent)| (*agent, name.clone()))
+        .collect::<BTreeMap<_, _>>();
+
     let agents = agents
         .into_iter()
         .map(|(name, agent)| {
@@ -304,6 +318,19 @@ fn run_survival_scattered() -> SurvivalScatteredObservation {
         })
         .collect::<BTreeMap<_, _>>();
 
+    let wash_facility_users = h
+        .event_log
+        .events_by_tag(EventTag::WashFacilityUsed)
+        .iter()
+        .filter_map(|id| h.event_log.get(*id))
+        .filter_map(|record| match record.decision_payload()? {
+            DecisionEventPayload::WashFacilityUsed(payload) => {
+                agent_name_by_id.get(&payload.user).cloned()
+            }
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+
     let mut survival_budget_exhaustions = Vec::new();
     for (agent_name, agent) in named_agents(&h) {
         for trace in decision_sink.traces_for(agent) {
@@ -329,6 +356,7 @@ fn run_survival_scattered() -> SurvivalScatteredObservation {
         contract,
         agents,
         isolated_agent_reached_food,
+        wash_facility_users,
         survival_budget_exhaustions,
         stuck_idle_windows,
     }
@@ -450,7 +478,7 @@ fn isolated_agent_reaches_food_source() {
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Search, Needs, Travel, Production
-// GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
+// GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash, ExploreLocation
 // ActionDomains: Needs, Travel, Production
 // Places: all 6 scattered scenario places
 // Principles: 6, 14, 31
@@ -459,11 +487,9 @@ fn isolated_agent_reaches_food_source() {
 // and inspect all traced plan-search attempts.  The scenario has longer
 // travel distances requiring deeper plans than the baseline.
 //
-// Proves: no non-Wash survival-goal planning attempt ends in
-// `BudgetExhausted` despite the expanded topology requiring multi-hop
-// plans.  Wash is excluded because it exhausts budget before agents
-// discover the WashBasin (same Travel-pruning gap as pre-fix Sleep);
-// tracked in GOAPTRVLSCAL-001.
+// Proves: no survival-goal planning attempt ends in `BudgetExhausted`.
+// Wash is included through the same goal-key inspection convention as Eat,
+// Drink, Sleep, Relieve, and ExploreLocation.
 //
 // Chain: travel-branch cap (4) + 640 planner expansions + chokepoint topology
 // -> survival plans complete within budget -> no BudgetExhausted.
@@ -480,7 +506,39 @@ fn no_budget_exhaustion_on_survival_goals() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 157: Scattered Survival Has No Stuck Idle Windows With Elevated Needs
+// Scenario 157: Scattered Survival Persists Wash Facility Commit Payloads
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Needs, Travel, Production
+// GoalKinds: Wash
+// ActionDomains: Needs
+// Places: River Crossing
+// Principles: 4, 14, 29A, 31
+//
+// Setup: Run the authored survival scattered scenario for 1440 ticks and
+// inspect the append-only decision event log for `WashFacilityUsed` payloads.
+//
+// Proves: every authored agent that is required to satisfy Wash commits through
+// the existing generic Wash facility payload surface. The assertion proves the
+// D5 commit branch without adding a Wash-specific failure-attribution variant.
+//
+// Chain: scenario-authored Wash self-care requirement -> belief-backed basin
+// discovery -> wash action commit -> persisted `WashFacilityUsed` payload keyed
+// by user and basin.
+#[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
+fn wash_facility_payloads_record_every_agent() {
+    let observation = run_survival_scattered();
+
+    let expected = observation.agents.keys().cloned().collect::<BTreeSet<_>>();
+    assert_eq!(
+        observation.wash_facility_users, expected,
+        "each scattered-scenario agent should emit at least one WashFacilityUsed payload"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 158: Scattered Survival Has No Stuck Idle Windows With Elevated Needs
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Needs, Travel, Production, Perception
@@ -627,4 +685,73 @@ fn seeded_target_location_belief_decays_to_stale_without_refresh() {
         profile.claim_confidence_threshold.value()
     );
     assert_eq!(stale_envelope.acquired_tick, location_claim.acquired_tick);
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 468: Scattered Belief-Only Wash Cannot Target An Unseen Remote Basin
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Belief View, Needs, Perception
+// GoalKinds: Wash
+// ActionDomains: Needs
+// Places: Hilltop Camp, River Crossing
+// Principles: 14, 14B, 16, 31
+//
+// Setup: Load the authored `survival-scattered.ron` topology, isolate Agent A
+// at its authored start, clear its belief store, seed only local beliefs, and
+// keep the authored remote `WashBasin` unobserved for 400 ticks.
+//
+// Proves: candidate generation never emits a Wash opportunity for the unseen
+// remote basin and no Wash plan is found or selected. Dirtiness remains
+// unresolved because ignorance is lawful rather than corrected through remote
+// authoritative truth.
+//
+// Chain: authored scattered topology -> local-only belief seed -> rising
+// dirtiness without basin belief -> no Wash candidate or selected plan.
+#[test]
+#[ignore = "CI-only: belief-only Wash regression; run via golden-survival workflow"]
+fn no_wash_plan_for_unseen_remote_basin_under_scattered_topology() {
+    let (mut h, agent, remote_basin) = build_belief_only_wash_harness_scattered();
+    let observation = run_belief_only_wash_barrier(&mut h, agent, remote_basin, BELIEF_ONLY_TICKS);
+
+    assert!(
+        observation.believed_wash_basins.is_empty(),
+        "scattered belief-only agent should not know remote basin {}; beliefs={:?}",
+        observation.remote_basin,
+        observation.believed_wash_basins
+    );
+    assert!(
+        observation.generated_wash_opportunities.is_empty(),
+        "scattered belief-only agent should emit no Wash candidates for unseen basin {}; opportunities={:?}",
+        observation.remote_basin,
+        observation.generated_wash_opportunities
+    );
+    assert!(
+        observation.found_wash_plan_ticks.is_empty(),
+        "scattered belief-only agent should find no Wash plans for unseen basin {}; ticks={:?}",
+        observation.remote_basin,
+        observation.found_wash_plan_ticks
+    );
+    assert!(
+        observation.selected_wash_ticks.is_empty(),
+        "scattered belief-only agent should select no Wash plan for unseen basin {}; ticks={:?}",
+        observation.remote_basin,
+        observation.selected_wash_ticks
+    );
+    assert!(
+        observation.dirtiness_drop_ticks.is_empty(),
+        "scattered belief-only dirtiness should not be relieved without basin knowledge: {:?}",
+        observation.dirtiness_drop_ticks
+    );
+    assert!(
+        observation.final_dirtiness >= observation.initial_dirtiness,
+        "scattered belief-only dirtiness should remain unresolved or rise; initial={} final={}",
+        observation.initial_dirtiness,
+        observation.final_dirtiness
+    );
+    assert!(
+        !observation.committed_actions.contains("wash"),
+        "scattered belief-only agent must not commit wash without basin knowledge; actions={:?}",
+        observation.committed_actions
+    );
 }
