@@ -61,7 +61,7 @@ archive/tickets/S169GENLAWVER-003.md (ConsultRecord) and this ticket are paralle
 
 ## Out of Scope
 
-- Negative omniscience cross-provider E2E golden — S169GENLAWVER-005.
+- Negative omniscience cross-provider seam proof — archive/tickets/S169GENLAWVER-005.md.
 - Real `consult_record_provider::try_build` implementation — archive/tickets/S169GENLAWVER-003.md (independent, parallel-safe).
 - New `GoalKind::SearchPlace` agenda companion variant — explicitly Non-Goal'd by S169 (deferred follow-up).
 - Changes to `SearchPlace` action handler or effect schema in `worldwake-systems` — none needed.

@@ -62,7 +62,7 @@ The ConsultRecord verification provider is implemented for stale institutional-c
 ## Out of Scope
 
 - Real `search_place_provider::try_build` implementation — archive/tickets/S169GENLAWVER-004.md.
-- Negative omniscience cross-provider E2E golden — S169GENLAWVER-005.
+- Negative omniscience cross-provider seam proof — archive/tickets/S169GENLAWVER-005.md.
 - New `GoalKind::ConsultRecord` agenda companion variant — explicitly Non-Goal'd by S169 (deferred to a follow-up spec).
 - Changes to `ConsultRecord` action handler or effect schema in `worldwake-systems` — no authoritative changes needed; the existing action is sufficient.
 

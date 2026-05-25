@@ -1757,6 +1757,7 @@ mod tests {
         actor: EntityId,
         subject: EntityId,
         place: EntityId,
+        remote_place: EntityId,
         expectation: ExpectationId,
     }
 
@@ -1846,7 +1847,116 @@ mod tests {
             actor,
             subject,
             place,
+            remote_place,
             expectation,
+        }
+    }
+
+    fn all_verification_action_defs() -> ActionDefRegistry {
+        let mut action_defs = ActionDefRegistry::new();
+        let mut action_handlers = ActionHandlerRegistry::new();
+        worldwake_systems::register_ask_witness_action(&mut action_defs, &mut action_handlers);
+        worldwake_systems::register_consult_record_action(&mut action_defs, &mut action_handlers);
+        worldwake_systems::register_search_place_action(&mut action_defs, &mut action_handlers);
+        action_defs
+    }
+
+    fn assert_non_verification_fallback_event(event_log: &EventLog) {
+        let payload = event_log
+            .events_by_tag(EventTag::RepairApplied)
+            .iter()
+            .filter_map(|event_id| event_log.get(*event_id))
+            .filter_map(EventView::decision_payload)
+            .find_map(|payload| match payload {
+                DecisionEventPayload::RepairApplied(payload) => Some(payload),
+                _ => None,
+            })
+            .expect("fallback repair should emit a repair-applied event");
+        assert_ne!(payload.repair_kind, RepairKind::InsertVerification);
+    }
+
+    struct RemoteRecordFixture {
+        world: worldwake_core::World,
+        store: AgentBeliefStore,
+        action_defs: ActionDefRegistry,
+        actor: EntityId,
+        office: EntityId,
+        record: EntityId,
+    }
+
+    fn remote_record_fixture() -> RemoteRecordFixture {
+        let local_place = entity(130);
+        let remote_place = entity(131);
+        let mut topology = Topology::new();
+        topology
+            .add_place(
+                local_place,
+                Place {
+                    name: "Square".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::new(),
+                },
+            )
+            .unwrap();
+        topology
+            .add_place(
+                remote_place,
+                Place {
+                    name: "Archive".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::new(),
+                },
+            )
+            .unwrap();
+        let mut world = worldwake_core::World::new(topology).unwrap();
+        let actor;
+        let office;
+        let record;
+        {
+            let mut txn = worldwake_core::WorldTxn::new(
+                &mut world,
+                Tick(1),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::SamePlace,
+                WitnessData::default(),
+            );
+            actor = txn.create_agent("agent", ControlSource::Ai).unwrap();
+            office = txn.create_office("office").unwrap();
+            txn.set_ground_location(actor, local_place).unwrap();
+            txn.set_ground_location(office, local_place).unwrap();
+            record = txn
+                .create_record(RecordData {
+                    record_kind: RecordKind::OfficeRegister,
+                    home_place: remote_place,
+                    issuer: office,
+                    consultation_ticks: 7,
+                    max_entries_per_consult: 4,
+                    entries: vec![InstitutionalRecordEntry {
+                        entry_id: RecordEntryId(0),
+                        claim: InstitutionalClaim::OfficeHolder {
+                            office,
+                            holder: Some(entity(40)),
+                            effective_tick: Tick(3),
+                        },
+                        recorded_tick: Tick(3),
+                        supersedes: None,
+                    }],
+                    next_entry_id: 1,
+                })
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        RemoteRecordFixture {
+            world,
+            store: AgentBeliefStore::new(),
+            action_defs: all_verification_action_defs(),
+            actor,
+            office,
+            record,
         }
     }
 
@@ -2320,6 +2430,254 @@ mod tests {
                 provider_kind: VerificationProviderKind::SearchPlace,
             })
         );
+    }
+
+    #[test]
+    fn remote_witness_breach_records_all_provider_rejections_without_insert_verification() {
+        let fixture = search_place_fixture();
+        let action_defs = all_verification_action_defs();
+        let goal_key = sample_goal_key();
+        let prefix = planned_step(10, None);
+        let failed = planned_step(7, Some(belief_target_link(1)));
+        let plan = PlannedPlan::new(
+            opportunity(goal_key),
+            goal_key,
+            vec![prefix.clone(), failed.clone()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_plan: Some(plan),
+            current_step_index: 1,
+            ..crate::AgentDecisionRuntime::default()
+        };
+        let view = PerAgentBeliefView::new(fixture.actor, &fixture.world, &fixture.store);
+        let outcome = attempt_local_repair_for_invalidated_step(
+            &runtime,
+            &RepairMemory::default(),
+            &cognitive(8, Permille::new(1000).unwrap()),
+            Some((&view, &action_defs, fixture.actor)),
+            Tick(9),
+            goal_key,
+            &failed,
+            worldwake_core::PlanInvalidationReason::ExpectationMismatch { step_index: 1 },
+            Some(repair_mismatch()),
+        )
+        .expect("stale entity belief should attempt localized repair");
+
+        assert_eq!(outcome.verification_provider, None);
+        assert_eq!(
+            outcome.verification_rejections,
+            vec![
+                (
+                    VerificationProviderKind::AskWitness,
+                    crate::VerificationRejection::NoLawfulLocalTarget
+                ),
+                (
+                    VerificationProviderKind::ConsultRecord,
+                    crate::VerificationRejection::BreachClassMismatch
+                ),
+                (
+                    VerificationProviderKind::SearchPlace,
+                    crate::VerificationRejection::BreachClassMismatch
+                )
+            ]
+        );
+        let RepairOutcome::Repaired {
+            kind,
+            new_plan,
+            rejected,
+        } = outcome.outcome
+        else {
+            panic!("visible prefix should downgrade after remote witness verification rejection");
+        };
+        assert!(rejected.contains(&(
+            RepairKind::InsertVerification,
+            crate::RepairFailure::NoEpistemicSubstrate
+        )));
+        assert_ne!(kind, RepairKind::InsertVerification);
+
+        let mut event_log = EventLog::new();
+        apply_repaired_plan_and_emit(
+            &mut event_log,
+            &mut runtime,
+            Tick(9),
+            fixture.actor,
+            goal_key,
+            1,
+            kind,
+            *new_plan,
+            None,
+        );
+        assert_non_verification_fallback_event(&event_log);
+    }
+
+    #[test]
+    fn remote_record_breach_records_all_provider_rejections_without_insert_verification() {
+        let fixture = remote_record_fixture();
+        let goal_key = sample_goal_key();
+        let prefix = planned_step(10, None);
+        let failed = planned_step(11, Some(record_link(fixture.record, fixture.office)));
+        let plan = PlannedPlan::new(
+            opportunity(goal_key),
+            goal_key,
+            vec![prefix.clone(), failed.clone()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_plan: Some(plan),
+            current_step_index: 1,
+            ..crate::AgentDecisionRuntime::default()
+        };
+        let view = PerAgentBeliefView::new(fixture.actor, &fixture.world, &fixture.store);
+        let outcome = attempt_local_repair_for_invalidated_step(
+            &runtime,
+            &RepairMemory::default(),
+            &cognitive(8, Permille::new(1000).unwrap()),
+            Some((&view, &fixture.action_defs, fixture.actor)),
+            Tick(9),
+            goal_key,
+            &failed,
+            worldwake_core::PlanInvalidationReason::ExpectationMismatch { step_index: 1 },
+            Some(repair_mismatch()),
+        )
+        .expect("stale institutional claim should attempt localized repair");
+
+        assert_eq!(outcome.verification_provider, None);
+        assert_eq!(
+            outcome.verification_rejections,
+            vec![
+                (
+                    VerificationProviderKind::AskWitness,
+                    crate::VerificationRejection::BreachClassMismatch
+                ),
+                (
+                    VerificationProviderKind::ConsultRecord,
+                    crate::VerificationRejection::NoLawfulLocalTarget
+                ),
+                (
+                    VerificationProviderKind::SearchPlace,
+                    crate::VerificationRejection::BreachClassMismatch
+                )
+            ]
+        );
+        let RepairOutcome::Repaired {
+            kind,
+            new_plan,
+            rejected,
+        } = outcome.outcome
+        else {
+            panic!("visible prefix should downgrade after remote record verification rejection");
+        };
+        assert!(rejected.contains(&(
+            RepairKind::InsertVerification,
+            crate::RepairFailure::NoEpistemicSubstrate
+        )));
+        assert_ne!(kind, RepairKind::InsertVerification);
+
+        let mut event_log = EventLog::new();
+        apply_repaired_plan_and_emit(
+            &mut event_log,
+            &mut runtime,
+            Tick(9),
+            fixture.actor,
+            goal_key,
+            1,
+            kind,
+            *new_plan,
+            None,
+        );
+        assert_non_verification_fallback_event(&event_log);
+    }
+
+    #[test]
+    fn remote_expectation_breach_records_all_provider_rejections_without_insert_verification() {
+        let fixture = search_place_fixture();
+        let goal_key = sample_goal_key();
+        let prefix = planned_step(10, None);
+        let mut failed = planned_step(
+            11,
+            Some(expectation_link(
+                fixture.expectation,
+                fixture.subject,
+                fixture.remote_place,
+            )),
+        );
+        failed.targets = vec![crate::PlanningEntityRef::Authoritative(
+            fixture.remote_place,
+        )];
+        failed.target_place = Some(fixture.remote_place);
+        let plan = PlannedPlan::new(
+            opportunity(goal_key),
+            goal_key,
+            vec![prefix.clone(), failed.clone()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_plan: Some(plan),
+            current_step_index: 1,
+            ..crate::AgentDecisionRuntime::default()
+        };
+        let view = PerAgentBeliefView::new(fixture.actor, &fixture.world, &fixture.store);
+        let outcome = attempt_local_repair_for_invalidated_step(
+            &runtime,
+            &RepairMemory::default(),
+            &cognitive(8, Permille::new(1000).unwrap()),
+            Some((&view, &fixture.action_defs, fixture.actor)),
+            Tick(9),
+            goal_key,
+            &failed,
+            worldwake_core::PlanInvalidationReason::ExpectationMismatch { step_index: 1 },
+            Some(repair_mismatch()),
+        )
+        .expect("remote overdue expectation should attempt localized repair");
+
+        assert_eq!(outcome.verification_provider, None);
+        assert_eq!(
+            outcome.verification_rejections,
+            vec![
+                (
+                    VerificationProviderKind::AskWitness,
+                    crate::VerificationRejection::BreachClassMismatch
+                ),
+                (
+                    VerificationProviderKind::ConsultRecord,
+                    crate::VerificationRejection::BreachClassMismatch
+                ),
+                (
+                    VerificationProviderKind::SearchPlace,
+                    crate::VerificationRejection::NoLawfulLocalTarget
+                )
+            ]
+        );
+        let RepairOutcome::Repaired {
+            kind,
+            new_plan,
+            rejected,
+        } = outcome.outcome
+        else {
+            panic!(
+                "visible prefix should downgrade after remote expectation verification rejection"
+            );
+        };
+        assert!(rejected.contains(&(
+            RepairKind::InsertVerification,
+            crate::RepairFailure::NoEpistemicSubstrate
+        )));
+        assert_ne!(kind, RepairKind::InsertVerification);
+
+        let mut event_log = EventLog::new();
+        apply_repaired_plan_and_emit(
+            &mut event_log,
+            &mut runtime,
+            Tick(9),
+            fixture.actor,
+            goal_key,
+            1,
+            kind,
+            *new_plan,
+            None,
+        );
+        assert_non_verification_fallback_event(&event_log);
     }
 
     #[test]

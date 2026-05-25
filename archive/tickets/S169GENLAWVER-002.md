@@ -149,7 +149,7 @@ When the seam runs the registry, the chosen provider populates `verification_pro
 - Real `consult_record_provider::try_build` implementation — archive/tickets/S169GENLAWVER-003.md.
 - Real `search_place_provider::try_build` implementation — archive/tickets/S169GENLAWVER-004.md.
 - ConsultRecord / SearchPlace provider proof surfaces — archive/tickets/S169GENLAWVER-003.md, archive/tickets/S169GENLAWVER-004.md.
-- Negative omniscience E2E golden — S169GENLAWVER-005.
+- Negative omniscience seam proof — archive/tickets/S169GENLAWVER-005.md.
 - New goal kinds (`GoalKind::ConsultRecord`, etc.) — explicitly Non-Goal'd by S169 spec (agenda companion seam follow-up).
 
 ## Acceptance Result

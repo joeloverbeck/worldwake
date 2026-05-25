@@ -384,7 +384,7 @@ field is added to `AgentDecisionTrace`. FND-29.
 
 ### D10. Proof surfaces
 
-S169's intended coverage is provider-specific positive proof plus a cross-provider negative-omniscience golden. Where the provider-selection seam is private, use focused in-crate seam regressions rather than widening production APIs solely to satisfy an external golden file shape.
+S169's intended coverage is provider-specific positive proof plus a cross-provider negative-omniscience proof. Where the provider-selection seam is private, use focused in-crate seam regressions rather than widening production APIs solely to satisfy an external golden file shape.
 
 1. **ConsultRecord positive proof** — archive/tickets/S169GENLAWVER-003.md
    landed this as focused provider tests plus an in-crate repair-seam
@@ -398,10 +398,14 @@ S169's intended coverage is provider-specific positive proof plus a cross-provid
    `provider_kind`, local-place targeting, and payload-validator parity
    without adding a test-only API export for an external
    `verification_search_place_repair.rs` file.
-3. **`verification_no_remote_truth.rs`** — negative omniscience test. The
-   stale belief is about a record at a *remote* place; no provider builds a
-   candidate; `NoEpistemicSubstrate` is the lawful outcome. Assert that no
-   `RepairApplied` event with the remote record's contents is produced.
+3. **Negative omniscience seam proof** — archive/tickets/S169GENLAWVER-005.md
+   landed this as focused in-crate repair-seam regressions for remote witness,
+   remote record, and remote-place expectation breaches. The proof asserts
+   deterministic iteration across all three providers, no selected provider,
+   `InsertVerification` rejection with `NoEpistemicSubstrate`, and fallback
+   `RepairApplied` events whose `repair_kind` is not `InsertVerification`,
+   without adding a test-only API export for an external
+   `verification_no_remote_truth.rs` file.
 
 Plus parity assertion: the S165 AskWitness golden runs through the new
 registry path and produces byte-identical authoritative events modulo the new
@@ -503,7 +507,7 @@ Required checks:
   (no `&World`); compile-time enforced by the function signature plus a
   unit test that constructs a witness/record/place outside the actor's
   place and asserts `VerificationRejection::NoLawfulLocalTarget`.
-- **Negative omniscience golden** (D10.3): under FND-14B, no provider may
+- **Negative omniscience seam proof** (D10.3): under FND-14B, no provider may
   emit a candidate whose payload reflects remote authoritative truth.
 - **Provider-selection trace completeness**: golden assertion that every
   successful repair attempt records at least one of `selected` or `rejected`
@@ -585,8 +589,9 @@ Per CLAUDE.md's "Authoritative-to-AI Impact Rule":
    D7 verifies this in unit tests. Without compatibility,
    `plan_revalidation.rs::requested_affordance_matches` would silently
    reject the step — D7 is the affirmative check.
-7. **All goldens pass** — D10's three new goldens plus the S165 parity
-   assertion plus the full `cargo test -p worldwake-ai` suite.
+7. **Proof lanes pass** — D10's provider-specific seam regressions and
+   negative omniscience seam proof plus the S165 parity assertion and the full
+   `cargo test -p worldwake-ai` suite.
 
 ## Validation and Falsification (FND-31)
 
@@ -603,7 +608,7 @@ Required tests:
   reason coverage.
 - Integration: `InsertVerification` end-to-end with each provider; payload
   override validator registration.
-- Golden: three scenarios per D10.
+- Proof surface: focused in-crate seam regressions per D10.
 - Save/load: a successful ConsultRecord verification, saved mid-repair-tick
   and reloaded, completes identically.
 - Replay: current-format event logs preserve `RepairApplied.provider_kind`;
