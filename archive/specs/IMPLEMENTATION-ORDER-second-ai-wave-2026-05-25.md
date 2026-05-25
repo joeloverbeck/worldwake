@@ -1,13 +1,13 @@
 # Implementation Order
 
-**Status**: ACTIVE
+**Status**: COMPLETED
 
 The retired phase-gate dependency graph and the prior AI-architecture
 consolidation waves (S155–S168) are recorded at
 `archive/specs/IMPLEMENTATION-ORDER-final-2026-05-21.md` and the dated archives
 it references (most recently `archive/specs/IMPLEMENTATION-ORDER-2026-05-25.md`,
 which closed out the first AI-architecture-improvements wave S165–S168). This
-active file carries the **second AI-architecture-improvements wave** — the
+archived file carried the **second AI-architecture-improvements wave** — the
 post-S168 work that broadens lawful verification beyond `AskWitness` and closes
 the confirmed learned-state provenance gaps. Gameplay specs `S60`–`S66`
 remain authored but **intentionally excluded** until a future directive reopens
@@ -73,3 +73,5 @@ No active specs remain in this implementation order.
 ## Outcome
 
 S169 and S170 completed and archived on 2026-05-25.
+This implementation order was archived on 2026-05-25 after its queue reached
+`No active specs remain`.
