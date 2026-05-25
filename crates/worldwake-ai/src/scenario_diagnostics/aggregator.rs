@@ -1412,6 +1412,8 @@ mod tests {
             },
             chosen_kind,
             verification_anchor: None,
+            verification_provider: None,
+            verification_rejections: Vec::new(),
             rejected: Vec::<(RepairKind, RepairFailure)>::new(),
             budget_consumed: consumed,
             budget_total: total,

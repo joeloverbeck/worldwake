@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — replaces `consult_record_provider::try_build` placeholder with real implementation
-**Deps**: S169GENLAWVER-002
+**Deps**: archive/tickets/S169GENLAWVER-002.md
 
 ## Problem
 
@@ -21,6 +21,7 @@ The ticket also adds the first new golden scenario `verification_consult_record_
 3. Mixed-layer boundary under audit: provider implementation lives in `worldwake-ai/src/verification_provider/consult_record_provider.rs`; consumes `VerificationContext.belief_view` (from `worldwake-sim`) and produces `RepairPlanCandidate` (from `worldwake-ai`); the authoritative `ConsultRecord` action handler lives in `worldwake-systems`. No cross-system direct calls.
 4. Planner-driven AI ticket: live `GoalKind` under test remains the original goal that triggered the breach (e.g., a goal whose `CausalLink` depended on a believed institutional fact). The verification step is spliced into the repaired plan as a *step*, not a new goal — no new `GoalKind` variants are added (S169 Non-Goal #2).
 5. Heuristic substrate: the provider's same-place legality check is enforced by reading `ctx.belief_view.entities_at(ctx.effective_place)` and filtering for `kind = EntityKind::Record`. The actor's belief about the record's topic relevance (not the authoritative record contents) is the lawful gate — preserves FND-14B (planner-visible inputs must be belief-backed).
+6. archive/tickets/S169GENLAWVER-002.md did not add `repair_memory` to `VerificationContext`; if this ticket retains the `RecentlyFailedAtTarget` behavior below, it must first extend the context or perform an equivalent seam-side recent-failure check before constructing the provider candidate.
 
 ## Architecture Check
 
@@ -63,7 +64,8 @@ pub fn try_build(
         .find(|record| ctx.belief_view.record_topic_matches(*record, record_topic))
         .ok_or(VerificationRejection::NoLawfulLocalTarget)?;
 
-    // Recently-failed check
+    // Recently-failed check. If this remains provider-local, add the needed
+    // repair-memory surface to VerificationContext in this ticket.
     if ctx.repair_memory.recently_failed_at(local_record) {
         return Err(VerificationRejection::RecentlyFailedAtTarget);
     }
@@ -109,6 +111,7 @@ New file `crates/worldwake-ai/tests/scenarios/verification_consult_record_repair
 
 - `crates/worldwake-ai/src/verification_provider/consult_record_provider.rs` (modify — replace placeholder with real `try_build`)
 - `crates/worldwake-ai/tests/scenarios/verification_consult_record_repair.rs` (new — golden scenario)
+- Likely: `crates/worldwake-ai/src/verification_provider/mod.rs` — if this ticket keeps `RecentlyFailedAtTarget` as a provider-local rejection, extend `VerificationContext` with the repair-memory surface required by the snippet above.
 - Likely: `crates/worldwake-sim/src/belief_view.rs` and `crates/worldwake-sim/src/per_agent_belief_view.rs` — if a new accessor like `record_topic_matches` is needed (verify during reassessment per 5h trait accessor propagation rule)
 
 ## Out of Scope

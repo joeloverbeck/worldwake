@@ -1116,6 +1116,16 @@ fn repair_applied_detail_lines(
             "&nbsp;&nbsp;verification_anchor: {}",
             format_optional_entity(trace.verification_anchor)
         ));
+        lines.push(format!(
+            "&nbsp;&nbsp;verification_provider: {}",
+            trace
+                .verification_provider
+                .map_or_else(|| "None".to_string(), |provider| format!("{provider:?}"))
+        ));
+        lines.push(format!(
+            "&nbsp;&nbsp;verification_rejections: {}",
+            format_verification_rejections(&trace.verification_rejections)
+        ));
     }
     lines.push(format!(
         "&nbsp;&nbsp;substitute_recipe: {}",
@@ -1368,6 +1378,25 @@ fn format_optional_recipe(recipe: Option<RecipeId>) -> String {
 
 fn format_repair_rejections(
     rejected: &[(worldwake_core::RepairKind, worldwake_ai::RepairFailure)],
+) -> String {
+    if rejected.is_empty() {
+        return "None".to_string();
+    }
+
+    let mut sorted = rejected.to_vec();
+    sorted.sort_by_key(|(kind, _)| *kind);
+    sorted
+        .into_iter()
+        .map(|(kind, failure)| format!("{kind:?} ({failure:?})"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn format_verification_rejections(
+    rejected: &[(
+        worldwake_core::VerificationProviderKind,
+        worldwake_ai::VerificationRejection,
+    )],
 ) -> String {
     if rejected.is_empty() {
         return "None".to_string();
@@ -6112,7 +6141,7 @@ mod tests {
         AgentDecisionRuntime, AgentTickDriver, BlockerSummary, CandidateSuppressionCategory,
         CriticalWindowFrame, CriticalWindowReport, DirtySet, ExhaustionSummary, GoalOffer,
         GoalPriorityClass, KillCondition, LocalSurvivalStateSummary, RepairFailure, RevivalTrigger,
-        ScenarioDiagnosticsReport, SelectedPlanSource,
+        ScenarioDiagnosticsReport, SelectedPlanSource, VerificationRejection,
     };
     use worldwake_cli::diagnostics_json::scenario_diagnostics_report_from_json;
     use worldwake_core::PerceptionSource;
@@ -8710,6 +8739,8 @@ mod tests {
             ],
             budget_consumed: 2,
             budget_total: 5,
+            verification_provider: None,
+            verification_rejections: Vec::new(),
         });
         let mut sink = DecisionTraceSink::new();
         sink.record(trace);
@@ -8779,6 +8810,17 @@ mod tests {
             },
             chosen_kind: Some(worldwake_core::RepairKind::InsertVerification),
             verification_anchor: Some(witness),
+            verification_provider: Some(worldwake_core::VerificationProviderKind::AskWitness),
+            verification_rejections: vec![
+                (
+                    worldwake_core::VerificationProviderKind::ConsultRecord,
+                    VerificationRejection::BreachClassMismatch,
+                ),
+                (
+                    worldwake_core::VerificationProviderKind::SearchPlace,
+                    VerificationRejection::BreachClassMismatch,
+                ),
+            ],
             rejected: vec![(
                 worldwake_core::RepairKind::RebindTarget,
                 RepairFailure::NoSiblingTargetFound,

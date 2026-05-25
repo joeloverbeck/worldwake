@@ -134,7 +134,7 @@ pub struct VerificationContext<'a> {
 }
 ```
 
-S169GENLAWVER-002 owns finalizing the exact `VerificationContext` field list once the seam-side data passed into the registry is known. This ticket landed the type with `actor`, `belief_view`, `effective_place` as the minimum required surface.
+archive/tickets/S169GENLAWVER-002.md finalized the exact `VerificationContext` field list once the seam-side data passed into the registry was known. This ticket landed the type with `actor`, `belief_view`, `effective_place` as the minimum required surface.
 
 Add `pub mod verification_provider;` to `worldwake-ai/src/lib.rs`.
 
@@ -153,10 +153,10 @@ Add `pub mod verification_provider;` to `worldwake-ai/src/lib.rs`.
 
 ## Out of Scope
 
-- `try_build_verification_candidate` registry function — S169GENLAWVER-002.
+- `try_build_verification_candidate` registry function — archive/tickets/S169GENLAWVER-002.md.
 - AskWitness / ConsultRecord / SearchPlace provider submodules and `try_build` implementations — S169GENLAWVER-002, -003, -004.
-- Seam refactor at `agent_tick/execution.rs:452` — S169GENLAWVER-002.
-- `RepairAttemptTrace` extension with `verification_provider` / `verification_rejections` fields — S169GENLAWVER-002.
+- Seam refactor at `agent_tick/execution.rs:452` — archive/tickets/S169GENLAWVER-002.md.
+- `RepairAttemptTrace` extension with `verification_provider` / `verification_rejections` fields — archive/tickets/S169GENLAWVER-002.md.
 - New goldens — S169GENLAWVER-003, -004, -005.
 
 ## Acceptance Result

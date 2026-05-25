@@ -443,17 +443,14 @@ pub struct RepairAppliedPayload {
     pub provider_kind: VerificationProviderKind,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize,
+)]
 pub enum VerificationProviderKind {
+    #[default]
     AskWitness,
     ConsultRecord,
     SearchPlace,
-}
-
-impl Default for VerificationProviderKind {
-    fn default() -> Self {
-        Self::AskWitness
-    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]

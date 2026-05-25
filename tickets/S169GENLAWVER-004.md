@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — replaces `search_place_provider::try_build` placeholder with real implementation
-**Deps**: S169GENLAWVER-002
+**Deps**: archive/tickets/S169GENLAWVER-002.md
 
 ## Problem
 
@@ -23,6 +23,7 @@ S169GENLAWVER-003 (ConsultRecord) and this ticket are parallel-safe — both dep
 3. Mixed-layer boundary under audit: provider implementation in `worldwake-ai/src/verification_provider/search_place_provider.rs` consumes `VerificationContext` (belief view, effective place, breach context) and produces a `RepairPlanCandidate`. The `SearchPlace` action handler in `worldwake-systems` is unchanged.
 4. Planner-driven AI ticket: same as S169GENLAWVER-003 — the verification step is a `PlannedStep` spliced into the repaired plan; no new `GoalKind` variants. The motivating semantic is FND-17 (surprise from violated expectation): when an expectation at a place is overdue, the lawful response is to physically inspect the place.
 5. Heuristic substrate: the provider's same-place legality is enforced by `need.place == ctx.effective_place`. If the overdue expectation is at a remote place, the provider returns `NoLawfulLocalTarget` — the agent cannot search a place they are not at.
+6. archive/tickets/S169GENLAWVER-002.md did not add `repair_memory` to `VerificationContext`; if this ticket retains the `RecentlyFailedAtTarget` behavior below, it must first extend the context or perform an equivalent seam-side recent-failure check before constructing the provider candidate.
 
 ## Architecture Check
 
@@ -60,7 +61,8 @@ pub fn try_build(
         return Err(VerificationRejection::NoLawfulLocalTarget);
     }
 
-    // Recently-failed check
+    // Recently-failed check. If this remains provider-local, add the needed
+    // repair-memory surface to VerificationContext in this ticket.
     if ctx.repair_memory.recently_failed_at(place) {
         return Err(VerificationRejection::RecentlyFailedAtTarget);
     }
@@ -105,6 +107,7 @@ New file `crates/worldwake-ai/tests/scenarios/verification_search_place_repair.r
 
 - `crates/worldwake-ai/src/verification_provider/search_place_provider.rs` (modify — replace placeholder with real `try_build`)
 - `crates/worldwake-ai/tests/scenarios/verification_search_place_repair.rs` (new — golden scenario)
+- Likely: `crates/worldwake-ai/src/verification_provider/mod.rs` — if this ticket keeps `RecentlyFailedAtTarget` as a provider-local rejection, extend `VerificationContext` with the repair-memory surface required by the snippet above.
 - Likely: `crates/worldwake-sim/src/belief_view.rs` and `crates/worldwake-sim/src/per_agent_belief_view.rs` — if a new accessor like `expectation_belief` is needed (verify during reassessment per 5h trait accessor propagation rule)
 
 ## Out of Scope

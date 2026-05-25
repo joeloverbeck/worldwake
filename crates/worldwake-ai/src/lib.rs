@@ -183,6 +183,7 @@ pub use survival_forensics::{
     CriticalWindowFrame, CriticalWindowReport, ExhaustionSummary, LocalSurvivalStateSummary,
     SurvivalForensicExtractor,
 };
+pub use verification_provider::VerificationRejection;
 pub use worldwake_core::GoalDispatchKey;
 pub use worldwake_core::{
     CognitiveProfile, CommodityPurpose, ExecutionBudget, GoalKey, GoalKind, OpportunityAnchor,

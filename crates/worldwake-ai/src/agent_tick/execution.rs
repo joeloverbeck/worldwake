@@ -8,7 +8,6 @@ use super::{
     emit_decision_event, handle_recoverable_travel_step_blockage, runtime_belief_view,
 };
 use crate::RepairAttemptTrace;
-use crate::candidate_generation::ask_witness_verification_step;
 use crate::failure_handling::exact_target_belief_discrepancy;
 use crate::plan_repair::{
     PlanRepairContext, RepairOutcome, RepairPlanCandidate, attempt_repair_then_replan,
@@ -17,6 +16,10 @@ use crate::plan_repair::{
 use crate::plan_step_expectations::{
     expire_plan_step_expectations, persist_expectation_store_update,
 };
+use crate::verification_provider::{
+    PROVIDER_ITERATION_ORDER, VerificationCandidate, VerificationContext, VerificationNeed,
+    VerificationRejection, try_build_verification_candidate,
+};
 use crate::{
     AgentDecisionRuntime, PlannedPlan, PlannedStep, RevalidationOutcome, classify_revalidation,
 };
@@ -24,9 +27,10 @@ use worldwake_core::{
     AffordanceKey, BeliefSnapshot, BeliefStatusTag, BlockerKey, BlockerMemory,
     BlockerRecordedPayload, BlockingFact, BreachSignature, CausalLink, CausalProvider, CauseRef,
     ContentionIntents, DecisionEventPayload, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
-    DiscrepancyMemory, EntityId, EventId, EventLog, EventTag, EventView, InvalidatorTag,
-    LearnedOpportunityMemory, MismatchDetail, PlanningFact, RepairAppliedPayload, RepairEntry,
-    RepairKind, RepairMemory, ReplanTriggeredPayload, Tick, VisibilitySpec, WitnessData, WorldTxn,
+    DiscrepancyMemory, EntityBeliefAspect, EntityId, EventId, EventLog, EventTag, EventView,
+    InvalidatorTag, LearnedOpportunityMemory, MismatchDetail, PlanningFact, RepairAppliedPayload,
+    RepairEntry, RepairKind, RepairMemory, ReplanTriggeredPayload, Tick, VerificationProviderKind,
+    VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionDefRegistry, CommitOutcome, CommittedAction, EntityBeliefView, InputKind,
@@ -132,7 +136,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                         mismatch_detail,
                     )
                 {
-                    match repair_outcome {
+                    match repair_outcome.outcome {
                         RepairOutcome::Repaired {
                             kind,
                             new_plan,
@@ -146,6 +150,10 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                                 let verification_anchor = verification_anchor_from_repaired_plan(
                                     kind, step_index, &new_plan,
                                 );
+                                let selected_verification_provider =
+                                    matches!(kind, RepairKind::InsertVerification)
+                                        .then_some(repair_outcome.verification_provider)
+                                        .flatten();
                                 traces.push(RepairAttemptTrace {
                                     breach: breach_signature_for_step(
                                         goal_key,
@@ -154,6 +162,10 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                                     ),
                                     chosen_kind: Some(kind),
                                     verification_anchor,
+                                    verification_provider: selected_verification_provider,
+                                    verification_rejections: repair_outcome
+                                        .verification_rejections
+                                        .clone(),
                                     budget_consumed: repair_budget_consumed(&rejected, true),
                                     rejected,
                                     budget_total: repair_budget(ctx.cognitive),
@@ -168,6 +180,9 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                                 step_index,
                                 kind,
                                 *new_plan,
+                                matches!(kind, RepairKind::InsertVerification)
+                                    .then_some(repair_outcome.verification_provider)
+                                    .flatten(),
                             );
                             return Ok(());
                         }
@@ -179,6 +194,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                                     signature,
                                     &tried,
                                     ctx.cognitive,
+                                    repair_outcome.verification_rejections.clone(),
                                 ));
                             }
                             record_failed_repair_attempts(
@@ -399,7 +415,7 @@ fn attempt_local_repair_for_invalidated_step(
     step: &PlannedStep,
     reason: worldwake_core::PlanInvalidationReason,
     mismatch_detail: Option<MismatchDetail>,
-) -> Option<RepairOutcome> {
+) -> Option<LocalRepairAttempt> {
     if !matches!(
         reason,
         worldwake_core::PlanInvalidationReason::ExpectationMismatch { .. }
@@ -421,15 +437,20 @@ fn attempt_local_repair_for_invalidated_step(
         .get(runtime.current_step_index + 1..)
         .unwrap_or(&[]);
     let mut replacement_candidates = repair_candidates_from_reusable_suffix(reusable_suffix);
-    if let Some((view, action_defs, agent)) = verification_context {
-        append_insert_verification_candidate(
+    let mut verification_provider = None;
+    let mut verification_rejections = Vec::new();
+    if let Some((view, action_defs, agent)) = verification_context
+        && let Some(selection) = append_insert_verification_candidate(
             view,
             agent,
             action_defs,
             broken_link,
             &discrepancy_entry,
             &mut replacement_candidates,
-        );
+        )
+    {
+        verification_provider = selection.provider_kind;
+        verification_rejections = selection.rejections;
     }
     let context = PlanRepairContext {
         opportunity: active_plan.opportunity,
@@ -442,11 +463,22 @@ fn attempt_local_repair_for_invalidated_step(
         new_evidence: &[],
         discrepancy_entry: &discrepancy_entry,
     };
-    Some(attempt_repair_then_replan(
-        &context,
-        cognitive,
-        repair_memory,
-    ))
+    Some(LocalRepairAttempt {
+        outcome: attempt_repair_then_replan(&context, cognitive, repair_memory),
+        verification_provider,
+        verification_rejections,
+    })
+}
+
+struct LocalRepairAttempt {
+    outcome: RepairOutcome,
+    verification_provider: Option<VerificationProviderKind>,
+    verification_rejections: Vec<(VerificationProviderKind, VerificationRejection)>,
+}
+
+struct VerificationSelection {
+    provider_kind: Option<VerificationProviderKind>,
+    rejections: Vec<(VerificationProviderKind, VerificationRejection)>,
 }
 
 fn append_insert_verification_candidate(
@@ -456,44 +488,54 @@ fn append_insert_verification_candidate(
     broken_link: CausalLink,
     discrepancy_entry: &DiscrepancyEntry,
     candidates: &mut Vec<RepairPlanCandidate>,
-) {
-    let Some(subject) = epistemic_verification_subject(broken_link, discrepancy_entry) else {
-        return;
-    };
-    let Some(actor_place) = view.effective_place(agent) else {
-        return;
-    };
-    let Some(ask_witness_def_id) = ask_witness_action_def_id(action_defs) else {
-        return;
-    };
+) -> Option<VerificationSelection> {
+    let need = verification_need_for_breach(broken_link, discrepancy_entry)?;
+    let actor_place = view.effective_place(agent)?;
 
-    let mut witnesses = view.entities_at(actor_place);
-    witnesses.sort_unstable();
-    witnesses.dedup();
-    let Some(step) = witnesses
-        .into_iter()
-        .filter(|witness| *witness != agent)
-        .filter(|witness| view.effective_place(*witness) == Some(actor_place))
-        .find_map(|witness| {
-            ask_witness_verification_step(view, agent, witness, subject, ask_witness_def_id)
-        })
-    else {
-        return;
+    let ctx = VerificationContext {
+        actor: agent,
+        belief_view: view,
+        effective_place: actor_place,
+        broken_link,
+        action_defs,
     };
-
-    candidates.push(RepairPlanCandidate {
-        kind: RepairKind::InsertVerification,
-        provider: broken_link.provider,
-        fact: broken_link.fact,
-        step,
-        reusable_suffix_index: None,
-    });
+    let mut selected = None::<VerificationCandidate>;
+    let mut rejections = Vec::new();
+    for provider in PROVIDER_ITERATION_ORDER {
+        match try_build_verification_candidate(provider, &need, &ctx) {
+            Ok(candidate) if selected.is_none() => selected = Some(candidate),
+            Ok(_) => {}
+            Err(rejection) => rejections.push((provider, rejection)),
+        }
+    }
+    let provider_kind = selected.as_ref().map(|candidate| candidate.provider_kind);
+    if let Some(candidate) = selected {
+        candidates.push(candidate.repair_candidate);
+    }
+    Some(VerificationSelection {
+        provider_kind,
+        rejections,
+    })
 }
 
-fn epistemic_verification_subject(
+fn verification_need_for_breach(
     broken_link: CausalLink,
     discrepancy_entry: &DiscrepancyEntry,
-) -> Option<EntityId> {
+) -> Option<VerificationNeed> {
+    if let CausalProvider::Record { topic, .. } = broken_link.provider {
+        return Some(VerificationNeed::StaleInstitutionalClaim {
+            record_topic: topic,
+        });
+    }
+    if let CausalProvider::Expectation { expectation_id } = broken_link.provider
+        && let DiscrepancyClearing::ReobservationOf { target } =
+            discrepancy_entry.clearing_condition
+    {
+        return Some(VerificationNeed::OverdueExpectationAtPlace {
+            expectation: expectation_id,
+            place: target,
+        });
+    }
     let provider_subject = match broken_link.provider {
         CausalProvider::Belief { claim_key } => Some(claim_key.subject),
         CausalProvider::Observation {
@@ -511,16 +553,25 @@ fn epistemic_verification_subject(
         | DiscrepancyClearing::CommodityAvailabilityChanged { .. }
         | DiscrepancyClearing::WorldStructureChange => None,
     }?;
-    (provider_subject == clearing_subject).then_some(provider_subject)
+    (provider_subject == clearing_subject).then_some(VerificationNeed::StaleEntityBelief {
+        subject: provider_subject,
+        aspect: EntityBeliefAspect::Location,
+    })
 }
 
-fn ask_witness_action_def_id(
-    action_defs: &ActionDefRegistry,
-) -> Option<worldwake_core::ActionDefId> {
-    action_defs
-        .iter()
-        .find(|def| def.name == "ask_witness")
-        .map(|def| def.id)
+#[cfg(test)]
+fn epistemic_verification_subject(
+    broken_link: CausalLink,
+    discrepancy_entry: &DiscrepancyEntry,
+) -> Option<EntityId> {
+    match verification_need_for_breach(broken_link, discrepancy_entry) {
+        Some(VerificationNeed::StaleEntityBelief { subject, .. }) => Some(subject),
+        Some(
+            VerificationNeed::StaleInstitutionalClaim { .. }
+            | VerificationNeed::OverdueExpectationAtPlace { .. },
+        )
+        | None => None,
+    }
 }
 
 fn broken_link_for_step(step: &PlannedStep, failed_step: u16) -> Option<CausalLink> {
@@ -677,11 +728,14 @@ fn repair_attempt_trace_from_failed(
     breach: BreachSignature,
     tried: &[(RepairKind, crate::RepairFailure)],
     cognitive: &worldwake_core::CognitiveProfile,
+    verification_rejections: Vec<(VerificationProviderKind, VerificationRejection)>,
 ) -> RepairAttemptTrace {
     RepairAttemptTrace {
         breach,
         chosen_kind: None,
         verification_anchor: None,
+        verification_provider: None,
+        verification_rejections,
         rejected: tried.to_vec(),
         budget_consumed: repair_budget_consumed(tried, false),
         budget_total: repair_budget(cognitive),
@@ -716,6 +770,7 @@ fn apply_repaired_plan_and_emit(
     step_index: u16,
     kind: RepairKind,
     new_plan: PlannedPlan,
+    verification_provider: Option<VerificationProviderKind>,
 ) {
     let substitute_target = substitute_target_from_repaired_plan(kind, step_index, &new_plan);
     let substitute_recipe = substitute_recipe_from_repaired_plan(&new_plan);
@@ -732,7 +787,7 @@ fn apply_repaired_plan_and_emit(
             repair_kind: kind,
             substitute_target,
             substitute_recipe,
-            provider_kind: worldwake_core::VerificationProviderKind::AskWitness,
+            provider_kind: verification_provider.unwrap_or(VerificationProviderKind::AskWitness),
         }),
     );
 }
@@ -1715,7 +1770,7 @@ mod tests {
             Some(repair_mismatch()),
         )
         .expect("causal-link invalidator should attempt localized repair");
-        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome else {
+        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome.outcome else {
             panic!(
                 "visible discrepancy with a committed prefix should repair to a progress barrier"
             );
@@ -1732,6 +1787,7 @@ mod tests {
             1,
             kind,
             *new_plan,
+            None,
         );
 
         let repaired_plan = runtime
@@ -1792,7 +1848,7 @@ mod tests {
             Some(repair_mismatch()),
         )
         .expect("causal-link invalidator should attempt localized repair");
-        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome else {
+        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome.outcome else {
             panic!("suffix candidate should repair the invalidated step");
         };
         assert_eq!(kind, RepairKind::RebindTarget);
@@ -1807,6 +1863,7 @@ mod tests {
             1,
             kind,
             *new_plan,
+            None,
         );
 
         let repaired_plan = runtime
@@ -1864,6 +1921,7 @@ mod tests {
             1,
             RepairKind::InsertVerification,
             plan,
+            Some(worldwake_core::VerificationProviderKind::AskWitness),
         );
 
         let events = event_log.events_by_tag(EventTag::RepairApplied);
@@ -1937,7 +1995,7 @@ mod tests {
             Some(repair_mismatch()),
         )
         .expect("causal-link invalidator should attempt localized repair");
-        let RepairOutcome::Failed { tried } = outcome else {
+        let RepairOutcome::Failed { tried } = outcome.outcome else {
             panic!("zero repair budget should fail before a local repair succeeds");
         };
         let signature = breach_signature_for_step(goal_key, &failed, Some(repair_mismatch()));
@@ -1981,7 +2039,7 @@ mod tests {
         ];
         let cognitive = cognitive(12, Permille::new(500).unwrap());
 
-        let trace = repair_attempt_trace_from_failed(signature, &tried, &cognitive);
+        let trace = repair_attempt_trace_from_failed(signature, &tried, &cognitive, Vec::new());
 
         assert_eq!(trace.breach, signature);
         assert_eq!(trace.chosen_kind, None);

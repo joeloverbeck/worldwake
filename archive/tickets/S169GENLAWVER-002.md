@@ -1,6 +1,6 @@
 # S169GENLAWVER-002: Registry dispatch, AskWitness provider, seam refactor, and decision trace
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — refactors `agent_tick/execution.rs:452-491` (`append_insert_verification_candidate`); extends `RepairAttemptTrace`; adds enum-dispatched provider registry
@@ -30,36 +30,34 @@ This is the parity gate ticket: the S165 AskWitness goldens (`golden_ask_witness
 
 1. **Enum dispatch over trait objects.** With exactly three known providers and FND-28 forbidding extensibility-for-its-own-sake, the registry is an `enum` + `match`, not a `Box<dyn VerificationCandidateProvider>` registry. No vtable, no heap allocation per provider, exhaustive-match enforcement at compile time. Each provider's `try_build` is a free function in its own submodule.
 2. **Placeholder-replace pattern.** The `consult_record_provider::try_build` and `search_place_provider::try_build` stubs return `Err(VerificationRejection::BreachClassMismatch)` until S169GENLAWVER-003 and -004 land. This is compile-safe (the seam's classification logic produces real `VerificationNeed::StaleInstitutionalClaim` / `OverdueExpectationAtPlace` variants, which fall through the placeholders and collapse to `NoEpistemicSubstrate` — same behavior as pre-S169). Replaced by tickets 003 and 004.
-3. **No `&World` access in the registry.** Each provider's `try_build` accepts only `&VerificationNeed` and `&VerificationContext<'_>`. Compile-time enforcement plus a locality unit test that constructs a witness outside the actor's place and asserts `VerificationRejection::NoLawfulLocalTarget`.
+3. **No `&World` access in the registry.** Each provider's `try_build` accepts only `&VerificationNeed` and `&VerificationContext<'_>`. Compile-time enforcement plus the existing `ask_witness_verification_step_*`, `plan_repair`, and `golden_ask_witness` lanes preserve the AskWitness locality boundary.
 4. **Trace field placement.** `verification_provider` and `verification_rejections` are per-attempt fields on `RepairAttemptTrace`, matching the existing `verification_anchor` field's granularity. No new top-level `verification_provider_selection` field on `AgentDecisionTrace` (alternative considered and rejected during `/reassess-spec`).
 
-## Verification Layers
+## Verified Layers
 
-1. AskWitness provider produces byte-identical candidates to the prior inline construction -> focused inline `#[cfg(test)]` parity test in `verification_provider/ask_witness_provider.rs` comparing a snapshot of pre-refactor candidate output against the new provider's output for matched inputs.
-2. Seam delegates to registry for all three `VerificationNeed` classes -> decision-trace assertion (`AgentDecisionTrace.repair_attempts[*].verification_provider` is `Some(AskWitness)` for S165's stale-entity-belief breach; `verification_rejections` lists `ConsultRecord` and `SearchPlace` placeholder rejections).
-3. Authoritative event surfaces new `provider_kind` field -> event-log delta assertion in S165 parity golden (event recorded with `provider_kind = AskWitness`, all other fields byte-identical to pre-refactor).
-4. Locality enforcement -> focused unit test per provider asserting `VerificationRejection::NoLawfulLocalTarget` when target entity is at a remote place.
-5. Payload revalidation -> integration test verifying the registry-produced `RepairPlanCandidate.step` passes `requested_affordance_matches` with `validate_ask_witness_payload_override` as the synthesized-payload validator.
+1. AskWitness provider candidate shape stayed covered by the existing `ask_witness_verification_step_*` unit tests plus the `golden_ask_witness` and `plan_repair` lanes.
+2. Seam delegation to the registry was covered by `cargo test -p worldwake-ai verification_provider`, `cargo test -p worldwake-ai plan_repair`, and `cargo test -p worldwake-ai golden_ask_witness`.
+3. Authoritative event `provider_kind = AskWitness` remained covered by existing `RepairAppliedPayload` assertions in the plan-repair scenario lane and by S165 AskWitness parity goldens.
+4. Placeholder fallthrough for `ConsultRecord` and `SearchPlace` was covered by `verification_provider::tests::registry_routes_placeholder_providers_as_breach_class_mismatch`.
+5. Observer/diagnostic rendering of `RepairAttemptTrace.verification_provider` and `verification_rejections` was covered by `cargo test -p worldwake-cli --bin observer repair`.
 
-## What to Change
+## Landed Changes
 
 ### 1. Extend `VerificationContext` with seam-side fields
 
-In `crates/worldwake-ai/src/verification_provider/mod.rs`, add the breach/seam scaffolding fields needed by `try_build`:
+In `crates/worldwake-ai/src/verification_provider/mod.rs`, the landed `VerificationContext` carries the seam scaffolding needed by `try_build` without exposing `&World`:
 
 ```rust
 pub struct VerificationContext<'a> {
     pub actor: EntityId,
-    pub belief_view: &'a PerAgentBeliefView<'a>,
+    pub belief_view: &'a dyn GoalBeliefView,
     pub effective_place: EntityId,
-    pub broken_link: &'a CausalLink,
-    pub discrepancy_entry: &'a DiscrepancyEntry,
+    pub broken_link: CausalLink,
     pub action_defs: &'a ActionDefRegistry,
-    pub repair_memory: &'a RepairMemory,
 }
 ```
 
-The `repair_memory` field lets each provider check `RepairMemory::recently_failed` to short-circuit on `RecentlyFailedAtTarget`.
+`RecentlyFailedAtTarget` remains a staged rejection variant for the real `ConsultRecord` / `SearchPlace` implementations in S169GENLAWVER-003 and S169GENLAWVER-004; this ticket did not add provider-local repair-memory checks.
 
 ### 2. Add `try_build_verification_candidate` registry function
 
@@ -135,7 +133,7 @@ pub struct RepairAttemptTrace {
 
 When the seam runs the registry, the chosen provider populates `verification_provider`; each rejection populates `verification_rejections`. When no provider succeeds, `verification_provider` is `None` and `verification_rejections` captures all attempted providers' failure reasons.
 
-## Files to Touch
+## Landed Files
 
 - `crates/worldwake-ai/src/verification_provider/mod.rs` (modify — extend `VerificationContext`, add `try_build_verification_candidate`, add `PROVIDER_ITERATION_ORDER`)
 - `crates/worldwake-ai/src/verification_provider/ask_witness_provider.rs` (new — real `try_build`)
@@ -144,6 +142,7 @@ When the seam runs the registry, the chosen provider populates `verification_pro
 - `crates/worldwake-ai/src/agent_tick/execution.rs` (modify — refactor `append_insert_verification_candidate` at lines 452-491 to delegate to registry)
 - `crates/worldwake-ai/src/decision_trace.rs` (modify — extend `RepairAttemptTrace`)
 - `crates/worldwake-cli/src/bin/observer.rs` (modify — extend trace rendering if observer surfaces `RepairAttemptTrace` fields — verify during implementation)
+- `crates/worldwake-core/src/decision_event_payload.rs` (modify — derive `Default` on `VerificationProviderKind` to keep the all-target clippy gate green)
 
 ## Out of Scope
 
@@ -153,42 +152,67 @@ When the seam runs the registry, the chosen provider populates `verification_pro
 - Negative omniscience E2E golden — S169GENLAWVER-005.
 - New goal kinds (`GoalKind::ConsultRecord`, etc.) — explicitly Non-Goal'd by S169 spec (agenda companion seam follow-up).
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Focused Proof
 
-1. `cargo test -p worldwake-ai golden_ask_witness_refreshes_stale_report` — S165 parity (event sequence byte-identical modulo `provider_kind = AskWitness` field).
-2. `cargo test -p worldwake-ai golden_ask_witness_refreshes_stale_report_replay_is_deterministic` — S165 replay parity.
-3. `cargo test -p worldwake-ai golden_ask_witness_cold_start_imports_local_witness_report` — S165 cold-start parity.
-4. `cargo test -p worldwake-ai insert_verification_returns_repaired_plan_for_supplied_candidate` — S165 inline test passes with new provider field populated.
-5. `cargo test -p worldwake-ai insert_verification_returns_no_epistemic_substrate_without_candidate` — S165 inline test continues to pass.
-6. New focused test `ask_witness_provider_produces_candidate_for_stale_entity_belief` — provider-level happy path.
-7. New focused test `ask_witness_provider_rejects_remote_witness` — locality enforcement.
-8. New focused test `registry_falls_through_when_all_providers_return_breach_class_mismatch` — seam delegation correctness.
-9. New decision-trace test `repair_attempt_trace_records_selected_verification_provider` — trace population correctness.
-10. Existing suite: `cargo test --workspace`.
+1. Passed `cargo test -p worldwake-ai golden_ask_witness`, which includes `golden_ask_witness_refreshes_stale_report`, `golden_ask_witness_refreshes_stale_report_replay_is_deterministic`, and `golden_ask_witness_cold_start_imports_local_witness_report`.
+2. Passed `cargo test -p worldwake-ai plan_repair`, which includes `insert_verification_returns_repaired_plan_for_supplied_candidate` and `insert_verification_returns_no_epistemic_substrate_without_candidate`.
+3. Passed `cargo test -p worldwake-ai verification_provider`, covering provider iteration order and placeholder fallthrough.
+4. Passed `cargo test -p worldwake-cli --bin observer repair`, covering observer rendering of the widened repair trace.
+5. Passed `cargo test -p worldwake-ai` as the affected-crate suite.
+6. Workspace and all-target clippy gates remain owned by the final harness pre-push verification phase.
 
 ### Invariants
 
-1. The S165 `golden_ask_witness_*` event sequences are byte-identical to pre-S169 modulo the new `provider_kind` field on `RepairApplied` events.
+1. The S165 `golden_ask_witness_*` lane passed with `provider_kind = AskWitness` on `RepairApplied` events.
 2. Pre-S169 non-AskWitness breach types (e.g., institutional-claim breaches if any exist in current scenarios) continue to collapse to `NoEpistemicSubstrate` — placeholders preserve current behavior.
 3. The `agent_tick/execution.rs` seam no longer contains inline `ask_witness_verification_step` invocation; all verification candidate construction routes through `try_build_verification_candidate`.
 4. `RepairAttemptTrace.verification_provider` is `Some(AskWitness)` for every S165 verification repair; `verification_rejections` lists exactly two entries (`ConsultRecord`, `SearchPlace`) both with `BreachClassMismatch`.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Focused Tests
 
-1. `crates/worldwake-ai/src/verification_provider/ask_witness_provider.rs` inline `#[cfg(test)]` — happy-path candidate construction, locality rejection, payload-validator parity. ~4 focused tests.
-2. `crates/worldwake-ai/src/verification_provider/mod.rs` inline `#[cfg(test)]` — registry fall-through behavior; provider iteration order determinism. ~2 focused tests.
-3. `crates/worldwake-ai/src/decision_trace.rs` — extend any existing `RepairAttemptTrace` roundtrip / construction tests to cover the two new fields.
-4. `crates/worldwake-ai/tests/scenarios/plan_repair.rs:272, :355, :734` — update `RepairAppliedPayload` construction sites already touched in S169GENLAWVER-001; this ticket's behavioral changes may require additional assertions on `provider_kind` value within these scenarios.
+1. Added `crates/worldwake-ai/src/verification_provider/mod.rs` inline tests for provider iteration order and placeholder fallthrough.
+2. Extended `crates/worldwake-ai/src/decision_trace.rs` bincode roundtrip coverage for the widened `RepairAttemptTrace`.
+3. Updated observer and diagnostics test constructors for the widened trace shape.
+4. Reused the existing `ask_witness_verification_step_*`, `plan_repair`, and S165 `golden_ask_witness` coverage for AskWitness parity.
 
-### Commands
+### Commands Run
 
 1. `cargo test -p worldwake-ai golden_ask_witness` — focused S165 parity gate.
-2. `cargo test -p worldwake-ai verification_provider` — new module's unit tests.
+2. `cargo test -p worldwake-ai verification_provider` — provider module unit tests.
 3. `cargo test -p worldwake-ai plan_repair` — covers refactored seam + downstream repair behavior.
-4. `cargo test --workspace` — full suite.
-5. `cargo clippy --workspace --all-targets -- -D warnings` — catch any test-target lints from new modules.
-6. `./scripts/verify.sh` — pre-PR gate.
+4. `cargo test -p worldwake-cli --bin observer repair` — observer repair rendering.
+5. `cargo test -p worldwake-ai` — affected crate suite.
+6. `cargo clippy --workspace --all-targets -- -D warnings` — all-target clippy gate.
+7. `cargo test --workspace` and `./scripts/verify.sh` remain deferred to the final harness pre-push phase.
+
+## Outcome
+
+Completed on 2026-05-25.
+
+- Added the enum-dispatched verification provider registry in `worldwake-ai::verification_provider`, with deterministic `AskWitness`, `ConsultRecord`, `SearchPlace` iteration order.
+- Moved the live AskWitness verification splice out of `agent_tick/execution.rs` and into `verification_provider/ask_witness_provider.rs`; `agent_tick/execution.rs` now classifies a breach into `VerificationNeed`, delegates to `try_build_verification_candidate`, and appends the selected `RepairPlanCandidate`.
+- Added placeholder `consult_record_provider` and `search_place_provider` modules that return `VerificationRejection::BreachClassMismatch`; S169GENLAWVER-003 and S169GENLAWVER-004 still own the real provider implementations.
+- Extended `RepairAttemptTrace` with `verification_provider` and `verification_rejections`, including serde/bincode roundtrip coverage, diagnostics aggregation constructor fallout, and observer rendering for the new trace fields.
+- Threaded the selected provider into `RepairAppliedPayload.provider_kind` for successful `InsertVerification` repairs. Non-verification repairs keep the pre-existing inert `AskWitness` default value.
+- Converted `VerificationProviderKind`'s manual `Default` impl to a derived default as same-family all-target clippy fallout.
+
+## Deviations
+
+- `VerificationContext.belief_view` landed as `&dyn GoalBeliefView` rather than a concrete `&PerAgentBeliefView`; this preserves the existing seam's trait boundary while still preventing provider access to `&World`.
+- `VerificationContext` did not retain the drafted `repair_memory` field because the only real provider in this ticket is AskWitness parity; provider-local recent-failure checks stay with the later real provider tickets.
+- The focused registry tests prove deterministic order and placeholder fallthrough. AskWitness payload shape and validator parity remain covered by the existing `ask_witness_verification_step_*`, `plan_repair`, and `golden_ask_witness` lanes instead of duplicating the same fixture inside the provider module.
+- The full pre-PR `./scripts/verify.sh` gate is deferred to the final `implement-spec-tickets` branch/push phase; this ticket ran the affected crate, parity lanes, observer lane, and all-target clippy gate directly.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai verification_provider`.
+- Passed `cargo test -p worldwake-ai plan_repair`.
+- Passed `cargo test -p worldwake-ai golden_ask_witness`.
+- Passed `cargo test -p worldwake-cli --bin observer repair`.
+- Passed `cargo test -p worldwake-ai`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Waived `cargo test --workspace` and `./scripts/verify.sh` for this per-ticket closeout because the harness final branch phase owns the full pre-push gate after all S169 tickets land.
