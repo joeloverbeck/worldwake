@@ -1,9 +1,9 @@
 # S172WASDISBUD-004: CLI POV assertion against remote Wash basin state leak
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
-**Engine Changes**: None
+**Engine Changes**: None — test-only POV boundary regression
 **Deps**: specs/S172-wash-discovery-budget-closure.md (D6); archive/specs/S158-belief-view-remote-truth-leak-closure.md; archive/specs/S162-belief-view-source-gate-hardening.md; archive/specs/S163-cli-player-pov-boundary.md
 
 ## Problem
@@ -27,37 +27,34 @@ S158/S162/S163 hardened the belief-view accessors and CLI POV boundary so the hu
 2. No backwards-compatibility aliasing: the test consumes existing CLI accessors as-is; it does not introduce a new accessor.
 3. FND-19 + FND-27 alignment: the test pins the POV-boundary contract for the Wash domain, complementing S158/S162/S163's broader leak-closure work.
 
-## Verification Layers
+## Verified Layers
 
 1. CLI accessor return contract for remote `WashBasinState` → focused unit-style assertion against the CLI accessor invoked from a scenario harness; the accessor must return `None` or `Default::default()`, never `Some(authoritative_remote_state)`.
 2. Belief-view consistency → confirm `per_agent_belief_view::wash_basin_state(controlled_agent, remote_basin)` returns `Default::default()` (no belief entry; co-location absent).
 3. Single-layer ticket — additional layer mapping is not applicable. The action-trace and decision-trace layers are unaffected by this UI-only assertion; the surface is the CLI accessor's return value, which is fully captured by a focused assertion against it.
 
-## What to Change
+## Landed Changes
 
-### 1. Add CLI POV assertion to a Wash-relevant scenario
+### 1. Added CLI POV assertion to a Wash-relevant scenario
 
-`crates/worldwake-ai/tests/scenarios/survival_drive_escalation.rs` (extend an existing test) OR a new test file under `crates/worldwake-cli/tests/` (if a more idiomatic CLI-test surface exists). Default to extending `survival_drive_escalation.rs` since the existing belief-only Wash harness is already there.
+`crates/worldwake-ai/tests/scenarios/survival_drive_escalation.rs` now extends the existing belief-only Wash harness and adds `cli_does_not_leak_remote_wash_basin_state_for_controlled_agent`.
 
-Add `#[test] fn cli_does_not_leak_remote_wash_basin_state_for_controlled_agent`:
-- Set up the controlled agent (or simulate human control) at a place without a co-located `WashBasin` and without any belief entry for the remote basin in `scenarios/survival-drive-escalation.ron`.
-- Place a `WashBasin` at a remote location with non-default `WashBasinState` (clean_water > 0, some dirtiness).
-- Invoke the CLI POV accessor that renders facility/basin state for the controlled agent (specific accessor TBD: grep `crates/worldwake-cli/src/` for `wash_basin_state` accessors during reassessment).
-- Assert the accessor returns `None`, `Default::default()`, or otherwise does not surface the remote basin's authoritative state.
+- The controlled-agent fixture remains at `ORCHARD_FARM` with only local beliefs seeded.
+- A remote `WashBasin` at `VILLAGE_SQUARE` carries non-default `WashBasinState` plus remote contention queue/grant state.
+- The test invokes the live POV boundary exposed to CLI consumers: `PerAgentBeliefView` through `GoalBeliefView::wash_basin_state`, `FacilityBeliefView::wash_basin_state`, and `TemporalBeliefView` queue/grant accessors.
+- Assertions fail with the remote basin id and leaked field surface if authoritative remote state becomes visible.
 
 ### 2. Negative-case assertion shape
 
-The test must fail loudly with the remote basin's entity-id and the leaked field (clean_water count, dirtiness level) in the failure message so a regression's symptom is immediately diagnosable.
+The added test fails loudly with the remote basin's entity id and the leaked surface: `GoalBeliefView::wash_basin_state`, `FacilityBeliefView::wash_basin_state`, queue position, or contention grant.
 
 ### 3. CLI accessor discovery
 
-If the exact CLI accessor name is not obvious from grep, the implementer documents the discovery step in the implementation PR: `grep -rn "wash_basin_state\|WashBasinState" crates/worldwake-cli/src/` to find the consumer surface, then assert against the highest-level CLI accessor that surfaces basin state for rendering. Pin the accessor name in the test for future regression reproducibility.
+Live reassessment found no dedicated WashBasin renderer/accessor in `crates/worldwake-cli/src/`. The highest current CLI-facing POV boundary is the belief-view surface exported by `worldwake-sim` and consumed by the CLI crate, so the regression pins that boundary directly instead of introducing a new accessor.
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-ai/tests/scenarios/survival_drive_escalation.rs` (modify) OR
-- `crates/worldwake-cli/tests/<new-cli-pov-test>.rs` (new) — choose based on which test surface most naturally exercises the CLI accessor; default to the AI test file.
-- Likely: a small CLI accessor invocation in the test file. If a new helper is required to bridge scenario state and the CLI accessor, add it to `crates/worldwake-cli/src/` in a new test-support module (not under `tests/` — see Dual-Use Read-Model Types pattern).
+- `crates/worldwake-ai/tests/scenarios/survival_drive_escalation.rs` — modified the belief-only Wash harness and added the focused POV leak assertion.
 
 ## Out of Scope
 
@@ -67,13 +64,16 @@ If the exact CLI accessor name is not obvious from grep, the implementer documen
 - Belief-only candidate-path regression — covered by `archive/tickets/S172WASDISBUD-003.md`.
 - Test consolidation across scattered/contested/drive-escalation belief-only proofs — defer.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests Passed Or Waived
 
-1. `cargo test -p worldwake-ai --test survival_drive_escalation cli_does_not_leak_remote_wash_basin_state_for_controlled_agent` (or appropriate CLI-crate test path) — new test passes.
-2. `cargo test -p worldwake-ai --test golden_ai scenarios::survival_drive_escalation::escalation_respects_belief_only_planning -- --ignored --exact` — existing belief-only test still passes (sibling regression check).
-3. Existing suite: `cargo test -p worldwake-ai --test survival_drive_escalation` and `cargo test -p worldwake-cli`.
+1. Passed `cargo test -p worldwake-ai --test golden_ai scenarios::survival_drive_escalation::cli_does_not_leak_remote_wash_basin_state_for_controlled_agent -- --exact`.
+2. Passed `cargo test -p worldwake-ai --test golden_ai scenarios::survival_drive_escalation::escalation_respects_belief_only_planning -- --ignored --exact`.
+3. Passed `cargo test -p worldwake-ai --test golden_ai scenarios::survival_drive_escalation`.
+4. Passed `cargo test -p worldwake-cli`.
+5. Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+6. Waived `./scripts/verify.sh` for per-ticket closeout because this ticket runs inside `implement-spec-tickets`; the harness final branch phase owns the full pre-PR gate before push.
 
 ### Invariants
 
@@ -81,15 +81,31 @@ If the exact CLI accessor name is not obvious from grep, the implementer documen
 2. The accessor's behavior matches S158/S162/S163 architecture — the test pins, does not establish, the contract.
 3. No new CLI accessor is introduced.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added Tests
 
-1. `crates/worldwake-ai/tests/scenarios/survival_drive_escalation.rs` — add `cli_does_not_leak_remote_wash_basin_state_for_controlled_agent` (or new CLI-crate test file).
+1. `crates/worldwake-ai/tests/scenarios/survival_drive_escalation.rs` — added `cli_does_not_leak_remote_wash_basin_state_for_controlled_agent`.
 
-### Commands
+## Outcome
 
-1. `cargo test -p worldwake-ai --test survival_drive_escalation` — targeted suite verification (if the test lives in the AI crate).
-2. `cargo test -p worldwake-cli` — CLI-crate verification if the test lives there.
-3. `cargo clippy --workspace --all-targets -- -D warnings` — lint check.
-4. `./scripts/verify.sh` — pre-PR full verification.
+Completed on 2026-05-25.
+
+- Added the S172 Deliverable 6 player-POV regression for remote Wash basin state.
+- Reused the existing survival drive-escalation belief-only Wash harness instead of creating a separate CLI test file.
+- Seeded non-default authoritative remote `WashBasinState` and remote contention state, then proved the controlled agent's POV belief-view surfaces hide that state without co-location or belief.
+- No production behavior or CLI renderer was changed.
+
+## Deviations
+
+- The draft expected a dedicated CLI WashBasin rendering accessor if one existed. Live reassessment found no such accessor, so the landed test pins the exported `PerAgentBeliefView` POV boundary that CLI consumers already use.
+- The drafted `cargo test -p worldwake-ai --test survival_drive_escalation ...` command was not a live integration-test binary. The truthful target is `cargo test -p worldwake-ai --test golden_ai scenarios::survival_drive_escalation::...`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::survival_drive_escalation::cli_does_not_leak_remote_wash_basin_state_for_controlled_agent -- --exact`
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::survival_drive_escalation::escalation_respects_belief_only_planning -- --ignored --exact`
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::survival_drive_escalation`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Waived `./scripts/verify.sh` for per-ticket closeout because `implement-spec-tickets` owns the final pre-push full verification gate.

@@ -19,7 +19,7 @@ Before this ticket, `scenarios/survival-contested.ron` authored `survival_health
 5. Live `GoalKind` under test: `GoalKind::Wash`. Current operator surface: `WASH_OPS = [PlannerOpKind::Wash, PlannerOpKind::Travel]` at `crates/worldwake-ai/src/goal_schema.rs:101`. Budget classification: `GoalPlanningBudget::SELF_CARE` at `crates/worldwake-ai/src/goal_schema.rs:374`. Both pinned by S172 Deliverable 2.
 6. AI regression layer: full action registries are required because `survival_contested` exercises end-to-end agent ticks across multiple needs and contention surfaces. Local needs-only harness is insufficient.
 9. First failure boundary: if Wash discovery still exhausts budget before basin discovery, the failure is at the planner search layer (expansion-budget enforcement in `crates/worldwake-ai/src/search/`), surfaced via `PlanSearchOutcome::BudgetExhausted` in `decision_trace.rs:1393`. If the failure is instead at action start, the boundary is `RevalidationOutcome::Invalidated` at `crates/worldwake-ai/src/plan_revalidation.rs:17`. Both branches are lawful per D5.
-13. Adjacent contradictions: removing the carve-out may surface a still-live planner regression in Wash discovery / travel-search. Per S172's Risks #1 (the `emit_wash_goal` helper-body audit is pending), if the implementation reveals the planner gap remains, this is a **required consequence** of this ticket — the ticket's success criterion includes EITHER a passing Wash budget-exhaustion check OR a documented lawful failure branch with recovery. If a separate planner fix is warranted, document the discovered gap and open a follow-up ticket; do not weaken this ticket's invariant to mask it.
+13. Adjacent contradictions: removing the carve-out could have surfaced a still-live planner regression in Wash discovery / travel-search. Later S172 implementation closed the `emit_wash_goal` helper-body audit in `specs/S172-wash-discovery-budget-closure.md` and did not require a separate planner follow-up.
 14. Implementation correction: the widened ignored `survival_contested` run exposed a live planner consistency bug before any Wash-specific failure assertion fired. `select_best_plan` could retain `runtime.current_plan` when `agenda_state.committed` named a different active goal, producing a debug assertion in `determine_selected_plan_source` (`Apple` active goal vs `Water` retained plan). This was required current-ticket fallout because the contested proof could not run with the stale retained-plan path. The landed guard in `crates/worldwake-ai/src/plan_selection.rs` returns to the best searched plan when `active_goal != Some(current_plan.goal)`.
 
 ## Architecture Check
@@ -112,11 +112,14 @@ Before this ticket, `scenarios/survival-contested.ron` authored `survival_health
 
 Completed on 2026-05-25.
 
+Outcome amended: 2026-05-25.
+
 - `survival-contested.ron` now requires Wash alongside Eat, Drink, Sleep, and Relieve.
 - The contested golden no longer excludes Wash from budget-exhaustion checks.
 - The contested golden now asserts persisted `WashFacilityUsed` payloads for every authored agent.
 - The planner no longer retains a current plan whose goal diverges from the committed active goal, closing the Apple-active/Water-retained mismatch exposed by the widened contested run.
 - Generated golden inventory/docs were refreshed from the new scenario metadata.
+- Later S172 closeout closed the helper-body audit risk this ticket cited during reassessment; no planner follow-up was required.
 
 ## Deviations
 

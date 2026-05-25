@@ -10,14 +10,18 @@ use worldwake_cli::scenario::{
     types::{ScenarioDef, SurvivalCriticalRunLimitsDef},
 };
 use worldwake_core::{
-    AgentBeliefStore, CommodityKind, DriveThresholds, EntityId, EventTag, EventView,
-    ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile, PerceptionSource,
-    Quantity, ResourceSource, Seed, Tick, UtilityProfile, WashBasinState, WorkstationTag,
+    ActionDefId, AgentBeliefStore, CommodityKind, ContentionGrant, ContentionQueue,
+    DriveThresholds, EntityId, EventTag, EventView, ExplorationProfile, HomeostaticNeedId,
+    HomeostaticNeeds, MetabolismProfile, PerceptionSource, Quantity, ResourceSource, Seed, Tick,
+    UtilityProfile, WashBasinState, WorkstationTag,
 };
-use worldwake_sim::ActionTraceKind;
+use worldwake_sim::{
+    ActionTraceKind, FacilityBeliefView, GoalBeliefView, PerAgentBeliefView, TemporalBeliefView,
+};
 
 const SURVIVAL_TICKS: u32 = 1440;
 const BELIEF_ONLY_TICKS: u32 = 400;
+const WASH_ACTION: ActionDefId = ActionDefId(4);
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct AgentSurvivalObservation {
     alive: bool,
@@ -241,7 +245,7 @@ fn run_survival_drive_escalation() -> SurvivalDriveEscalationObservation {
     }
 }
 
-fn build_belief_only_wash_harness() -> (GoldenHarness, EntityId) {
+fn build_belief_only_wash_harness() -> (GoldenHarness, EntityId, EntityId) {
     let mut h = GoldenHarness::new(Seed([6; 32]));
     h.driver.enable_tracing();
     h.enable_action_tracing();
@@ -288,7 +292,7 @@ fn build_belief_only_wash_harness() -> (GoldenHarness, EntityId) {
     .expect("belief-barrier harness should keep exploration profile writable");
     commit_txn(txn, &mut h.event_log);
 
-    let _remote_wash = place_workstation_with_source(
+    let remote_wash = place_workstation_with_source(
         &mut h.world,
         &mut h.event_log,
         VILLAGE_SQUARE,
@@ -304,6 +308,42 @@ fn build_belief_only_wash_harness() -> (GoldenHarness, EntityId) {
         },
         ProductionOutputOwner::Actor,
     );
+    let mut txn = new_txn(&mut h.world, 0);
+    let remote_holder = txn
+        .create_agent("Remote Wash Holder", worldwake_core::ControlSource::Ai)
+        .expect("belief-barrier harness should create remote holder");
+    txn.set_ground_location(remote_holder, VILLAGE_SQUARE)
+        .expect("belief-barrier harness should place remote holder");
+    commit_txn(txn, &mut h.event_log);
+
+    let mut remote_queue = ContentionQueue {
+        granted: Some(ContentionGrant {
+            actor: remote_holder,
+            intended_action: WASH_ACTION,
+            granted_at: Tick(7),
+            expires_at: Tick(12),
+        }),
+        ..ContentionQueue::default()
+    };
+    remote_queue
+        .enqueue(agent, WASH_ACTION, Tick(8), None)
+        .expect("remote queue should accept a diagnostic waiter");
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_wash_basin_state(
+        remote_wash,
+        WashBasinState {
+            clean_water_units: 9,
+            max_clean_water: 12,
+            refill_per_tick: 3,
+            units_per_full_wash: 4,
+            dirtiness_level: pm(700),
+            dirtiness_per_use: pm(90),
+        },
+    )
+    .expect("belief-barrier harness should keep remote wash basin state writable");
+    txn.set_component_contention_queue(remote_wash, remote_queue)
+        .expect("belief-barrier harness should keep remote wash basin contention writable");
+    commit_txn(txn, &mut h.event_log);
     seed_actor_local_beliefs(
         &mut h.world,
         &mut h.event_log,
@@ -312,11 +352,11 @@ fn build_belief_only_wash_harness() -> (GoldenHarness, EntityId) {
         PerceptionSource::DirectObservation,
     );
 
-    (h, agent)
+    (h, agent, remote_wash)
 }
 
 fn run_escalation_respects_belief_only_planning() -> BeliefBarrierObservation {
-    let (mut h, agent) = build_belief_only_wash_harness();
+    let (mut h, agent, _) = build_belief_only_wash_harness();
 
     for _ in 0..BELIEF_ONLY_TICKS {
         h.step_once();
@@ -374,6 +414,40 @@ fn run_escalation_respects_belief_only_planning() -> BeliefBarrierObservation {
         found_wash_plan_ticks,
         committed_actions,
     }
+}
+
+fn remote_wash_basin_pov_reads() -> (
+    EntityId,
+    WashBasinState,
+    Option<WashBasinState>,
+    Option<u32>,
+    bool,
+) {
+    let (h, agent, remote_wash) = build_belief_only_wash_harness();
+    let authoritative_state = *h
+        .world
+        .get_component_wash_basin_state(remote_wash)
+        .expect("remote basin should carry authoritative non-default wash state");
+    let view = PerAgentBeliefView::from_world(agent, &h.world);
+    let goal_view_state = GoalBeliefView::wash_basin_state(&view, agent, remote_wash);
+    let facility_view_state = FacilityBeliefView::wash_basin_state(&view, remote_wash);
+    let remote_queue_position =
+        TemporalBeliefView::facility_queue_position(&view, remote_wash, agent);
+    let remote_grant_visible = TemporalBeliefView::facility_grant(&view, remote_wash).is_some();
+
+    assert_ne!(
+        authoritative_state,
+        WashBasinState::default(),
+        "remote basin {remote_wash} must have non-default authoritative state for the leak assertion"
+    );
+
+    (
+        remote_wash,
+        goal_view_state,
+        facility_view_state,
+        remote_queue_position,
+        remote_grant_visible,
+    )
 }
 
 fn build_escalation_relief_harness() -> (GoldenHarness, EntityId) {
@@ -693,6 +767,35 @@ fn escalation_respects_belief_only_planning() {
     assert!(
         observation.exposure_ticks > start_after,
         "dirtiness exposure should grow past the escalation start threshold; observation={observation:?}"
+    );
+}
+
+#[test]
+fn cli_does_not_leak_remote_wash_basin_state_for_controlled_agent() {
+    let (
+        remote_wash,
+        goal_view_state,
+        facility_view_state,
+        remote_queue_position,
+        remote_grant_visible,
+    ) = remote_wash_basin_pov_reads();
+
+    assert_eq!(
+        goal_view_state,
+        WashBasinState::default(),
+        "controlled agent POV leaked remote basin {remote_wash} through GoalBeliefView::wash_basin_state: state={goal_view_state:?}"
+    );
+    assert_eq!(
+        facility_view_state, None,
+        "controlled agent POV leaked remote basin {remote_wash} through FacilityBeliefView::wash_basin_state: state={facility_view_state:?}"
+    );
+    assert_eq!(
+        remote_queue_position, None,
+        "controlled agent POV leaked remote basin {remote_wash} queue position: position={remote_queue_position:?}"
+    );
+    assert!(
+        !remote_grant_visible,
+        "controlled agent POV leaked remote basin {remote_wash} contention grant"
     );
 }
 
