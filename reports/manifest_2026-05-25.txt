@@ -211,6 +211,7 @@ archive/specs/IMPLEMENTATION-ORDER-final-2026-05-21.md
 archive/specs/IMPLEMENTATION-ORDER-post-phase5-2026-04.md
 archive/specs/IMPLEMENTATION-ORDER-post-phase6-2026-04.md
 archive/specs/IMPLEMENTATION-ORDER-pre-phase4-2026-03.md
+archive/specs/IMPLEMENTATION-ORDER-second-ai-wave-2026-05-25.md
 archive/specs/PHASE1-EPIC-AUDIT.md
 archive/specs/PHASE2-SPEC-REASSESSMENT.md
 archive/specs/S01-production-output-ownership-claims.md
@@ -304,6 +305,7 @@ archive/specs/S169-generalized-lawful-verification-substrate.md
 archive/specs/S16b-force-legitimacy-emergence-golden-suites.md
 archive/specs/S17-wound-lifecycle-golden-suites.md
 archive/specs/S170-learned-state-provenance-hardening.md
+archive/specs/S171-learned-context-decision-trace-edge.md
 archive/specs/S18-prerequisite-aware-emergent-chain-goldens.md
 archive/specs/S19-institutional-record-consultation-golden-suites.md
 archive/specs/S20-structural-cleanup.md
@@ -1181,6 +1183,10 @@ archive/tickets/S170LEASTAPRO-001.md
 archive/tickets/S170LEASTAPRO-002.md
 archive/tickets/S170LEASTAPRO-003.md
 archive/tickets/S170LEASTAPRO-004.md
+archive/tickets/S171LEACONTDEC-001.md
+archive/tickets/S171LEACONTDEC-002.md
+archive/tickets/S171LEACONTDEC-003.md
+archive/tickets/S171LEACONTDEC-004.md
 archive/tickets/S18AIPLTRACE-002.md
 archive/tickets/S20STRCLE-001-agent-tick-scaffold-mod-directory.md
 archive/tickets/S20STRCLE-002-extract-agent-tick-observation.md
@@ -2491,8 +2497,10 @@ docs/triage/2026-05-21-ai-architecture-consolidation-third-iteration-triage.md
 docs/triage/2026-05-22-ai-architecture-consolidation-fourth-iteration-triage.md
 docs/triage/2026-05-22-ai-architecture-improvements-first-iteration-triage.md
 docs/triage/2026-05-22-ai-architecture-improvements-second-iteration-triage.md
+docs/triage/2026-05-25-ai-architecture-improvements-fourth-iteration-triage.md
 docs/triage/2026-05-25-ai-architecture-improvements-third-iteration-triage.md
 reports/ai-architecture-improvements-first-iteration.md
+reports/ai-architecture-improvements-fourth-iteration.md
 reports/ai-architecture-improvements-second-iteration.md
 reports/ai-architecture-improvements-third-iteration.md
 reports/cli-evaluation-transcripts/.gitkeep
@@ -2531,7 +2539,6 @@ scripts/golden_inventory.py
 scripts/profile_docs.py
 scripts/test_golden_inventory.py
 scripts/verify.sh
-specs/IMPLEMENTATION-ORDER.md
 specs/S60-persistent-site-occupancy.md
 specs/S61-predator-ecology-dens.md
 specs/S62-boundary-processes-remote-shocks.md
