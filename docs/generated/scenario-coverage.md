@@ -453,7 +453,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Seed: 306006
 - Agents: 4 Ai
 - Places: 8
-- Survival contract: max_critical 300, elevated_idle 40, families [Eat, Drink, Sleep, Relieve]
+- Survival contract: max_critical 300, elevated_idle 40, families [Eat, Drink, Sleep, Relieve, Wash]
 
 **Active features**
 - Basic needs (Eat)
