@@ -141,7 +141,7 @@ fn seed_route_preferences(agents: &[EntityId]) -> BTreeMap<EntityId, RoutePrefer
                 preference.record_dangerous(direct, EventId(0), Tick(2));
                 preference.record_dangerous(direct, EventId(0), Tick(3));
             } else {
-                preference.record_safe(direct, Tick(2));
+                preference.record_safe(direct, EventId(0), Tick(2));
             }
             (*agent, preference)
         })

@@ -3258,7 +3258,7 @@ mod tests {
             ..RoutePreferenceProfile::default()
         };
         let mut route_preference = RoutePreference::default();
-        route_preference.record_safe(segment, Tick(0));
+        route_preference.record_safe(segment, worldwake_core::EventId(0), Tick(0));
 
         let mut view = StubBeliefView::default();
         view.alive.insert(actor, true);

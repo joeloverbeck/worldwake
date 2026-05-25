@@ -231,7 +231,7 @@ fn resource_entities(h: &GoldenHarness) -> Vec<EntityId> {
 fn seed_mixed_direct_route_memory(h: &mut GoldenHarness, agent: EntityId, segment: RouteSegment) {
     let mut route_preference = RoutePreference::default();
     for _ in 0..3 {
-        route_preference.record_safe(segment, Tick(0));
+        route_preference.record_safe(segment, EventId(0), Tick(0));
     }
     route_preference.record_dangerous(segment, EventId(0), Tick(0));
 

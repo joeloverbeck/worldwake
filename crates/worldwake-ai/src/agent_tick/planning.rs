@@ -4846,9 +4846,11 @@ mod tests {
             EventId(77),
             Tick(19),
         );
-        runtime
-            .route_preference
-            .record_safe(RouteSegment::new(first_place, second_place), tick);
+        runtime.route_preference.record_safe(
+            RouteSegment::new(first_place, second_place),
+            EventId(78),
+            tick,
+        );
         let mut effective_places = BTreeMap::new();
         effective_places.insert(agent, first_place);
         let view = SelectionContextView {
