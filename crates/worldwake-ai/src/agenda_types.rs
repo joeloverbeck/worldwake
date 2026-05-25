@@ -1,6 +1,9 @@
 use crate::{
     GoalOffer, GoalPriorityClass, PartialPlanSegment, RankedGoalProvenance, SourceCompositeRank,
-    decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
+    decision_trace::{
+        CompetitionDiscount, LearnedOpportunityBonusAttribution, RepairMemoryBonusAttribution,
+        SourceReliabilityDiscount,
+    },
     feasibility::FeasibilityHint,
 };
 use serde::{Deserialize, Serialize};
@@ -36,6 +39,10 @@ pub struct AgendaEntry {
     pub provenance: Option<RankedGoalProvenance>,
     pub source_reliability_discount: Option<SourceReliabilityDiscount>,
     pub competition_discount: Option<CompetitionDiscount>,
+    #[serde(default)]
+    pub learned_opportunity_bonus: Option<LearnedOpportunityBonusAttribution>,
+    #[serde(default)]
+    pub repair_memory_bonus: Option<RepairMemoryBonusAttribution>,
     pub source_composite: Option<SourceCompositeRank>,
     pub feasibility: FeasibilityHint,
     #[serde(default)]
@@ -54,6 +61,8 @@ impl AgendaEntry {
         provenance: Option<RankedGoalProvenance>,
         source_reliability_discount: Option<SourceReliabilityDiscount>,
         competition_discount: Option<CompetitionDiscount>,
+        learned_opportunity_bonus: Option<LearnedOpportunityBonusAttribution>,
+        repair_memory_bonus: Option<RepairMemoryBonusAttribution>,
         source_composite: Option<SourceCompositeRank>,
         feasibility: FeasibilityHint,
     ) -> Self {
@@ -75,6 +84,8 @@ impl AgendaEntry {
             provenance,
             source_reliability_discount,
             competition_discount,
+            learned_opportunity_bonus,
+            repair_memory_bonus,
             source_composite,
             feasibility,
             partial_plan_segment: None,
@@ -203,6 +214,8 @@ mod tests {
             GoalPriorityClass::Background,
             42,
             Vec::new(),
+            None,
+            None,
             None,
             None,
             None,
@@ -338,6 +351,8 @@ mod tests {
             GoalPriorityClass::High,
             900,
             Vec::new(),
+            None,
+            None,
             None,
             None,
             None,

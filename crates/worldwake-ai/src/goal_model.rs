@@ -2763,6 +2763,8 @@ mod tests {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: Some(discount.clone()),
+            learned_opportunity_bonus: None,
+            repair_memory_bonus: None,
             source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
             partial_plan_segment: None,
@@ -2790,6 +2792,8 @@ mod tests {
             failure_ratio_permille: 500,
             pre_discount_motive: 700,
             post_discount_motive: 350,
+            provenance_event_count: 0,
+            most_recent_provenance_event: None,
         };
         let ranked = AgendaEntry {
             offer: GoalOffer {
@@ -2815,6 +2819,8 @@ mod tests {
             provenance: None,
             source_reliability_discount: Some(discount.clone()),
             competition_discount: None,
+            learned_opportunity_bonus: None,
+            repair_memory_bonus: None,
             source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
             partial_plan_segment: None,
@@ -2901,6 +2907,8 @@ mod tests {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
+            learned_opportunity_bonus: None,
+            repair_memory_bonus: None,
             source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
             partial_plan_segment: None,

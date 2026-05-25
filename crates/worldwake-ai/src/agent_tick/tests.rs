@@ -125,6 +125,8 @@ fn committed_goal_entry(goal_key: GoalKey, tick: Tick) -> AgendaEntry {
         provenance: None,
         source_reliability_discount: None,
         competition_discount: None,
+        learned_opportunity_bonus: None,
+        repair_memory_bonus: None,
         source_composite: None,
         feasibility: crate::FeasibilityHint::Uncertain,
         partial_plan_segment: None,
@@ -1590,6 +1592,8 @@ fn ranked_goal(
         provenance: None,
         source_reliability_discount: None,
         competition_discount: None,
+        learned_opportunity_bonus: None,
+        repair_memory_bonus: None,
         source_composite: None,
         feasibility: crate::feasibility::FeasibilityHint::Uncertain,
         partial_plan_segment: None,
@@ -6831,6 +6835,7 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
         cause: ExpectationFailureCause::SameGoalSearchInfeasibleWhileSiblingSucceeded,
     };
 
+    let reliability_event = harness.event_log.next_id();
     let applied = super::apply_source_reliability_failure_observations(
         &mut harness.world,
         &mut harness.event_log,
@@ -6905,6 +6910,16 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
         Some(&worldwake_core::ReliabilityRecord {
             failed_attempts: 1,
             last_attempt_tick: Tick(20),
+            provenance_events: [
+                Some(reliability_event),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ],
             ..worldwake_core::ReliabilityRecord::default()
         })
     );
@@ -6916,6 +6931,16 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
         Some(&worldwake_core::ReliabilityRecord {
             failed_attempts: 1,
             last_attempt_tick: Tick(20),
+            provenance_events: [
+                Some(reliability_event),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ],
             ..worldwake_core::ReliabilityRecord::default()
         })
     );

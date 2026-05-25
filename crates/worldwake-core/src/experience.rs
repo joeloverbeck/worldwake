@@ -1,8 +1,10 @@
 //! Per-agent learned route and source experience state.
 
-use crate::{CommodityKind, Component, EntityId, Permille, Tick, TravelEdgeId};
+use crate::{CommodityKind, Component, EntityId, EventId, Permille, Tick, TravelEdgeId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+
+pub const SOURCE_RELIABILITY_PROVENANCE_RING_CAPACITY: usize = 8;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EdgeExperience {
@@ -78,6 +80,7 @@ pub struct ReliabilityRecord {
     pub successful_acquisitions: u16,
     pub failed_attempts: u16,
     pub last_attempt_tick: Tick,
+    pub provenance_events: [Option<EventId>; SOURCE_RELIABILITY_PROVENANCE_RING_CAPACITY],
     /// Running mean of observed wait ticks at this source.
     ///
     /// Updated by `observe_wait` when a queued source grant is promoted.
@@ -107,6 +110,7 @@ impl ReliabilityRecord {
             successful_acquisitions: 0,
             failed_attempts: 0,
             last_attempt_tick,
+            provenance_events: [None; SOURCE_RELIABILITY_PROVENANCE_RING_CAPACITY],
             average_wait_ticks: 0,
             wait_observation_count: 0,
             last_observed_capacity: 0,
@@ -134,6 +138,34 @@ impl ReliabilityRecord {
     pub fn observe_capacity(&mut self, capacity: u16, tick: Tick) {
         self.last_observed_capacity = capacity;
         self.last_observed_capacity_tick = tick;
+    }
+
+    pub fn push_provenance(&mut self, event: EventId) {
+        if let Some(slot) = self
+            .provenance_events
+            .iter_mut()
+            .find(|slot| slot.is_none())
+        {
+            *slot = Some(event);
+            return;
+        }
+        self.provenance_events.rotate_left(1);
+        self.provenance_events[SOURCE_RELIABILITY_PROVENANCE_RING_CAPACITY - 1] = Some(event);
+    }
+
+    #[must_use]
+    pub fn provenance_event_count(&self) -> u32 {
+        self.provenance_events
+            .iter()
+            .filter(|event| event.is_some())
+            .count()
+            .try_into()
+            .unwrap_or(u32::MAX)
+    }
+
+    #[must_use]
+    pub fn most_recent_provenance_event(&self) -> Option<EventId> {
+        self.provenance_events.iter().rev().find_map(|event| *event)
     }
 }
 
@@ -219,11 +251,13 @@ impl Component for PreferenceProfile {}
 #[cfg(test)]
 mod tests {
     use super::{
-        EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,
-        SourceReliability, danger_ratio_permille, failure_ratio_permille,
+        EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience,
+        SOURCE_RELIABILITY_PROVENANCE_RING_CAPACITY, SourceKey, SourceReliability,
+        danger_ratio_permille, failure_ratio_permille,
     };
     use crate::{
-        ControlSource, EntityId, EntityKind, Tick, Topology, TravelEdgeId, World, WorldError,
+        ControlSource, EntityId, EntityKind, EventId, Tick, Topology, TravelEdgeId, World,
+        WorldError,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -453,6 +487,16 @@ mod tests {
                 successful_acquisitions: 3,
                 failed_attempts: 1,
                 last_attempt_tick: Tick(21),
+                provenance_events: [
+                    Some(EventId(3)),
+                    Some(EventId(5)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ],
                 average_wait_ticks: 4,
                 wait_observation_count: 2,
                 last_observed_capacity: 7,
@@ -863,12 +907,32 @@ mod tests {
     }
 
     #[test]
+    fn reliability_record_provenance_keeps_bounded_recent_event_ring() {
+        let mut record = ReliabilityRecord::new(Tick(1));
+
+        for event in 0..(SOURCE_RELIABILITY_PROVENANCE_RING_CAPACITY as u64 + 2) {
+            record.push_provenance(EventId(event));
+        }
+
+        assert_eq!(record.provenance_events[0], Some(EventId(2)));
+        assert_eq!(
+            record.provenance_event_count(),
+            SOURCE_RELIABILITY_PROVENANCE_RING_CAPACITY as u32
+        );
+        assert_eq!(record.most_recent_provenance_event(), Some(EventId(9)));
+    }
+
+    #[test]
     fn reliability_record_default_zeroes_observation_fields() {
         let record = ReliabilityRecord::default();
 
         assert_eq!(record.successful_acquisitions, 0);
         assert_eq!(record.failed_attempts, 0);
         assert_eq!(record.last_attempt_tick, Tick(0));
+        assert_eq!(
+            record.provenance_events,
+            [None; SOURCE_RELIABILITY_PROVENANCE_RING_CAPACITY]
+        );
         assert_eq!(record.average_wait_ticks, 0);
         assert_eq!(record.wait_observation_count, 0);
         assert_eq!(record.last_observed_capacity, 0);
@@ -895,6 +959,16 @@ mod tests {
                     successful_acquisitions: 2,
                     failed_attempts: 1,
                     last_attempt_tick: Tick(40),
+                    provenance_events: [
+                        Some(EventId(8)),
+                        Some(EventId(13)),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    ],
                     average_wait_ticks: 9,
                     wait_observation_count: 3,
                     last_observed_capacity: 18,

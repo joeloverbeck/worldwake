@@ -1,4 +1,4 @@
-use worldwake_core::{EntityId, ReliabilityRecord, SourceKey, Tick, WorldTxn};
+use worldwake_core::{EntityId, EventId, ReliabilityRecord, SourceKey, Tick, WorldTxn};
 use worldwake_sim::ActionError;
 
 fn update_source_reliability(
@@ -6,6 +6,7 @@ fn update_source_reliability(
     actor: EntityId,
     key: SourceKey,
     current_tick: Tick,
+    provenance_event: Option<EventId>,
     update: impl FnOnce(&mut ReliabilityRecord),
 ) -> Result<(), ActionError> {
     let mut reliability = txn
@@ -18,6 +19,9 @@ fn update_source_reliability(
         .or_insert_with(|| ReliabilityRecord::new(current_tick));
     update(record);
     record.last_attempt_tick = current_tick;
+    if let Some(event_id) = provenance_event {
+        record.push_provenance(event_id);
+    }
 
     let profile = txn
         .get_component_preference_profile(actor)
@@ -34,8 +38,9 @@ pub(crate) fn record_successful_source_acquisition(
     actor: EntityId,
     key: SourceKey,
     current_tick: Tick,
+    provenance_event: Option<EventId>,
 ) -> Result<(), ActionError> {
-    update_source_reliability(txn, actor, key, current_tick, |record| {
+    update_source_reliability(txn, actor, key, current_tick, provenance_event, |record| {
         record.successful_acquisitions = record.successful_acquisitions.saturating_add(1);
     })
 }
@@ -45,8 +50,9 @@ pub(crate) fn record_failed_source_attempt(
     actor: EntityId,
     key: SourceKey,
     current_tick: Tick,
+    provenance_event: Option<EventId>,
 ) -> Result<(), ActionError> {
-    update_source_reliability(txn, actor, key, current_tick, |record| {
+    update_source_reliability(txn, actor, key, current_tick, provenance_event, |record| {
         record.failed_attempts = record.failed_attempts.saturating_add(1);
     })
 }

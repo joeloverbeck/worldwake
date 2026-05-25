@@ -569,6 +569,9 @@ fn commit_queue_update(
             .entry(key)
             .or_insert_with(|| ReliabilityRecord::new(tick))
             .observe_wait(observation.wait_ticks);
+        if let Some(record) = reliability.sources.get_mut(&key) {
+            record.push_provenance(event_log.next_id());
+        }
         txn.set_component_source_reliability(observation.actor, reliability)
             .map_err(|error| SystemError::new(error.to_string()))?;
     }

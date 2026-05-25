@@ -360,7 +360,7 @@ fn commit_trade(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
-    _event_log: &worldwake_core::EventLog,
+    event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -378,13 +378,20 @@ fn commit_trade(
             },
         ));
     };
-    apply_trade_effect_schema(def, instance, Some(agreed_price), txn)
+    apply_trade_effect_schema(
+        def,
+        instance,
+        Some(agreed_price),
+        Some(event_log.next_id()),
+        txn,
+    )
 }
 
 struct TradeEffectSink<'txn, 'world, 'instance> {
     txn: &'txn mut WorldTxn<'world>,
     instance: &'instance ActionInstance,
     agreed_price: Option<Quantity>,
+    provenance_event: Option<worldwake_core::EventId>,
     action_error: Option<ActionError>,
 }
 
@@ -512,6 +519,7 @@ impl EffectSink for TradeEffectSink<'_, '_, '_> {
             actor,
             trade_source_key(counterparty, requested_commodity),
             tick,
+            self.provenance_event,
         )
         .map_err(|err| self.record_error(err))
     }
@@ -563,12 +571,14 @@ fn apply_trade_effect_schema(
     def: &ActionDef,
     instance: &ActionInstance,
     agreed_price: Option<Quantity>,
+    provenance_event: Option<worldwake_core::EventId>,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
     let mut sink = TradeEffectSink {
         txn,
         instance,
         agreed_price,
+        provenance_event,
         action_error: None,
     };
     match apply_effects_with_context(
@@ -593,7 +603,7 @@ fn abort_trade(
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     reason: &AbortReason,
-    _event_log: &worldwake_core::EventLog,
+    event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
@@ -610,6 +620,7 @@ fn abort_trade(
             instance.actor,
             trade_source_key(counterparty, commodity),
             txn.tick(),
+            Some(event_log.next_id()),
         )?;
     } else {
         // External interruptions do not penalize source reliability. The
@@ -1882,7 +1893,7 @@ fn commit_staff_market(
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
     let _ = staff_market_payload(def, instance)?;
-    apply_trade_effect_schema(def, instance, None, txn)
+    apply_trade_effect_schema(def, instance, None, None, txn)
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -3318,6 +3329,16 @@ mod tests {
             Some(&ReliabilityRecord {
                 successful_acquisitions: 1,
                 last_attempt_tick: Tick(4),
+                provenance_events: [
+                    Some(trade_events[0]),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ],
                 ..ReliabilityRecord::default()
             })
         );
@@ -3488,6 +3509,7 @@ mod tests {
 
         assert!(matches!(second, TickOutcome::Continuing));
         assert!(matches!(third, TickOutcome::Aborted { .. }));
+        let abort_event = harness.log.events_by_tag(EventTag::ActionAborted)[0];
         let buyer_memory = harness
             .world
             .get_component_demand_memory(harness.actor)
@@ -3517,6 +3539,7 @@ mod tests {
             Some(&ReliabilityRecord {
                 failed_attempts: 1,
                 last_attempt_tick: Tick(6),
+                provenance_events: [Some(abort_event), None, None, None, None, None, None, None,],
                 ..ReliabilityRecord::default()
             })
         );

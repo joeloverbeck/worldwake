@@ -64,8 +64,13 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         action_defs,
         &mut updated_stores,
     );
-    let updated_source_reliabilities =
-        capacity_observations_for_direct_local_batches(world, tick, &direct_local_batches);
+    let source_reliability_event = event_log.next_id();
+    let updated_source_reliabilities = capacity_observations_for_direct_local_batches(
+        world,
+        tick,
+        source_reliability_event,
+        &direct_local_batches,
+    );
     observe_active_actions(
         world,
         tick,
@@ -141,6 +146,7 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
 fn capacity_observations_for_direct_local_batches(
     world: &World,
     tick: worldwake_core::Tick,
+    provenance_event: worldwake_core::EventId,
     direct_local_batches: &BTreeMap<EntityId, DirectLocalObservationBatch>,
 ) -> BTreeMap<EntityId, SourceReliability> {
     let mut updates = BTreeMap::new();
@@ -166,6 +172,9 @@ fn capacity_observations_for_direct_local_batches(
                 .entry(key)
                 .or_insert_with(|| ReliabilityRecord::new(tick))
                 .observe_capacity(observed_capacity, tick);
+            if let Some(record) = reliability.sources.get_mut(&key) {
+                record.push_provenance(provenance_event);
+            }
             changed = true;
         }
 
@@ -1584,7 +1593,7 @@ mod tests {
         BelievedEvidenceState, BountyTarget, BountyTerms, CauseRef, CognitiveProfile,
         CommodityKind, ComponentDelta, ComponentKind, ComponentValue, Container, ContentionGrant,
         ContentionQueue, ContentionWaiter, ControlSource, DeadAt, DecisionEventPayload,
-        DisturbanceKind, EntityBeliefAspect, EntityKind, EventLog, EventPayload, EventTag,
+        DisturbanceKind, EntityBeliefAspect, EntityKind, EventId, EventLog, EventPayload, EventTag,
         EventView, EvidenceKind, EvidenceRef, ExplorationMotivation, FrameState, GoalKey, GoalKind,
         GroundComfortTag, HomeostaticNeeds, HypothesisKind, InstitutionalBeliefKey,
         InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalSnapshotSource,
@@ -5191,6 +5200,7 @@ mod tests {
             ReliabilityRecord {
                 last_observed_capacity: 18,
                 last_observed_capacity_tick: Tick(100),
+                provenance_events: [Some(EventId(0)), None, None, None, None, None, None, None,],
                 ..ReliabilityRecord::new(Tick(100))
             }
         );
@@ -5229,6 +5239,7 @@ mod tests {
         };
         let mut event_log = EventLog::new();
 
+        let first_capacity_event = event_log.next_id();
         run_perception(&mut world, &mut event_log, 100);
         {
             let mut txn = new_txn(&mut world, 150);
@@ -5265,6 +5276,19 @@ mod tests {
         assert_eq!(record.successful_acquisitions, 0);
         assert_eq!(record.failed_attempts, 0);
         assert_eq!(record.last_attempt_tick, Tick(100));
+        assert_eq!(
+            record.provenance_events,
+            [
+                Some(first_capacity_event),
+                Some(EventId(2)),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ]
+        );
         assert_eq!(record.average_wait_ticks, 0);
         assert_eq!(record.wait_observation_count, 0);
     }

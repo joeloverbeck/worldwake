@@ -435,6 +435,8 @@ mod tests {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
+            learned_opportunity_bonus: None,
+            repair_memory_bonus: None,
             source_composite: None,
             feasibility: FeasibilityHint::Uncertain,
             partial_plan_segment: None,
@@ -642,6 +644,8 @@ mod tests {
                     failure_ratio_permille: 250,
                     pre_discount_motive: 80_000,
                     post_discount_motive: 60_000,
+                    provenance_event_count: 2,
+                    most_recent_provenance_event: Some(EventId(701)),
                 });
                 let mut pending = sample_agenda_entry(
                     pending_goal,

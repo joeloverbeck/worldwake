@@ -167,6 +167,8 @@ mod tests {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
+            learned_opportunity_bonus: None,
+            repair_memory_bonus: None,
             source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
             partial_plan_segment: None,

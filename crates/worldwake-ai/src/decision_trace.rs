@@ -10,11 +10,11 @@ use std::fmt::Write as _;
 use worldwake_core::{
     ActionDefId, ActionDomain, ArtifactActionability, ArtifactCredibility, ArtifactExistence,
     ArtifactLegalEffect, ArtifactVisibility, BeliefStatusTag, BelievedArtifactState, BlockingFact,
-    CommodityKind, EntityId, FrameAssumption, FrameClearReason, GoalKey, GoalPlanningBudget,
-    HypothesisKind, InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag,
-    MethodSchemaId, MotiveSourceRef, OmissionReason, OpportunityAnchor, OpportunityKey,
-    PatrolRoute, PerceptionSource, Permille, PunishmentFineSelectionTrace, RepairKind,
-    SuspensionReason, TellTopic, Tick,
+    CommodityKind, EntityId, EventId, FrameAssumption, FrameClearReason, GoalKey,
+    GoalPlanningBudget, HypothesisKind, InstitutionalClaim, InstitutionalKnowledgeSource,
+    IntentionDomainTag, LearnedOpportunitySource, MethodSchemaId, MotiveSourceRef, OmissionReason,
+    OpportunityAnchor, OpportunityKey, PatrolRoute, PerceptionSource, Permille,
+    PunishmentFineSelectionTrace, RepairKind, SuspensionReason, TellTopic, Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionStartFailureReason, BindingStrictness, ResolvedRequestTrace,
@@ -323,6 +323,12 @@ impl DecisionOutcome {
                 let competition_suffix = selected_summary
                     .and_then(|summary| summary.competition_discount.as_ref())
                     .map_or_else(String::new, format_competition_discount_summary);
+                let learned_opportunity_bonus_suffix = selected_summary
+                    .and_then(|summary| summary.learned_opportunity_bonus.as_ref())
+                    .map_or_else(String::new, format_learned_opportunity_bonus_summary);
+                let repair_memory_bonus_suffix = selected_summary
+                    .and_then(|summary| summary.repair_memory_bonus.as_ref())
+                    .map_or_else(String::new, format_repair_memory_bonus_summary);
                 let acquisition_quantity_suffix = selected_summary
                     .and_then(|summary| summary.acquisition_quantity)
                     .map_or_else(String::new, format_acquisition_quantity_summary);
@@ -363,7 +369,7 @@ impl DecisionOutcome {
                         });
                 let dirty = planning.dirty.display_names();
                 format!(
-                    "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{same_goal_suffix}{replacement_suffix}{selected_provenance}{selected_feasibility}{source_reliability_suffix}{source_composite_suffix}{competition_suffix}{acquisition_quantity_suffix}{artifact_axis_suffix}{ranking_suffix}{discrepancy_suffix}{frame_suffix}{patrol_suffix}"
+                    "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{same_goal_suffix}{replacement_suffix}{selected_provenance}{selected_feasibility}{source_reliability_suffix}{source_composite_suffix}{competition_suffix}{learned_opportunity_bonus_suffix}{repair_memory_bonus_suffix}{acquisition_quantity_suffix}{artifact_axis_suffix}{ranking_suffix}{discrepancy_suffix}{frame_suffix}{patrol_suffix}"
                 )
             }
         }
@@ -700,6 +706,8 @@ pub struct RankedGoalSummary {
     pub provenance: Option<RankedGoalProvenance>,
     pub source_reliability_discount: Option<SourceReliabilityDiscount>,
     pub competition_discount: Option<CompetitionDiscount>,
+    pub learned_opportunity_bonus: Option<LearnedOpportunityBonusAttribution>,
+    pub repair_memory_bonus: Option<RepairMemoryBonusAttribution>,
     pub source_composite: Option<SourceCompositeRank>,
     pub feasibility: FeasibilityHint,
     /// Per-emission `AcquisitionQuantity` carried alongside the normalized
@@ -727,6 +735,8 @@ impl Default for RankedGoalSummary {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
+            learned_opportunity_bonus: None,
+            repair_memory_bonus: None,
             source_composite: None,
             feasibility: FeasibilityHint::Uncertain,
             acquisition_quantity: None,
@@ -769,6 +779,27 @@ pub struct CompetitionDiscount {
     pub post_discount_motive: u32,
 }
 
+/// Records the learned-opportunity bonus applied to a ranked goal's motive score.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LearnedOpportunityBonusAttribution {
+    pub opportunity: OpportunityKey,
+    pub entry_source: LearnedOpportunitySource,
+    pub entry_observed_tick: Tick,
+    pub entry_expires_tick: Tick,
+    pub pre_bonus_motive: u32,
+    pub post_bonus_motive: u32,
+}
+
+/// Records the repair-memory bonus applied to a ranked goal's motive score.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RepairMemoryBonusAttribution {
+    pub signature: worldwake_core::BreachSignature,
+    pub entry_success_count: u32,
+    pub entry_expires_tick: Tick,
+    pub pre_bonus_motive: u32,
+    pub post_bonus_motive: u32,
+}
+
 /// Records the source reliability discount applied to a ranked goal's motive score.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceReliabilityDiscount {
@@ -777,6 +808,8 @@ pub struct SourceReliabilityDiscount {
     pub failure_ratio_permille: u32,
     pub pre_discount_motive: u32,
     pub post_discount_motive: u32,
+    pub provenance_event_count: u32,
+    pub most_recent_provenance_event: Option<EventId>,
 }
 
 /// Actionable evidence contributor kind for one generated goal.
@@ -1786,6 +1819,8 @@ impl DecisionTraceSink {
                     if ranked.source_reliability_discount.is_some()
                         || ranked.source_composite.is_some()
                         || ranked.competition_discount.is_some()
+                        || ranked.learned_opportunity_bonus.is_some()
+                        || ranked.repair_memory_bonus.is_some()
                         || ranked.artifact_axes.is_some()
                     {
                         let source_reliability_suffix = ranked
@@ -1800,16 +1835,26 @@ impl DecisionTraceSink {
                             .competition_discount
                             .as_ref()
                             .map_or_else(String::new, format_competition_discount_summary);
+                        let learned_opportunity_bonus_suffix = ranked
+                            .learned_opportunity_bonus
+                            .as_ref()
+                            .map_or_else(String::new, format_learned_opportunity_bonus_summary);
+                        let repair_memory_bonus_suffix = ranked
+                            .repair_memory_bonus
+                            .as_ref()
+                            .map_or_else(String::new, format_repair_memory_bonus_summary);
                         let artifact_axis_suffix = ranked
                             .artifact_axes
                             .as_ref()
                             .map_or_else(String::new, format_artifact_axis_summary);
                         eprintln!(
-                            "  Ranked: {}{}{}{}{}",
+                            "  Ranked: {}{}{}{}{}{}{}",
                             format_opportunity_key(ranked.opportunity),
                             source_reliability_suffix,
                             source_composite_suffix,
                             competition_suffix,
+                            learned_opportunity_bonus_suffix,
+                            repair_memory_bonus_suffix,
                             artifact_axis_suffix
                         );
                     }
@@ -2108,6 +2153,12 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
             let competition = selected_summary
                 .and_then(|summary| summary.competition_discount.as_ref())
                 .map_or_else(String::new, format_competition_discount_summary);
+            let learned_opportunity_bonus = selected_summary
+                .and_then(|summary| summary.learned_opportunity_bonus.as_ref())
+                .map_or_else(String::new, format_learned_opportunity_bonus_summary);
+            let repair_memory_bonus = selected_summary
+                .and_then(|summary| summary.repair_memory_bonus.as_ref())
+                .map_or_else(String::new, format_repair_memory_bonus_summary);
             let acquisition_quantity_suffix = selected_summary
                 .and_then(|summary| summary.acquisition_quantity)
                 .map_or_else(String::new, format_acquisition_quantity_summary);
@@ -2121,7 +2172,7 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 .map_or_else(String::new, format_ranked_goal_comparison_summary);
             let dirty = planning.dirty.display_names();
             let mut out = format!(
-                "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{competition}{acquisition_quantity_suffix}{artifact_axis_suffix}{ranking}"
+                "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{competition}{learned_opportunity_bonus}{repair_memory_bonus}{acquisition_quantity_suffix}{artifact_axis_suffix}{ranking}"
             );
             if let Some(ref aff) = planning.affordances {
                 let place_str = aff
@@ -2437,14 +2488,55 @@ fn format_competition_discount_summary(discount: &CompetitionDiscount) -> String
     )
 }
 
-fn format_source_reliability_discount_summary(discount: &SourceReliabilityDiscount) -> String {
+fn format_learned_opportunity_bonus_summary(
+    attribution: &LearnedOpportunityBonusAttribution,
+) -> String {
+    let source = match attribution.entry_source {
+        LearnedOpportunitySource::Event(id) => format!("event={}", id.0),
+        LearnedOpportunitySource::ReadPhaseInference => String::from("read-phase"),
+    };
     format!(
-        ", source_reliability=entity={} commodity={:?} failure={} pre={} post={}",
+        ", learned_opp=opportunity={} source={} observed_tick={} expires_tick={} pre={} post={}",
+        format_opportunity_key(attribution.opportunity),
+        source,
+        attribution.entry_observed_tick.0,
+        attribution.entry_expires_tick.0,
+        attribution.pre_bonus_motive,
+        attribution.post_bonus_motive,
+    )
+}
+
+fn format_repair_memory_bonus_summary(attribution: &RepairMemoryBonusAttribution) -> String {
+    format!(
+        ", repair_mem=signature={:?} success_count={} expires_tick={} pre={} post={}",
+        attribution.signature,
+        attribution.entry_success_count,
+        attribution.entry_expires_tick.0,
+        attribution.pre_bonus_motive,
+        attribution.post_bonus_motive,
+    )
+}
+
+fn format_source_reliability_discount_summary(discount: &SourceReliabilityDiscount) -> String {
+    let provenance_suffix = if discount.provenance_event_count > 0 {
+        let most_recent = discount
+            .most_recent_provenance_event
+            .map_or_else(|| String::from("None"), |event| event.0.to_string());
+        format!(
+            " prov_count={} most_recent_event={}",
+            discount.provenance_event_count, most_recent
+        )
+    } else {
+        String::new()
+    };
+    format!(
+        ", source_reliability=entity={} commodity={:?} failure={} pre={} post={}{}",
         discount.source_entity,
         discount.commodity,
         discount.failure_ratio_permille,
         discount.pre_discount_motive,
         discount.post_discount_motive,
+        provenance_suffix,
     )
 }
 
@@ -3030,6 +3122,8 @@ mod tests {
                         provenance: None,
                         source_reliability_discount: None,
                         competition_discount: None,
+                        learned_opportunity_bonus: None,
+                        repair_memory_bonus: None,
                         source_composite: None,
                         feasibility: FeasibilityHint::Likely,
                         acquisition_quantity: None,
@@ -3128,6 +3222,31 @@ mod tests {
         }
     }
 
+    fn sample_learned_opportunity_bonus_attribution() -> LearnedOpportunityBonusAttribution {
+        LearnedOpportunityBonusAttribution {
+            opportunity: default_opportunity(GoalKey::new(worldwake_core::GoalKind::Sleep)),
+            entry_source: LearnedOpportunitySource::ReadPhaseInference,
+            entry_observed_tick: Tick(12),
+            entry_expires_tick: Tick(42),
+            pre_bonus_motive: 700,
+            post_bonus_motive: 735,
+        }
+    }
+
+    fn sample_repair_memory_bonus_attribution() -> RepairMemoryBonusAttribution {
+        RepairMemoryBonusAttribution {
+            signature: worldwake_core::BreachSignature {
+                goal_key: GoalKey::new(worldwake_core::GoalKind::Sleep),
+                invalidator: worldwake_core::InvalidatorTag::TargetMoved,
+                step_target: Some(entity(4)),
+            },
+            entry_success_count: 3,
+            entry_expires_tick: Tick(44),
+            pre_bonus_motive: 700,
+            post_bonus_motive: 910,
+        }
+    }
+
     fn sample_source_reliability_discount() -> SourceReliabilityDiscount {
         SourceReliabilityDiscount {
             source_entity: entity(12),
@@ -3135,6 +3254,8 @@ mod tests {
             failure_ratio_permille: 500,
             pre_discount_motive: 700,
             post_discount_motive: 350,
+            provenance_event_count: 3,
+            most_recent_provenance_event: Some(EventId(42)),
         }
     }
 
@@ -3502,6 +3623,8 @@ mod tests {
                     provenance: None,
                     source_reliability_discount: None,
                     competition_discount: None,
+                    learned_opportunity_bonus: None,
+                    repair_memory_bonus: None,
                     source_composite: None,
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
@@ -3515,6 +3638,8 @@ mod tests {
                     provenance: None,
                     source_reliability_discount: None,
                     competition_discount: None,
+                    learned_opportunity_bonus: None,
+                    repair_memory_bonus: None,
                     source_composite: None,
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
@@ -3842,6 +3967,8 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                learned_opportunity_bonus: None,
+                repair_memory_bonus: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Uncertain,
                 acquisition_quantity: None,
@@ -3867,6 +3994,8 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                learned_opportunity_bonus: None,
+                repair_memory_bonus: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Uncertain,
                 acquisition_quantity: None,
@@ -3948,6 +4077,8 @@ mod tests {
                         provenance: None,
                         source_reliability_discount: None,
                         competition_discount: None,
+                        learned_opportunity_bonus: None,
+                        repair_memory_bonus: None,
                         source_composite: None,
                         feasibility: FeasibilityHint::Uncertain,
                         acquisition_quantity: None,
@@ -3961,6 +4092,8 @@ mod tests {
                         provenance: None,
                         source_reliability_discount: None,
                         competition_discount: None,
+                        learned_opportunity_bonus: None,
+                        repair_memory_bonus: None,
                         source_composite: None,
                         feasibility: FeasibilityHint::Likely,
                         acquisition_quantity: None,
@@ -4260,6 +4393,8 @@ mod tests {
                     provenance: None,
                     source_reliability_discount: None,
                     competition_discount: None,
+                    learned_opportunity_bonus: None,
+                    repair_memory_bonus: None,
                     source_composite: None,
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
@@ -4492,6 +4627,8 @@ mod tests {
                     provenance: None,
                     source_reliability_discount: None,
                     competition_discount: None,
+                    learned_opportunity_bonus: None,
+                    repair_memory_bonus: None,
                     source_composite: None,
                     feasibility: FeasibilityHint::Likely,
                     acquisition_quantity: None,
@@ -4550,6 +4687,8 @@ mod tests {
         use worldwake_core::GoalKind;
 
         let discount = sample_competition_discount();
+        let learned_bonus = sample_learned_opportunity_bonus_attribution();
+        let repair_bonus = sample_repair_memory_bonus_attribution();
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
             affordances: None,
             dirty: crate::DirtySet::NO_PLAN,
@@ -4568,6 +4707,8 @@ mod tests {
                     provenance: None,
                     source_reliability_discount: None,
                     competition_discount: Some(discount),
+                    learned_opportunity_bonus: Some(learned_bonus),
+                    repair_memory_bonus: Some(repair_bonus),
                     source_composite: None,
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
@@ -4617,6 +4758,10 @@ mod tests {
         assert!(summary.contains("discount=400"));
         assert!(summary.contains("pre=700"));
         assert!(summary.contains("post=420"));
+        assert!(summary.contains("learned_opp="));
+        assert!(summary.contains("source=read-phase"));
+        assert!(summary.contains("repair_mem="));
+        assert!(summary.contains("success_count=3"));
     }
 
     #[test]
@@ -4643,6 +4788,8 @@ mod tests {
                     provenance: None,
                     source_reliability_discount: Some(discount),
                     competition_discount: None,
+                    learned_opportunity_bonus: None,
+                    repair_memory_bonus: None,
                     source_composite: Some(composite),
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
@@ -4717,6 +4864,63 @@ mod tests {
     }
 
     #[test]
+    fn format_learned_opportunity_bonus_summary_renders_event_source_form() {
+        let mut attribution = sample_learned_opportunity_bonus_attribution();
+        attribution.entry_source = LearnedOpportunitySource::Event(EventId(77));
+
+        let summary = format_learned_opportunity_bonus_summary(&attribution);
+
+        assert!(summary.contains("learned_opp="));
+        assert!(summary.contains("source=event=77"));
+        assert!(summary.contains("observed_tick=12"));
+        assert!(summary.contains("expires_tick=42"));
+        assert!(summary.contains("pre=700"));
+        assert!(summary.contains("post=735"));
+    }
+
+    #[test]
+    fn format_learned_opportunity_bonus_summary_renders_read_phase_form() {
+        let attribution = sample_learned_opportunity_bonus_attribution();
+
+        let summary = format_learned_opportunity_bonus_summary(&attribution);
+
+        assert!(summary.contains("learned_opp="));
+        assert!(summary.contains("source=read-phase"));
+    }
+
+    #[test]
+    fn format_repair_memory_bonus_summary_renders_signature_and_success_count() {
+        let summary = format_repair_memory_bonus_summary(&sample_repair_memory_bonus_attribution());
+
+        assert!(summary.contains("repair_mem="));
+        assert!(summary.contains("signature="));
+        assert!(summary.contains("TargetMoved"));
+        assert!(summary.contains("success_count=3"));
+        assert!(summary.contains("expires_tick=44"));
+        assert!(summary.contains("pre=700"));
+        assert!(summary.contains("post=910"));
+    }
+
+    #[test]
+    fn format_source_reliability_discount_summary_includes_provenance_when_non_zero() {
+        let with_provenance =
+            format_source_reliability_discount_summary(&sample_source_reliability_discount());
+
+        assert!(with_provenance.contains("prov_count=3"));
+        assert!(with_provenance.contains("most_recent_event=42"));
+
+        let mut without_provenance = sample_source_reliability_discount();
+        without_provenance.provenance_event_count = 0;
+        without_provenance.most_recent_provenance_event = None;
+        let rendered_without = format_source_reliability_discount_summary(&without_provenance);
+
+        assert_eq!(
+            rendered_without,
+            ", source_reliability=entity=e12g0 commodity=Bread failure=500 pre=700 post=350"
+        );
+    }
+
+    #[test]
     fn summary_planning_omits_competition_discount_when_absent() {
         use worldwake_core::GoalKind;
 
@@ -4738,6 +4942,8 @@ mod tests {
                     provenance: None,
                     source_reliability_discount: None,
                     competition_discount: None,
+                    learned_opportunity_bonus: None,
+                    repair_memory_bonus: None,
                     source_composite: None,
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
@@ -4961,6 +5167,8 @@ mod tests {
                         provenance: None,
                         source_reliability_discount: None,
                         competition_discount: None,
+                        learned_opportunity_bonus: None,
+                        repair_memory_bonus: None,
                         source_composite: None,
                         feasibility: FeasibilityHint::Likely,
                         acquisition_quantity: None,
@@ -4974,6 +5182,8 @@ mod tests {
                         provenance: None,
                         source_reliability_discount: None,
                         competition_discount: None,
+                        learned_opportunity_bonus: None,
+                        repair_memory_bonus: None,
                         source_composite: None,
                         feasibility: FeasibilityHint::Likely,
                         acquisition_quantity: None,
@@ -5059,6 +5269,8 @@ mod tests {
                     })),
                     source_reliability_discount: None,
                     competition_discount: None,
+                    learned_opportunity_bonus: None,
+                    repair_memory_bonus: None,
                     source_composite: None,
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
@@ -5158,6 +5370,8 @@ mod tests {
                     )),
                     source_reliability_discount: None,
                     competition_discount: None,
+                    learned_opportunity_bonus: None,
+                    repair_memory_bonus: None,
                     source_composite: None,
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
@@ -5238,6 +5452,8 @@ mod tests {
                     provenance: None,
                     source_reliability_discount: None,
                     competition_discount: None,
+                    learned_opportunity_bonus: None,
+                    repair_memory_bonus: None,
                     source_composite: None,
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
@@ -5933,6 +6149,8 @@ mod tests {
                         provenance: None,
                         source_reliability_discount: None,
                         competition_discount: None,
+                        learned_opportunity_bonus: None,
+                        repair_memory_bonus: None,
                         source_composite: None,
                         feasibility: FeasibilityHint::Likely,
                         acquisition_quantity: None,

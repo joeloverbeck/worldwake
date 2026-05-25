@@ -350,6 +350,8 @@ pub(super) fn summarize_ranked_goal(ranked: &AgendaEntry) -> RankedGoalSummary {
         provenance: ranked.provenance.clone(),
         source_reliability_discount: ranked.source_reliability_discount.clone(),
         competition_discount: ranked.competition_discount.clone(),
+        learned_opportunity_bonus: ranked.learned_opportunity_bonus.clone(),
+        repair_memory_bonus: ranked.repair_memory_bonus.clone(),
         source_composite: ranked.source_composite,
         feasibility: ranked.feasibility,
         acquisition_quantity: ranked.offer.acquisition_quantity,
@@ -3121,8 +3123,8 @@ mod tests {
         agent_tick::portfolio::{FeasibilityVerdict, Portfolio, PortfolioSlot, SlotKind},
         build_semantics_table,
         decision_trace::{
-            CompetitionDiscount, SnapshotContinuationOutcome, SourceReliabilityDiscount,
-            TargetBeliefPresence,
+            CompetitionDiscount, LearnedOpportunityBonusAttribution, RepairMemoryBonusAttribution,
+            SnapshotContinuationOutcome, SourceReliabilityDiscount, TargetBeliefPresence,
         },
         feasibility::FeasibilityHint,
         goal_schema::{FrontierExhaustionStrategy, GoalDispatchKeySchemaExt},
@@ -4484,6 +4486,8 @@ mod tests {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
+            learned_opportunity_bonus: None,
+            repair_memory_bonus: None,
             source_composite: None,
             feasibility: FeasibilityHint::Likely,
             partial_plan_segment: None,
@@ -4529,6 +4533,8 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                learned_opportunity_bonus: None,
+                repair_memory_bonus: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 partial_plan_segment: None,
@@ -4563,6 +4569,8 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                learned_opportunity_bonus: None,
+                repair_memory_bonus: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 partial_plan_segment: None,
@@ -4597,6 +4605,8 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                learned_opportunity_bonus: None,
+                repair_memory_bonus: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 partial_plan_segment: None,
@@ -4631,6 +4641,8 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                learned_opportunity_bonus: None,
+                repair_memory_bonus: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 partial_plan_segment: None,
@@ -5011,6 +5023,8 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                learned_opportunity_bonus: None,
+                repair_memory_bonus: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 partial_plan_segment: None,
@@ -5166,6 +5180,8 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                learned_opportunity_bonus: None,
+                repair_memory_bonus: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 partial_plan_segment: None,
@@ -5201,6 +5217,8 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                learned_opportunity_bonus: None,
+                repair_memory_bonus: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 partial_plan_segment: None,
@@ -5236,6 +5254,8 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                learned_opportunity_bonus: None,
+                repair_memory_bonus: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 partial_plan_segment: None,
@@ -5498,6 +5518,8 @@ mod tests {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
+            learned_opportunity_bonus: None,
+            repair_memory_bonus: None,
             source_composite: None,
             feasibility: FeasibilityHint::Likely,
             partial_plan_segment: None,
@@ -5551,6 +5573,8 @@ mod tests {
             failure_ratio_permille: 500,
             pre_discount_motive: 100,
             post_discount_motive: 50,
+            provenance_event_count: 0,
+            most_recent_provenance_event: None,
         });
 
         let summary = summarize_ranked_goal(&ranked);
@@ -5559,6 +5583,44 @@ mod tests {
             summary.source_reliability_discount,
             ranked.source_reliability_discount
         );
+    }
+
+    #[test]
+    fn summarize_ranked_goal_preserves_learned_context_bonus_attributions() {
+        let goal = acquire_goal(
+            CommodityKind::Bread,
+            OpportunityAnchor::Place(place_entity(40)),
+            BTreeSet::new(),
+            BTreeSet::new(),
+        );
+        let mut ranked = ranked_goal(goal);
+        ranked.learned_opportunity_bonus = Some(LearnedOpportunityBonusAttribution {
+            opportunity: ranked.key,
+            entry_source: worldwake_core::LearnedOpportunitySource::ReadPhaseInference,
+            entry_observed_tick: Tick(3),
+            entry_expires_tick: Tick(30),
+            pre_bonus_motive: 100,
+            post_bonus_motive: 105,
+        });
+        ranked.repair_memory_bonus = Some(RepairMemoryBonusAttribution {
+            signature: worldwake_core::BreachSignature {
+                goal_key: ranked.offer.key,
+                invalidator: worldwake_core::InvalidatorTag::TargetMoved,
+                step_target: Some(place_entity(40)),
+            },
+            entry_success_count: 2,
+            entry_expires_tick: Tick(40),
+            pre_bonus_motive: 100,
+            post_bonus_motive: 120,
+        });
+
+        let summary = summarize_ranked_goal(&ranked);
+
+        assert_eq!(
+            summary.learned_opportunity_bonus,
+            ranked.learned_opportunity_bonus
+        );
+        assert_eq!(summary.repair_memory_bonus, ranked.repair_memory_bonus);
     }
 
     #[test]
@@ -5709,6 +5771,8 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                learned_opportunity_bonus: None,
+                repair_memory_bonus: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 partial_plan_segment: None,
@@ -5746,6 +5810,8 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                learned_opportunity_bonus: None,
+                repair_memory_bonus: None,
                 source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 partial_plan_segment: None,
