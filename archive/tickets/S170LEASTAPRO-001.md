@@ -90,7 +90,7 @@ Each call now passes a synthesized or contextually meaningful `EventId`.
 
 ## Out of Scope
 
-- `LearnedOpportunitySource` enum or `OpportunityEntry` migration (ticket 002)
+- `LearnedOpportunitySource` enum or `OpportunityEntry` migration (`archive/tickets/S170LEASTAPRO-002.md`, now archived)
 - `DiscrepancySource` enum or `DiscrepancyEntry` migration (ticket 003)
 - `BlockerSource` enum or `Blocker` migration (ticket 004)
 - `SAVE_FORMAT_VERSION` bump — no schema change in this ticket

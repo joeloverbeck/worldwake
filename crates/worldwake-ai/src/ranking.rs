@@ -5904,6 +5904,7 @@ mod tests {
             observed_tick: Tick(3),
             expires_tick: Tick(18),
             observed_at: place_b,
+            source: worldwake_core::LearnedOpportunitySource::ReadPhaseInference,
         });
 
         let boosted = rank_with_memories(
@@ -7886,6 +7887,7 @@ mod tests {
             observed_tick: Tick(8),
             expires_tick: Tick(20),
             observed_at: witness,
+            source: worldwake_core::LearnedOpportunitySource::ReadPhaseInference,
         });
 
         let damped = rank_with_memories(

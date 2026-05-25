@@ -25,7 +25,7 @@
    ```
    The "upgrade from inference to authentic event when one becomes available" pattern translates 1:1 to enum-match form.
 7. Existing focused tests touching `DiscrepancyEntry`: `discrepancy_types_satisfy_required_bounds:174`, `discrepancy_entry_roundtrips_through_bincode:273`, `discrepancy_entry_preserves_explicit_absent_source_event:290` (MUST be rewritten — currently asserts `source_event = None` round-trips; new assertion is `source = DiscrepancySource::ReadPhaseInference` round-trips), `discrepancy_memory_roundtrips_non_exact_scope_entries:308` (constructs entries with `source_event: Some(EventId(7))` / `Some(EventId(8))` — update to `DiscrepancySource::Event(EventId(7))` / `DiscrepancySource::Event(EventId(8))`).
-8. Save/load: this ticket bumps `SAVE_FORMAT_VERSION` by 1 as part of the cascade with tickets 002 and 004 (see Merge note). The save_load.rs test at 611-626 constructs a `DiscrepancyEntry` with `source_event: Some(worldwake_core::EventId(5))` — update to `source: DiscrepancySource::Event(worldwake_core::EventId(5))`.
+8. Save/load: ticket 002 has already bumped `SAVE_FORMAT_VERSION` from 101 to 102 (`archive/tickets/S170LEASTAPRO-002.md`). This ticket bumps the current value by 1 as part of the remaining cascade with ticket 004 (see Merge note). The save_load.rs test at 611-626 constructs a `DiscrepancyEntry` with `source_event: Some(worldwake_core::EventId(5))` — update to `source: DiscrepancySource::Event(worldwake_core::EventId(5))`.
 9. Reassessment classification: the runtime conditional-promotion at execution.rs:1242-1258 is a required-consequence migration — its enum-match form preserves the existing semantic intent. The "value-merge" patterns (e.g., `existing.source_event` flowing into `normalized.source_event`) become `existing.source` flowing into `normalized.source` — straightforward field-name rename for the merge.
 
 ## Architecture Check
@@ -175,7 +175,7 @@ In `crates/worldwake-sim/src/save_load.rs:7`, increment by 1 (cascade with ticke
 ## Out of Scope
 
 - `RoutePreference::record_safe` changes (ticket 001)
-- `LearnedOpportunitySource` or `OpportunityEntry` migration (ticket 002)
+- `LearnedOpportunitySource` or `OpportunityEntry` migration (`archive/tickets/S170LEASTAPRO-002.md`, completed)
 - `BlockerSource` enum or `Blocker` migration (ticket 004) — `Blocker::source_event` is a separate field on a separate type
 - Unifying `LearnedOpportunitySource` and `DiscrepancySource` into a shared abstract enum (per spec Design Goal 3 — domain-specific sentinel names are intentional)
 
@@ -212,4 +212,4 @@ In `crates/worldwake-sim/src/save_load.rs:7`, increment by 1 (cascade with ticke
 3. `cargo test -p worldwake-sim`
 4. `./scripts/verify.sh`
 
-Merge note: Ticket 003 bumps `SAVE_FORMAT_VERSION` by 1 as part of the cascade with tickets 002 and 004 — landing order determines exact target values.
+Merge note: Ticket 002 bumped `SAVE_FORMAT_VERSION` from 101 to 102. Ticket 003 owns the next bump from 102 to 103, and ticket 004 owns the following persisted-shape bump.

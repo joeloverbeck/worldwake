@@ -36,7 +36,7 @@
    }
    ```
 6. Existing focused tests touching `Blocker` in `crates/worldwake-core/src/blocker_memory.rs`: `blocker_types_satisfy_required_bounds:292`, `blocker_clearing_condition_and_baseline_satisfy_required_bounds:306`, `blocker_memory_defaults_empty:359`, `clear_for_removes_matching_blocker_key:505`, `blocker_memory_roundtrips_through_bincode:583`, `blocker_memory_preserves_explicit_absent_source_event:602` (MUST be rewritten — currently asserts `source_event = None` round-trips; new assertion is `source = BlockerSource::Inferred` round-trips), `blocker_memory_roundtrips_non_exact_scope_entries:618` (constructs entries with `source_event: Some(EventId(_))` — update to `BlockerSource::Event(_)`).
-7. Save/load: this ticket bumps `SAVE_FORMAT_VERSION` by 1 as part of the cascade with tickets 002 and 003. The save_load.rs test at lines 637-655 constructs two `Blocker` instances with `source_event: Some(EventId(6))` and `source_event: Some(EventId(7))` — update to `BlockerSource::Event(EventId(6))` and `BlockerSource::Event(EventId(7))`.
+7. Save/load: ticket 002 has already bumped `SAVE_FORMAT_VERSION` from 101 to 102 (`archive/tickets/S170LEASTAPRO-002.md`), and ticket 003 owns the next bump. This ticket owns the following persisted-shape bump. The save_load.rs test at lines 637-655 constructs two `Blocker` instances with `source_event: Some(EventId(6))` and `source_event: Some(EventId(7))` — update to `BlockerSource::Event(EventId(6))` and `BlockerSource::Event(EventId(7))`.
 8. Most planning-time inferences write `BlockerSource::Inferred` (the agent inferred a blocker from belief state without a discrete triggering event — e.g., `NoKnownSeller`, `NoKnownPath`, `MissingInput`, `WorkstationBusy`). Sites with a concrete event id (e.g., a `ReservationConflict` derived from a contention event with `contention_event: Some(EventId)` in its payload, a `BlockingFact::TargetGone` derived from a perception event that confirmed absence) write `BlockerSource::Event(id)`. The audit visits each runtime site at implementation time and picks the appropriate variant.
 9. Reassessment classification: the conditional-promotion runtime sites at execution.rs:1137-1153 are required-consequence migrations; their enum-match form preserves the existing semantic intent. The "value-merge" pattern (`existing.source_event` flowing into `normalized.source_event`) becomes `existing.source` flowing into `normalized.source` — straightforward field-name rename for the merge component.
 
@@ -172,7 +172,7 @@ In `crates/worldwake-sim/src/save_load.rs:7`, increment by 1 (cascade with ticke
 ## Out of Scope
 
 - `RoutePreference::record_safe` changes (ticket 001)
-- `LearnedOpportunitySource` or `OpportunityEntry` migration (ticket 002)
+- `LearnedOpportunitySource` or `OpportunityEntry` migration (`archive/tickets/S170LEASTAPRO-002.md`, completed)
 - `DiscrepancySource` enum or `DiscrepancyEntry` migration (ticket 003) — `DiscrepancyEntry::source_event` is a separate field on a separate type
 - Unifying `BlockerSource`, `DiscrepancySource`, and `LearnedOpportunitySource` into a shared abstract enum (per spec Design Goal 3 — domain-specific sentinel names are intentional)
 - Auditing `BlockingFact::ReservationConflict { contention_event, .. }` payload semantics (separate concern; this ticket uses the payload's `contention_event` opportunistically where in scope, but does not restructure `BlockingFact`)
@@ -211,4 +211,4 @@ In `crates/worldwake-sim/src/save_load.rs:7`, increment by 1 (cascade with ticke
 4. `cargo test -p worldwake-systems`
 5. `./scripts/verify.sh`
 
-Merge note: Ticket 004 bumps `SAVE_FORMAT_VERSION` by 1 as part of the cascade with tickets 002 and 003 — landing order determines exact target values.
+Merge note: Ticket 002 bumped `SAVE_FORMAT_VERSION` from 101 to 102. Ticket 003 owns the next bump from 102 to 103, and ticket 004 owns the following bump to 104 when the queue lands in order.

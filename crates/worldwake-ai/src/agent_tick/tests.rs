@@ -50,17 +50,17 @@ use worldwake_core::{
     HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, InstitutionalSnapshotSource, IntentionDispositionProfile,
     IntentionDomain, IntentionFrame, InvalidatorTag, KnownRecipes, LearnedOpportunityMemory,
-    LoadUnits, MemoryCapacityProfile, MerchandiseProfile, MetabolismProfile, MismatchDetail,
-    ObservationPredicate, OfficeData, OpportunityExpectationKindTag, PatrolProfile, PatrolRoute,
-    PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, PlanningFact, Quantity,
-    QueuedContentionIntent, RecipeId, RecordData, RecordKind, RepairAppliedPayload, RepairKind,
-    RepairMemory, ResourceSource, Seed, SourceAttributionOutcomeTag,
-    SourceExpectationFailurePayload, SourceKey, SourceKeyPayload, StatePredicate, SuccessionLaw,
-    TellMemoryKey, TellProfile, TellTopic, TestimonyTrustSummary, Tick, ToldBeliefMemory,
-    TopicScope, Topology, TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile,
-    ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-    WorldTxn, Wound, WoundCause, WoundId, WoundList, build_believed_entity_state,
-    build_prototype_world,
+    LearnedOpportunitySource, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
+    MetabolismProfile, MismatchDetail, ObservationPredicate, OfficeData,
+    OpportunityExpectationKindTag, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
+    PerceptionSource, Permille, Place, PlanningFact, Quantity, QueuedContentionIntent, RecipeId,
+    RecordData, RecordKind, RepairAppliedPayload, RepairKind, RepairMemory, ResourceSource, Seed,
+    SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKey, SourceKeyPayload,
+    StatePredicate, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, TestimonyTrustSummary,
+    Tick, ToldBeliefMemory, TopicScope, Topology, TravelEdge, TravelEdgeId, UniqueItemKind,
+    UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker,
+    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    build_believed_entity_state, build_prototype_world,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
@@ -9423,4 +9423,5 @@ fn in_transit_read_phase_records_learned_opportunity_memory_entry() {
     assert_eq!(entry.observed_tick, Tick(5));
     assert_eq!(entry.expires_tick, Tick(65));
     assert_eq!(entry.observed_at, actor_place);
+    assert_eq!(entry.source, LearnedOpportunitySource::ReadPhaseInference);
 }

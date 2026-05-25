@@ -3,8 +3,8 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-/// S169GENLAWVER-001 stores verification provider kind on repair-applied events.
-pub const SAVE_FORMAT_VERSION: u32 = 101;
+/// S170LEASTAPRO-002 stores learned-opportunity provenance source.
+pub const SAVE_FORMAT_VERSION: u32 = 102;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -1368,8 +1368,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_101_after_verification_provider_kind() {
-        assert_eq!(SAVE_FORMAT_VERSION, 101);
+    fn save_format_version_is_102_after_learned_opportunity_source() {
+        assert_eq!(SAVE_FORMAT_VERSION, 102);
     }
 
     #[test]
@@ -1380,7 +1380,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 101);
+        assert_eq!(SAVE_FORMAT_VERSION, 102);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]

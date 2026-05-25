@@ -1,6 +1,14 @@
-use crate::{Component, MemoryCapacityProfile, OpportunityKey, Tick};
+use crate::{Component, EventId, MemoryCapacityProfile, OpportunityKey, Tick};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum LearnedOpportunitySource {
+    /// The learning update is attributable to a specific world event.
+    Event(EventId),
+    /// The learning update emerged from read-phase inference over belief state.
+    ReadPhaseInference,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct OpportunityEntry {
@@ -8,6 +16,7 @@ pub struct OpportunityEntry {
     pub observed_tick: Tick,
     pub expires_tick: Tick,
     pub observed_at: crate::EntityId,
+    pub source: LearnedOpportunitySource,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -48,9 +57,9 @@ impl Component for LearnedOpportunityMemory {}
 
 #[cfg(test)]
 mod tests {
-    use super::{LearnedOpportunityMemory, OpportunityEntry};
+    use super::{LearnedOpportunityMemory, LearnedOpportunitySource, OpportunityEntry};
     use crate::{
-        AcquisitionQuantity, CommodityKind, CommodityPurpose, GoalKey, GoalKind,
+        AcquisitionQuantity, CommodityKind, CommodityPurpose, EventId, GoalKey, GoalKind,
         MemoryCapacityProfile, OpportunityAnchor, OpportunityKey, Tick, test_utils::entity_id,
         traits::Component,
     };
@@ -80,6 +89,7 @@ mod tests {
             observed_tick: Tick(observed_tick),
             expires_tick: Tick(observed_tick + 20),
             observed_at: entity_id(slot + 10, 0),
+            source: LearnedOpportunitySource::ReadPhaseInference,
         }
     }
 
@@ -93,6 +103,38 @@ mod tests {
     #[test]
     fn opportunity_entry_roundtrips_through_bincode() {
         let entry = opportunity_entry(4, 12);
+
+        let bytes = bincode::serialize(&entry).unwrap();
+        let roundtrip: OpportunityEntry = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, entry);
+    }
+
+    #[test]
+    fn opportunity_entry_with_event_source_roundtrips() {
+        let entry = OpportunityEntry {
+            opportunity: opportunity_key(4),
+            observed_tick: Tick(12),
+            expires_tick: Tick(32),
+            observed_at: entity_id(14, 0),
+            source: LearnedOpportunitySource::Event(EventId(42)),
+        };
+
+        let bytes = bincode::serialize(&entry).unwrap();
+        let roundtrip: OpportunityEntry = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, entry);
+    }
+
+    #[test]
+    fn opportunity_entry_with_read_phase_inference_source_roundtrips() {
+        let entry = OpportunityEntry {
+            opportunity: opportunity_key(4),
+            observed_tick: Tick(12),
+            expires_tick: Tick(32),
+            observed_at: entity_id(14, 0),
+            source: LearnedOpportunitySource::ReadPhaseInference,
+        };
 
         let bytes = bincode::serialize(&entry).unwrap();
         let roundtrip: OpportunityEntry = bincode::deserialize(&bytes).unwrap();
@@ -119,12 +161,14 @@ mod tests {
             observed_tick: Tick(10),
             expires_tick: Tick(20),
             observed_at: entity_id(20, 0),
+            source: LearnedOpportunitySource::ReadPhaseInference,
         };
         let fresh = OpportunityEntry {
             opportunity: key,
             observed_tick: Tick(14),
             expires_tick: Tick(30),
             observed_at: entity_id(21, 0),
+            source: LearnedOpportunitySource::ReadPhaseInference,
         };
         let mut memory = LearnedOpportunityMemory::default();
 

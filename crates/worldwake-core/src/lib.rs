@@ -266,7 +266,9 @@ pub use items::{
     UniqueItemKindSpec, UniqueItemPhysicalProfile, default_commodity_decay_map,
 };
 pub use law_abiding_profile::LawAbidingProfile;
-pub use learned_opportunity_memory::{LearnedOpportunityMemory, OpportunityEntry};
+pub use learned_opportunity_memory::{
+    LearnedOpportunityMemory, LearnedOpportunitySource, OpportunityEntry,
+};
 pub use load::{
     current_container_load, load_of_entity, load_of_lot, load_of_unique_item,
     load_of_unique_item_kind, load_per_unit, remaining_container_capacity,

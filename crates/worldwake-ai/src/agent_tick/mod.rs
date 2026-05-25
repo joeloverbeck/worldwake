@@ -69,9 +69,9 @@ use worldwake_core::{
     ExecutionBudget, ExpectationFailureCauseTag, ExpectationFailurePhaseTag, FrameAssumption,
     GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload, GoalSuppressedPayload,
     GoalSuspendedPayload, GoalSwitchReason, IntentionFrame, LastProactiveExplorationTick,
-    LearnedOpportunityMemory, MismatchDetail, ObservationPredicate, ObservationRef,
-    OpportunityAnchor, OpportunityEntry, OpportunityExpectationKindTag, PendingEvent,
-    PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
+    LearnedOpportunityMemory, LearnedOpportunitySource, MismatchDetail, ObservationPredicate,
+    ObservationRef, OpportunityAnchor, OpportunityEntry, OpportunityExpectationKindTag,
+    PendingEvent, PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
     PursuitInvalidationReasonTag, RecordRef, RepairAppliedPayload, RepairEntry, RepairMemory,
     ReplanReason, ReplanTriggeredPayload, SourceAttributionOutcomeTag,
     SourceExpectationFailurePayload, SourceKeyPayload, StatePredicate, Tick, VisibilitySpec,
@@ -2584,6 +2584,7 @@ fn record_learned_opportunities_from_read_phase(
             observed_tick: current_tick,
             expires_tick: Tick(current_tick.0 + u64::from(ttl_ticks)),
             observed_at: in_transit.destination,
+            source: LearnedOpportunitySource::ReadPhaseInference,
         });
     }
     learned_opportunity_memory.enforce_capacity(&memory_capacity);
