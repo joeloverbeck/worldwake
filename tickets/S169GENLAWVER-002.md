@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — refactors `agent_tick/execution.rs:452-491` (`append_insert_verification_candidate`); extends `RepairAttemptTrace`; adds enum-dispatched provider registry
-**Deps**: S169GENLAWVER-001
+**Deps**: archive/tickets/S169GENLAWVER-001.md
 
 ## Problem
 

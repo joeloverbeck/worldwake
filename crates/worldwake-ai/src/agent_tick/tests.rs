@@ -9265,6 +9265,7 @@ fn completed_alternate_plan_records_repair_memory_entry() {
             repair_kind: RepairKind::RebindTarget,
             substitute_target: Some(successful_place),
             substitute_recipe: None,
+            provider_kind: worldwake_core::VerificationProviderKind::AskWitness,
         })
     );
 }

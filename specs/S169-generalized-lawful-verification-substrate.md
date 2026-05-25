@@ -480,14 +480,13 @@ S165). No HTN methods are added. No `RequiredActionLeaf` is introduced.
 
 ### Causal-equivalence contract
 
-No new caches, snapshots, region summaries, or save/load surfaces are
-introduced. Existing serializable components are unchanged. The
-`RepairAppliedPayload` gains one new field (`provider_kind`); old saved
-events deserialize with `provider_kind` defaulted to `AskWitness` (the
-S165 status quo) under standard `serde` `default` attribute. Replay
-equivalence: a save from pre-S169 reloaded post-S169 produces identical
-world meaning; a save from post-S169 reloaded post-S169 round-trips the
-new field exactly. No causal-variable elision.
+No new caches, snapshots, or region summaries are introduced. Existing
+serializable components are unchanged. The `RepairAppliedPayload` gains one
+new persisted field (`provider_kind`), so the current save format advances.
+Per FND-28, old versioned saves remain rejected at the save-version boundary
+instead of being normalized through a compatibility shim. Replay equivalence
+for current-format saves is preserved: a save from post-S169 reloaded
+post-S169 round-trips the new field exactly. No causal-variable elision.
 
 ### Systemic-validation analysis (FND-31)
 
@@ -604,8 +603,8 @@ Required tests:
 - Golden: three scenarios per D10.
 - Save/load: a successful ConsultRecord verification, saved mid-repair-tick
   and reloaded, completes identically.
-- Replay: an event log containing pre-S169 `RepairApplied` events deserializes
-  with `provider_kind = AskWitness` defaults; replay is identical.
+- Replay: current-format event logs preserve `RepairApplied.provider_kind`;
+  pre-S169 save versions remain rejected by the existing save-version boundary.
 
 ## Risks
 

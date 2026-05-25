@@ -732,6 +732,7 @@ fn apply_repaired_plan_and_emit(
             repair_kind: kind,
             substitute_target,
             substitute_recipe,
+            provider_kind: worldwake_core::VerificationProviderKind::AskWitness,
         }),
     );
 }
@@ -1755,6 +1756,7 @@ mod tests {
                 repair_kind: RepairKind::DowngradeToTypedBarrier,
                 substitute_target: None,
                 substitute_recipe: None,
+                provider_kind: worldwake_core::VerificationProviderKind::AskWitness,
             })
         );
     }
@@ -1828,6 +1830,7 @@ mod tests {
                 repair_kind: RepairKind::RebindTarget,
                 substitute_target: Some(entity(7)),
                 substitute_recipe: None,
+                provider_kind: worldwake_core::VerificationProviderKind::AskWitness,
             })
         );
     }
@@ -1878,6 +1881,7 @@ mod tests {
                 repair_kind: RepairKind::InsertVerification,
                 substitute_target: Some(witness),
                 substitute_recipe: None,
+                provider_kind: worldwake_core::VerificationProviderKind::AskWitness,
             })
         );
     }

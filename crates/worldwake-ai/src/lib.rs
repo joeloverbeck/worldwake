@@ -57,6 +57,7 @@ mod source_composite;
 pub mod survival_forensics;
 mod testimony_trust;
 mod theft;
+pub mod verification_provider;
 
 pub use agenda_manager::{
     AgendaTickPolicy, AgendaTransitions, CommitTransition, ResumedPlan,

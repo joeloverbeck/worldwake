@@ -276,6 +276,7 @@ fn merchant_moved_breach_rebinds_to_sibling() {
             repair_kind: kind,
             substitute_target: Some(sibling),
             substitute_recipe: None,
+            provider_kind: worldwake_core::VerificationProviderKind::AskWitness,
         }),
     );
     let DecisionEventPayload::RepairApplied(payload) = payload else {
@@ -359,6 +360,7 @@ fn stale_belief_breach_inserts_ask_witness_verification() {
             repair_kind: kind,
             substitute_target: Some(witness),
             substitute_recipe: None,
+            provider_kind: worldwake_core::VerificationProviderKind::AskWitness,
         }),
     );
     let DecisionEventPayload::RepairApplied(payload) = payload else {
@@ -738,6 +740,7 @@ fn phase_11_approved_repair_gate_witness_reduces_full_replans() {
                 repair_kind: kind,
                 substitute_target: Some(sibling),
                 substitute_recipe: None,
+                provider_kind: worldwake_core::VerificationProviderKind::AskWitness,
             })),
             artifact_transition_payload: None,
 

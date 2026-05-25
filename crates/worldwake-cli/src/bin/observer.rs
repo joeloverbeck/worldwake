@@ -651,8 +651,12 @@ fn decision_payload_summary(
             summary
         }
         DecisionEventPayload::RepairApplied(inner) => format!(
-            "goal={:?} step={} kind={:?} target={:?}",
-            inner.goal_key.kind, inner.step_index, inner.repair_kind, inner.substitute_target
+            "goal={:?} step={} kind={:?} target={:?} provider={:?}",
+            inner.goal_key.kind,
+            inner.step_index,
+            inner.repair_kind,
+            inner.substitute_target,
+            inner.provider_kind
         ),
         DecisionEventPayload::ReplanTriggered(inner) => {
             let mut summary = format!(
@@ -1099,6 +1103,10 @@ fn repair_applied_detail_lines(
     lines.push(format!(
         "&nbsp;&nbsp;substitute_target: {}",
         format_optional_entity(payload.substitute_target)
+    ));
+    lines.push(format!(
+        "&nbsp;&nbsp;provider_kind: {:?}",
+        payload.provider_kind
     ));
     if let Some(trace) = trace
         && (payload.repair_kind == worldwake_core::RepairKind::InsertVerification
@@ -6736,6 +6744,7 @@ mod tests {
                 repair_kind: worldwake_core::RepairKind::RebindTarget,
                 substitute_target: Some(target),
                 substitute_recipe: None,
+                provider_kind: worldwake_core::VerificationProviderKind::AskWitness,
             }),
         );
         emit_decision_event(
@@ -8614,7 +8623,7 @@ mod tests {
         assert!(out.contains("| Tick | Agent | Event | Payload Summary |"));
         assert_eq!(
             out.lines().filter(|line| line.starts_with("| ")).count(),
-            20
+            21
         );
         for event_name in [
             "GoalOffered",
@@ -8669,6 +8678,7 @@ mod tests {
                 repair_kind: worldwake_core::RepairKind::ReplaceProvider,
                 substitute_target: Some(target),
                 substitute_recipe: Some(recipe),
+                provider_kind: worldwake_core::VerificationProviderKind::AskWitness,
             }),
         );
 
@@ -8749,6 +8759,7 @@ mod tests {
                 repair_kind: worldwake_core::RepairKind::InsertVerification,
                 substitute_target: Some(witness),
                 substitute_recipe: None,
+                provider_kind: worldwake_core::VerificationProviderKind::AskWitness,
             }),
         );
 
