@@ -355,7 +355,8 @@ fn provider_supports_fact(provider: CausalProvider, fact: PlanningFact) -> bool 
                 ..
             },
             PlanningFact::TargetPresent { .. } | PlanningFact::ResourceAccess { .. },
-        ) => true,
+        )
+        | (CausalProvider::Expectation { .. }, PlanningFact::TargetPresent { .. }) => true,
         (
             CausalProvider::Record {
                 topic: RecordTopic::OfficeRule { office },

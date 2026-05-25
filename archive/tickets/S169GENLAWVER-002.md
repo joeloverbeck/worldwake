@@ -10,7 +10,7 @@
 
 S169GENLAWVER-001 landed the foundation types and the `provider_kind` field on `RepairAppliedPayload`, but no producer yet writes the new field and no seam code consults a provider registry. This ticket lands the **atomic refactor** that moves the existing inline AskWitness verification-candidate construction at `agent_tick/execution.rs:452-491` into a `worldwake-ai/src/verification_provider/ask_witness_provider.rs` submodule, introduces the `try_build_verification_candidate` enum-dispatched registry function, refactors the seam to delegate to the registry, and extends `RepairAttemptTrace` with per-attempt `verification_provider` and `verification_rejections` fields that the seam populates.
 
-The registry ships with all three provider arms wired, but only `AskWitness` has a real `try_build` implementation in this ticket; `ConsultRecord` and `SearchPlace` arms return `Err(VerificationRejection::BreachClassMismatch)` as placeholders. archive/tickets/S169GENLAWVER-003.md replaces the ConsultRecord placeholder, and S169GENLAWVER-004 replaces the SearchPlace placeholder. The seam already classifies all three `VerificationNeed` variants from the breach context — so once 003/004 swap the placeholders for real implementations, the routing already works.
+The registry ships with all three provider arms wired, but only `AskWitness` has a real `try_build` implementation in this ticket; `ConsultRecord` and `SearchPlace` arms return `Err(VerificationRejection::BreachClassMismatch)` as placeholders. archive/tickets/S169GENLAWVER-003.md replaces the ConsultRecord placeholder, and archive/tickets/S169GENLAWVER-004.md replaces the SearchPlace placeholder. The seam already classifies all three `VerificationNeed` variants from the breach context — so once 003/004 swap the placeholders for real implementations, the routing already works.
 
 This is the parity gate ticket: the S165 AskWitness goldens (`golden_ask_witness_refreshes_stale_report`, `golden_ask_witness_refreshes_stale_report_replay_is_deterministic`, `golden_ask_witness_cold_start_imports_local_witness_report`) must continue to pass with byte-identical authoritative event sequences modulo the new `provider_kind = AskWitness` field.
 
@@ -29,7 +29,7 @@ This is the parity gate ticket: the S165 AskWitness goldens (`golden_ask_witness
 ## Architecture Check
 
 1. **Enum dispatch over trait objects.** With exactly three known providers and FND-28 forbidding extensibility-for-its-own-sake, the registry is an `enum` + `match`, not a `Box<dyn VerificationCandidateProvider>` registry. No vtable, no heap allocation per provider, exhaustive-match enforcement at compile time. Each provider's `try_build` is a free function in its own submodule.
-2. **Placeholder-replace pattern.** The `consult_record_provider::try_build` and `search_place_provider::try_build` stubs return `Err(VerificationRejection::BreachClassMismatch)` until archive/tickets/S169GENLAWVER-003.md and S169GENLAWVER-004 land. This is compile-safe (the seam's classification logic produces real `VerificationNeed::StaleInstitutionalClaim` / `OverdueExpectationAtPlace` variants, which fall through the placeholders and collapse to `NoEpistemicSubstrate` — same behavior as pre-S169). Replaced by tickets 003 and 004.
+2. **Placeholder-replace pattern.** The `consult_record_provider::try_build` and `search_place_provider::try_build` stubs returned `Err(VerificationRejection::BreachClassMismatch)` until archive/tickets/S169GENLAWVER-003.md and archive/tickets/S169GENLAWVER-004.md landed. This was compile-safe (the seam's classification logic produced real `VerificationNeed::StaleInstitutionalClaim` / `OverdueExpectationAtPlace` variants, which fell through the placeholders and collapsed to `NoEpistemicSubstrate` — same behavior as pre-S169). Replaced by tickets 003 and 004.
 3. **No `&World` access in the registry.** Each provider's `try_build` accepts only `&VerificationNeed` and `&VerificationContext<'_>`. Compile-time enforcement plus the existing `ask_witness_verification_step_*`, `plan_repair`, and `golden_ask_witness` lanes preserve the AskWitness locality boundary.
 4. **Trace field placement.** `verification_provider` and `verification_rejections` are per-attempt fields on `RepairAttemptTrace`, matching the existing `verification_anchor` field's granularity. No new top-level `verification_provider_selection` field on `AgentDecisionTrace` (alternative considered and rejected during `/reassess-spec`).
 
@@ -57,7 +57,7 @@ pub struct VerificationContext<'a> {
 }
 ```
 
-`RecentlyFailedAtTarget` remains a staged rejection variant for a future explicitly specified target-scoped verification-memory substrate. archive/tickets/S169GENLAWVER-003.md intentionally did not add provider-local target memory for ConsultRecord because live `RepairMemory` is breach/kind scoped; S169GENLAWVER-004 should follow the same constraint unless it first specifies the missing target-scoped substrate.
+`RecentlyFailedAtTarget` remains a staged rejection variant for a future explicitly specified target-scoped verification-memory substrate. archive/tickets/S169GENLAWVER-003.md and archive/tickets/S169GENLAWVER-004.md intentionally did not add provider-local target memory because live `RepairMemory` is breach/kind scoped.
 
 ### 2. Add `try_build_verification_candidate` registry function
 
@@ -95,7 +95,7 @@ pub fn try_build(
     _ctx: &VerificationContext<'_>,
 ) -> Result<VerificationCandidate, VerificationRejection> {
     // Placeholder, replaced by ticket archive/tickets/S169GENLAWVER-003.md (ConsultRecord) /
-    // S169GENLAWVER-004 (SearchPlace). The placeholder returns
+    // archive/tickets/S169GENLAWVER-004.md (SearchPlace). The placeholder returns
     // BreachClassMismatch so the seam falls through to NoEpistemicSubstrate
     // — same behavior as pre-S169 for non-AskWitness breach classes.
     Err(VerificationRejection::BreachClassMismatch)
@@ -147,8 +147,8 @@ When the seam runs the registry, the chosen provider populates `verification_pro
 ## Out of Scope
 
 - Real `consult_record_provider::try_build` implementation — archive/tickets/S169GENLAWVER-003.md.
-- Real `search_place_provider::try_build` implementation — S169GENLAWVER-004 (placeholder remains until then).
-- ConsultRecord / SearchPlace provider proof surfaces — archive/tickets/S169GENLAWVER-003.md, S169GENLAWVER-004.
+- Real `search_place_provider::try_build` implementation — archive/tickets/S169GENLAWVER-004.md.
+- ConsultRecord / SearchPlace provider proof surfaces — archive/tickets/S169GENLAWVER-003.md, archive/tickets/S169GENLAWVER-004.md.
 - Negative omniscience E2E golden — S169GENLAWVER-005.
 - New goal kinds (`GoalKind::ConsultRecord`, etc.) — explicitly Non-Goal'd by S169 spec (agenda companion seam follow-up).
 
@@ -195,7 +195,7 @@ Completed on 2026-05-25.
 
 - Added the enum-dispatched verification provider registry in `worldwake-ai::verification_provider`, with deterministic `AskWitness`, `ConsultRecord`, `SearchPlace` iteration order.
 - Moved the live AskWitness verification splice out of `agent_tick/execution.rs` and into `verification_provider/ask_witness_provider.rs`; `agent_tick/execution.rs` now classifies a breach into `VerificationNeed`, delegates to `try_build_verification_candidate`, and appends the selected `RepairPlanCandidate`.
-- Added placeholder `consult_record_provider` and `search_place_provider` modules that return `VerificationRejection::BreachClassMismatch`; archive/tickets/S169GENLAWVER-003.md owns the ConsultRecord provider implementation and S169GENLAWVER-004 owns the SearchPlace provider implementation.
+- Added placeholder `consult_record_provider` and `search_place_provider` modules that return `VerificationRejection::BreachClassMismatch`; archive/tickets/S169GENLAWVER-003.md owns the ConsultRecord provider implementation and archive/tickets/S169GENLAWVER-004.md owns the SearchPlace provider implementation.
 - Extended `RepairAttemptTrace` with `verification_provider` and `verification_rejections`, including serde/bincode roundtrip coverage, diagnostics aggregation constructor fallout, and observer rendering for the new trace fields.
 - Threaded the selected provider into `RepairAppliedPayload.provider_kind` for successful `InsertVerification` repairs. Non-verification repairs keep the pre-existing inert `AskWitness` default value.
 - Converted `VerificationProviderKind`'s manual `Default` impl to a derived default as same-family all-target clippy fallout.

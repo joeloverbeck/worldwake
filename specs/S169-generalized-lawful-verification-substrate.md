@@ -392,11 +392,12 @@ S169's intended coverage is provider-specific positive proof plus a cross-provid
    `provider_kind`, local-record targeting, and payload-validator parity
    without adding a test-only API export for an external
    `verification_consult_record_repair.rs` file.
-2. **`verification_search_place_repair.rs`** — agent has an overdue
-   expectation at the actor's current place; the repair seam splices a
-   `SearchPlace` verification step; assertions parallel D10.1. The exact
-   proof surface should follow the same private-seam rule used by
-   archive/tickets/S169GENLAWVER-003.md.
+2. **SearchPlace positive proof** — archive/tickets/S169GENLAWVER-004.md
+   landed this as focused provider tests plus an in-crate repair-seam
+   regression. The proof asserts provider selection, `RepairApplied`
+   `provider_kind`, local-place targeting, and payload-validator parity
+   without adding a test-only API export for an external
+   `verification_search_place_repair.rs` file.
 3. **`verification_no_remote_truth.rs`** — negative omniscience test. The
    stale belief is about a record at a *remote* place; no provider builds a
    candidate; `NoEpistemicSubstrate` is the lawful outcome. Assert that no
