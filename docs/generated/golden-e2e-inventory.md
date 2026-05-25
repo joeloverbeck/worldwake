@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden scenario source files: 59
 - Files contributing `golden_*` tests: 59
-- Total `golden_*` tests: 292
+- Total `golden_*` tests: 293
 
 ## Per-Scenario-File Inventory
 
@@ -57,7 +57,7 @@ Do not hand-edit it.
 | `survival_ask_consult.rs` | 1 |
 | `survival_baseline.rs` | 7 |
 | `survival_combat.rs` | 2 |
-| `survival_contested.rs` | 7 |
+| `survival_contested.rs` | 8 |
 | `survival_drive_escalation.rs` | 3 |
 | `survival_escort.rs` | 2 |
 | `survival_items_decay.rs` | 2 |
@@ -447,6 +447,7 @@ Do not hand-edit it.
 - `both_water_sources_are_used`
 - `both_camp_sides_reach_food`
 - `no_budget_exhaustion_on_survival_goals`
+- `wash_facility_payloads_record_every_agent`
 - `no_stuck_idle_windows_with_elevated_needs`
 - `per_need_critical_run_limit_override_beats_default_for_dirtiness_only`
 

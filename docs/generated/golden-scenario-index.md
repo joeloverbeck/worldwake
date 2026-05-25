@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 224
+- Scenario blocks: 225
 - Contributing golden scenario source files: 54
-- Associated tests: 274
+- Associated tests: 275
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1417,7 +1417,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 462: Opportunity Compiler Status Diagnostics
 
-- Source: `opportunity_compiler.rs:323`
+- Source: `opportunity_compiler.rs:324`
 - Systems: AI, Perception
 - GoalKinds: AcquireCommodity
 - ActionDomains: AI
@@ -1431,7 +1431,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 402: Opportunity Compiler Default Replay Bound
 
-- Source: `opportunity_compiler.rs:398`
+- Source: `opportunity_compiler.rs:399`
 - Systems: AI, Replay
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: AI, Needs, Travel
@@ -1445,7 +1445,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 439: S149 Typed Terminal Segments Carry Resume And Failure Shape
 
-- Source: `partial_plan_terminals.rs:243`
+- Source: `partial_plan_terminals.rs:245`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity, AskWitness
 - ActionDomains: Planning, Agenda
@@ -1457,7 +1457,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 440: S149 Suspended Agenda Entries Preserve Partial Plan Segments
 
-- Source: `partial_plan_terminals.rs:286`
+- Source: `partial_plan_terminals.rs:288`
 - Systems: AI, SaveLoad
 - GoalKinds: AcquireCommodity
 - ActionDomains: Agenda
@@ -1469,7 +1469,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 441: S149 Partial Plan Resume And Patience Abandon Lifecycle
 
-- Source: `partial_plan_terminals.rs:336`
+- Source: `partial_plan_terminals.rs:338`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Agenda
@@ -1481,7 +1481,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 465: S168 Information Barrier Resume Reuses Skeleton
 
-- Source: `partial_plan_terminals.rs:410`
+- Source: `partial_plan_terminals.rs:412`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Planning, Agenda
@@ -1493,7 +1493,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 466: S168 Information Barrier Resume Falls Back On Invalid Skeleton
 
-- Source: `partial_plan_terminals.rs:479`
+- Source: `partial_plan_terminals.rs:481`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Planning, Agenda
@@ -1505,7 +1505,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 467: S168 Populated Skeleton Survives Save Load Before Resume
 
-- Source: `partial_plan_terminals.rs:562`
+- Source: `partial_plan_terminals.rs:564`
 - Systems: AI, SaveLoad
 - GoalKinds: AcquireCommodity
 - ActionDomains: Planning, Agenda
@@ -1517,7 +1517,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 442: S149 Coordination Barrier Uses Blocker Memory
 
-- Source: `partial_plan_terminals.rs:628`
+- Source: `partial_plan_terminals.rs:630`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: Planning, Contention
@@ -1757,7 +1757,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 409: S165 Stale Belief Inserts Verification
 
-- Source: `plan_repair.rs:288`
+- Source: `plan_repair.rs:289`
 - Systems: AI
 - GoalKinds: AcquireCommodity, AskWitness
 - ActionDomains: PlanRepair
@@ -1769,7 +1769,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 461: S165 Stale Belief Without Witness Falls Through
 
-- Source: `plan_repair.rs:371`
+- Source: `plan_repair.rs:373`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1781,7 +1781,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 410: S137 Recently Failed Repair Kind Is Skipped
 
-- Source: `plan_repair.rs:436`
+- Source: `plan_repair.rs:438`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1793,7 +1793,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 411: S137 Commodity Availability Changed Clears Blocker Structurally
 
-- Source: `plan_repair.rs:487`
+- Source: `plan_repair.rs:489`
 - Systems: AI, Core
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1805,7 +1805,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 412: S137 Repair Budget Exhaustion Falls Through To Full Replan
 
-- Source: `plan_repair.rs:562`
+- Source: `plan_repair.rs:564`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1817,7 +1817,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 413: S137 Abandon Produces Empty Progress Barrier
 
-- Source: `plan_repair.rs:617`
+- Source: `plan_repair.rs:619`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1829,7 +1829,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 414: S137 Phase 11 Approved Repair Gate Witness
 
-- Source: `plan_repair.rs:660`
+- Source: `plan_repair.rs:662`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: PlanRepair
@@ -1871,7 +1871,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 167: Portfolio Rejects Infeasible Commitment After Sleep Blocker Suppression
 
-- Source: `portfolio_planning.rs:220`
+- Source: `portfolio_planning.rs:222`
 - Systems: AI, Needs, Social, Production, Decision History
 - GoalKinds: Sleep, ReportMissing, ProduceCommodity
 - ActionDomains: Needs, Social, Production
@@ -1973,7 +1973,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 428: S151 Dangerous Traversal Lowers Preference
 
-- Source: `route_preferences.rs:63`
+- Source: `route_preferences.rs:64`
 - Systems: AI, Travel, Combat
 - GoalKinds: Travel
 - ActionDomains: Travel
@@ -1985,7 +1985,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 429: S151 Route Preference Decays To Neutral
 
-- Source: `route_preferences.rs:89`
+- Source: `route_preferences.rs:90`
 - Systems: AI, Travel
 - GoalKinds: Travel
 - ActionDomains: Travel
@@ -1997,7 +1997,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 430: S151 Route Preference And S150 Blocker Compose
 
-- Source: `route_preferences.rs:116`
+- Source: `route_preferences.rs:117`
 - Systems: AI, Travel, BlockerMemory
 - GoalKinds: Travel
 - ActionDomains: Travel
@@ -2176,7 +2176,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 375: Source Composite Wait Reranks Same-Commodity Siblings
 
-- Source: `source_composite.rs:345`
+- Source: `source_composite.rs:346`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2189,7 +2189,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 376: Source Composite Does Not Cross Goal Categories
 
-- Source: `source_composite.rs:389`
+- Source: `source_composite.rs:390`
 - Systems: AI, SourceReliability, Dirtiness
 - GoalKinds: Wash, AcquireCommodity(SelfConsume)
 - ActionDomains: Needs, Production
@@ -2202,7 +2202,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 377: Fresh Capacity Bonus Reranks Same-Commodity Siblings
 
-- Source: `source_composite.rs:430`
+- Source: `source_composite.rs:431`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2215,7 +2215,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 378: Stale Capacity Observation Is Neutral
 
-- Source: `source_composite.rs:479`
+- Source: `source_composite.rs:480`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2228,7 +2228,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 379: Empty Fresh Capacity Demotes Source
 
-- Source: `source_composite.rs:521`
+- Source: `source_composite.rs:522`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2241,7 +2241,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 380: Missing Source Records Are Neutral
 
-- Source: `source_composite.rs:558`
+- Source: `source_composite.rs:559`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2391,7 +2391,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 158: Contested Survival Keeps All Four Agents Alive For 1440 Ticks
 
-- Source: `survival_contested.rs:383`
+- Source: `survival_contested.rs:401`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -2406,7 +2406,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 159: Contested Survival Exercises All Five Self-Care Action Families
 
-- Source: `survival_contested.rs:432`
+- Source: `survival_contested.rs:450`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -2421,7 +2421,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 160: Contested Survival Draws From Both Water Sources Across The Run
 
-- Source: `survival_contested.rs:467`
+- Source: `survival_contested.rs:485`
 - Systems: AI, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Needs, Travel, Production
@@ -2436,7 +2436,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 161: Contested Survival Has Both Camp Sides Reach A Food Source
 
-- Source: `survival_contested.rs:511`
+- Source: `survival_contested.rs:529`
 - Systems: AI, Exploration, Perception, Travel
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs
@@ -2451,7 +2451,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 162: Contested Survival Avoids Budget Exhaustion On Survival Goals
 
-- Source: `survival_contested.rs:548`
+- Source: `survival_contested.rs:566`
 - Systems: AI, Search, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: Needs, Travel, Production
@@ -2460,13 +2460,28 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Setup**: Run the authored survival contested scenario with decision tracing
 
-**Proves**: no non-Wash survival-goal planning attempt ends in
+**Proves**: no survival-goal planning attempt ends in `BudgetExhausted`.
 
 **Cross-system chain**: preserved travel-branch cap (4) + 640 planner expansions +
 
-### Scenario 163: Contested Survival Has No Stuck Idle Windows With Elevated Needs
+### Scenario 163: Contested Survival Persists Wash Facility Commit Payloads
 
-- Source: `survival_contested.rs:582`
+- Source: `survival_contested.rs:600`
+- Systems: AI, Needs, Travel, Production
+- GoalKinds: Wash
+- ActionDomains: Needs
+- Places: Spring Basin
+- Principles: 4, 14, 29A, 31
+
+**Setup**: Run the authored survival contested scenario for 1440 ticks and
+
+**Proves**: every authored agent that is required to satisfy Wash commits through
+
+**Cross-system chain**: scenario-authored Wash self-care requirement -> belief-backed basin
+
+### Scenario 164: Contested Survival Has No Stuck Idle Windows With Elevated Needs
+
+- Source: `survival_contested.rs:632`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production

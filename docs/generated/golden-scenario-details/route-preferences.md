@@ -22,7 +22,7 @@ Scenarios: 4
 
 ### Scenario 428: S151 Dangerous Traversal Lowers Preference
 
-- Source: `route_preferences.rs:63`
+- Source: `route_preferences.rs:64`
 - Systems: AI, Travel, Combat
 - GoalKinds: Travel
 - ActionDomains: Travel
@@ -37,7 +37,7 @@ Scenarios: 4
 
 ### Scenario 429: S151 Route Preference Decays To Neutral
 
-- Source: `route_preferences.rs:89`
+- Source: `route_preferences.rs:90`
 - Systems: AI, Travel
 - GoalKinds: Travel
 - ActionDomains: Travel
@@ -52,7 +52,7 @@ Scenarios: 4
 
 ### Scenario 430: S151 Route Preference And S150 Blocker Compose
 
-- Source: `route_preferences.rs:116`
+- Source: `route_preferences.rs:117`
 - Systems: AI, Travel, BlockerMemory
 - GoalKinds: Travel
 - ActionDomains: Travel

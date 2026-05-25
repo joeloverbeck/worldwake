@@ -2,7 +2,7 @@
 
 ## Summary
 
-Close the known `Wash` budget-exhaustion exclusion in `survival-scattered` and `survival-contested` so that Wash obeys the same lawful discovery, travel-search, planner-budget, and traceable-failure accounting as Eat, Drink, Sleep, and Relieve. Today both scenarios deliberately omit Wash from the `required_self_care_families` contract and from budget-exhaustion assertions because Wash can exhaust planner budget before the agent discovers a `WashBasin`. The simulation already has every substrate Wash needs (`GoalPlanningBudget::SELF_CARE`, `emit_wash_goal`, `WASH_OPS = [Wash, Travel]`, `MayContainWashBasin`, `WashBasinState`, the drive-escalation belief-only Wash regression). What is missing is the lawful collision proof that Wash discovery and budget closure behave identically to the other four families under scattered, contested, and belief-only topologies. This spec audits the Wash candidate-enumeration path against the FND-14B belief-backed-input rule, pins the trace fields a future implementation must preserve, and reinstates Wash in the scenario contracts.
+Close the known `Wash` budget-exhaustion exclusion in `survival-scattered` and `survival-contested` so that Wash obeys the same lawful discovery, travel-search, planner-budget, and traceable-failure accounting as Eat, Drink, Sleep, and Relieve. Before S172 implementation began, `survival-contested` omitted Wash from `required_self_care_families`, and both `survival-scattered` and `survival-contested` omitted Wash from budget-exhaustion assertions because Wash could exhaust planner budget before the agent discovered a `WashBasin`. Ticket `S172WASDISBUD-001` has landed the contested contract/test side and fixed the planner active-goal/current-plan retention bug that surfaced there; the scattered, belief-only, and CLI POV deliverables remain active sibling work. The simulation has the core Wash substrates (`GoalPlanningBudget::SELF_CARE`, `emit_wash_goal`, `WASH_OPS = [Wash, Travel]`, `MayContainWashBasin`, `WashBasinState`, the drive-escalation belief-only Wash regression), and this spec pins the lawful collision proof that Wash discovery and budget closure must match the other four families under scattered, contested, and belief-only topologies.
 
 ## Phase
 
@@ -100,7 +100,7 @@ The implementation deliverable is an audit ticket against `search/transition.rs`
 | `scenarios/survival-contested.ron` (line 20–33, `survival_health_contract` block) | `survival_health_contract.required_self_care_families` becomes `[Eat, Drink, Sleep, Relieve, Wash]` | Scenario contract violation if any agent does not exercise Wash |
 | `scenarios/survival-contested.ron` (test) | Budget-exhaustion assertion includes Wash in the covered family set | Test failure if Wash exhausts budget without traceable recovery |
 | `scenarios/survival-scattered.ron` (test; the `.ron` already includes Wash in `survival_health_contract.required_self_care_families` at line 19) | Budget-exhaustion assertion includes Wash in the covered family set | Test failure as above |
-| `crates/worldwake-ai/tests/scenarios/survival_contested.rs` (carve-out at line 106 + comment at line 564 — both citing tracking ID `GOAPTRVLSCAL-001`) | Remove Wash carve-out comment and exclusion | Compile/test failure if exclusion is reintroduced |
+| `crates/worldwake-ai/tests/scenarios/survival_contested.rs` | Landed by `S172WASDISBUD-001`: Wash carve-out comment and exclusion removed; `wash_facility_payloads_record_every_agent` added | Compile/test failure if exclusion is reintroduced |
 | `crates/worldwake-ai/tests/scenarios/survival_scattered.rs` (carve-out at line 118 + comment at line 466 — both citing tracking ID `GOAPTRVLSCAL-001`) | Remove Wash carve-out comment and exclusion | Compile/test failure if exclusion is reintroduced |
 
 ### 4. Belief-only Wash regression generalization
@@ -238,7 +238,7 @@ Assertions:
 
 ### Scenario B — Wash under contested topology
 
-Modify (do not branch) `scenarios/survival-contested.ron` analogously. The current scenario excludes Wash; this change makes the exclusion impossible.
+`S172WASDISBUD-001` updated `scenarios/survival-contested.ron` so the scenario includes Wash; remaining S172 work may build on that live contract.
 
 Assertions: same shape as Scenario A, plus assertion that no Wash plan reads remote `WashBasinState` directly.
 

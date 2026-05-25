@@ -75,7 +75,7 @@ Scenarios: 6
 
 ### Scenario 462: Opportunity Compiler Status Diagnostics
 
-- Source: `opportunity_compiler.rs:323`
+- Source: `opportunity_compiler.rs:324`
 - Systems: AI, Perception
 - GoalKinds: AcquireCommodity
 - ActionDomains: AI
@@ -92,7 +92,7 @@ Scenarios: 6
 
 ### Scenario 402: Opportunity Compiler Default Replay Bound
 
-- Source: `opportunity_compiler.rs:398`
+- Source: `opportunity_compiler.rs:399`
 - Systems: AI, Replay
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: AI, Needs, Travel

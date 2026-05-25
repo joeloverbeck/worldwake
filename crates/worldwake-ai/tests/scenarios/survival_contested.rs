@@ -18,7 +18,9 @@ use worldwake_cli::scenario::{
     load_scenario_file, spawn_scenario,
     types::{ScenarioDef, SurvivalCriticalRunLimitsDef},
 };
-use worldwake_core::{DriveThresholds, EntityId, GoalKind, Tick};
+use worldwake_core::{
+    DecisionEventPayload, DriveThresholds, EntityId, EventTag, EventView, GoalKind, Tick,
+};
 use worldwake_sim::ActionTraceKind;
 
 const SURVIVAL_TICKS: u32 = 1440;
@@ -49,6 +51,8 @@ struct SurvivalContestedObservation {
     north_reached_food: bool,
     /// Food-producing places reached by at least one South-side agent (C or D).
     south_reached_food: bool,
+    /// Agents with at least one persisted `WashFacilityUsed` decision payload.
+    wash_facility_users: BTreeSet<String>,
     survival_budget_exhaustions: Vec<BudgetExhaustionObservation>,
     stuck_idle_windows: Vec<StuckIdleWindow>,
 }
@@ -101,13 +105,8 @@ fn is_survival_goal(goal: &GoalKind) -> bool {
     )
 }
 
-/// Survival goals excluding `Wash`.  `Wash` exhausts budget before agents
-/// discover any `WashBasin` (same Travel-pruning issue flagged in scattered;
-/// tracked under `GOAPTRVLSCAL-001`).  Excluded here for parity with
-/// `golden_survival_scattered.rs` so the contested scenario isolates the
-/// contention stressor from the Wash-travel gap.
 fn is_budget_checked_survival_goal(goal: &GoalKind) -> bool {
-    is_survival_goal(goal) && !matches!(goal, GoalKind::Wash)
+    is_survival_goal(goal)
 }
 
 fn food_place_ids(def: &ScenarioDef) -> Vec<EntityId> {
@@ -318,6 +317,11 @@ fn run_survival_contested() -> SurvivalContestedObservation {
         .trace_sink()
         .expect("decision tracing should be enabled");
 
+    let agent_name_by_id = agents
+        .iter()
+        .map(|(name, agent)| (*agent, name.clone()))
+        .collect::<BTreeMap<_, _>>();
+
     let agents = agents
         .into_iter()
         .map(|(name, agent)| {
@@ -347,6 +351,19 @@ fn run_survival_contested() -> SurvivalContestedObservation {
         })
         .collect::<BTreeMap<_, _>>();
 
+    let wash_facility_users = h
+        .event_log
+        .events_by_tag(EventTag::WashFacilityUsed)
+        .iter()
+        .filter_map(|id| h.event_log.get(*id))
+        .filter_map(|record| match record.decision_payload()? {
+            DecisionEventPayload::WashFacilityUsed(payload) => {
+                agent_name_by_id.get(&payload.user).cloned()
+            }
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+
     let mut survival_budget_exhaustions = Vec::new();
     for (agent_name, agent) in named_agents(&h) {
         for trace in decision_sink.traces_for(agent) {
@@ -374,6 +391,7 @@ fn run_survival_contested() -> SurvivalContestedObservation {
         drink_places,
         north_reached_food,
         south_reached_food,
+        wash_facility_users,
         survival_budget_exhaustions,
         stuck_idle_windows,
     }
@@ -559,9 +577,9 @@ fn both_camp_sides_reach_food() {
 // agent and tighter resource capacities over scattered but preserves the
 // same cognitive budget (640 expansions, beam_width 12).
 //
-// Proves: no non-Wash survival-goal planning attempt ends in
-// `BudgetExhausted`.  Wash is excluded for parity with scattered; the
-// Wash-Travel pruning gap is tracked in `GOAPTRVLSCAL-001`.
+// Proves: no survival-goal planning attempt ends in `BudgetExhausted`.
+// Wash is included through the same goal-key inspection convention as Eat,
+// Drink, Sleep, Relieve, and ExploreLocation.
 //
 // Chain: preserved travel-branch cap (4) + 640 planner expansions +
 // chokepoint topology + contention -> survival plans complete within
@@ -579,7 +597,39 @@ fn no_budget_exhaustion_on_survival_goals() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 163: Contested Survival Has No Stuck Idle Windows With Elevated Needs
+// Scenario 163: Contested Survival Persists Wash Facility Commit Payloads
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Needs, Travel, Production
+// GoalKinds: Wash
+// ActionDomains: Needs
+// Places: Spring Basin
+// Principles: 4, 14, 29A, 31
+//
+// Setup: Run the authored survival contested scenario for 1440 ticks and
+// inspect the append-only decision event log for `WashFacilityUsed` payloads.
+//
+// Proves: every authored agent that is required to satisfy Wash commits through
+// the existing generic Wash facility payload surface.  The assertion proves the
+// D5 commit branch without adding a Wash-specific failure-attribution variant.
+//
+// Chain: scenario-authored Wash self-care requirement -> belief-backed basin
+// discovery -> wash action commit -> persisted `WashFacilityUsed` payload keyed
+// by user and basin.
+#[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
+fn wash_facility_payloads_record_every_agent() {
+    let observation = run_survival_contested();
+
+    let expected = observation.agents.keys().cloned().collect::<BTreeSet<_>>();
+    assert_eq!(
+        observation.wash_facility_users, expected,
+        "each contested-scenario agent should emit at least one WashFacilityUsed payload"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 164: Contested Survival Has No Stuck Idle Windows With Elevated Needs
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Needs, Travel, Production, Perception

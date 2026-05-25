@@ -1,14 +1,14 @@
 # S172WASDISBUD-001: Close Wash carve-out in survival-contested
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: None
+**Engine Changes**: Yes — `worldwake-ai` plan selection active-goal/current-plan retention guard; contested scenario contract/test assertions
 **Deps**: specs/S172-wash-discovery-budget-closure.md (D3 contested portion, D5 distributed)
 
 ## Problem
 
-`scenarios/survival-contested.ron` (line 33) authors `survival_health_contract.required_self_care_families: [Eat, Drink, Sleep, Relieve]` — explicitly omitting Wash. The sibling test `crates/worldwake-ai/tests/scenarios/survival_contested.rs` carries an explicit Wash carve-out at `is_budget_checked_survival_goal` (lines 99-110) and a comment at line 562-565, both citing tracking ID `GOAPTRVLSCAL-001`. The carve-out was added because Wash exhausted planner budget before any agent discovered a basin under contested topology. S172's D3 (contested portion) requires the carve-out be removed and Wash be elevated to a first-class member of the survival-health contract, with D5's failure-attribution surfaces asserted via the `(goal_key, generic_cause)` inspection convention. If removing the carve-out exposes a still-live planner regression, that surfaces the deferred-budget issue that S172 was authored to close.
+Before this ticket, `scenarios/survival-contested.ron` authored `survival_health_contract.required_self_care_families: [Eat, Drink, Sleep, Relieve]` — explicitly omitting Wash. The sibling test `crates/worldwake-ai/tests/scenarios/survival_contested.rs` carried an explicit Wash carve-out at `is_budget_checked_survival_goal` and a scenario comment, both citing tracking ID `GOAPTRVLSCAL-001`. The carve-out was added because Wash exhausted planner budget before any agent discovered a basin under contested topology. S172's D3 (contested portion) required the carve-out be removed and Wash be elevated to a first-class member of the survival-health contract, with D5's failure-attribution surfaces asserted via the `(goal_key, generic_cause)` inspection convention.
 
 ## Assumption Reassessment (2026-05-25)
 
@@ -20,6 +20,7 @@
 6. AI regression layer: full action registries are required because `survival_contested` exercises end-to-end agent ticks across multiple needs and contention surfaces. Local needs-only harness is insufficient.
 9. First failure boundary: if Wash discovery still exhausts budget before basin discovery, the failure is at the planner search layer (expansion-budget enforcement in `crates/worldwake-ai/src/search/`), surfaced via `PlanSearchOutcome::BudgetExhausted` in `decision_trace.rs:1393`. If the failure is instead at action start, the boundary is `RevalidationOutcome::Invalidated` at `crates/worldwake-ai/src/plan_revalidation.rs:17`. Both branches are lawful per D5.
 13. Adjacent contradictions: removing the carve-out may surface a still-live planner regression in Wash discovery / travel-search. Per S172's Risks #1 (the `emit_wash_goal` helper-body audit is pending), if the implementation reveals the planner gap remains, this is a **required consequence** of this ticket — the ticket's success criterion includes EITHER a passing Wash budget-exhaustion check OR a documented lawful failure branch with recovery. If a separate planner fix is warranted, document the discovered gap and open a follow-up ticket; do not weaken this ticket's invariant to mask it.
+14. Implementation correction: the widened ignored `survival_contested` run exposed a live planner consistency bug before any Wash-specific failure assertion fired. `select_best_plan` could retain `runtime.current_plan` when `agenda_state.committed` named a different active goal, producing a debug assertion in `determine_selected_plan_source` (`Apple` active goal vs `Water` retained plan). This was required current-ticket fallout because the contested proof could not run with the stale retained-plan path. The landed guard in `crates/worldwake-ai/src/plan_selection.rs` returns to the best searched plan when `active_goal != Some(current_plan.goal)`.
 
 ## Architecture Check
 
@@ -27,51 +28,41 @@
 2. No backwards-compatibility aliasing: the carve-out function `is_budget_checked_survival_goal` is updated in place (Wash filter removed); the GOAPTRVLSCAL-001 comment is removed, not retained as a "historical note" shim.
 3. FND-31 alignment: the negative case "Wash exhausts budget without traceable recovery" becomes an active assertion, not a documented exclusion.
 
-## Verification Layers
+## Verified Layers
 
 1. Wash-contract enforcement (every required family must be exercised or its budget-exhausted surface must fire) → focused unit assertion against the post-run `CandidateGenerationDiagnostics` + selection-trace surfaces, filtered by `goal_key == GoalKind::Wash`.
 2. Wash commit attribution → action trace + `DecisionEventPayload::WashFacilityUsed` (payload at `crates/worldwake-core/src/decision_event_payload.rs:79`) — verifies that any Wash that does commit carries `basin`, `user`, water/dirtiness deltas, and the partial flag.
 3. Lawful budget-exhausted branch (if it fires) → decision trace via `PlanSearchOutcome::BudgetExhausted` at `crates/worldwake-ai/src/decision_trace.rs:1393` + `Discrepancy::SearchBudgetExhausted`. No silent skip.
 4. Scenario isolation: the contested scenario specifically exercises a contested-resource topology with shared water/wash; the test contract change must not lawfully starve Wash on otherwise valid setups. If the lawful failure branch fires, the trace must show recovery (other self-care families continue to be exercised).
 
-## What to Change
+## Landed Changes
 
-### 1. Add Wash to the survival-health contract
+### 1. Added Wash to the survival-health contract
 
-`scenarios/survival-contested.ron` (lines 20-33, `survival_health_contract` block): change `required_self_care_families: [Eat, Drink, Sleep, Relieve]` → `required_self_care_families: [Eat, Drink, Sleep, Relieve, Wash]`. Remove any in-block comment text that documents Wash as deliberately excluded.
+`scenarios/survival-contested.ron` now authors `required_self_care_families: [Eat, Drink, Sleep, Relieve, Wash]`.
 
-### 2. Remove the Wash carve-out from `is_budget_checked_survival_goal`
+### 2. Removed the Wash carve-out from `is_budget_checked_survival_goal`
 
-`crates/worldwake-ai/tests/scenarios/survival_contested.rs` (lines 99-110): delete the doc-comment block that cites `GOAPTRVLSCAL-001` and rewrite `is_budget_checked_survival_goal` to:
+`crates/worldwake-ai/tests/scenarios/survival_contested.rs` now delegates `is_budget_checked_survival_goal` directly to `is_survival_goal`, so `GoalKind::Wash` is budget-checked with Eat, Drink, Sleep, Relieve, and ExploreLocation.
 
-```rust
-fn is_budget_checked_survival_goal(goal: &GoalKind) -> bool {
-    is_survival_goal(goal)
-}
-```
+### 3. Added explicit Wash commit payload proof
 
-Remove the comment block at lines 562-565 that re-cites the carve-out rationale. If `is_survival_goal` does not currently include `GoalKind::Wash`, add it.
+`wash_facility_payloads_record_every_agent` asserts every contested-scenario agent emits at least one persisted `DecisionEventPayload::WashFacilityUsed` payload. This proves the D5 completed-Wash branch through the existing generic payload surface.
 
-### 3. Extend `no_budget_exhaustion_on_survival_goals` to cover Wash
+### 4. Fixed stale current-plan retention exposed by the widened proof
 
-`crates/worldwake-ai/tests/scenarios/survival_contested.rs:1201`: the test currently iterates `is_budget_checked_survival_goal`-filtered attempts and asserts no budget exhaustion. With the filter widened, the test now also covers Wash. If the test passes unchanged, no further edit is required. If it fails, the failure exposes the lawful failure branch S172 D5 contemplates — per Assumption Reassessment #13, surface the discovered gap as a separate ticket and document the lawful failure here.
+`crates/worldwake-ai/src/plan_selection.rs` now refuses to retain `runtime.current_plan` when the committed active goal no longer matches that current plan's goal. The focused regression `current_plan_is_not_retained_when_active_goal_differs` covers the Apple-active/Water-retained mismatch shape exposed by the contested survival run.
 
-### 4. Add a Wash-commit positive assertion
+### 5. Refreshed generated golden docs
 
-Add a new `#[test]` `wash_is_exercised_in_contested_topology` or extend `all_agents_perform_survival_actions` (line 1083) to filter the decision-event log for at least one `DecisionEventPayload::WashFacilityUsed` per dirty agent within the run window. The payload carries `basin`, `user`, `water_consumed`, `agent_dirtiness_delta`, `basin_dirtiness_delta`, `partial` — assert presence (not specific values).
+`python3 scripts/golden_inventory.py --write --check-docs` updated the survival-contested inventory entry and source-line references in generated golden docs.
 
-### 5. Failure-attribution surface assertion (D5)
-
-If a Wash attempt fails (budget exhausted or revalidation rejected), the test must filter on `goal_key == GoalKind::Wash` AND the existing generic cause:
-- `PlanSearchOutcome::BudgetExhausted` from `decision_trace.rs:1393` with `goal_key` from the enclosing `SelectionTrace`, OR
-- `RevalidationOutcome::Invalidated { reason: PlanInvalidationReason::ExpectationMismatch, mismatch_detail }` from `plan_revalidation.rs:17` with `ExpectationMismatchPayload.goal_key` from `decision_event_payload.rs:365`.
-
-The assertion shape: if Wash is not exercised by some agent within the run, at least one of these surfaces must fire for that agent's Wash attempt. Silent absence (no Wash candidate emitted) is itself lawful per D5's no-candidate branch — assertable via `CandidateGenerationDiagnostics` showing zero Wash candidates that tick.
-
-## Files to Touch
+## Landed Files
 
 - `scenarios/survival-contested.ron` (modify)
 - `crates/worldwake-ai/tests/scenarios/survival_contested.rs` (modify)
+- `crates/worldwake-ai/src/plan_selection.rs` (modify)
+- `docs/generated/golden-*.md` and `docs/generated/golden-scenario-details/*.md` (regenerated)
 
 ## Out of Scope
 
@@ -83,14 +74,14 @@ The assertion shape: if Wash is not exercised by some agent within the run, at l
 - Self-care occupancy / interruption contracts — S173 deliverable.
 - Planner-side fix if a budget-exhaustion regression is discovered — if surfaced, open a separate ticket per Assumption Reassessment #13; this ticket's success criterion is "either Wash is lawfully exercised OR the failure branch is lawfully traced," not "Wash discovery is fixed."
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Verified Tests
 
-1. `cargo test -p worldwake-ai --test survival_contested no_budget_exhaustion_on_survival_goals` — passes with widened filter (no Wash carve-out).
-2. `cargo test -p worldwake-ai --test survival_contested all_agents_perform_survival_actions` — passes; existing assertions hold under Wash-inclusive contract.
-3. `cargo test -p worldwake-ai --test survival_contested wash_is_exercised_in_contested_topology` (new) OR extension to `all_agents_perform_survival_actions` — at least one `WashFacilityUsed` per dirty agent, OR a lawful D5 failure-attribution surface fires.
-4. Existing suite: `cargo test -p worldwake-ai --test survival_contested`.
+1. Passed `cargo test -p worldwake-ai plan_selection::tests::current_plan_is_not_retained_when_active_goal_differs -- --exact`.
+2. Passed `cargo test -p worldwake-ai --test golden_ai scenarios::survival_contested:: -- --ignored`; this is the live replacement for the stale drafted `--test survival_contested` command. It ran all 7 ignored contested scenario tests, including `all_agents_perform_survival_actions`, `no_budget_exhaustion_on_survival_goals`, and `wash_facility_payloads_record_every_agent`.
+3. Passed `cargo test -p worldwake-ai`.
+4. Passed `cargo clippy -p worldwake-ai --all-targets -- -D warnings`.
 
 ### Invariants
 
@@ -99,15 +90,45 @@ The assertion shape: if Wash is not exercised by some agent within the run, at l
 3. Any Wash failure within the run is attributable through an existing generic emission surface filtered by `goal_key == GoalKind::Wash` — never silent.
 4. No new failure-attribution payload variant is introduced.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
-1. `crates/worldwake-ai/tests/scenarios/survival_contested.rs` — modify `is_budget_checked_survival_goal` (remove Wash exclusion), modify `no_budget_exhaustion_on_survival_goals` consumer (no change required if widened filter passes), add `wash_is_exercised_in_contested_topology` OR extend `all_agents_perform_survival_actions` for D5 commit assertion.
-2. `scenarios/survival-contested.ron` — modify `survival_health_contract.required_self_care_families`.
+1. `crates/worldwake-ai/src/plan_selection.rs` — added `current_plan_is_not_retained_when_active_goal_differs`.
+2. `crates/worldwake-ai/tests/scenarios/survival_contested.rs` — removed the Wash budget carve-out, added `wash_facility_payloads_record_every_agent`, and regenerated scenario metadata.
+3. `scenarios/survival-contested.ron` — added Wash to `survival_health_contract.required_self_care_families`.
 
-### Commands
+### Commands Run
 
-1. `cargo test -p worldwake-ai --test survival_contested` — targeted suite verification.
-2. `cargo clippy -p worldwake-ai --all-targets -- -D warnings` — lint check on modified test file.
-3. `./scripts/verify.sh` — pre-PR full-suite verification.
+1. Passed `cargo test -p worldwake-ai plan_selection::tests::current_plan_is_not_retained_when_active_goal_differs -- --exact`.
+2. Passed `cargo test -p worldwake-ai --test golden_ai survival_contested -- --list`.
+3. Passed `cargo test -p worldwake-ai --test golden_ai scenarios::survival_contested:: -- --ignored`.
+4. Passed `python3 scripts/golden_inventory.py --write --check-docs`.
+5. Passed `cargo clippy -p worldwake-ai --all-targets -- -D warnings`.
+6. Passed `cargo test -p worldwake-ai`.
+7. Waived `./scripts/verify.sh` for this per-ticket closeout because the `implement-spec-tickets` final branch phase owns the full pre-push gate after all S172 tickets land.
+
+## Outcome
+
+Completed on 2026-05-25.
+
+- `survival-contested.ron` now requires Wash alongside Eat, Drink, Sleep, and Relieve.
+- The contested golden no longer excludes Wash from budget-exhaustion checks.
+- The contested golden now asserts persisted `WashFacilityUsed` payloads for every authored agent.
+- The planner no longer retains a current plan whose goal diverges from the committed active goal, closing the Apple-active/Water-retained mismatch exposed by the widened contested run.
+- Generated golden inventory/docs were refreshed from the new scenario metadata.
+
+## Deviations
+
+- The drafted ticket listed `Engine Changes: None`, but the widened proof exposed a production planner retention bug that blocked the scenario. The implemented seam includes a focused `select_best_plan` guard plus regression coverage.
+- The drafted commands used nonexistent target `--test survival_contested`; live verification used the `golden_ai` integration target with the `scenarios::survival_contested::` module filter.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai plan_selection::tests::current_plan_is_not_retained_when_active_goal_differs -- --exact`.
+- Passed `cargo test -p worldwake-ai --test golden_ai survival_contested -- --list`.
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::survival_contested:: -- --ignored`.
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`.
+- Passed `cargo clippy -p worldwake-ai --all-targets -- -D warnings`.
+- Passed `cargo test -p worldwake-ai`.
+- Waived `./scripts/verify.sh` for this per-ticket closeout; the spec-family harness final branch phase owns the full pre-push gate before push.

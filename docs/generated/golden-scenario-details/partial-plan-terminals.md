@@ -7,7 +7,7 @@ Scenarios: 7
 
 ### Scenario 439: S149 Typed Terminal Segments Carry Resume And Failure Shape
 
-- Source: `partial_plan_terminals.rs:243`
+- Source: `partial_plan_terminals.rs:245`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity, AskWitness
 - ActionDomains: Planning, Agenda
@@ -22,7 +22,7 @@ Scenarios: 7
 
 ### Scenario 440: S149 Suspended Agenda Entries Preserve Partial Plan Segments
 
-- Source: `partial_plan_terminals.rs:286`
+- Source: `partial_plan_terminals.rs:288`
 - Systems: AI, SaveLoad
 - GoalKinds: AcquireCommodity
 - ActionDomains: Agenda
@@ -37,7 +37,7 @@ Scenarios: 7
 
 ### Scenario 441: S149 Partial Plan Resume And Patience Abandon Lifecycle
 
-- Source: `partial_plan_terminals.rs:336`
+- Source: `partial_plan_terminals.rs:338`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Agenda
@@ -52,7 +52,7 @@ Scenarios: 7
 
 ### Scenario 465: S168 Information Barrier Resume Reuses Skeleton
 
-- Source: `partial_plan_terminals.rs:410`
+- Source: `partial_plan_terminals.rs:412`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Planning, Agenda
@@ -67,7 +67,7 @@ Scenarios: 7
 
 ### Scenario 466: S168 Information Barrier Resume Falls Back On Invalid Skeleton
 
-- Source: `partial_plan_terminals.rs:479`
+- Source: `partial_plan_terminals.rs:481`
 - Systems: AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Planning, Agenda
@@ -82,7 +82,7 @@ Scenarios: 7
 
 ### Scenario 467: S168 Populated Skeleton Survives Save Load Before Resume
 
-- Source: `partial_plan_terminals.rs:562`
+- Source: `partial_plan_terminals.rs:564`
 - Systems: AI, SaveLoad
 - GoalKinds: AcquireCommodity
 - ActionDomains: Planning, Agenda
@@ -97,7 +97,7 @@ Scenarios: 7
 
 ### Scenario 442: S149 Coordination Barrier Uses Blocker Memory
 
-- Source: `partial_plan_terminals.rs:628`
+- Source: `partial_plan_terminals.rs:630`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: Planning, Contention

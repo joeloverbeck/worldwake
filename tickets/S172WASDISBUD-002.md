@@ -80,10 +80,10 @@ Silent absence (no Wash candidate emitted) is lawful per D5's no-candidate branc
 
 ### Tests That Must Pass
 
-1. `cargo test -p worldwake-ai --test survival_scattered no_budget_exhaustion_on_survival_goals` — passes with widened filter.
-2. `cargo test -p worldwake-ai --test survival_scattered all_agents_perform_survival_actions` — passes; existing assertions hold.
-3. `cargo test -p worldwake-ai --test survival_scattered wash_is_exercised_in_scattered_topology` (new) OR extension to `all_agents_perform_survival_actions` — at least one `WashFacilityUsed` per dirty agent OR lawful D5 failure-attribution surface fires.
-4. Existing suite: `cargo test -p worldwake-ai --test survival_scattered`.
+1. `cargo test -p worldwake-ai --test golden_ai scenarios::survival_scattered::no_budget_exhaustion_on_survival_goals -- --ignored --exact` — passes with widened filter.
+2. `cargo test -p worldwake-ai --test golden_ai scenarios::survival_scattered::all_agents_perform_survival_actions -- --ignored --exact` — passes; existing assertions hold.
+3. `cargo test -p worldwake-ai --test golden_ai scenarios::survival_scattered::wash_is_exercised_in_scattered_topology -- --ignored --exact` (new) OR extension to `all_agents_perform_survival_actions` — at least one `WashFacilityUsed` per dirty agent OR lawful D5 failure-attribution surface fires.
+4. Existing scattered module: `cargo test -p worldwake-ai --test golden_ai scenarios::survival_scattered:: -- --ignored`.
 
 ### Invariants
 
@@ -99,6 +99,6 @@ Silent absence (no Wash candidate emitted) is lawful per D5's no-candidate branc
 
 ### Commands
 
-1. `cargo test -p worldwake-ai --test survival_scattered` — targeted suite verification.
+1. `cargo test -p worldwake-ai --test golden_ai scenarios::survival_scattered:: -- --ignored` — targeted scattered scenario verification.
 2. `cargo clippy -p worldwake-ai --all-targets -- -D warnings` — lint check.
 3. `./scripts/verify.sh` — pre-PR full-suite verification.

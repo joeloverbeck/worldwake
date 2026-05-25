@@ -77,10 +77,10 @@ For each test, the negative-case assertion explicitly fails if ANY candidate ref
 
 ### Tests That Must Pass
 
-1. `cargo test -p worldwake-ai --test survival_scattered no_wash_plan_for_unseen_remote_basin_under_scattered_topology` — new test passes.
-2. `cargo test -p worldwake-ai --test survival_contested no_wash_plan_for_unseen_remote_basin_under_contested_topology` — new test passes.
-3. `cargo test -p worldwake-ai --test survival_drive_escalation run_escalation_respects_belief_only_planning` — existing precedent still passes.
-4. Existing suite: `cargo test -p worldwake-ai --test survival_scattered --test survival_contested --test survival_drive_escalation`.
+1. `cargo test -p worldwake-ai --test golden_ai scenarios::survival_scattered::no_wash_plan_for_unseen_remote_basin_under_scattered_topology -- --ignored --exact` — new test passes.
+2. `cargo test -p worldwake-ai --test golden_ai scenarios::survival_contested::no_wash_plan_for_unseen_remote_basin_under_contested_topology -- --ignored --exact` — new test passes.
+3. `cargo test -p worldwake-ai --test golden_ai scenarios::survival_drive_escalation::run_escalation_respects_belief_only_planning -- --ignored --exact` — existing precedent still passes.
+4. Existing modules: `cargo test -p worldwake-ai --test golden_ai scenarios::survival_scattered:: -- --ignored`, `cargo test -p worldwake-ai --test golden_ai scenarios::survival_contested:: -- --ignored`, and `cargo test -p worldwake-ai --test golden_ai scenarios::survival_drive_escalation:: -- --ignored`.
 
 ### Invariants
 
@@ -97,7 +97,7 @@ For each test, the negative-case assertion explicitly fails if ANY candidate ref
 
 ### Commands
 
-1. `cargo test -p worldwake-ai --test survival_scattered no_wash_plan_for_unseen_remote_basin_under_scattered_topology` — targeted new-test verification.
-2. `cargo test -p worldwake-ai --test survival_contested no_wash_plan_for_unseen_remote_basin_under_contested_topology` — targeted new-test verification.
+1. `cargo test -p worldwake-ai --test golden_ai scenarios::survival_scattered::no_wash_plan_for_unseen_remote_basin_under_scattered_topology -- --ignored --exact` — targeted new-test verification.
+2. `cargo test -p worldwake-ai --test golden_ai scenarios::survival_contested::no_wash_plan_for_unseen_remote_basin_under_contested_topology -- --ignored --exact` — targeted new-test verification.
 3. `cargo test -p worldwake-ai` — full AI-crate suite to confirm no regression.
 4. `./scripts/verify.sh` — pre-PR full verification.
