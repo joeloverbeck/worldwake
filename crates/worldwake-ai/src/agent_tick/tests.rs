@@ -6835,6 +6835,7 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
         cause: ExpectationFailureCause::SameGoalSearchInfeasibleWhileSiblingSucceeded,
     };
 
+    let reliability_event = harness.event_log.next_id();
     let applied = super::apply_source_reliability_failure_observations(
         &mut harness.world,
         &mut harness.event_log,
@@ -6909,6 +6910,16 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
         Some(&worldwake_core::ReliabilityRecord {
             failed_attempts: 1,
             last_attempt_tick: Tick(20),
+            provenance_events: [
+                Some(reliability_event),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ],
             ..worldwake_core::ReliabilityRecord::default()
         })
     );
@@ -6920,6 +6931,16 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
         Some(&worldwake_core::ReliabilityRecord {
             failed_attempts: 1,
             last_attempt_tick: Tick(20),
+            provenance_events: [
+                Some(reliability_event),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ],
             ..worldwake_core::ReliabilityRecord::default()
         })
     );

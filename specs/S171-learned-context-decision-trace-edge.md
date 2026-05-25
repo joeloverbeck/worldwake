@@ -42,8 +42,9 @@ provenance:
    consults. Live S171LEACONTDEC-002 reassessment corrected the original draft:
    the discount path reads `SourceReliability.sources: BTreeMap<SourceKey,
    ReliabilityRecord>`, not `TestimonyReliabilityEntry::provenance_events`.
-   S171LEACONTDEC-004 owns landing a lawful source-reliability provenance
-   producer for this discount axis.
+   S171LEACONTDEC-004 landed a lawful `ReliabilityRecord` provenance ring for
+   this discount axis and kept projection-only/no-event seams empty rather than
+   synthesizing false event ids.
 
 Symmetric precedent exists: `RankedGoalSummary`
 (`crates/worldwake-ai/src/decision_trace.rs:691-715`) already carries
@@ -109,11 +110,12 @@ remain excluded.
 - `worldwake-sim` — save-format version bump only. `SourceReliabilityDiscount`
   is serialized through `AgentDecisionRuntime.agenda_state`, so adding fields
   to that carrier changes the current runtime save shape.
-- `worldwake-core` — **changes only if required by S171LEACONTDEC-004**.
-  Learned-opportunity and repair-memory stores already carry the fields that
-  S171LEACONTDEC-002 threads forward. Source-reliability discount provenance
-  requires a lawful carrier on the live `ReliabilityRecord` path; it must not
-  be synthesized from testimony reliability.
+- `worldwake-core` — S171LEACONTDEC-004 added the lawful
+  `ReliabilityRecord` provenance carrier for source-reliability discount
+  attribution. Learned-opportunity and repair-memory stores already carry the
+  fields that S171LEACONTDEC-002 threads forward. Source-reliability discount
+  provenance must continue to come from the live `ReliabilityRecord` path, not
+  testimony reliability.
 
 ## Dependencies
 
@@ -344,11 +346,10 @@ later projects that agenda entry into `RankedGoalSummary`. The local bindings
 282), and `provenance` (line 273) are already in scope. The two new
 bonus-attribution fields therefore populate by extending the agenda-entry
 carrier and then copying those fields in `summarize_ranked_goal`. The
-`SourceReliabilityDiscount` construction currently remains placeholder-only
-for provenance (`0` / `None`) until S171LEACONTDEC-004 lands the lawful
-source-reliability carrier. The S171LEACONTDEC-002 reassessment proved the
-original `TestimonyReliabilityEntry` read sketch was false for the live
-discount path.
+`SourceReliabilityDiscount` construction reads the matched
+`ReliabilityRecord` provenance ring landed by S171LEACONTDEC-004. The
+S171LEACONTDEC-002 reassessment proved the original
+`TestimonyReliabilityEntry` read sketch was false for the live discount path.
 
 ### D7. Decision-trace formatter additions
 

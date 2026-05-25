@@ -233,8 +233,9 @@ pub use expectation::{
     SearchResult,
 };
 pub use experience::{
-    EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,
-    SourceReliability, danger_ratio_permille, failure_ratio_permille,
+    EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience,
+    SOURCE_RELIABILITY_PROVENANCE_RING_CAPACITY, SourceKey, SourceReliability,
+    danger_ratio_permille, failure_ratio_permille,
 };
 pub use exploration::{AcquisitionExhaustionTracker, ExplorationProfile};
 pub use factions::{FactionData, FactionPurpose};

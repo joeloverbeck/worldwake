@@ -790,6 +790,7 @@ fn resolve_output_owner(
 
 struct ProductionEffectSink<'txn, 'world> {
     txn: &'txn mut WorldTxn<'world>,
+    provenance_event: Option<worldwake_core::EventId>,
     action_error: Option<ActionError>,
 }
 
@@ -881,7 +882,7 @@ impl EffectSink for ProductionEffectSink<'_, '_> {
         workstation: EntityId,
         payload: &ActionPayload,
     ) -> Result<Vec<EffectFact>, Discrepancy> {
-        apply_harvest_resource(self.txn, actor, workstation, payload)
+        apply_harvest_resource(self.txn, actor, workstation, payload, self.provenance_event)
             .map_err(|err| self.record_error(err))
     }
 
@@ -899,10 +900,12 @@ impl EffectSink for ProductionEffectSink<'_, '_> {
 fn apply_production_effect_schema(
     def: &ActionDef,
     instance: &ActionInstance,
+    provenance_event: Option<worldwake_core::EventId>,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
     let mut sink = ProductionEffectSink {
         txn,
+        provenance_event,
         action_error: None,
     };
     let outcome = match apply_effects_with_context(
@@ -943,11 +946,11 @@ fn commit_harvest(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
-    _event_log: &worldwake_core::EventLog,
+    event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    apply_production_effect_schema(def, instance, txn)
+    apply_production_effect_schema(def, instance, Some(event_log.next_id()), txn)
 }
 
 fn apply_harvest_resource(
@@ -955,6 +958,7 @@ fn apply_harvest_resource(
     actor: EntityId,
     workstation: EntityId,
     payload: &ActionPayload,
+    provenance_event: Option<worldwake_core::EventId>,
 ) -> Result<Vec<EffectFact>, ActionError> {
     let payload = payload.as_harvest().ok_or_else(|| {
         ActionError::InternalError(format!(
@@ -1047,6 +1051,7 @@ fn apply_harvest_resource(
         actor,
         harvest_source_key(payload, workstation),
         txn.tick(),
+        provenance_event,
     )?;
 
     release_extraction_slot(txn, actor, workstation)?;
@@ -1069,7 +1074,7 @@ fn commit_craft(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    apply_production_effect_schema(def, instance, txn)
+    apply_production_effect_schema(def, instance, None, txn)
 }
 
 fn apply_finish_craft(
@@ -1225,6 +1230,7 @@ fn record_harvest_start_failure(
             actor,
             harvest_source_key(payload, workstation),
             txn.tick(),
+            None,
         )?;
     }
     Ok(())
@@ -1978,6 +1984,11 @@ mod tests {
         );
 
         let reliability = world.get_component_source_reliability(actor).unwrap();
+        let harvest_event = event_log
+            .events_by_tag(EventTag::ActionCommitted)
+            .last()
+            .copied()
+            .expect("harvest commit event should be recorded");
         assert_eq!(reliability.sources.len(), 1);
         assert_eq!(
             reliability.sources.get(&SourceKey {
@@ -1987,6 +1998,16 @@ mod tests {
             Some(&ReliabilityRecord {
                 successful_acquisitions: 1,
                 last_attempt_tick: Tick(12),
+                provenance_events: [
+                    Some(harvest_event),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ],
                 ..ReliabilityRecord::default()
             })
         );

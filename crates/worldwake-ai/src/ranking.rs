@@ -702,8 +702,8 @@ fn source_reliability_failure_discount(
         failure_ratio_permille: failure_ratio,
         pre_discount_motive: motive_score,
         post_discount_motive,
-        provenance_event_count: 0,
-        most_recent_provenance_event: None,
+        provenance_event_count: trust_record.provenance_event_count(),
+        most_recent_provenance_event: trust_record.most_recent_provenance_event(),
     })
 }
 
@@ -3268,7 +3268,7 @@ mod tests {
         CommodityKind, CommodityPurpose, CommodityValuationProfile, DemandObservation,
         DemandObservationReason, DeprivationExposure, DeprivationKind, DiversificationProfile,
         DriveEscalationParams, DriveEscalationProfile, DriveThresholds, EffectiveRight, EntityId,
-        EntityKind, EpistemicDispositionProfile, ExpectationBasis, ExpectationId,
+        EntityKind, EpistemicDispositionProfile, EventId, ExpectationBasis, ExpectationId,
         ExpectationRecord, ExpectationState, ExpectationStore, GoalRejectionReason,
         GroundComfortTag, HomeostaticNeedId, HomeostaticNeeds, HypothesisKind, InTransitOnEdge,
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
@@ -6636,6 +6636,9 @@ mod tests {
                 capacity_observation_weight: pm(20),
             },
         );
+        let mut record = source_reliability_record(2, 2);
+        record.push_provenance(EventId(8));
+        record.push_provenance(EventId(13));
         view.source_reliabilities.insert(
             agent,
             SourceReliability {
@@ -6644,7 +6647,7 @@ mod tests {
                         entity: source,
                         commodity: CommodityKind::Bread,
                     },
-                    source_reliability_record(2, 2),
+                    record,
                 )]),
             },
         );
@@ -6675,8 +6678,8 @@ mod tests {
                 failure_ratio_permille: 500,
                 pre_discount_motive: 90_000,
                 post_discount_motive: 45_000,
-                provenance_event_count: 0,
-                most_recent_provenance_event: None,
+                provenance_event_count: 2,
+                most_recent_provenance_event: Some(EventId(13)),
             })
         );
     }

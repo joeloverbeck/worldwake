@@ -2753,6 +2753,7 @@ pub(super) fn apply_source_reliability_failure_observations(
             .or_insert_with(|| worldwake_core::ReliabilityRecord::new(*detected_at_tick));
         record.failed_attempts = record.failed_attempts.saturating_add(1);
         record.last_attempt_tick = *detected_at_tick;
+        record.push_provenance(event_log.next_id());
     }
     reliability.enforce_limits(tick, &profile);
 

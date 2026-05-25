@@ -148,8 +148,8 @@ Changed:
 - Threaded those carriers through ranking into `AgendaEntry`, then through `agent_tick/planning.rs::summarize_ranked_goal` into `RankedGoalSummary`.
 - Extended focused ranking tests to assert the attributed entry identity, expiry/source fields, and pre/post motive arithmetic for both bonus axes.
 - Added a focused projection test proving `summarize_ranked_goal` preserves both bonus-attribution fields.
-- Created `tickets/S171LEACONTDEC-004.md` for the live source-reliability provenance gap and truth-synced the active S171 spec plus S171LEACONTDEC-003 dependency wording.
+- Created the now-archived `archive/tickets/S171LEACONTDEC-004.md` for the live source-reliability provenance gap and truth-synced the active S171 spec plus S171LEACONTDEC-003 dependency wording.
 
 Deviations:
-- Live reassessment disproved the drafted `TestimonyReliabilityEntry::provenance_events` source-reliability plan. The actual discount path reads `ReliabilityRecord`, which has no event provenance carrier. This ticket did not synthesize provenance from the wrong store; `tickets/S171LEACONTDEC-004.md` now owns the lawful source-reliability provenance producer.
+- Live reassessment disproved the drafted `TestimonyReliabilityEntry::provenance_events` source-reliability plan. The actual discount path reads `ReliabilityRecord`, which had no event provenance carrier. This ticket did not synthesize provenance from the wrong store; the now-archived `archive/tickets/S171LEACONTDEC-004.md` landed the lawful source-reliability provenance producer.
 - Constructor fallout was broader than the drafted three-file list because adding serialized fields to `AgendaEntry` required explicit `None` values in existing test/helper literals across `worldwake-ai`.

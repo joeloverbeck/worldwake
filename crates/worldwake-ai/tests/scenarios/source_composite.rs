@@ -222,6 +222,7 @@ fn record(
         successful_acquisitions: 1,
         failed_attempts: 0,
         last_attempt_tick: last_observed_capacity_tick,
+        provenance_events: [None; 8],
         average_wait_ticks,
         wait_observation_count,
         last_observed_capacity,

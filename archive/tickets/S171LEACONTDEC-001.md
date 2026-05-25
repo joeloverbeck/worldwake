@@ -8,7 +8,7 @@
 
 ## Problem
 
-Before this ticket, the decision-trace surface had no way to record which learned-state entry produced a ranking-time bonus or discount. `RankedGoalSummary` (`crates/worldwake-ai/src/decision_trace.rs:691-715`) carried `source_reliability_discount` and `competition_discount` attribution structs for the two discount axes but no equivalent attribution for the two bonus axes (`learned_opportunity_bonus` / `repair_memory_bonus`). `SourceReliabilityDiscount` (`decision_trace.rs:773-780`) recorded `failure_ratio_permille` but no lawful source-reliability provenance carrier. This ticket added the foundation attribution types and field extensions to the existing trace structs so the threading work in S171LEACONTDEC-002 had somewhere to land. Per the spec's FND-22A "experience path" requirement, S170 made the stored update inspectable; S171LEACONTDEC-002 made bonus consumption at ranking time inspectable, while S171LEACONTDEC-004 owns the remaining source-reliability provenance producer.
+Before this ticket, the decision-trace surface had no way to record which learned-state entry produced a ranking-time bonus or discount. `RankedGoalSummary` (`crates/worldwake-ai/src/decision_trace.rs:691-715`) carried `source_reliability_discount` and `competition_discount` attribution structs for the two discount axes but no equivalent attribution for the two bonus axes (`learned_opportunity_bonus` / `repair_memory_bonus`). `SourceReliabilityDiscount` (`decision_trace.rs:773-780`) recorded `failure_ratio_permille` but no lawful source-reliability provenance carrier. This ticket added the foundation attribution types and field extensions to the existing trace structs so the threading work in S171LEACONTDEC-002 had somewhere to land. Per the spec's FND-22A "experience path" requirement, S170 made the stored update inspectable; S171LEACONTDEC-002 made bonus consumption at ranking time inspectable, and `archive/tickets/S171LEACONTDEC-004.md` later landed the remaining source-reliability provenance producer.
 
 ## Assumption Reassessment (2026-05-25)
 
@@ -28,7 +28,7 @@ Before this ticket, the decision-trace surface had no way to record which learne
 1. Type definitions and field additions exist with the spec's exact shapes -> compile-time check (`cargo build --workspace`).
 2. Existing tests continue to pass -> the spec's V2 contract that motive_score/priority_class/agenda order are byte-identical pre/post is satisfied by the absence of runtime data-flow changes in this ticket; `cargo test -p worldwake-ai` proves the foundation lands cleanly.
 3. Current save/runtime shape advanced, not backward-compatible -> `SAVE_FORMAT_VERSION` assertions and `agent_decision_runtime_bincode_round_trip_preserves_all_fields` prove the new serialized discount fields roundtrip with non-default values.
-4. Single-layer ticket — no mixed-layer mapping applies. Bonus-attribution threading landed in S171LEACONTDEC-002, source-reliability provenance is owned by S171LEACONTDEC-004, and trace-text rendering remains deferred to S171LEACONTDEC-003.
+4. Single-layer ticket — no mixed-layer mapping applies. Bonus-attribution threading landed in S171LEACONTDEC-002, source-reliability provenance later landed in `archive/tickets/S171LEACONTDEC-004.md`, and trace-text rendering remains deferred to S171LEACONTDEC-003.
 
 ## Landed Changes
 
@@ -77,7 +77,7 @@ pub struct SourceReliabilityDiscount {
 }
 ```
 
-All 8 construction sites must populate the new fields with `0` and `None` respectively in this ticket. S171LEACONTDEC-002 later proved that the drafted source-reliability provenance read was aimed at the wrong carrier; S171LEACONTDEC-004 owns the lawful source-reliability producer. Sites identified by Step 2 codebase validation:
+All 8 construction sites must populate the new fields with `0` and `None` respectively in this ticket. S171LEACONTDEC-002 later proved that the drafted source-reliability provenance read was aimed at the wrong carrier; `archive/tickets/S171LEACONTDEC-004.md` later landed the lawful source-reliability producer. Sites identified by Step 2 codebase validation:
 
 - `crates/worldwake-ai/src/decision_trace.rs:3132` (`sample_source_reliability_discount`)
 - `crates/worldwake-ai/src/ranking.rs:657` (production `apply_source_reliability_discount` return)
@@ -86,7 +86,7 @@ All 8 construction sites must populate the new fields with `0` and `None` respec
 - `crates/worldwake-ai/src/agent_tick/planning.rs:5548` (test fixture)
 - `crates/worldwake-ai/src/goal_model.rs:2787` (focused test)
 
-Placeholder for source-reliability provenance: production sites at `ranking.rs:657` and `decision_runtime.rs:639` initially write `0` / `None`; S171LEACONTDEC-004 owns the lawful source-reliability provenance reads.
+Placeholder for source-reliability provenance: production sites at `ranking.rs:657` and `decision_runtime.rs:639` initially write `0` / `None`; `archive/tickets/S171LEACONTDEC-004.md` later landed the lawful source-reliability provenance reads.
 
 ### 3. Extend `RankedGoalSummary` with two new bonus-attribution fields
 
@@ -136,7 +136,7 @@ In `crates/worldwake-ai/src/decision_trace.rs:3121-3140`:
 
 ## Out of Scope
 
-- Threading attribution into `RankedGoalSummary` at ranking time (D5+D6 — bonus fields landed by S171LEACONTDEC-002; source-reliability provenance remains owned by S171LEACONTDEC-004).
+- Threading attribution into `RankedGoalSummary` at ranking time (D5+D6 — bonus fields landed by S171LEACONTDEC-002; source-reliability provenance later landed in `archive/tickets/S171LEACONTDEC-004.md`).
 - Decision-trace formatter additions (D7 — landed by S171LEACONTDEC-003).
 - Any new behavior or score arithmetic change — this is type-definition-and-construction-site migration only.
 
@@ -191,4 +191,4 @@ Changed:
 
 Deviations:
 - Live reassessment disproved the draft's no-save-shape premise. The ticket absorbed the required current save-format bump instead of adding compatibility shims.
-- S171LEACONTDEC-002 populated the new bonus attribution fields in ranking and extended the `AgendaEntry` carrier before `summarize_ranked_goal` projected those fields into `RankedGoalSummary`. S171LEACONTDEC-004 owns the remaining source-reliability provenance producer.
+- S171LEACONTDEC-002 populated the new bonus attribution fields in ranking and extended the `AgendaEntry` carrier before `summarize_ranked_goal` projected those fields into `RankedGoalSummary`. `archive/tickets/S171LEACONTDEC-004.md` landed the remaining source-reliability provenance producer.

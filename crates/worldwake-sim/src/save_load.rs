@@ -3,8 +3,8 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-/// S170LEASTAPRO-004 stores blocker provenance source.
-pub const SAVE_FORMAT_VERSION: u32 = 105;
+/// S171LEACONTDEC-004 stores source-reliability provenance events.
+pub const SAVE_FORMAT_VERSION: u32 = 106;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -1368,8 +1368,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_105_after_learned_context_trace_fields() {
-        assert_eq!(SAVE_FORMAT_VERSION, 105);
+    fn save_format_version_is_106_after_source_reliability_provenance() {
+        assert_eq!(SAVE_FORMAT_VERSION, 106);
     }
 
     #[test]
@@ -1380,7 +1380,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 105);
+        assert_eq!(SAVE_FORMAT_VERSION, 106);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
