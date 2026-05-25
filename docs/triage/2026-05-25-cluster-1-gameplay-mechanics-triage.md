@@ -26,7 +26,7 @@ single per-spec assertion since `S158`/`S162`/`S163` already cover the architect
 
 ## Accepted
 
-- **`specs/S172-wash-discovery-budget-closure.md`** (P0.1, P0.5 Wash branch, P1.4
+- **`archive/specs/S172-wash-discovery-budget-closure.md`** (P0.1, P0.5 Wash branch, P1.4
   narrowed) — closes the known Wash budget-exhaustion exclusion in
   `survival-scattered`/`survival-contested`; pins the source-class table for the
   Wash candidate path under FND-14B; pins the four lawful Wash decision-trace

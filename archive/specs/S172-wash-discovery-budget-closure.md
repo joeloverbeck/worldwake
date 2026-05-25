@@ -10,7 +10,7 @@ Phase 7: Consequence Carriers
 
 ## Status
 
-Draft
+COMPLETED
 
 ## Crates
 
@@ -255,12 +255,12 @@ Assertions:
 
 Landed by `archive/tickets/S172WASDISBUD-004.md`: `crates/worldwake-ai/tests/scenarios/survival_drive_escalation.rs::cli_does_not_leak_remote_wash_basin_state_for_controlled_agent` extends the existing belief-only Wash harness. The controlled agent remains at a place without a co-located `WashBasin`, the remote basin carries non-default authoritative `WashBasinState` plus queue/grant state, and `PerAgentBeliefView` surfaces used by CLI consumers return default/none for remote clean-water, dirtiness, queue position, and grant state without a belief entry.
 
-## Risks and Open Questions
+## Closeout Notes
 
 1. **`emit_wash_goal` helper-body audit closed.** The S172 implementation verified the source-class table through live helper inspection plus regression coverage: `wash_access_opportunities` enumerates reachable places through public topology, obtains Wash facilities through the belief view, and only admits basins whose `facility_wash_basin_state` is visible through co-location or stored belief; tickets 003 and 004 pin the negative remote-truth/POV cases.
-2. **`MetabolismProfile` and `DriveThresholds` field naming.** Field names in Profile-Driven Parameters and the Deliverable 1 source-class table are pinned to current source at reassessment time (`needs.rs:166` for `wash_ticks`, `drives.rs:58` for `DriveThresholds`). If field names drift between reassessment and implementation, the implementation maps to actual field names and surfaces the drift as a spec amendment.
-3. **Decision-trace payload variants.** Deliverable 5 commits to pure reuse of existing emission surfaces (option (3) of the project's "Discrepancy as Failure-Attribution Surface" pattern). No new variants are introduced. The implementation must verify that the existing substrates (`SelectionTrace`, `ExpectationMismatchPayload`, `CandidateGenerationDiagnostics`) carry sufficient goal-key context for the `(goal_key, generic_cause)` filter convention. If a verification gap is found, that becomes a documented spec amendment — not a license to introduce Wash-specific cause types.
-4. **Sub-scenario vs. parameterized variant.** Whether Scenario C is a separate `.ron` file or a parameterized arm of the existing scenarios is left to implementation taste; the assertion contract is what matters.
+2. **`MetabolismProfile` and `DriveThresholds` field naming.** The implementation matched the live profile/source names used by the spec; no field-name drift required amendment.
+3. **Decision-trace payload variants.** Deliverable 5 landed with pure reuse of existing emission surfaces (option (3) of the project's "Discrepancy as Failure-Attribution Surface" pattern). No new variants were introduced.
+4. **Sub-scenario shape.** Scenario C landed as ignored scattered/contested golden sub-scenarios while Scenario D reused the existing drive-escalation harness. The assertion contracts, not a new `.ron` shape, are the durable proof surface.
 
 ## Out of Scope (Tracked Elsewhere)
 
@@ -269,3 +269,22 @@ Landed by `archive/tickets/S172WASDISBUD-004.md`: `crates/worldwake-ai/tests/sce
 - Repeated-interruption collapse trace — S173.
 - Recovery-memory blockers (avoid retrying a recently-failed basin) — deferred (P1.3 in source report).
 - Disease, sanitation economy, etiquette, privacy, social shame — deferred (P2 in source report).
+
+## Outcome
+
+Completed on 2026-05-25.
+
+- `archive/tickets/S172WASDISBUD-001.md` added Wash to `survival-contested`, removed the budget-check carve-out there, added contested `WashFacilityUsed` payload proof, and fixed the active-goal/current-plan retention bug exposed by the widened run.
+- `archive/tickets/S172WASDISBUD-002.md` removed the scattered Wash budget-check carve-out and added scattered `WashFacilityUsed` payload proof.
+- `archive/tickets/S172WASDISBUD-003.md` generalized the belief-only unseen-remote-basin regression to scattered and contested topologies.
+- `archive/tickets/S172WASDISBUD-004.md` added the player-POV remote WashBasin state leak assertion against the live `PerAgentBeliefView` surface consumed by CLI code.
+- No new authoritative state, failure-attribution payload variant, or CLI accessor was introduced.
+
+Verification:
+
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::survival_drive_escalation::cli_does_not_leak_remote_wash_basin_state_for_controlled_agent -- --exact`
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::survival_drive_escalation::escalation_respects_belief_only_planning -- --ignored --exact`
+- Passed `cargo test -p worldwake-ai --test golden_ai scenarios::survival_drive_escalation`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Earlier S172 tickets recorded their own focused scattered/contested and generated-doc verification; the spec-family final branch phase owns the full pre-push `./scripts/verify.sh` gate.

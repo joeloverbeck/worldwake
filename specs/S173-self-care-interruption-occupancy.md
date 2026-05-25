@@ -22,7 +22,7 @@ Draft
 
 ## Dependencies
 
-- S172 (Wash discovery + budget closure) — lands first; this spec assumes Wash budget accounting is correct before adding occupancy contention
+- `archive/specs/S172-wash-discovery-budget-closure.md` — landed first; this spec assumes Wash budget accounting is correct before adding occupancy contention
 - `archive/specs/S44-generalized-contention-substrate.md` — provides `ContentionQueue`/`ContentionPolicy`
 - `archive/specs/S142-contention-event-inspectability.md` — provides facility-queue promotion and contention-resolved events
 - `archive/specs/S128-sleep-episode-place-quality.md` — provides the precedent: `SleepEpisode` durable abort contract that this spec mirrors for Wash and Toilet
@@ -292,7 +292,7 @@ Per `docs/spec-drafting-rules.md` §Agent Profile Scenario Contract, no `AgentDe
 
 | System | Interaction | Direction |
 |--------|-------------|-----------|
-| S172 (Wash discovery) | Wash candidate emission must filter on known occupancy | State-mediated read |
+| `archive/specs/S172-wash-discovery-budget-closure.md` | Wash candidate emission must filter on known occupancy | State-mediated read |
 | S44/S142 (contention substrate) | `SelfCareOccupancy` + `ContentionKind::SelfCareWash`/`SelfCareLatrine` participate in existing queue/grant flow | State-mediated |
 | S128 (Sleep episode) | Sleep retains its existing contract; `SelfCareInterrupted` event is layered for uniform inspection | Trace-only, no behavior change |
 | S129 (WashBasinState) | Basin water/dirtiness state continues to gate `wash_preconditions`; occupancy is a parallel gate | State-mediated |
@@ -373,7 +373,7 @@ Assertions:
 
 ## Out of Scope (Tracked Elsewhere)
 
-- Wash budget closure and discovery — S172.
+- Wash budget closure and discovery — `archive/specs/S172-wash-discovery-budget-closure.md`.
 - Recovery-memory blockers (avoid retrying a recently-failed basin) — deferred (P1.3 in source report).
 - Sleep-surface scarcity / `SleepSlot` — deferred unless a scenario proves it matters.
 - `WashSessionProgress` duration-partial state — deferred.

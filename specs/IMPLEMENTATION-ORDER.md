@@ -24,23 +24,26 @@ convention); P1.3 / P1.4 narrowed; P2.* deferred. Dismissals and rationale:
 `docs/triage/2026-05-25-cluster-1-gameplay-mechanics-triage.md`.
 
 ```
-S172 (Wash discovery + budget closure)         ── independent; planner + scenario contract only
-S173 (Self-care interruption + occupancy)      ── depends on S172 (budget accounting must be sound
+S172 (Wash discovery + budget closure)         ── completed and archived; planner + scenario contract only
+S173 (Self-care interruption + occupancy)      ── depends on archived S172 (budget accounting must be sound
                                                     before adding contention)
 ```
 
-S173 depends on S172. S172 is independent and may be implemented first.
+S173 depends on archived S172. S172 is complete.
+
+### Completed
+
+- **S172 — Wash Discovery and Budget Closure** —
+  `archive/specs/S172-wash-discovery-budget-closure.md` — *Status: COMPLETED.*
+  Closed the known `Wash` budget-exhaustion exclusion in `survival-scattered` and
+  `survival-contested`; audits the Wash candidate-enumeration path against FND-14B;
+  pinned the four lawful Wash decision-trace branches (Completed, BudgetExhausted,
+  BeliefDisconfirmed, NoCandidate); generalized the belief-only Wash regression to
+  scattered/contested topologies; added a single CLI player-POV assertion against
+  remote-basin-state leak. No new authoritative state. **FND-3/7/8/14/14A/14B/16/19/26/29A/31.**
 
 ### Pending
 
-- **S172 — Wash Discovery and Budget Closure** —
-  `specs/S172-wash-discovery-budget-closure.md` — *Status: Draft.*
-  Closes the known `Wash` budget-exhaustion exclusion in `survival-scattered` and
-  `survival-contested`; audits the Wash candidate-enumeration path against FND-14B;
-  pins the four lawful Wash decision-trace branches (Completed, BudgetExhausted,
-  BeliefDisconfirmed, NoCandidate); generalizes the belief-only Wash regression to
-  scattered/contested topologies; adds a single CLI player-POV assertion against
-  remote-basin-state leak. No new authoritative state. **FND-3/7/8/14/14A/14B/16/19/26/29A/31.**
 - **S173 — Self-Care Interruption Contracts and Facility Occupancy** —
   `specs/S173-self-care-interruption-occupancy.md` — *Status: Draft.*
   Defines the interruption contract per self-care action family (eat, drink, sleep,
@@ -67,10 +70,9 @@ directive. None of the below participate in any active implementation order:
 
 ## Activation
 
-When the gameplay hold is lifted, the recommended priority within the Cluster 1
-adjunct wave is **S172 → S173** (S173 depends on S172's budget accounting being
-sound). Ordering against `S60`–`S66` is a separate decision for the activating
-directive.
+When the gameplay hold is lifted, the remaining Cluster 1 adjunct wave work is
+**S173**; it depends on archived S172's budget accounting being sound. Ordering
+against `S60`–`S66` is a separate decision for the activating directive.
 
 ## Outcome
 

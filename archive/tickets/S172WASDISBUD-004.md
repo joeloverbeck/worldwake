@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — test-only POV boundary regression
-**Deps**: specs/S172-wash-discovery-budget-closure.md (D6); archive/specs/S158-belief-view-remote-truth-leak-closure.md; archive/specs/S162-belief-view-source-gate-hardening.md; archive/specs/S163-cli-player-pov-boundary.md
+**Deps**: archive/specs/S172-wash-discovery-budget-closure.md (D6); archive/specs/S158-belief-view-remote-truth-leak-closure.md; archive/specs/S162-belief-view-source-gate-hardening.md; archive/specs/S163-cli-player-pov-boundary.md
 
 ## Problem
 
@@ -13,7 +13,7 @@ S158/S162/S163 hardened the belief-view accessors and CLI POV boundary so the hu
 ## Assumption Reassessment (2026-05-25)
 
 1. The CLI POV boundary machinery exists (S163 archived). The belief-view leak closure for remote facility state exists (S158, S162 archived). The dual-mode accessor `wash_basin_state` at `crates/worldwake-sim/src/per_agent_belief_view.rs:824` returns the world-authoritative `WashBasinState` only when `has_authoritative_local_visibility(basin)` holds (FND-14A co-located case); otherwise it falls back to `BelievedEntityState::wash_basin_state`. If the belief store has no entry, the accessor returns `Default::default()`.
-2. S172 Deliverable 6 (`specs/S172-wash-discovery-budget-closure.md`): "Add a single CLI assertion against an existing scenario (e.g., `survival-drive-escalation`) confirming that with the controlled agent at a place without a co-located `WashBasin` and with no remote-basin belief, the UI does not display clean-water levels, basin dirtiness, or queue state for any remote basin."
+2. S172 Deliverable 6 (`archive/specs/S172-wash-discovery-budget-closure.md`): "Add a single CLI assertion against an existing scenario (e.g., `survival-drive-escalation`) confirming that with the controlled agent at a place without a co-located `WashBasin` and with no remote-basin belief, the UI does not display clean-water levels, basin dirtiness, or queue state for any remote basin."
 3. Shared abstraction boundary: the CLI POV accessor pipeline that surfaces basin state for human-facing rendering. The contract is "no remote `WashBasinState` is rendered for the controlled agent without a belief entry." The boundary lives in the CLI crate's belief-view consumer surface, not in the simulation crates.
 4. Intended invariant: CLI accessor pipelines respect FND-19 agent symmetry and FND-27 derived-summaries-are-caches — no UI accessor may surface authoritative remote `WashBasin` state.
 5. Live `GoalKind` under test: not directly under test — this is a UI-layer assertion. The candidate path is exercised, but the surface tested is the CLI POV accessor return.

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: specs/S172-wash-discovery-budget-closure.md (D3 scattered portion, D5 distributed)
+**Deps**: archive/specs/S172-wash-discovery-budget-closure.md (D3 scattered portion, D5 distributed)
 
 ## Problem
 
@@ -13,7 +13,7 @@ Before this ticket, `crates/worldwake-ai/tests/scenarios/survival_scattered.rs` 
 ## Assumption Reassessment (2026-05-25)
 
 1. Before implementation, the carve-out existed at `crates/worldwake-ai/tests/scenarios/survival_scattered.rs` (`is_budget_checked_survival_goal`) and was consumed by `no_budget_exhaustion_on_survival_goals`. A re-citation comment lived in that test's scenario metadata. Existing tests in this file included `all_agents_survive_1440_ticks`, `all_agents_perform_survival_actions`, `isolated_agent_reaches_food_source`, `no_budget_exhaustion_on_survival_goals`, `no_stuck_idle_windows_with_elevated_needs`, and `seeded_target_location_belief_decays_to_stale_without_refresh`. The `.ron` already included Wash in `scenarios/survival-scattered.ron`.
-2. S172 Deliverable 3 (`specs/S172-wash-discovery-budget-closure.md`) requires the test-side filter widening for scattered. Deliverable 5 commits to option (3) Reuse with the goal-key-join inspection convention.
+2. S172 Deliverable 3 (`archive/specs/S172-wash-discovery-budget-closure.md`) requires the test-side filter widening for scattered. Deliverable 5 commits to option (3) Reuse with the goal-key-join inspection convention.
 3. Shared abstraction boundary: the AI-test-side filter `is_budget_checked_survival_goal` is the only surface that diverges from the contract. The `.ron` contract is already correct.
 4. Intended invariant: every agent must lawfully exercise Wash under scattered topology within the run window OR emit a lawful D5 failure-attribution surface — uniformly with the other four self-care goals.
 5. Live `GoalKind` under test: `GoalKind::Wash`; current operator surface `WASH_OPS = [PlannerOpKind::Wash, PlannerOpKind::Travel]` at `crates/worldwake-ai/src/goal_schema.rs:101`; `GoalPlanningBudget::SELF_CARE` at `goal_schema.rs:374`.

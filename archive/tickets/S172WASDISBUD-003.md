@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: specs/S172-wash-discovery-budget-closure.md (D4, D5 distributed — no-candidate surface)
+**Deps**: archive/specs/S172-wash-discovery-budget-closure.md (D4, D5 distributed — no-candidate surface)
 
 ## Problem
 
@@ -13,7 +13,7 @@
 ## Assumption Reassessment (2026-05-25)
 
 1. Existing belief-only Wash proof: `crates/worldwake-ai/tests/scenarios/survival_drive_escalation.rs:244` `build_belief_only_wash_harness` constructs a harness with `WashBasin` at `VILLAGE_SQUARE`, agent at `ORCHARD_FARM`, no belief seeded for the remote basin; the test at line 318 (`run_escalation_respects_belief_only_planning`) runs `BELIEF_ONLY_TICKS` and verifies no Wash candidate references the remote basin. Sibling pattern in `survival_scattered.rs:547` `seeded_target_location_belief_decays_to_stale_without_refresh` exercises belief decay (a different but adjacent concern).
-2. S172 D4 (`specs/S172-wash-discovery-budget-closure.md`): "Add the same proof shape to `survival-scattered` and `survival-contested`." D5's no-candidate branch (`emit_wash_goal` empty-emit) is the failure-attribution surface this regression filters on.
+2. S172 D4 (`archive/specs/S172-wash-discovery-budget-closure.md`): "Add the same proof shape to `survival-scattered` and `survival-contested`." D5's no-candidate branch (`emit_wash_goal` empty-emit) is the failure-attribution surface this regression filters on.
 3. Shared abstraction boundary: the cross-system contract is "no `emit_wash_goal` candidate may reference a `WashBasin` entity-id the agent has no belief about." This is a candidate-emission-layer invariant proven via `CandidateGenerationDiagnostics` and decision trace.
 4. Intended invariant: candidate enumeration must not synthesize a Wash candidate from authoritative remote state. Hereby applies to scattered, contested, and drive-escalation topologies symmetrically.
 5. Live `GoalKind` under test: `GoalKind::Wash`. The candidate-emission helper under test is `emit_wash_goal` at `crates/worldwake-ai/src/candidate_generation.rs:4607`, which routes through `wash_access_opportunities` at line 4744. The belief-view accessor at `crates/worldwake-sim/src/per_agent_belief_view.rs:824` is the dual-mode FND-14A authoritative-or-stored-belief accessor.
