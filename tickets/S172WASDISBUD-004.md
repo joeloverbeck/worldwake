@@ -64,7 +64,7 @@ If the exact CLI accessor name is not obvious from grep, the implementer documen
 - Any change to `per_agent_belief_view::wash_basin_state` or any other belief-view accessor — those are S158/S162's deliverables.
 - Any change to S163's CLI POV boundary infrastructure — already landed.
 - Any extension to cover Sleep, Toilet, or other self-care facility state in UI — Wash is the only self-care facility surface S172 requires; sibling assertions for other facilities belong in their own tickets if warranted.
-- Belief-only candidate-path regression — covered by ticket 003.
+- Belief-only candidate-path regression — covered by `archive/tickets/S172WASDISBUD-003.md`.
 - Test consolidation across scattered/contested/drive-escalation belief-only proofs — defer.
 
 ## Acceptance Criteria
@@ -72,7 +72,7 @@ If the exact CLI accessor name is not obvious from grep, the implementer documen
 ### Tests That Must Pass
 
 1. `cargo test -p worldwake-ai --test survival_drive_escalation cli_does_not_leak_remote_wash_basin_state_for_controlled_agent` (or appropriate CLI-crate test path) — new test passes.
-2. `cargo test -p worldwake-ai --test survival_drive_escalation run_escalation_respects_belief_only_planning` — existing belief-only test still passes (sibling regression check).
+2. `cargo test -p worldwake-ai --test golden_ai scenarios::survival_drive_escalation::escalation_respects_belief_only_planning -- --ignored --exact` — existing belief-only test still passes (sibling regression check).
 3. Existing suite: `cargo test -p worldwake-ai --test survival_drive_escalation` and `cargo test -p worldwake-cli`.
 
 ### Invariants

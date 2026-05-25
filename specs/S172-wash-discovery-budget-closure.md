@@ -2,7 +2,7 @@
 
 ## Summary
 
-Close the known `Wash` budget-exhaustion exclusion in `survival-scattered` and `survival-contested` so that Wash obeys the same lawful discovery, travel-search, planner-budget, and traceable-failure accounting as Eat, Drink, Sleep, and Relieve. Before S172 implementation began, `survival-contested` omitted Wash from `required_self_care_families`, and both `survival-scattered` and `survival-contested` omitted Wash from budget-exhaustion assertions because Wash could exhaust planner budget before the agent discovered a `WashBasin`. Ticket `S172WASDISBUD-001` has landed the contested contract/test side and fixed the planner active-goal/current-plan retention bug that surfaced there; ticket `S172WASDISBUD-002` has landed the scattered budget-check and `WashFacilityUsed` payload proof. The belief-only and CLI POV deliverables remain active sibling work. The simulation has the core Wash substrates (`GoalPlanningBudget::SELF_CARE`, `emit_wash_goal`, `WASH_OPS = [Wash, Travel]`, `MayContainWashBasin`, `WashBasinState`, the drive-escalation belief-only Wash regression), and this spec pins the lawful collision proof that Wash discovery and budget closure must match the other four families under scattered, contested, and belief-only topologies.
+Close the known `Wash` budget-exhaustion exclusion in `survival-scattered` and `survival-contested` so that Wash obeys the same lawful discovery, travel-search, planner-budget, and traceable-failure accounting as Eat, Drink, Sleep, and Relieve. Before S172 implementation began, `survival-contested` omitted Wash from `required_self_care_families`, and both `survival-scattered` and `survival-contested` omitted Wash from budget-exhaustion assertions because Wash could exhaust planner budget before the agent discovered a `WashBasin`. Ticket `archive/tickets/S172WASDISBUD-001.md` has landed the contested contract/test side and fixed the planner active-goal/current-plan retention bug that surfaced there; ticket `archive/tickets/S172WASDISBUD-002.md` has landed the scattered budget-check and `WashFacilityUsed` payload proof; ticket `archive/tickets/S172WASDISBUD-003.md` has landed the scattered/contested belief-only Wash regression. The CLI POV deliverable remains active sibling work. The simulation has the core Wash substrates (`GoalPlanningBudget::SELF_CARE`, `emit_wash_goal`, `WASH_OPS = [Wash, Travel]`, `MayContainWashBasin`, `WashBasinState`, and the drive-escalation/scattered/contested belief-only Wash regressions), and this spec pins the lawful collision proof that Wash discovery and budget closure must match the other four families under scattered, contested, and belief-only topologies.
 
 ## Phase
 
@@ -105,10 +105,10 @@ The implementation deliverable is an audit ticket against `search/transition.rs`
 
 ### 4. Belief-only Wash regression generalization
 
-The existing `survival_drive_escalation::build_belief_only_wash_harness` proves Wash is not synthesized for a remote unseen basin in a drive-escalation topology. This deliverable adds the same proof shape to `survival-scattered` and `survival-contested`:
+Landed by `archive/tickets/S172WASDISBUD-003.md`: the existing `survival_drive_escalation::build_belief_only_wash_harness` proves Wash is not synthesized for a remote unseen basin in a drive-escalation topology, and ignored golden Scenario 468 / Scenario 477 add the same candidate-emission proof shape to `survival-scattered` and `survival-contested`.
 
-- A sub-scenario (or a parameterized variant) where a `WashBasin` exists at a place the agent has no belief about and no perception path to within the run window.
-- Assertion: no `emit_wash_goal` candidate references the remote basin; no Wash plan is composed; the agent's dirtiness rises and other self-care goals proceed.
+- Each landed sub-scenario preserves the authored remote `WashBasin`, clears the selected agent's belief store, seeds only local beliefs, and disables exploration pressure so the test remains at the no-remote-truth candidate boundary.
+- Assertion: no `emit_wash_goal` candidate references the remote basin; no Wash plan is composed or selected; the agent's dirtiness remains unresolved instead of being corrected by remote truth.
 - Assertion negative: any planner-visible candidate carrying the remote basin's `EntityId` fails the scenario.
 
 ### 5. Lawful Wash failure-attribution surfaces
@@ -133,7 +133,7 @@ The CLI must not display remote `WashBasin::clean_water`, basin dirtiness, or qu
 
 ## FND-01 Section H — Causal Hooks Declaration
 
-1. **Missing downstream consequence**: The `survival-scattered` and `survival-contested` scenarios are the canonical proof surface for self-care collision under bounded planner budget. Before S172 implementation, Wash was one of the five homeostatic needs but escaped parts of those contracts. As a result, an entire fifth of the survival loop could escape budget pressure without breaking goldens — exactly the seam where a meter becomes decorative instead of systemic. `S172WASDISBUD-001` and `S172WASDISBUD-002` have now landed the contested and scattered budget-closure tests; the remaining active validation work is belief-only and CLI POV coverage.
+1. **Missing downstream consequence**: The `survival-scattered` and `survival-contested` scenarios are the canonical proof surface for self-care collision under bounded planner budget. Before S172 implementation, Wash was one of the five homeostatic needs but escaped parts of those contracts. As a result, an entire fifth of the survival loop could escape budget pressure without breaking goldens — exactly the seam where a meter becomes decorative instead of systemic. `archive/tickets/S172WASDISBUD-001.md` and `archive/tickets/S172WASDISBUD-002.md` have now landed the contested and scattered budget-closure tests, and `archive/tickets/S172WASDISBUD-003.md` has landed the scattered/contested belief-only candidate regression; the remaining active validation work is CLI POV coverage.
 
 2. **New entities/relations/records**: None. The spec audits existing surfaces (`emit_wash_goal`, `WASH_OPS`, `GoalPlanningBudget::SELF_CARE`, `MayContainWashBasin`, `WashBasinState`, `MetabolismProfile`) and existing decision-event payloads.
 
@@ -244,12 +244,12 @@ Assertions: same shape as Scenario A, plus assertion that no Wash plan reads rem
 
 ### Scenario C — Belief-only Wash regression in scattered/contested topologies
 
-Sub-scenario (or parameterized variant) of A and B in which the agent has no belief about a `WashBasin` that exists in authoritative truth. The agent's dirtiness escalates; no Wash plan is composed; other self-care goals proceed.
+Landed by `archive/tickets/S172WASDISBUD-003.md`: sub-scenarios of A and B in which the selected agent has no belief about a `WashBasin` that exists in authoritative truth. The agent's dirtiness remains unresolved; no Wash candidate, plan, selection, or commit occurs. The landed isolation deliberately disables exploration and non-dirtiness need pressure so this proof stays at the belief-only candidate boundary.
 
 Assertions:
 - No `emit_wash_goal` candidate references the remote basin id.
 - The no-candidate surface from Deliverable 5 fires for the dirty agent (if dirtiness crosses the urgency threshold) — observable via `CandidateGenerationDiagnostics` showing zero Wash candidates that tick.
-- Other self-care families continue to be exercised.
+- No Wash plan is found or selected, no `wash` action commits, and dirtiness does not drop.
 
 ### Scenario D — Player POV self-care UI assertion
 

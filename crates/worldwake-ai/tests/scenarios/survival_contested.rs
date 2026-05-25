@@ -24,6 +24,7 @@ use worldwake_core::{
 use worldwake_sim::ActionTraceKind;
 
 const SURVIVAL_TICKS: u32 = 1440;
+const BELIEF_ONLY_TICKS: u32 = 400;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct AgentSurvivalObservation {
@@ -69,6 +70,15 @@ fn load_survival_contested_harness() -> (GoldenHarness, ScenarioDef) {
     harness.driver.enable_tracing();
     harness.enable_action_tracing();
     (harness, def)
+}
+
+fn build_belief_only_wash_harness_contested() -> (GoldenHarness, EntityId, EntityId) {
+    let (mut h, _def) = load_survival_contested_harness();
+    let agent = *named_agents(&h)
+        .get("Agent A")
+        .expect("contested scenario should include Agent A");
+    let remote_basin = configure_belief_only_wash_barrier_agent(&mut h, agent);
+    (h, agent, remote_basin)
 }
 
 fn scenario_place_id(def: &ScenarioDef, place_name: &str) -> EntityId {
@@ -398,7 +408,7 @@ fn run_survival_contested() -> SurvivalContestedObservation {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 158: Contested Survival Keeps All Four Agents Alive For 1440 Ticks
+// Scenario 470: Contested Survival Keeps All Four Agents Alive For 1440 Ticks
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Needs, Travel, Production, Perception
@@ -447,7 +457,7 @@ fn all_agents_survive_1440_ticks() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 159: Contested Survival Exercises All Five Self-Care Action Families
+// Scenario 471: Contested Survival Exercises All Five Self-Care Action Families
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Needs, Travel, Production
@@ -482,7 +492,7 @@ fn all_agents_perform_survival_actions() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 160: Contested Survival Draws From Both Water Sources Across The Run
+// Scenario 472: Contested Survival Draws From Both Water Sources Across The Run
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Travel, Production, Perception
@@ -526,7 +536,7 @@ fn both_water_sources_are_used() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 161: Contested Survival Has Both Camp Sides Reach A Food Source
+// Scenario 473: Contested Survival Has Both Camp Sides Reach A Food Source
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Exploration, Perception, Travel
@@ -563,7 +573,7 @@ fn both_camp_sides_reach_food() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 162: Contested Survival Avoids Budget Exhaustion On Survival Goals
+// Scenario 474: Contested Survival Avoids Budget Exhaustion On Survival Goals
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Search, Needs, Travel, Production
@@ -597,7 +607,7 @@ fn no_budget_exhaustion_on_survival_goals() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 163: Contested Survival Persists Wash Facility Commit Payloads
+// Scenario 475: Contested Survival Persists Wash Facility Commit Payloads
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Needs, Travel, Production
@@ -629,7 +639,7 @@ fn wash_facility_payloads_record_every_agent() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 164: Contested Survival Has No Stuck Idle Windows With Elevated Needs
+// Scenario 476: Contested Survival Has No Stuck Idle Windows With Elevated Needs
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Needs, Travel, Production, Perception
@@ -680,5 +690,74 @@ fn per_need_critical_run_limit_override_beats_default_for_dirtiness_only() {
         "Agent A",
         &thresholds,
         &runs,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 477: Contested Belief-Only Wash Cannot Target An Unseen Remote Basin
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Belief View, Needs, Perception
+// GoalKinds: Wash
+// ActionDomains: Needs
+// Places: North Camp, Spring Basin
+// Principles: 14, 14B, 16, 31
+//
+// Setup: Load the authored `survival-contested.ron` topology, isolate Agent A
+// at its authored start, clear its belief store, seed only local beliefs, and
+// keep the authored remote `WashBasin` unobserved for 400 ticks.
+//
+// Proves: candidate generation never emits a Wash opportunity for the unseen
+// remote basin and no Wash plan is found or selected. Dirtiness remains
+// unresolved because ignorance is lawful rather than corrected through remote
+// authoritative truth.
+//
+// Chain: authored contested topology -> local-only belief seed -> rising
+// dirtiness without basin belief -> no Wash candidate or selected plan.
+#[test]
+#[ignore = "CI-only: belief-only Wash regression; run via golden-survival workflow"]
+fn no_wash_plan_for_unseen_remote_basin_under_contested_topology() {
+    let (mut h, agent, remote_basin) = build_belief_only_wash_harness_contested();
+    let observation = run_belief_only_wash_barrier(&mut h, agent, remote_basin, BELIEF_ONLY_TICKS);
+
+    assert!(
+        observation.believed_wash_basins.is_empty(),
+        "contested belief-only agent should not know remote basin {}; beliefs={:?}",
+        observation.remote_basin,
+        observation.believed_wash_basins
+    );
+    assert!(
+        observation.generated_wash_opportunities.is_empty(),
+        "contested belief-only agent should emit no Wash candidates for unseen basin {}; opportunities={:?}",
+        observation.remote_basin,
+        observation.generated_wash_opportunities
+    );
+    assert!(
+        observation.found_wash_plan_ticks.is_empty(),
+        "contested belief-only agent should find no Wash plans for unseen basin {}; ticks={:?}",
+        observation.remote_basin,
+        observation.found_wash_plan_ticks
+    );
+    assert!(
+        observation.selected_wash_ticks.is_empty(),
+        "contested belief-only agent should select no Wash plan for unseen basin {}; ticks={:?}",
+        observation.remote_basin,
+        observation.selected_wash_ticks
+    );
+    assert!(
+        observation.dirtiness_drop_ticks.is_empty(),
+        "contested belief-only dirtiness should not be relieved without basin knowledge: {:?}",
+        observation.dirtiness_drop_ticks
+    );
+    assert!(
+        observation.final_dirtiness >= observation.initial_dirtiness,
+        "contested belief-only dirtiness should remain unresolved or rise; initial={} final={}",
+        observation.initial_dirtiness,
+        observation.final_dirtiness
+    );
+    assert!(
+        !observation.committed_actions.contains("wash"),
+        "contested belief-only agent must not commit wash without basin knowledge; actions={:?}",
+        observation.committed_actions
     );
 }

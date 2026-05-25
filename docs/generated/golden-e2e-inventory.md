@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden scenario source files: 59
 - Files contributing `golden_*` tests: 59
-- Total `golden_*` tests: 293
+- Total `golden_*` tests: 296
 
 ## Per-Scenario-File Inventory
 
@@ -57,7 +57,7 @@ Do not hand-edit it.
 | `survival_ask_consult.rs` | 1 |
 | `survival_baseline.rs` | 7 |
 | `survival_combat.rs` | 2 |
-| `survival_contested.rs` | 8 |
+| `survival_contested.rs` | 9 |
 | `survival_drive_escalation.rs` | 3 |
 | `survival_escort.rs` | 2 |
 | `survival_items_decay.rs` | 2 |
@@ -66,7 +66,7 @@ Do not hand-edit it.
 | `survival_patrol.rs` | 2 |
 | `survival_preferences.rs` | 3 |
 | `survival_production.rs` | 2 |
-| `survival_scattered.rs` | 6 |
+| `survival_scattered.rs` | 8 |
 | `survival_tell.rs` | 2 |
 | `survival_theft.rs` | 2 |
 | `survival_trade.rs` | 2 |
@@ -450,6 +450,7 @@ Do not hand-edit it.
 - `wash_facility_payloads_record_every_agent`
 - `no_stuck_idle_windows_with_elevated_needs`
 - `per_need_critical_run_limit_override_beats_default_for_dirtiness_only`
+- `no_wash_plan_for_unseen_remote_basin_under_contested_topology`
 
 ### `survival_drive_escalation.rs`
 
@@ -502,8 +503,10 @@ Do not hand-edit it.
 - `all_agents_perform_survival_actions`
 - `isolated_agent_reaches_food_source`
 - `no_budget_exhaustion_on_survival_goals`
+- `wash_facility_payloads_record_every_agent`
 - `no_stuck_idle_windows_with_elevated_needs`
 - `seeded_target_location_belief_decays_to_stale_without_refresh`
+- `no_wash_plan_for_unseen_remote_basin_under_scattered_topology`
 
 ### `survival_tell.rs`
 

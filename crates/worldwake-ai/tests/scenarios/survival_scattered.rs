@@ -22,6 +22,7 @@ use worldwake_sim::{
 };
 
 const SURVIVAL_TICKS: u32 = 1440;
+const BELIEF_ONLY_TICKS: u32 = 400;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct AgentSurvivalObservation {
@@ -63,6 +64,15 @@ fn load_survival_scattered_harness() -> (GoldenHarness, ScenarioDef) {
     harness.driver.enable_tracing();
     harness.enable_action_tracing();
     (harness, def)
+}
+
+fn build_belief_only_wash_harness_scattered() -> (GoldenHarness, EntityId, EntityId) {
+    let (mut h, _def) = load_survival_scattered_harness();
+    let agent = *named_agents(&h)
+        .get("Agent A")
+        .expect("scattered scenario should include Agent A");
+    let remote_basin = configure_belief_only_wash_barrier_agent(&mut h, agent);
+    (h, agent, remote_basin)
 }
 
 fn scenario_place_id(def: &ScenarioDef, place_name: &str) -> EntityId {
@@ -675,4 +685,73 @@ fn seeded_target_location_belief_decays_to_stale_without_refresh() {
         profile.claim_confidence_threshold.value()
     );
     assert_eq!(stale_envelope.acquired_tick, location_claim.acquired_tick);
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 468: Scattered Belief-Only Wash Cannot Target An Unseen Remote Basin
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Belief View, Needs, Perception
+// GoalKinds: Wash
+// ActionDomains: Needs
+// Places: Hilltop Camp, River Crossing
+// Principles: 14, 14B, 16, 31
+//
+// Setup: Load the authored `survival-scattered.ron` topology, isolate Agent A
+// at its authored start, clear its belief store, seed only local beliefs, and
+// keep the authored remote `WashBasin` unobserved for 400 ticks.
+//
+// Proves: candidate generation never emits a Wash opportunity for the unseen
+// remote basin and no Wash plan is found or selected. Dirtiness remains
+// unresolved because ignorance is lawful rather than corrected through remote
+// authoritative truth.
+//
+// Chain: authored scattered topology -> local-only belief seed -> rising
+// dirtiness without basin belief -> no Wash candidate or selected plan.
+#[test]
+#[ignore = "CI-only: belief-only Wash regression; run via golden-survival workflow"]
+fn no_wash_plan_for_unseen_remote_basin_under_scattered_topology() {
+    let (mut h, agent, remote_basin) = build_belief_only_wash_harness_scattered();
+    let observation = run_belief_only_wash_barrier(&mut h, agent, remote_basin, BELIEF_ONLY_TICKS);
+
+    assert!(
+        observation.believed_wash_basins.is_empty(),
+        "scattered belief-only agent should not know remote basin {}; beliefs={:?}",
+        observation.remote_basin,
+        observation.believed_wash_basins
+    );
+    assert!(
+        observation.generated_wash_opportunities.is_empty(),
+        "scattered belief-only agent should emit no Wash candidates for unseen basin {}; opportunities={:?}",
+        observation.remote_basin,
+        observation.generated_wash_opportunities
+    );
+    assert!(
+        observation.found_wash_plan_ticks.is_empty(),
+        "scattered belief-only agent should find no Wash plans for unseen basin {}; ticks={:?}",
+        observation.remote_basin,
+        observation.found_wash_plan_ticks
+    );
+    assert!(
+        observation.selected_wash_ticks.is_empty(),
+        "scattered belief-only agent should select no Wash plan for unseen basin {}; ticks={:?}",
+        observation.remote_basin,
+        observation.selected_wash_ticks
+    );
+    assert!(
+        observation.dirtiness_drop_ticks.is_empty(),
+        "scattered belief-only dirtiness should not be relieved without basin knowledge: {:?}",
+        observation.dirtiness_drop_ticks
+    );
+    assert!(
+        observation.final_dirtiness >= observation.initial_dirtiness,
+        "scattered belief-only dirtiness should remain unresolved or rise; initial={} final={}",
+        observation.initial_dirtiness,
+        observation.final_dirtiness
+    );
+    assert!(
+        !observation.committed_actions.contains("wash"),
+        "scattered belief-only agent must not commit wash without basin knowledge; actions={:?}",
+        observation.committed_actions
+    );
 }
