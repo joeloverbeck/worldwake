@@ -13,7 +13,7 @@
   "next_target": null,
   "queue": [],
   "implement_ticket_audit": "done",
-  "post_ticket_review_audit": "not_required",
+  "post_ticket_review_audit": "done",
   "last_implement_ticket_audit": "done",
   "last_post_ticket_review_audit": "done",
   "blocked": false,
