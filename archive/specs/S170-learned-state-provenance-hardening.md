@@ -1,6 +1,6 @@
 # S170: Learned-State Provenance Hardening
 
-**Status**: DRAFT
+**Status**: COMPLETED
 
 ## Problem Statement
 
@@ -158,7 +158,10 @@ any order. Builds on completed S109 (typed discrepancy taxonomy) and S151
     Each runtime site writes `source: BlockerSource::Event(id)` where a
     triggering event id is in scope, or `source: BlockerSource::Inferred`
     where the blocker is inferred without one discrete triggering event.
-- No `worldwake-systems` changes.
+- `worldwake-systems`
+  - `src/trade_actions.rs` no-buyer staff-market blockers record
+    `BlockerSource::Event(id)` when the transaction has an event cause, or
+    `BlockerSource::Inferred` otherwise.
 
 ## Dependencies
 
@@ -627,4 +630,21 @@ state.
 
 ## Outcome
 
-(Filled in upon completion.)
+Completed on 2026-05-25.
+
+- Landed the S170 ticket family across `archive/tickets/S170LEASTAPRO-001.md`
+  through `archive/tickets/S170LEASTAPRO-004.md`.
+- `RoutePreference::record_safe` now stores safe-traversal event provenance.
+- `OpportunityEntry`, `DiscrepancyEntry`, and `Blocker` now carry explicit
+  domain-specific source enums instead of silent absent-event states.
+- `BlockerSource::{Event, Inferred}` preserves event-backed blockers and names
+  no-single-event planning inferences explicitly.
+- `SAVE_FORMAT_VERSION` advanced through the family to 104.
+- Deviations: implementation corrected the drafted Blocker-site inventory;
+  `candidate_generation.rs` and `search/tests.rs` hits were test fixture
+  fallout, not runtime blocker producers. No shared `LearnedStateUpdate`
+  abstraction or decision-effect trace coupling landed.
+- Verification results included focused per-ticket tests, crate suites for
+  `worldwake-core`, `worldwake-ai`, `worldwake-sim`, and `worldwake-systems`,
+  plus `cargo test --workspace --no-run` during the final Blocker migration.
+  Full pre-push verification remains owned by the final harness branch phase.
