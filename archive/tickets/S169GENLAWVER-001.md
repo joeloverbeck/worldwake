@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-core/src/decision_event_payload.rs` (new enum + field on `RepairAppliedPayload`), new `worldwake-ai/src/verification_provider/` module
-**Deps**: specs/S169-generalized-lawful-verification-substrate.md
+**Deps**: archive/specs/S169-generalized-lawful-verification-substrate.md
 
 ## Problem
 
@@ -154,10 +154,10 @@ Add `pub mod verification_provider;` to `worldwake-ai/src/lib.rs`.
 ## Out of Scope
 
 - `try_build_verification_candidate` registry function — archive/tickets/S169GENLAWVER-002.md.
-- AskWitness / ConsultRecord / SearchPlace provider submodules and `try_build` implementations — S169GENLAWVER-002, -003, -004.
+- AskWitness / ConsultRecord / SearchPlace provider submodules and `try_build` implementations — archive/tickets/S169GENLAWVER-002.md, archive/tickets/S169GENLAWVER-003.md, archive/tickets/S169GENLAWVER-004.md.
 - Seam refactor at `agent_tick/execution.rs:452` — archive/tickets/S169GENLAWVER-002.md.
 - `RepairAttemptTrace` extension with `verification_provider` / `verification_rejections` fields — archive/tickets/S169GENLAWVER-002.md.
-- New goldens — S169GENLAWVER-003, -004, -005.
+- Provider and negative-omniscience proof surfaces — archive/tickets/S169GENLAWVER-003.md, archive/tickets/S169GENLAWVER-004.md, archive/tickets/S169GENLAWVER-005.md.
 
 ## Acceptance Result
 

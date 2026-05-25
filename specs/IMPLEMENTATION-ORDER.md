@@ -39,18 +39,20 @@ Recommended priority follows benefit: **S169 first** (highest-leverage seam
 identified in two consecutive iterations of the report), then **S170**
 (provenance hygiene, no behavior change).
 
-### Pending
+### Completed
 
 - **S169 — Generalized Lawful Verification Substrate** —
-  `specs/S169-generalized-lawful-verification-substrate.md`. Introduces a
-  fixed three-provider `VerificationCandidateProvider` registry (AskWitness,
-  ConsultRecord, SearchPlace) at the plan-repair revalidation seam; extends
-  the `RepairApplied` event with `provider_kind` + `target` for FND-29A
-  append-only history; adds three goldens (consult-record repair, search-place
-  repair, negative omniscience) plus parity assertion with the existing S165
-  AskWitness golden. Goal-level agenda-companion polymorphism is explicitly
-  out of scope. **FND-1, FND-7, FND-14, FND-14A, FND-14B, FND-15, FND-16,
-  FND-17, FND-18, FND-20, FND-21, FND-28, FND-29, FND-29A, FND-31.**
+  `archive/specs/S169-generalized-lawful-verification-substrate.md`. Introduced
+  a fixed three-provider verification registry (AskWitness, ConsultRecord,
+  SearchPlace) at the plan-repair revalidation seam; extended repair decision
+  traces and `RepairAppliedPayload` with provider selection; landed
+  provider-specific seam proofs, negative omniscience seam proof, and the
+  existing S165 AskWitness parity assertion. Goal-level agenda-companion
+  polymorphism remains explicitly out of scope. **FND-1, FND-7, FND-14,
+  FND-14A, FND-14B, FND-15, FND-16, FND-17, FND-18, FND-20, FND-21, FND-28,
+  FND-29, FND-29A, FND-31.**
+
+### Pending
 
 - **S170 — Learned-State Provenance Hardening** —
   `specs/S170-learned-state-provenance-hardening.md`. Closes three confirmed
@@ -70,4 +72,4 @@ identified in two consecutive iterations of the report), then **S170**
 
 ## Outcome
 
-(Filled in upon completion.)
+S169 completed and archived on 2026-05-25. S170 remains pending.

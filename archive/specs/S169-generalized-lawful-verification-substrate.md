@@ -1,6 +1,6 @@
 # S169: Generalized Lawful Verification Substrate
 
-**Status**: DRAFT
+**Status**: COMPLETED
 
 ## Problem Statement
 
@@ -637,4 +637,26 @@ Required tests:
 
 ## Outcome
 
-(Filled in upon completion.)
+Completed: 2026-05-25
+
+Implemented through archive/tickets/S169GENLAWVER-001.md through
+archive/tickets/S169GENLAWVER-005.md. The repair-axis verification substrate now
+uses a three-provider registry for `AskWitness`, `ConsultRecord`, and
+`SearchPlace`; records provider selection in decision traces and
+`RepairAppliedPayload.provider_kind`; validates synthesized payload overrides
+through the existing action definitions; and preserves the S165 AskWitness
+parity lane.
+
+Final proof surface differs from the original external-golden wording where the
+relevant provider-selection seam is private. ConsultRecord, SearchPlace, and the
+negative-omniscience capstone landed as focused in-crate seam regressions rather
+than widening production or test-only API surface for external scenario files.
+The negative capstone proves remote witness, remote record, and remote-place
+expectation breaches iterate all three providers, select no verification
+provider, reject `InsertVerification` with `NoEpistemicSubstrate`, and emit only
+non-verification fallback repair events.
+
+Final verification:
+
+1. Passed — `cargo test -p worldwake-ai`.
+2. Passed — `cargo clippy --workspace --all-targets -- -D warnings`.
