@@ -57,6 +57,7 @@ mod source_composite;
 pub mod survival_forensics;
 mod testimony_trust;
 mod theft;
+pub mod verification_provider;
 
 pub use agenda_manager::{
     AgendaTickPolicy, AgendaTransitions, CommitTransition, ResumedPlan,
@@ -182,6 +183,7 @@ pub use survival_forensics::{
     CriticalWindowFrame, CriticalWindowReport, ExhaustionSummary, LocalSurvivalStateSummary,
     SurvivalForensicExtractor,
 };
+pub use verification_provider::VerificationRejection;
 pub use worldwake_core::GoalDispatchKey;
 pub use worldwake_core::{
     CognitiveProfile, CommodityPurpose, ExecutionBudget, GoalKey, GoalKind, OpportunityAnchor,

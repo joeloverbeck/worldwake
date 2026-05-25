@@ -200,6 +200,11 @@ pub struct RepairAttemptTrace {
     pub breach: worldwake_core::BreachSignature,
     pub chosen_kind: Option<RepairKind>,
     pub verification_anchor: Option<worldwake_core::EntityId>,
+    pub verification_provider: Option<worldwake_core::VerificationProviderKind>,
+    pub verification_rejections: Vec<(
+        worldwake_core::VerificationProviderKind,
+        crate::VerificationRejection,
+    )>,
     pub rejected: Vec<(RepairKind, RepairFailure)>,
     pub budget_consumed: u16,
     pub budget_total: u16,
@@ -2906,6 +2911,11 @@ mod tests {
             breach: sample_breach_signature(),
             chosen_kind: Some(RepairKind::ReplaceProvider),
             verification_anchor: None,
+            verification_provider: Some(worldwake_core::VerificationProviderKind::AskWitness),
+            verification_rejections: vec![(
+                worldwake_core::VerificationProviderKind::ConsultRecord,
+                crate::VerificationRejection::BreachClassMismatch,
+            )],
             rejected: vec![(
                 RepairKind::RebindTarget,
                 RepairFailure::NoSiblingTargetFound,

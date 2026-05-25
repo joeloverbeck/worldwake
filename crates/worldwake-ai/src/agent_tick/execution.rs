@@ -8,7 +8,6 @@ use super::{
     emit_decision_event, handle_recoverable_travel_step_blockage, runtime_belief_view,
 };
 use crate::RepairAttemptTrace;
-use crate::candidate_generation::ask_witness_verification_step;
 use crate::failure_handling::exact_target_belief_discrepancy;
 use crate::plan_repair::{
     PlanRepairContext, RepairOutcome, RepairPlanCandidate, attempt_repair_then_replan,
@@ -17,6 +16,10 @@ use crate::plan_repair::{
 use crate::plan_step_expectations::{
     expire_plan_step_expectations, persist_expectation_store_update,
 };
+use crate::verification_provider::{
+    PROVIDER_ITERATION_ORDER, VerificationCandidate, VerificationContext, VerificationNeed,
+    VerificationRejection, try_build_verification_candidate,
+};
 use crate::{
     AgentDecisionRuntime, PlannedPlan, PlannedStep, RevalidationOutcome, classify_revalidation,
 };
@@ -24,9 +27,10 @@ use worldwake_core::{
     AffordanceKey, BeliefSnapshot, BeliefStatusTag, BlockerKey, BlockerMemory,
     BlockerRecordedPayload, BlockingFact, BreachSignature, CausalLink, CausalProvider, CauseRef,
     ContentionIntents, DecisionEventPayload, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
-    DiscrepancyMemory, EntityId, EventId, EventLog, EventTag, EventView, InvalidatorTag,
-    LearnedOpportunityMemory, MismatchDetail, PlanningFact, RepairAppliedPayload, RepairEntry,
-    RepairKind, RepairMemory, ReplanTriggeredPayload, Tick, VisibilitySpec, WitnessData, WorldTxn,
+    DiscrepancyMemory, EntityBeliefAspect, EntityId, EventId, EventLog, EventTag, EventView,
+    InvalidatorTag, LearnedOpportunityMemory, MismatchDetail, PlanningFact, RepairAppliedPayload,
+    RepairEntry, RepairKind, RepairMemory, ReplanTriggeredPayload, Tick, VerificationProviderKind,
+    VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionDefRegistry, CommitOutcome, CommittedAction, EntityBeliefView, InputKind,
@@ -132,7 +136,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                         mismatch_detail,
                     )
                 {
-                    match repair_outcome {
+                    match repair_outcome.outcome {
                         RepairOutcome::Repaired {
                             kind,
                             new_plan,
@@ -146,6 +150,10 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                                 let verification_anchor = verification_anchor_from_repaired_plan(
                                     kind, step_index, &new_plan,
                                 );
+                                let selected_verification_provider =
+                                    matches!(kind, RepairKind::InsertVerification)
+                                        .then_some(repair_outcome.verification_provider)
+                                        .flatten();
                                 traces.push(RepairAttemptTrace {
                                     breach: breach_signature_for_step(
                                         goal_key,
@@ -154,6 +162,10 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                                     ),
                                     chosen_kind: Some(kind),
                                     verification_anchor,
+                                    verification_provider: selected_verification_provider,
+                                    verification_rejections: repair_outcome
+                                        .verification_rejections
+                                        .clone(),
                                     budget_consumed: repair_budget_consumed(&rejected, true),
                                     rejected,
                                     budget_total: repair_budget(ctx.cognitive),
@@ -168,6 +180,9 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                                 step_index,
                                 kind,
                                 *new_plan,
+                                matches!(kind, RepairKind::InsertVerification)
+                                    .then_some(repair_outcome.verification_provider)
+                                    .flatten(),
                             );
                             return Ok(());
                         }
@@ -179,6 +194,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                                     signature,
                                     &tried,
                                     ctx.cognitive,
+                                    repair_outcome.verification_rejections.clone(),
                                 ));
                             }
                             record_failed_repair_attempts(
@@ -399,7 +415,7 @@ fn attempt_local_repair_for_invalidated_step(
     step: &PlannedStep,
     reason: worldwake_core::PlanInvalidationReason,
     mismatch_detail: Option<MismatchDetail>,
-) -> Option<RepairOutcome> {
+) -> Option<LocalRepairAttempt> {
     if !matches!(
         reason,
         worldwake_core::PlanInvalidationReason::ExpectationMismatch { .. }
@@ -421,15 +437,20 @@ fn attempt_local_repair_for_invalidated_step(
         .get(runtime.current_step_index + 1..)
         .unwrap_or(&[]);
     let mut replacement_candidates = repair_candidates_from_reusable_suffix(reusable_suffix);
-    if let Some((view, action_defs, agent)) = verification_context {
-        append_insert_verification_candidate(
+    let mut verification_provider = None;
+    let mut verification_rejections = Vec::new();
+    if let Some((view, action_defs, agent)) = verification_context
+        && let Some(selection) = append_insert_verification_candidate(
             view,
             agent,
             action_defs,
             broken_link,
             &discrepancy_entry,
             &mut replacement_candidates,
-        );
+        )
+    {
+        verification_provider = selection.provider_kind;
+        verification_rejections = selection.rejections;
     }
     let context = PlanRepairContext {
         opportunity: active_plan.opportunity,
@@ -442,11 +463,22 @@ fn attempt_local_repair_for_invalidated_step(
         new_evidence: &[],
         discrepancy_entry: &discrepancy_entry,
     };
-    Some(attempt_repair_then_replan(
-        &context,
-        cognitive,
-        repair_memory,
-    ))
+    Some(LocalRepairAttempt {
+        outcome: attempt_repair_then_replan(&context, cognitive, repair_memory),
+        verification_provider,
+        verification_rejections,
+    })
+}
+
+struct LocalRepairAttempt {
+    outcome: RepairOutcome,
+    verification_provider: Option<VerificationProviderKind>,
+    verification_rejections: Vec<(VerificationProviderKind, VerificationRejection)>,
+}
+
+struct VerificationSelection {
+    provider_kind: Option<VerificationProviderKind>,
+    rejections: Vec<(VerificationProviderKind, VerificationRejection)>,
 }
 
 fn append_insert_verification_candidate(
@@ -456,44 +488,54 @@ fn append_insert_verification_candidate(
     broken_link: CausalLink,
     discrepancy_entry: &DiscrepancyEntry,
     candidates: &mut Vec<RepairPlanCandidate>,
-) {
-    let Some(subject) = epistemic_verification_subject(broken_link, discrepancy_entry) else {
-        return;
-    };
-    let Some(actor_place) = view.effective_place(agent) else {
-        return;
-    };
-    let Some(ask_witness_def_id) = ask_witness_action_def_id(action_defs) else {
-        return;
-    };
+) -> Option<VerificationSelection> {
+    let need = verification_need_for_breach(broken_link, discrepancy_entry)?;
+    let actor_place = view.effective_place(agent)?;
 
-    let mut witnesses = view.entities_at(actor_place);
-    witnesses.sort_unstable();
-    witnesses.dedup();
-    let Some(step) = witnesses
-        .into_iter()
-        .filter(|witness| *witness != agent)
-        .filter(|witness| view.effective_place(*witness) == Some(actor_place))
-        .find_map(|witness| {
-            ask_witness_verification_step(view, agent, witness, subject, ask_witness_def_id)
-        })
-    else {
-        return;
+    let ctx = VerificationContext {
+        actor: agent,
+        belief_view: view,
+        effective_place: actor_place,
+        broken_link,
+        action_defs,
     };
-
-    candidates.push(RepairPlanCandidate {
-        kind: RepairKind::InsertVerification,
-        provider: broken_link.provider,
-        fact: broken_link.fact,
-        step,
-        reusable_suffix_index: None,
-    });
+    let mut selected = None::<VerificationCandidate>;
+    let mut rejections = Vec::new();
+    for provider in PROVIDER_ITERATION_ORDER {
+        match try_build_verification_candidate(provider, &need, &ctx) {
+            Ok(candidate) if selected.is_none() => selected = Some(candidate),
+            Ok(_) => {}
+            Err(rejection) => rejections.push((provider, rejection)),
+        }
+    }
+    let provider_kind = selected.as_ref().map(|candidate| candidate.provider_kind);
+    if let Some(candidate) = selected {
+        candidates.push(candidate.repair_candidate);
+    }
+    Some(VerificationSelection {
+        provider_kind,
+        rejections,
+    })
 }
 
-fn epistemic_verification_subject(
+fn verification_need_for_breach(
     broken_link: CausalLink,
     discrepancy_entry: &DiscrepancyEntry,
-) -> Option<EntityId> {
+) -> Option<VerificationNeed> {
+    if let CausalProvider::Record { topic, .. } = broken_link.provider {
+        return Some(VerificationNeed::StaleInstitutionalClaim {
+            record_topic: topic,
+        });
+    }
+    if let CausalProvider::Expectation { expectation_id } = broken_link.provider
+        && let DiscrepancyClearing::ReobservationOf { target } =
+            discrepancy_entry.clearing_condition
+    {
+        return Some(VerificationNeed::OverdueExpectationAtPlace {
+            expectation: expectation_id,
+            place: target,
+        });
+    }
     let provider_subject = match broken_link.provider {
         CausalProvider::Belief { claim_key } => Some(claim_key.subject),
         CausalProvider::Observation {
@@ -511,16 +553,25 @@ fn epistemic_verification_subject(
         | DiscrepancyClearing::CommodityAvailabilityChanged { .. }
         | DiscrepancyClearing::WorldStructureChange => None,
     }?;
-    (provider_subject == clearing_subject).then_some(provider_subject)
+    (provider_subject == clearing_subject).then_some(VerificationNeed::StaleEntityBelief {
+        subject: provider_subject,
+        aspect: EntityBeliefAspect::Location,
+    })
 }
 
-fn ask_witness_action_def_id(
-    action_defs: &ActionDefRegistry,
-) -> Option<worldwake_core::ActionDefId> {
-    action_defs
-        .iter()
-        .find(|def| def.name == "ask_witness")
-        .map(|def| def.id)
+#[cfg(test)]
+fn epistemic_verification_subject(
+    broken_link: CausalLink,
+    discrepancy_entry: &DiscrepancyEntry,
+) -> Option<EntityId> {
+    match verification_need_for_breach(broken_link, discrepancy_entry) {
+        Some(VerificationNeed::StaleEntityBelief { subject, .. }) => Some(subject),
+        Some(
+            VerificationNeed::StaleInstitutionalClaim { .. }
+            | VerificationNeed::OverdueExpectationAtPlace { .. },
+        )
+        | None => None,
+    }
 }
 
 fn broken_link_for_step(step: &PlannedStep, failed_step: u16) -> Option<CausalLink> {
@@ -677,11 +728,14 @@ fn repair_attempt_trace_from_failed(
     breach: BreachSignature,
     tried: &[(RepairKind, crate::RepairFailure)],
     cognitive: &worldwake_core::CognitiveProfile,
+    verification_rejections: Vec<(VerificationProviderKind, VerificationRejection)>,
 ) -> RepairAttemptTrace {
     RepairAttemptTrace {
         breach,
         chosen_kind: None,
         verification_anchor: None,
+        verification_provider: None,
+        verification_rejections,
         rejected: tried.to_vec(),
         budget_consumed: repair_budget_consumed(tried, false),
         budget_total: repair_budget(cognitive),
@@ -716,6 +770,7 @@ fn apply_repaired_plan_and_emit(
     step_index: u16,
     kind: RepairKind,
     new_plan: PlannedPlan,
+    verification_provider: Option<VerificationProviderKind>,
 ) {
     let substitute_target = substitute_target_from_repaired_plan(kind, step_index, &new_plan);
     let substitute_recipe = substitute_recipe_from_repaired_plan(&new_plan);
@@ -732,6 +787,7 @@ fn apply_repaired_plan_and_emit(
             repair_kind: kind,
             substitute_target,
             substitute_recipe,
+            provider_kind: verification_provider.unwrap_or(VerificationProviderKind::AskWitness),
         }),
     );
 }
@@ -1434,16 +1490,22 @@ mod tests {
     use crate::RepairOutcome;
     use crate::{PlanGuard, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind};
     use std::collections::{BTreeMap, BTreeSet};
+    use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, AffordanceKey, BeliefClaimKey, Blocker, BlockerClearingCondition, BlockerKey,
-        BlockerMemory, BlockingFact, BreachSignature, CausalLink, CausalProvider, CauseRef,
-        ClaimantOutcome, ContentionClaimant, ContentionEventPayload, ContentionResolutionRule,
-        DecisionEventPayload, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
-        EntityBeliefAspect, EntityId, EventLog, EventPayload, EventTag, EventView, GoalKey,
-        GoalKind, InvalidatorTag, MismatchDetail, OpportunityKey, PendingEvent, Permille,
-        PlanningFact, RepairAppliedPayload, RepairKind, RepairMemory, Tick, VisibilitySpec,
-        WitnessData, test_utils::sample_goal_key,
+        ActionDefId, AffordanceKey, AgentBeliefStore, BeliefClaimKey, BelievedRecordDataSnapshot,
+        Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
+        BreachSignature, CausalLink, CausalProvider, CauseRef, ClaimantOutcome, ContentionClaimant,
+        ContentionEventPayload, ContentionResolutionRule, ControlSource, DecisionEventPayload,
+        Discrepancy, DiscrepancyClearing, DiscrepancyEntry, EntityBeliefAspect, EntityId, EventLog,
+        EventPayload, EventTag, EventView, ExpectationBasis, ExpectationId, ExpectationRecord,
+        ExpectationState, ExpectationStore, GoalKey, GoalKind, InstitutionalClaim,
+        InstitutionalRecordEntry, InstitutionalSnapshotSource, InvalidatorTag, MismatchDetail,
+        OpportunityKey, PendingEvent, Permille, Place, PlanningFact, RecordData, RecordEntryId,
+        RecordKind, RecordTopic, RepairAppliedPayload, RepairKind, RepairMemory, Tick, Topology,
+        VerificationProviderKind, ViolationDispositionProfile, VisibilitySpec, WitnessData,
+        test_utils::sample_goal_key,
     };
+    use worldwake_sim::{ActionDefRegistry, ActionHandlerRegistry, PerAgentBeliefView};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -1513,6 +1575,41 @@ mod tests {
         }
     }
 
+    fn record_link(record: EntityId, office: EntityId) -> CausalLink {
+        CausalLink {
+            provider: CausalProvider::Record {
+                record_entity: record,
+                topic: RecordTopic::OfficeRule { office },
+            },
+            fact: PlanningFact::ResourceAccess {
+                resource: office,
+                agent_holds_permission: true,
+            },
+            consumer_step_index: 1,
+            source_tick: Tick(3),
+            confidence: Permille::new(800).unwrap(),
+        }
+    }
+
+    fn expectation_link(
+        expectation: ExpectationId,
+        subject: EntityId,
+        place: EntityId,
+    ) -> CausalLink {
+        CausalLink {
+            provider: CausalProvider::Expectation {
+                expectation_id: expectation,
+            },
+            fact: PlanningFact::TargetPresent {
+                target: subject,
+                at_place: place,
+            },
+            consumer_step_index: 1,
+            source_tick: Tick(3),
+            confidence: Permille::new(800).unwrap(),
+        }
+    }
+
     fn repair_discrepancy_entry(clearing_condition: DiscrepancyClearing) -> DiscrepancyEntry {
         DiscrepancyEntry {
             scope: BlockerKey {
@@ -1563,6 +1660,304 @@ mod tests {
 
     fn repair_mismatch() -> MismatchDetail {
         MismatchDetail::GuardInvalidator(InvalidatorTag::TargetMoved)
+    }
+
+    struct ConsultRecordFixture {
+        world: worldwake_core::World,
+        store: AgentBeliefStore,
+        action_defs: ActionDefRegistry,
+        actor: EntityId,
+        office: EntityId,
+        record: EntityId,
+    }
+
+    fn consult_record_fixture() -> ConsultRecordFixture {
+        let place = entity(100);
+        let mut topology = Topology::new();
+        topology
+            .add_place(
+                place,
+                Place {
+                    name: "Square".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::new(),
+                },
+            )
+            .unwrap();
+        let mut world = worldwake_core::World::new(topology).unwrap();
+        let actor;
+        let office;
+        let record;
+        let record_data;
+        {
+            let mut txn = worldwake_core::WorldTxn::new(
+                &mut world,
+                Tick(1),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::SamePlace,
+                WitnessData::default(),
+            );
+            actor = txn.create_agent("agent", ControlSource::Ai).unwrap();
+            office = txn.create_office("office").unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(office, place).unwrap();
+            record_data = RecordData {
+                record_kind: RecordKind::OfficeRegister,
+                home_place: place,
+                issuer: office,
+                consultation_ticks: 7,
+                max_entries_per_consult: 4,
+                entries: vec![InstitutionalRecordEntry {
+                    entry_id: RecordEntryId(0),
+                    claim: InstitutionalClaim::OfficeHolder {
+                        office,
+                        holder: Some(entity(40)),
+                        effective_tick: Tick(3),
+                    },
+                    recorded_tick: Tick(3),
+                    supersedes: None,
+                }],
+                next_entry_id: 1,
+            };
+            record = txn.create_record(record_data.clone()).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        let mut store = AgentBeliefStore::new();
+        store.record_believed_record_data(
+            record,
+            BelievedRecordDataSnapshot {
+                data: record_data,
+                source: InstitutionalSnapshotSource::RecordConsultation { record },
+                learned_tick: Tick(2),
+                learned_at: Some(place),
+            },
+        );
+        let mut action_defs = ActionDefRegistry::new();
+        let mut action_handlers = ActionHandlerRegistry::new();
+        worldwake_systems::register_consult_record_action(&mut action_defs, &mut action_handlers);
+
+        ConsultRecordFixture {
+            world,
+            store,
+            action_defs,
+            actor,
+            office,
+            record,
+        }
+    }
+
+    struct SearchPlaceFixture {
+        world: worldwake_core::World,
+        store: AgentBeliefStore,
+        action_defs: ActionDefRegistry,
+        actor: EntityId,
+        subject: EntityId,
+        place: EntityId,
+        remote_place: EntityId,
+        expectation: ExpectationId,
+    }
+
+    fn violation_profile() -> ViolationDispositionProfile {
+        ViolationDispositionProfile {
+            investigation_duration_ticks: NonZeroU32::new(6).unwrap(),
+            violation_memory_retention_ticks: 30,
+            investigation_motive_weight: Permille::new(500).unwrap(),
+            ownership_motive_bonus: Permille::new(100).unwrap(),
+        }
+    }
+
+    fn search_place_fixture() -> SearchPlaceFixture {
+        let place = entity(120);
+        let remote_place = entity(121);
+        let mut topology = Topology::new();
+        topology
+            .add_place(
+                place,
+                Place {
+                    name: "Square".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::new(),
+                },
+            )
+            .unwrap();
+        topology
+            .add_place(
+                remote_place,
+                Place {
+                    name: "Hill".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::new(),
+                },
+            )
+            .unwrap();
+        let mut world = worldwake_core::World::new(topology).unwrap();
+        let actor;
+        let subject;
+        let expectation = ExpectationId(7);
+        {
+            let mut txn = worldwake_core::WorldTxn::new(
+                &mut world,
+                Tick(1),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::SamePlace,
+                WitnessData::default(),
+            );
+            actor = txn.create_agent("agent", ControlSource::Ai).unwrap();
+            subject = txn.create_agent("missing", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(subject, remote_place).unwrap();
+            txn.set_component_violation_disposition_profile(actor, violation_profile())
+                .unwrap();
+            let mut expectations = ExpectationStore::default();
+            expectations.records.insert(
+                expectation,
+                ExpectationRecord {
+                    id: expectation,
+                    owner: actor,
+                    subject,
+                    expected_place: place,
+                    deadline_tick: Tick(4),
+                    grace_ticks: 0,
+                    basis: ExpectationBasis::RoutineReturn,
+                    state: ExpectationState::Overdue,
+                    created_tick: Tick(1),
+                },
+            );
+            txn.set_component_expectation_store(actor, expectations)
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        let store = AgentBeliefStore::new();
+        let mut action_defs = ActionDefRegistry::new();
+        let mut action_handlers = ActionHandlerRegistry::new();
+        worldwake_systems::register_search_place_action(&mut action_defs, &mut action_handlers);
+
+        SearchPlaceFixture {
+            world,
+            store,
+            action_defs,
+            actor,
+            subject,
+            place,
+            remote_place,
+            expectation,
+        }
+    }
+
+    fn all_verification_action_defs() -> ActionDefRegistry {
+        let mut action_defs = ActionDefRegistry::new();
+        let mut action_handlers = ActionHandlerRegistry::new();
+        worldwake_systems::register_ask_witness_action(&mut action_defs, &mut action_handlers);
+        worldwake_systems::register_consult_record_action(&mut action_defs, &mut action_handlers);
+        worldwake_systems::register_search_place_action(&mut action_defs, &mut action_handlers);
+        action_defs
+    }
+
+    fn assert_non_verification_fallback_event(event_log: &EventLog) {
+        let payload = event_log
+            .events_by_tag(EventTag::RepairApplied)
+            .iter()
+            .filter_map(|event_id| event_log.get(*event_id))
+            .filter_map(EventView::decision_payload)
+            .find_map(|payload| match payload {
+                DecisionEventPayload::RepairApplied(payload) => Some(payload),
+                _ => None,
+            })
+            .expect("fallback repair should emit a repair-applied event");
+        assert_ne!(payload.repair_kind, RepairKind::InsertVerification);
+    }
+
+    struct RemoteRecordFixture {
+        world: worldwake_core::World,
+        store: AgentBeliefStore,
+        action_defs: ActionDefRegistry,
+        actor: EntityId,
+        office: EntityId,
+        record: EntityId,
+    }
+
+    fn remote_record_fixture() -> RemoteRecordFixture {
+        let local_place = entity(130);
+        let remote_place = entity(131);
+        let mut topology = Topology::new();
+        topology
+            .add_place(
+                local_place,
+                Place {
+                    name: "Square".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::new(),
+                },
+            )
+            .unwrap();
+        topology
+            .add_place(
+                remote_place,
+                Place {
+                    name: "Archive".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::new(),
+                },
+            )
+            .unwrap();
+        let mut world = worldwake_core::World::new(topology).unwrap();
+        let actor;
+        let office;
+        let record;
+        {
+            let mut txn = worldwake_core::WorldTxn::new(
+                &mut world,
+                Tick(1),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::SamePlace,
+                WitnessData::default(),
+            );
+            actor = txn.create_agent("agent", ControlSource::Ai).unwrap();
+            office = txn.create_office("office").unwrap();
+            txn.set_ground_location(actor, local_place).unwrap();
+            txn.set_ground_location(office, local_place).unwrap();
+            record = txn
+                .create_record(RecordData {
+                    record_kind: RecordKind::OfficeRegister,
+                    home_place: remote_place,
+                    issuer: office,
+                    consultation_ticks: 7,
+                    max_entries_per_consult: 4,
+                    entries: vec![InstitutionalRecordEntry {
+                        entry_id: RecordEntryId(0),
+                        claim: InstitutionalClaim::OfficeHolder {
+                            office,
+                            holder: Some(entity(40)),
+                            effective_tick: Tick(3),
+                        },
+                        recorded_tick: Tick(3),
+                        supersedes: None,
+                    }],
+                    next_entry_id: 1,
+                })
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        RemoteRecordFixture {
+            world,
+            store: AgentBeliefStore::new(),
+            action_defs: all_verification_action_defs(),
+            actor,
+            office,
+            record,
+        }
     }
 
     #[test]
@@ -1714,7 +2109,7 @@ mod tests {
             Some(repair_mismatch()),
         )
         .expect("causal-link invalidator should attempt localized repair");
-        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome else {
+        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome.outcome else {
             panic!(
                 "visible discrepancy with a committed prefix should repair to a progress barrier"
             );
@@ -1731,6 +2126,7 @@ mod tests {
             1,
             kind,
             *new_plan,
+            None,
         );
 
         let repaired_plan = runtime
@@ -1755,6 +2151,7 @@ mod tests {
                 repair_kind: RepairKind::DowngradeToTypedBarrier,
                 substitute_target: None,
                 substitute_recipe: None,
+                provider_kind: worldwake_core::VerificationProviderKind::AskWitness,
             })
         );
     }
@@ -1790,7 +2187,7 @@ mod tests {
             Some(repair_mismatch()),
         )
         .expect("causal-link invalidator should attempt localized repair");
-        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome else {
+        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome.outcome else {
             panic!("suffix candidate should repair the invalidated step");
         };
         assert_eq!(kind, RepairKind::RebindTarget);
@@ -1805,6 +2202,7 @@ mod tests {
             1,
             kind,
             *new_plan,
+            None,
         );
 
         let repaired_plan = runtime
@@ -1828,8 +2226,458 @@ mod tests {
                 repair_kind: RepairKind::RebindTarget,
                 substitute_target: Some(entity(7)),
                 substitute_recipe: None,
+                provider_kind: worldwake_core::VerificationProviderKind::AskWitness,
             })
         );
+    }
+
+    #[test]
+    fn record_breach_inserts_consult_record_verification_and_records_provider() {
+        let fixture = consult_record_fixture();
+        let goal_key = sample_goal_key();
+        let prefix = planned_step(10, None);
+        let failed = planned_step(11, Some(record_link(fixture.record, fixture.office)));
+        let plan = PlannedPlan::new(
+            opportunity(goal_key),
+            goal_key,
+            vec![prefix.clone(), failed.clone()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_plan: Some(plan),
+            current_step_index: 1,
+            ..crate::AgentDecisionRuntime::default()
+        };
+        let view = PerAgentBeliefView::new(fixture.actor, &fixture.world, &fixture.store);
+        let cognitive = cognitive(8, Permille::new(1000).unwrap());
+        let outcome = attempt_local_repair_for_invalidated_step(
+            &runtime,
+            &RepairMemory::default(),
+            &cognitive,
+            Some((&view, &fixture.action_defs, fixture.actor)),
+            Tick(9),
+            goal_key,
+            &failed,
+            worldwake_core::PlanInvalidationReason::ExpectationMismatch { step_index: 1 },
+            Some(repair_mismatch()),
+        )
+        .expect("record-backed causal-link invalidator should attempt localized repair");
+
+        assert_eq!(
+            outcome.verification_provider,
+            Some(VerificationProviderKind::ConsultRecord)
+        );
+        assert_eq!(
+            outcome.verification_rejections,
+            vec![
+                (
+                    VerificationProviderKind::AskWitness,
+                    crate::VerificationRejection::BreachClassMismatch
+                ),
+                (
+                    VerificationProviderKind::SearchPlace,
+                    crate::VerificationRejection::BreachClassMismatch
+                )
+            ]
+        );
+        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome.outcome else {
+            panic!("local record should repair the invalidated step with ConsultRecord");
+        };
+        assert_eq!(kind, RepairKind::InsertVerification);
+        let verification_step = new_plan
+            .steps
+            .get(1)
+            .expect("verification step should be inserted after preserved prefix");
+        assert_eq!(verification_step.op_kind, PlannerOpKind::ConsultRecord);
+        assert_eq!(
+            verification_step.targets,
+            vec![crate::PlanningEntityRef::Authoritative(fixture.record)]
+        );
+
+        let mut event_log = EventLog::new();
+        apply_repaired_plan_and_emit(
+            &mut event_log,
+            &mut runtime,
+            Tick(9),
+            fixture.actor,
+            goal_key,
+            1,
+            kind,
+            *new_plan,
+            Some(VerificationProviderKind::ConsultRecord),
+        );
+
+        let events = event_log.events_by_tag(EventTag::RepairApplied);
+        assert_eq!(events.len(), 1);
+        let payload = event_log
+            .get(events[0])
+            .and_then(|event| event.decision_payload())
+            .expect("repair event should carry a payload");
+        assert_eq!(
+            payload,
+            &DecisionEventPayload::RepairApplied(RepairAppliedPayload {
+                agent: fixture.actor,
+                goal_key,
+                step_index: 1,
+                repair_kind: RepairKind::InsertVerification,
+                substitute_target: Some(fixture.record),
+                substitute_recipe: None,
+                provider_kind: VerificationProviderKind::ConsultRecord,
+            })
+        );
+    }
+
+    #[test]
+    fn expectation_breach_inserts_search_place_verification_and_records_provider() {
+        let fixture = search_place_fixture();
+        let goal_key = sample_goal_key();
+        let prefix = planned_step(10, None);
+        let mut failed = planned_step(
+            11,
+            Some(expectation_link(
+                fixture.expectation,
+                fixture.subject,
+                fixture.place,
+            )),
+        );
+        failed.targets = vec![crate::PlanningEntityRef::Authoritative(fixture.place)];
+        failed.target_place = Some(fixture.place);
+        let plan = PlannedPlan::new(
+            opportunity(goal_key),
+            goal_key,
+            vec![prefix.clone(), failed.clone()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_plan: Some(plan),
+            current_step_index: 1,
+            ..crate::AgentDecisionRuntime::default()
+        };
+        let view = PerAgentBeliefView::new(fixture.actor, &fixture.world, &fixture.store);
+        let cognitive = cognitive(8, Permille::new(1000).unwrap());
+        let outcome = attempt_local_repair_for_invalidated_step(
+            &runtime,
+            &RepairMemory::default(),
+            &cognitive,
+            Some((&view, &fixture.action_defs, fixture.actor)),
+            Tick(9),
+            goal_key,
+            &failed,
+            worldwake_core::PlanInvalidationReason::ExpectationMismatch { step_index: 1 },
+            Some(repair_mismatch()),
+        )
+        .expect("expectation-backed causal-link invalidator should attempt localized repair");
+
+        assert_eq!(
+            outcome.verification_provider,
+            Some(VerificationProviderKind::SearchPlace)
+        );
+        assert_eq!(
+            outcome.verification_rejections,
+            vec![
+                (
+                    VerificationProviderKind::AskWitness,
+                    crate::VerificationRejection::BreachClassMismatch
+                ),
+                (
+                    VerificationProviderKind::ConsultRecord,
+                    crate::VerificationRejection::BreachClassMismatch
+                )
+            ]
+        );
+        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome.outcome else {
+            panic!("local overdue expectation should repair the invalidated step with SearchPlace");
+        };
+        assert_eq!(kind, RepairKind::InsertVerification);
+        let verification_step = new_plan
+            .steps
+            .get(1)
+            .expect("verification step should be inserted after preserved prefix");
+        assert_eq!(verification_step.op_kind, PlannerOpKind::SearchPlace);
+        assert_eq!(
+            verification_step.targets,
+            vec![crate::PlanningEntityRef::Authoritative(fixture.place)]
+        );
+
+        let mut event_log = EventLog::new();
+        apply_repaired_plan_and_emit(
+            &mut event_log,
+            &mut runtime,
+            Tick(9),
+            fixture.actor,
+            goal_key,
+            1,
+            kind,
+            *new_plan,
+            Some(VerificationProviderKind::SearchPlace),
+        );
+
+        let events = event_log.events_by_tag(EventTag::RepairApplied);
+        assert_eq!(events.len(), 1);
+        let payload = event_log
+            .get(events[0])
+            .and_then(|event| event.decision_payload())
+            .expect("repair event should carry a payload");
+        assert_eq!(
+            payload,
+            &DecisionEventPayload::RepairApplied(RepairAppliedPayload {
+                agent: fixture.actor,
+                goal_key,
+                step_index: 1,
+                repair_kind: RepairKind::InsertVerification,
+                substitute_target: Some(fixture.place),
+                substitute_recipe: None,
+                provider_kind: VerificationProviderKind::SearchPlace,
+            })
+        );
+    }
+
+    #[test]
+    fn remote_witness_breach_records_all_provider_rejections_without_insert_verification() {
+        let fixture = search_place_fixture();
+        let action_defs = all_verification_action_defs();
+        let goal_key = sample_goal_key();
+        let prefix = planned_step(10, None);
+        let failed = planned_step(7, Some(belief_target_link(1)));
+        let plan = PlannedPlan::new(
+            opportunity(goal_key),
+            goal_key,
+            vec![prefix.clone(), failed.clone()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_plan: Some(plan),
+            current_step_index: 1,
+            ..crate::AgentDecisionRuntime::default()
+        };
+        let view = PerAgentBeliefView::new(fixture.actor, &fixture.world, &fixture.store);
+        let outcome = attempt_local_repair_for_invalidated_step(
+            &runtime,
+            &RepairMemory::default(),
+            &cognitive(8, Permille::new(1000).unwrap()),
+            Some((&view, &action_defs, fixture.actor)),
+            Tick(9),
+            goal_key,
+            &failed,
+            worldwake_core::PlanInvalidationReason::ExpectationMismatch { step_index: 1 },
+            Some(repair_mismatch()),
+        )
+        .expect("stale entity belief should attempt localized repair");
+
+        assert_eq!(outcome.verification_provider, None);
+        assert_eq!(
+            outcome.verification_rejections,
+            vec![
+                (
+                    VerificationProviderKind::AskWitness,
+                    crate::VerificationRejection::NoLawfulLocalTarget
+                ),
+                (
+                    VerificationProviderKind::ConsultRecord,
+                    crate::VerificationRejection::BreachClassMismatch
+                ),
+                (
+                    VerificationProviderKind::SearchPlace,
+                    crate::VerificationRejection::BreachClassMismatch
+                )
+            ]
+        );
+        let RepairOutcome::Repaired {
+            kind,
+            new_plan,
+            rejected,
+        } = outcome.outcome
+        else {
+            panic!("visible prefix should downgrade after remote witness verification rejection");
+        };
+        assert!(rejected.contains(&(
+            RepairKind::InsertVerification,
+            crate::RepairFailure::NoEpistemicSubstrate
+        )));
+        assert_ne!(kind, RepairKind::InsertVerification);
+
+        let mut event_log = EventLog::new();
+        apply_repaired_plan_and_emit(
+            &mut event_log,
+            &mut runtime,
+            Tick(9),
+            fixture.actor,
+            goal_key,
+            1,
+            kind,
+            *new_plan,
+            None,
+        );
+        assert_non_verification_fallback_event(&event_log);
+    }
+
+    #[test]
+    fn remote_record_breach_records_all_provider_rejections_without_insert_verification() {
+        let fixture = remote_record_fixture();
+        let goal_key = sample_goal_key();
+        let prefix = planned_step(10, None);
+        let failed = planned_step(11, Some(record_link(fixture.record, fixture.office)));
+        let plan = PlannedPlan::new(
+            opportunity(goal_key),
+            goal_key,
+            vec![prefix.clone(), failed.clone()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_plan: Some(plan),
+            current_step_index: 1,
+            ..crate::AgentDecisionRuntime::default()
+        };
+        let view = PerAgentBeliefView::new(fixture.actor, &fixture.world, &fixture.store);
+        let outcome = attempt_local_repair_for_invalidated_step(
+            &runtime,
+            &RepairMemory::default(),
+            &cognitive(8, Permille::new(1000).unwrap()),
+            Some((&view, &fixture.action_defs, fixture.actor)),
+            Tick(9),
+            goal_key,
+            &failed,
+            worldwake_core::PlanInvalidationReason::ExpectationMismatch { step_index: 1 },
+            Some(repair_mismatch()),
+        )
+        .expect("stale institutional claim should attempt localized repair");
+
+        assert_eq!(outcome.verification_provider, None);
+        assert_eq!(
+            outcome.verification_rejections,
+            vec![
+                (
+                    VerificationProviderKind::AskWitness,
+                    crate::VerificationRejection::BreachClassMismatch
+                ),
+                (
+                    VerificationProviderKind::ConsultRecord,
+                    crate::VerificationRejection::NoLawfulLocalTarget
+                ),
+                (
+                    VerificationProviderKind::SearchPlace,
+                    crate::VerificationRejection::BreachClassMismatch
+                )
+            ]
+        );
+        let RepairOutcome::Repaired {
+            kind,
+            new_plan,
+            rejected,
+        } = outcome.outcome
+        else {
+            panic!("visible prefix should downgrade after remote record verification rejection");
+        };
+        assert!(rejected.contains(&(
+            RepairKind::InsertVerification,
+            crate::RepairFailure::NoEpistemicSubstrate
+        )));
+        assert_ne!(kind, RepairKind::InsertVerification);
+
+        let mut event_log = EventLog::new();
+        apply_repaired_plan_and_emit(
+            &mut event_log,
+            &mut runtime,
+            Tick(9),
+            fixture.actor,
+            goal_key,
+            1,
+            kind,
+            *new_plan,
+            None,
+        );
+        assert_non_verification_fallback_event(&event_log);
+    }
+
+    #[test]
+    fn remote_expectation_breach_records_all_provider_rejections_without_insert_verification() {
+        let fixture = search_place_fixture();
+        let goal_key = sample_goal_key();
+        let prefix = planned_step(10, None);
+        let mut failed = planned_step(
+            11,
+            Some(expectation_link(
+                fixture.expectation,
+                fixture.subject,
+                fixture.remote_place,
+            )),
+        );
+        failed.targets = vec![crate::PlanningEntityRef::Authoritative(
+            fixture.remote_place,
+        )];
+        failed.target_place = Some(fixture.remote_place);
+        let plan = PlannedPlan::new(
+            opportunity(goal_key),
+            goal_key,
+            vec![prefix.clone(), failed.clone()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_plan: Some(plan),
+            current_step_index: 1,
+            ..crate::AgentDecisionRuntime::default()
+        };
+        let view = PerAgentBeliefView::new(fixture.actor, &fixture.world, &fixture.store);
+        let outcome = attempt_local_repair_for_invalidated_step(
+            &runtime,
+            &RepairMemory::default(),
+            &cognitive(8, Permille::new(1000).unwrap()),
+            Some((&view, &fixture.action_defs, fixture.actor)),
+            Tick(9),
+            goal_key,
+            &failed,
+            worldwake_core::PlanInvalidationReason::ExpectationMismatch { step_index: 1 },
+            Some(repair_mismatch()),
+        )
+        .expect("remote overdue expectation should attempt localized repair");
+
+        assert_eq!(outcome.verification_provider, None);
+        assert_eq!(
+            outcome.verification_rejections,
+            vec![
+                (
+                    VerificationProviderKind::AskWitness,
+                    crate::VerificationRejection::BreachClassMismatch
+                ),
+                (
+                    VerificationProviderKind::ConsultRecord,
+                    crate::VerificationRejection::BreachClassMismatch
+                ),
+                (
+                    VerificationProviderKind::SearchPlace,
+                    crate::VerificationRejection::NoLawfulLocalTarget
+                )
+            ]
+        );
+        let RepairOutcome::Repaired {
+            kind,
+            new_plan,
+            rejected,
+        } = outcome.outcome
+        else {
+            panic!(
+                "visible prefix should downgrade after remote expectation verification rejection"
+            );
+        };
+        assert!(rejected.contains(&(
+            RepairKind::InsertVerification,
+            crate::RepairFailure::NoEpistemicSubstrate
+        )));
+        assert_ne!(kind, RepairKind::InsertVerification);
+
+        let mut event_log = EventLog::new();
+        apply_repaired_plan_and_emit(
+            &mut event_log,
+            &mut runtime,
+            Tick(9),
+            fixture.actor,
+            goal_key,
+            1,
+            kind,
+            *new_plan,
+            None,
+        );
+        assert_non_verification_fallback_event(&event_log);
     }
 
     #[test]
@@ -1861,6 +2709,7 @@ mod tests {
             1,
             RepairKind::InsertVerification,
             plan,
+            Some(worldwake_core::VerificationProviderKind::AskWitness),
         );
 
         let events = event_log.events_by_tag(EventTag::RepairApplied);
@@ -1878,6 +2727,7 @@ mod tests {
                 repair_kind: RepairKind::InsertVerification,
                 substitute_target: Some(witness),
                 substitute_recipe: None,
+                provider_kind: worldwake_core::VerificationProviderKind::AskWitness,
             })
         );
     }
@@ -1933,7 +2783,7 @@ mod tests {
             Some(repair_mismatch()),
         )
         .expect("causal-link invalidator should attempt localized repair");
-        let RepairOutcome::Failed { tried } = outcome else {
+        let RepairOutcome::Failed { tried } = outcome.outcome else {
             panic!("zero repair budget should fail before a local repair succeeds");
         };
         let signature = breach_signature_for_step(goal_key, &failed, Some(repair_mismatch()));
@@ -1977,7 +2827,7 @@ mod tests {
         ];
         let cognitive = cognitive(12, Permille::new(500).unwrap());
 
-        let trace = repair_attempt_trace_from_failed(signature, &tried, &cognitive);
+        let trace = repair_attempt_trace_from_failed(signature, &tried, &cognitive, Vec::new());
 
         assert_eq!(trace.breach, signature);
         assert_eq!(trace.chosen_kind, None);

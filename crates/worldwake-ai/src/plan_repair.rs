@@ -317,6 +317,13 @@ fn provider_supports_fact(provider: CausalProvider, fact: PlanningFact) -> bool 
                     },
             },
             PlanningFact::TargetPresent { target, .. },
+        )
+        | (
+            CausalProvider::Record {
+                topic: RecordTopic::TestifiedAbout { subject },
+                ..
+            },
+            PlanningFact::TargetPresent { target, .. },
         ) => subject == target,
         (
             CausalProvider::Observation {
@@ -341,7 +348,29 @@ fn provider_supports_fact(provider: CausalProvider, fact: PlanningFact) -> bool 
                 ..
             },
             PlanningFact::RouteKnown { .. },
-        ) => true,
+        )
+        | (
+            CausalProvider::Record {
+                topic: RecordTopic::BountyExists,
+                ..
+            },
+            PlanningFact::TargetPresent { .. } | PlanningFact::ResourceAccess { .. },
+        )
+        | (CausalProvider::Expectation { .. }, PlanningFact::TargetPresent { .. }) => true,
+        (
+            CausalProvider::Record {
+                topic: RecordTopic::OfficeRule { office },
+                ..
+            },
+            PlanningFact::ResourceAccess { resource, .. },
+        ) => office == resource,
+        (
+            CausalProvider::Record {
+                topic: RecordTopic::PriceObserved { commodity },
+                ..
+            },
+            PlanningFact::CommodityAvailable { kind, .. },
+        ) => commodity == kind,
         (
             CausalProvider::Observation {
                 observed_entity,

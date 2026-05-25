@@ -440,6 +440,17 @@ pub struct RepairAppliedPayload {
     pub substitute_target: Option<EntityId>,
     #[serde(default)]
     pub substitute_recipe: Option<RecipeId>,
+    pub provider_kind: VerificationProviderKind,
+}
+
+#[derive(
+    Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize,
+)]
+pub enum VerificationProviderKind {
+    #[default]
+    AskWitness,
+    ConsultRecord,
+    SearchPlace,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -529,8 +540,8 @@ mod tests {
         RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload,
         RoutePreferenceSummary, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
         SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKeyPayload,
-        SurveyRecordedPayload, TestimonyTrustSummary, WakeReason, WashFacilityUsedPayload,
-        WasteCreatedPayload, WasteSource,
+        SurveyRecordedPayload, TestimonyTrustSummary, VerificationProviderKind, WakeReason,
+        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
     };
     use crate::{
         ActionDefId, BeliefClaimKey, BlockingFact, CommodityKind, Discrepancy, EntityBeliefAspect,
@@ -540,7 +551,7 @@ mod tests {
         Tick, TopicScope, WakeCondition,
         test_utils::{entity_id, sample_blocker_key, sample_goal_key},
     };
-    use serde::{Serialize, de::DeserializeOwned};
+    use serde::{Deserialize, Serialize, de::DeserializeOwned};
     use std::collections::BTreeMap;
     use std::fmt::Debug;
     use std::hash::Hash;
@@ -745,6 +756,7 @@ mod tests {
                 repair_kind: RepairKind::RebindTarget,
                 substitute_target: Some(entity_id(11, 0)),
                 substitute_recipe: None,
+                provider_kind: VerificationProviderKind::AskWitness,
             }),
             DecisionEventPayload::ReplanTriggered(ReplanTriggeredPayload {
                 agent: entity_id(12, 0),
@@ -913,6 +925,7 @@ mod tests {
             repair_kind: RepairKind::RebindTarget,
             substitute_target: None,
             substitute_recipe: Some(RecipeId(7)),
+            provider_kind: VerificationProviderKind::SearchPlace,
         };
 
         let bytes = bincode::serialize(&payload).unwrap();
@@ -920,6 +933,43 @@ mod tests {
 
         assert_eq!(roundtrip, payload);
         assert_eq!(roundtrip.substitute_recipe, Some(RecipeId(7)));
+        assert_eq!(
+            roundtrip.provider_kind,
+            VerificationProviderKind::SearchPlace
+        );
+    }
+
+    #[test]
+    fn verification_provider_kind_derives_satisfy_event_payload_bounds() {
+        fn assert_bounds<T>()
+        where
+            T: Copy
+                + Clone
+                + std::fmt::Debug
+                + Eq
+                + PartialEq
+                + Ord
+                + PartialOrd
+                + std::hash::Hash
+                + Serialize
+                + for<'de> Deserialize<'de>,
+        {
+        }
+
+        assert_bounds::<VerificationProviderKind>();
+    }
+
+    #[test]
+    fn verification_provider_kind_variants_roundtrip_through_bincode() {
+        for provider_kind in [
+            VerificationProviderKind::AskWitness,
+            VerificationProviderKind::ConsultRecord,
+            VerificationProviderKind::SearchPlace,
+        ] {
+            let bytes = bincode::serialize(&provider_kind).unwrap();
+            let roundtrip: VerificationProviderKind = bincode::deserialize(&bytes).unwrap();
+            assert_eq!(roundtrip, provider_kind);
+        }
     }
 
     #[test]

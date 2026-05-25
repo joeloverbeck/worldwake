@@ -2551,6 +2551,7 @@ fn record_repair_memory_from_completed_plan(
         repair_kind: accepted_repair.repair_kind,
         substitute_target: accepted_repair.substitute_target,
         substitute_recipe: accepted_repair.substitute_recipe,
+        provider_kind: worldwake_core::VerificationProviderKind::AskWitness,
     })
 }
 
