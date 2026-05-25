@@ -2,8 +2,8 @@ use crate::{AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind, authorit
 use worldwake_core::{
     AffordanceKey, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
     ClearingBaseline, CognitiveProfile, CommodityKind, ContentionIntents, Discrepancy,
-    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EntityBeliefAspect, EntityId,
-    GoalKey, GoalKind, IntentionFrame, Quantity, Tick,
+    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DiscrepancySource,
+    EntityBeliefAspect, EntityId, GoalKey, GoalKind, IntentionFrame, Quantity, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -274,7 +274,7 @@ pub(crate) fn record_failure_classification(
                     &blocker_key,
                     context.execution_failure,
                 ),
-                source_event: None,
+                source: DiscrepancySource::ReadPhaseInference,
             });
             FailureClassification::Discrepancy(discrepancy)
         }
@@ -1592,10 +1592,11 @@ mod tests {
         BlockerKey, BlockerMemory, BlockingFact, ClearingBaseline, CognitiveProfile, CombatProfile,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, ContentionGrant,
         ContentionIntents, DemandObservation, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
-        DiscrepancyMemory, DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind,
-        HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OmissionReason, Quantity, RecipeId, ResourceSource,
-        Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        DiscrepancyMemory, DiscrepancySource, DriveThresholds, EntityId, EntityKind, FrameState,
+        GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, OmissionReason, Quantity, RecipeId,
+        ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
+        Wound,
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
@@ -4227,7 +4228,7 @@ mod tests {
             discrepancy: Discrepancy::BeliefContradicted,
             observed_tick: Tick(10),
             expires_tick: Tick(200),
-            source_event: None,
+            source: DiscrepancySource::ReadPhaseInference,
             clearing_condition: DiscrepancyClearing::CommodityAvailabilityChanged {
                 commodity: CommodityKind::Apple,
                 place,

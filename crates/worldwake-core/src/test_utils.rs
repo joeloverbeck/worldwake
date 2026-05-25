@@ -233,7 +233,7 @@ pub fn sample_discrepancy_memory() -> DiscrepancyMemory {
         observed_tick: Tick(12),
         expires_tick: Tick(18),
         clearing_condition: DiscrepancyClearing::TtlExpiry,
-        source_event: Some(crate::EventId(1)),
+        source: crate::DiscrepancySource::Event(crate::EventId(1)),
     };
     let mut entries = BTreeMap::new();
     entries.insert(entry.scope, entry);

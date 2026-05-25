@@ -4,7 +4,7 @@ use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
 /// S170LEASTAPRO-002 stores learned-opportunity provenance source.
-pub const SAVE_FORMAT_VERSION: u32 = 102;
+pub const SAVE_FORMAT_VERSION: u32 = 103;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -206,18 +206,18 @@ mod tests {
         ClaimantOutcome, CloseCause, CognitiveArchetype, CognitiveArchetypeComponent,
         CommodityKind, CommodityPurpose, ContentionClaimant, ContentionEventPayload,
         ContentionResolutionRule, ControlSource, DecisionEventPayload, Discrepancy,
-        DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EmitterTag, EntityBeliefAspect,
-        EntityBeliefClaim, EntityId, EntityKind, EpistemicDispositionProfile, EventLog,
-        EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExpectationBasis,
-        ExpectationId, ExpectationMismatchPayload, ExpectationRecord, ExpectationState,
-        ExpectationStore, GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload,
-        GoalDispatchKey, GoalKey, GoalKind, GoalOfferedPayload, GoalPlanningBudget,
-        GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
-        GroundComfortTag, HomeostaticNeedId, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
-        LatrineFullness, LawAbidingProfile, MaterializationTag, MetabolismProfile, MotiveSource,
-        MotiveSourceRef, ObservationOmission, ObservationRef, OmissionReason, PendingEvent,
-        PerceptionSource, PersonalityAssignedPayload, PlaceDirtiness, PlanAdoptedPayload,
-        PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
+        DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DiscrepancySource, EmitterTag,
+        EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EpistemicDispositionProfile,
+        EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary,
+        ExpectationBasis, ExpectationId, ExpectationMismatchPayload, ExpectationRecord,
+        ExpectationState, ExpectationStore, GoalAbandonReason, GoalAbandonedPayload,
+        GoalCommittedPayload, GoalDispatchKey, GoalKey, GoalKind, GoalOfferedPayload,
+        GoalPlanningBudget, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
+        GoalSwitchReason, GroundComfortTag, HomeostaticNeedId, LastSeenMemory, LastSeenProvenance,
+        LastSeenRecord, LatrineFullness, LawAbidingProfile, MaterializationTag, MetabolismProfile,
+        MotiveSource, MotiveSourceRef, ObservationOmission, ObservationRef, OmissionReason,
+        PendingEvent, PerceptionSource, PersonalityAssignedPayload, PlaceDirtiness,
+        PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
         PursuitInvalidationReasonTag, Quantity, RankedGoalComparisonDimensionTag, RecordRef,
         RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
         ReplanTriggeredPayload, ReservationId, RewardEncumbrance, RiskWeightProfile,
@@ -623,7 +623,7 @@ mod tests {
             observed_tick: Tick(5),
             expires_tick: Tick(25),
             clearing_condition: DiscrepancyClearing::ReobservationOf { target: artifact },
-            source_event: Some(worldwake_core::EventId(5)),
+            source: DiscrepancySource::Event(worldwake_core::EventId(5)),
         });
         belief_txn
             .set_component_discrepancy_memory(actor, discrepancy_memory)
@@ -1368,8 +1368,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_102_after_learned_opportunity_source() {
-        assert_eq!(SAVE_FORMAT_VERSION, 102);
+    fn save_format_version_is_103_after_discrepancy_source() {
+        assert_eq!(SAVE_FORMAT_VERSION, 103);
     }
 
     #[test]
@@ -1380,7 +1380,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 102);
+        assert_eq!(SAVE_FORMAT_VERSION, 103);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]

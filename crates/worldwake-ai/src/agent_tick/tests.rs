@@ -41,17 +41,17 @@ use worldwake_core::{
     ContentionGrant, ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
     DecisionEventPayload, DemandMemory, DemandObservation, DemandObservationReason,
     DeprivationExposure, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
-    DriveThresholds, EmitterTag, EntityBeliefAspect, EntityId, EntityKind, EventLog, EventPayload,
-    EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExecutionBudget, ExpectationBasis,
-    ExpectationFailureCauseTag, ExpectationFailurePhaseTag, ExpectationId, ExpectationKindTag,
-    ExpectationMismatchPayload, ExpectationOutcome, ExpectationRecord, ExpectationState,
-    ExplorationProfile, FrameAssumption, FrameClearReason, FrameState, GoalAbandonReason,
-    GoalAbandonedPayload, GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload,
-    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
-    InstitutionalKnowledgeSource, InstitutionalSnapshotSource, IntentionDispositionProfile,
-    IntentionDomain, IntentionFrame, InvalidatorTag, KnownRecipes, LearnedOpportunityMemory,
-    LearnedOpportunitySource, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
-    MetabolismProfile, MismatchDetail, ObservationPredicate, OfficeData,
+    DiscrepancySource, DriveThresholds, EmitterTag, EntityBeliefAspect, EntityId, EntityKind,
+    EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExecutionBudget,
+    ExpectationBasis, ExpectationFailureCauseTag, ExpectationFailurePhaseTag, ExpectationId,
+    ExpectationKindTag, ExpectationMismatchPayload, ExpectationOutcome, ExpectationRecord,
+    ExpectationState, ExplorationProfile, FrameAssumption, FrameClearReason, FrameState,
+    GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload, GoalRejectionReason,
+    GoalSuppressedPayload, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalSnapshotSource,
+    IntentionDispositionProfile, IntentionDomain, IntentionFrame, InvalidatorTag, KnownRecipes,
+    LearnedOpportunityMemory, LearnedOpportunitySource, LoadUnits, MemoryCapacityProfile,
+    MerchandiseProfile, MetabolismProfile, MismatchDetail, ObservationPredicate, OfficeData,
     OpportunityExpectationKindTag, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
     PerceptionSource, Permille, Place, PlanningFact, Quantity, QueuedContentionIntent, RecipeId,
     RecordData, RecordKind, RepairAppliedPayload, RepairKind, RepairMemory, ResourceSource, Seed,
@@ -5347,7 +5347,7 @@ fn persist_discrepancy_memory_emits_blocker_recorded_for_discrepancy_entries() {
         discrepancy: Discrepancy::BeliefContradicted,
         observed_tick: Tick(2),
         expires_tick: Tick(9),
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
 
@@ -5370,15 +5370,16 @@ fn persist_discrepancy_memory_emits_blocker_recorded_for_discrepancy_entries() {
         .values()
         .next()
         .expect("persisted discrepancy memory should contain entry")
-        .source_event;
-    let source_event =
-        source_event.expect("persisted discrepancy should carry commit source event");
+        .source;
+    let DiscrepancySource::Event(source_event) = source_event else {
+        panic!("persisted discrepancy should carry commit source event");
+    };
     assert!(event_log.get(source_event).is_some());
     let mut expected_discrepancy_memory = discrepancy_memory.clone();
     expected_discrepancy_memory
         .entries
         .values_mut()
-        .for_each(|entry| entry.source_event = Some(source_event));
+        .for_each(|entry| entry.source = DiscrepancySource::Event(source_event));
     assert_eq!(persisted, &expected_discrepancy_memory);
     let blocker_events = event_log.events_by_tag(EventTag::BlockerRecorded);
     assert_eq!(blocker_events.len(), 1);
@@ -5438,7 +5439,7 @@ fn persist_discrepancy_memory_captures_belief_snapshot_for_target_belief_discrep
         discrepancy: Discrepancy::BeliefStale,
         observed_tick: Tick(80),
         expires_tick: Tick(90),
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
 
@@ -8934,7 +8935,7 @@ fn discrepancy_trace_populated_from_discrepancy_memory() {
         discrepancy: Discrepancy::BeliefContradicted,
         observed_tick: Tick(0),
         expires_tick: Tick(5),
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
     memory.record(DiscrepancyEntry {
@@ -8942,7 +8943,7 @@ fn discrepancy_trace_populated_from_discrepancy_memory() {
         discrepancy: Discrepancy::RouteUnknown,
         observed_tick: Tick(0),
         expires_tick: Tick(6),
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
         clearing_condition: DiscrepancyClearing::WorldStructureChange,
     });
     let mut txn = new_txn(&mut harness.world, 0);
@@ -9040,7 +9041,7 @@ fn discrepancy_trace_excludes_expired_entries() {
         discrepancy: Discrepancy::MissingObservation,
         observed_tick: Tick(0),
         expires_tick: Tick(0),
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
     memory.record(DiscrepancyEntry {
@@ -9048,7 +9049,7 @@ fn discrepancy_trace_excludes_expired_entries() {
         discrepancy: Discrepancy::ImproperPlanningState,
         observed_tick: Tick(0),
         expires_tick: Tick(3),
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
     let mut txn = new_txn(&mut harness.world, 0);

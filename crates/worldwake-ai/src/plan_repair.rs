@@ -412,9 +412,9 @@ mod tests {
     use crate::{PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind};
     use worldwake_core::{
         ActionDefId, BeliefClaimKey, BreachSignature, CausalLink, CausalProvider, Discrepancy,
-        DiscrepancyClearing, DiscrepancyEntry, EntityBeliefAspect, EntityId, InvalidatorTag,
-        OpportunityAnchor, OpportunityKey, Permille, PlanningFact, RepairEntry, RepairKind,
-        RepairMemory, Tick,
+        DiscrepancyClearing, DiscrepancyEntry, DiscrepancySource, EntityBeliefAspect, EntityId,
+        InvalidatorTag, OpportunityAnchor, OpportunityKey, Permille, PlanningFact, RepairEntry,
+        RepairKind, RepairMemory, Tick,
         test_utils::{sample_blocker_key, sample_goal_key},
     };
 
@@ -452,7 +452,7 @@ mod tests {
             discrepancy: Discrepancy::BeliefStale,
             observed_tick: Tick(5),
             expires_tick: Tick(25),
-            source_event: None,
+            source: DiscrepancySource::ReadPhaseInference,
             clearing_condition,
         }
     }

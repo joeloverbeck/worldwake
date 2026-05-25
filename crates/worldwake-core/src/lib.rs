@@ -209,8 +209,8 @@ pub use delta::{
     RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
 };
 pub use discrepancy::{
-    Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, MethodFailureContext,
-    MethodFailureKind,
+    Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DiscrepancySource,
+    MethodFailureContext, MethodFailureKind,
 };
 pub use disposal::DisposalProfile;
 pub use diversification::{DiversificationProfile, LastProactiveExplorationTick};

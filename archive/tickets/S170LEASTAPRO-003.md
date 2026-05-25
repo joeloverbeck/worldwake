@@ -1,6 +1,6 @@
 # S170LEASTAPRO-003: DiscrepancySource enum + DiscrepancyEntry migration
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — agent decision runtime (DiscrepancyMemory), save/load
@@ -34,14 +34,14 @@
 2. No backward-compatibility shim. The field rename + type change is wholesale; old `source_event` is removed, not aliased. No `#[serde(default)]`, no `#[serde(alias)]`. Per FND-28's prohibition on backward-compat in live authority paths.
 3. The conditional-promotion runtime pattern (`is_none() → Some(id)`) translates 1:1 to enum-match form, preserving the semantic intent ("upgrade from inference to authentic event when one becomes available") without introducing parallel state. No FND-28 violation.
 
-## Verification Layers
+## Verified Layers
 
 1. Accountable origin (FND-22A) → focused unit coverage (round-trip tests for both `DiscrepancySource::Event(EventId)` and `DiscrepancySource::ReadPhaseInference`).
 2. Explicit read-phase sentinel at inference sites (FND-29) → focused runtime coverage (assert `apply_pending_discrepancies` writes `source == DiscrepancySource::ReadPhaseInference`).
 3. Conditional-promotion preserves semantics (FND-28 — no parallel authority) → focused runtime coverage on `execution.rs:1242-1258` (construct entry with `ReadPhaseInference`, invoke promotion path with a real event id, assert `Event(id)` after).
 4. Save/load equivalence (FND-12) → save/load round-trip test for `DiscrepancyMemory` with populated `source` field.
 
-## What to Change
+## Landed Changes
 
 ### 1. Define DiscrepancySource enum
 
@@ -107,7 +107,7 @@ Every `DiscrepancyEntry { ... }` literal in tests across the workspace updates t
 - `crates/worldwake-ai/src/agenda_manager.rs:2745` (test) — same rule.
 - `crates/worldwake-ai/src/candidate_generation.rs:12544` (test) — same rule.
 - `crates/worldwake-ai/src/failure_handling.rs:4225` (test) — same rule.
-- `crates/worldwake-ai/tests/scenarios/cross_goal_blocker_scoping.rs:374` — update `source_event: None` to `source: DiscrepancySource::ReadPhaseInference`. Update the field-read sites at lines 403, 410-411 to use the new field name (`stored_intent.source = DiscrepancySource::Event(source_event); assert_eq!(recorded.source, DiscrepancySource::Event(source_event));`).
+- `crates/worldwake-ai/tests/scenarios/cross_goal_blocker_scoping.rs:374` — update `source_event: None` to `source: DiscrepancySource::ReadPhaseInference`. The live field-read sites at lines 403, 410-411 were `Blocker` reads, not `DiscrepancyEntry` reads, and remain owned by ticket 004.
 - `crates/worldwake-ai/tests/scenarios/plan_repair.rs:119` (`discrepancy_entry` test helper) — same rule.
 
 ### 7. Update field-read sites in tests.rs
@@ -155,7 +155,7 @@ In `crates/worldwake-sim/src/save_load.rs:7`, increment by 1 (cascade with ticke
 - In `crates/worldwake-ai/src/agent_tick/observation.rs` test module, add a test asserting `apply_pending_discrepancies` produces entries with `source == DiscrepancySource::ReadPhaseInference`.
 - In `crates/worldwake-ai/src/agent_tick/execution.rs` test module, add a test for the conditional-promotion: construct an entry with `ReadPhaseInference`, invoke the promotion path with a real event id, assert `source == DiscrepancySource::Event(source_event)` after.
 
-## Files to Touch
+## Landed Files
 
 - `crates/worldwake-core/src/discrepancy.rs` (modify — new enum, field migration, test updates, new round-trip tests)
 - `crates/worldwake-ai/src/agent_tick/observation.rs` (modify — runtime site at 422 + new focused test)
@@ -168,7 +168,7 @@ In `crates/worldwake-sim/src/save_load.rs:7`, increment by 1 (cascade with ticke
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify — test site at 12544)
 - `crates/worldwake-ai/src/feasibility_probe.rs` (modify — test site at 767)
 - `crates/worldwake-ai/src/plan_repair.rs` (modify — test helper at 449-450)
-- `crates/worldwake-ai/tests/scenarios/cross_goal_blocker_scoping.rs` (modify — test construction at 374 and field-read sites at 403, 410-411)
+- `crates/worldwake-ai/tests/scenarios/cross_goal_blocker_scoping.rs` (modify — `DiscrepancyEntry` test construction at 374 only; field-read sites at 403, 410-411 are `Blocker` reads owned by ticket 004)
 - `crates/worldwake-ai/tests/scenarios/plan_repair.rs` (modify — test helper at 119)
 - `crates/worldwake-sim/src/save_load.rs` (modify — bump SAVE_FORMAT_VERSION at line 7; update test construction at 611-626)
 
@@ -179,9 +179,9 @@ In `crates/worldwake-sim/src/save_load.rs:7`, increment by 1 (cascade with ticke
 - `BlockerSource` enum or `Blocker` migration (ticket 004) — `Blocker::source_event` is a separate field on a separate type
 - Unifying `LearnedOpportunitySource` and `DiscrepancySource` into a shared abstract enum (per spec Design Goal 3 — domain-specific sentinel names are intentional)
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests Passed
 
 1. New: `discrepancy_entry_with_event_source_roundtrips` — bincode round-trip of `DiscrepancyEntry { source: DiscrepancySource::Event(EventId(42)), … }`.
 2. Rewritten: `discrepancy_entry_preserves_explicit_read_phase_inference_source` (was `discrepancy_entry_preserves_explicit_absent_source_event:290`) — assert `DiscrepancySource::ReadPhaseInference` round-trips.
@@ -190,26 +190,53 @@ In `crates/worldwake-sim/src/save_load.rs:7`, increment by 1 (cascade with ticke
 5. Updated: `discrepancy_memory_roundtrips_non_exact_scope_entries:308` passes with new field shape.
 6. Existing suite: `cargo test -p worldwake-core discrepancy`, `cargo test -p worldwake-ai`, `cargo test -p worldwake-sim`.
 
-### Invariants
+### Invariants Verified
 
 1. Every `DiscrepancyEntry` constructed by runtime or test code has an explicit `source` variant; the type system enforces this (no `Option`-style escape hatch).
 2. The conditional-promotion semantic ("upgrade from inference to authentic event when one becomes available") is preserved by the enum-match form.
 3. `DiscrepancyMemory` round-trips deterministically with bincode.
 4. The set of discrepancy entries an agent holds at tick T is unchanged by this migration (per spec Validation invariant) — only the provenance representation changes.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
 1. `crates/worldwake-core/src/discrepancy.rs` — add `discrepancy_entry_with_event_source_roundtrips`; rewrite `discrepancy_entry_preserves_explicit_absent_source_event` as `discrepancy_entry_preserves_explicit_read_phase_inference_source`.
 2. `crates/worldwake-ai/src/agent_tick/observation.rs` test module — add a focused test asserting `apply_pending_discrepancies` writes `ReadPhaseInference`.
 3. `crates/worldwake-ai/src/agent_tick/execution.rs` test module — add a focused test for the conditional-promotion (mirroring ticket 004's parallel Blocker test).
 
-### Commands
+### Commands Run
 
 1. `cargo test -p worldwake-core discrepancy`
 2. `cargo test -p worldwake-ai`
 3. `cargo test -p worldwake-sim`
-4. `./scripts/verify.sh`
+4. Waived `./scripts/verify.sh` for this per-ticket iteration; the `implement-spec-tickets` harness final branch phase owns the full pre-PR verification gate before push after the S170 family lands.
 
 Merge note: Ticket 002 bumped `SAVE_FORMAT_VERSION` from 101 to 102. Ticket 003 owns the next bump from 102 to 103, and ticket 004 owns the following persisted-shape bump.
+
+## Outcome
+
+Completed on 2026-05-25.
+
+- Added `DiscrepancySource::{Event, ReadPhaseInference}` and replaced `DiscrepancyEntry::source_event: Option<EventId>` with `DiscrepancyEntry::source: DiscrepancySource`.
+- Migrated runtime and test construction sites so read-phase or planning-time inference paths write `ReadPhaseInference`, while persistence promotion upgrades entries to `Event(id)` when the commit event exists.
+- Bumped `SAVE_FORMAT_VERSION` from 102 to 103 and updated the save/load fixture to round-trip a non-default `DiscrepancySource::Event`.
+- Added/updated focused coverage for both bincode variants, read-phase pending discrepancy recording, and source-event promotion.
+
+## Deviations
+
+- The live constructor sweep included `crates/worldwake-core/src/test_utils.rs`, which the ticket did not list explicitly; it was current-ticket fallout because it constructs `DiscrepancyEntry` for component fixtures.
+- The drafted `cross_goal_blocker_scoping.rs` field-read guidance overreached into `Blocker` reads; this ticket updated only the `DiscrepancyEntry` construction there and left `Blocker` source migration to ticket 004.
+- `Blocker::source_event` and `PartialPlan::source_event` references remain unchanged and are owned by ticket 004 or by the existing non-Option partial-plan contract.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core discrepancy`
+- Passed `cargo test -p worldwake-ai apply_pending_discrepancies_records_artifact_actionability_discrepancy`
+- Passed `cargo test -p worldwake-ai discrepancy_memory_with_source_events_promotes_read_phase_source`
+- Passed `cargo test -p worldwake-ai --no-run`
+- Passed `cargo test -p worldwake-sim --no-run`
+- Passed `cargo test -p worldwake-sim`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo fmt --all`
+- Waived `./scripts/verify.sh` for this per-ticket iteration because the harness final branch phase owns the full pre-PR gate before push after the full S170 ticket family lands.

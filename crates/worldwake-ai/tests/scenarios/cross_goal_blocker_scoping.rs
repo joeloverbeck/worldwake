@@ -8,10 +8,10 @@ use worldwake_ai::generate_candidates;
 use worldwake_core::{
     AgentBeliefStore, Blocker, BlockerClearingCondition, BlockerMemory, BlockerScope, BlockingFact,
     CommodityKind, CommunicationProfile, ControlSource, DeprivationExposure, Discrepancy,
-    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EntityId, EventId,
-    GoalKind, HomeostaticNeeds, MerchandiseProfile, MetabolismProfile, PerceptionProfile,
-    PerceptionSource, Permille, Quantity, ResourceSource, RouteSegment, Tick, UtilityProfile,
-    WorkstationTag,
+    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DiscrepancySource, DriveThresholds,
+    EntityId, EventId, GoalKind, HomeostaticNeeds, MerchandiseProfile, MetabolismProfile,
+    PerceptionProfile, PerceptionSource, Permille, Quantity, ResourceSource, RouteSegment, Tick,
+    UtilityProfile, WorkstationTag,
 };
 use worldwake_sim::{PerAgentBeliefView, SpatialBeliefView};
 
@@ -376,7 +376,7 @@ fn discrepancy_memory_preserves_parallel_route_scope_suppression() {
         discrepancy: Discrepancy::RouteUnknown,
         observed_tick: Tick(0),
         expires_tick: Tick(30),
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
 

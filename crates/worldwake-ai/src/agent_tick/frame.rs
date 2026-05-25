@@ -8,8 +8,8 @@ use crate::{
 use worldwake_core::{
     ArtifactExistence, ArtifactLegalEffectTag, BeliefStatusTag, Blocker, BlockerKey, BlockerMemory,
     BlockingFact, CognitiveProfile, CommodityKind, ContentionIntents, Discrepancy,
-    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EntityId, FrameAssumption,
-    FrameClearReason, FrameState, HomeostaticNeedId, IntentionAbandonCondition,
+    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DiscrepancySource, EntityId,
+    FrameAssumption, FrameClearReason, FrameState, HomeostaticNeedId, IntentionAbandonCondition,
     IntentionAbandonConditionDiscriminant, IntentionDomain, IntentionFrame,
     IntentionResumeCondition, OpportunityAnchor, Permille, Quantity, SourceKey, SuspensionReason,
     Tick,
@@ -742,7 +742,7 @@ pub(super) fn record_abandon_condition_fired(
         observed_tick: tick,
         expires_tick: tick + u64::from(structural_block_ticks),
         clearing_condition: DiscrepancyClearing::TtlExpiry,
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
     });
 }
 
@@ -880,7 +880,7 @@ pub(super) fn record_assumption_failure(
         observed_tick: tick,
         expires_tick: tick + u64::from(structural_block_ticks),
         clearing_condition,
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
     });
 }
 
@@ -903,7 +903,7 @@ pub(super) fn record_source_invalidation(
         observed_tick: tick,
         expires_tick: tick + u64::from(structural_block_ticks),
         clearing_condition: DiscrepancyClearing::TtlExpiry,
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
     });
 }
 

@@ -1685,7 +1685,7 @@ fn apply_committed_rejection_lifecycle(
                     observed_tick: current_tick,
                     expires_tick: Tick(current_tick.0.saturating_add(1)),
                     clearing_condition: worldwake_core::DiscrepancyClearing::TtlExpiry,
-                    source_event: None,
+                    source: worldwake_core::DiscrepancySource::ReadPhaseInference,
                 });
             }
             agenda_state.committed = None;

@@ -27,10 +27,10 @@ use worldwake_core::{
     AffordanceKey, BeliefSnapshot, BeliefStatusTag, BlockerKey, BlockerMemory,
     BlockerRecordedPayload, BlockingFact, BreachSignature, CausalLink, CausalProvider, CauseRef,
     ContentionIntents, DecisionEventPayload, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
-    DiscrepancyMemory, EntityBeliefAspect, EntityId, EventId, EventLog, EventTag, EventView,
-    InvalidatorTag, LearnedOpportunityMemory, MismatchDetail, PlanningFact, RepairAppliedPayload,
-    RepairEntry, RepairKind, RepairMemory, ReplanTriggeredPayload, Tick, VerificationProviderKind,
-    VisibilitySpec, WitnessData, WorldTxn,
+    DiscrepancyMemory, DiscrepancySource, EntityBeliefAspect, EntityId, EventId, EventLog,
+    EventTag, EventView, InvalidatorTag, LearnedOpportunityMemory, MismatchDetail, PlanningFact,
+    RepairAppliedPayload, RepairEntry, RepairKind, RepairMemory, ReplanTriggeredPayload, Tick,
+    VerificationProviderKind, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionDefRegistry, CommitOutcome, CommittedAction, EntityBeliefView, InputKind,
@@ -626,7 +626,7 @@ fn discrepancy_entry_for_repair(
         observed_tick: tick,
         expires_tick: Tick(tick.0 + 1),
         clearing_condition,
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
     }
 }
 
@@ -1239,8 +1239,8 @@ fn discrepancy_memory_already_persisted(
                 return true;
             }
             let mut normalized = *requested;
-            if normalized.source_event.is_none() {
-                normalized.source_event = existing.source_event;
+            if matches!(normalized.source, DiscrepancySource::ReadPhaseInference) {
+                normalized.source = existing.source;
             }
             existing == &normalized
         })
@@ -1254,8 +1254,8 @@ fn discrepancy_memory_with_source_events(
     let mut updated = memory.clone();
     let mut changed = false;
     for entry in updated.entries.values_mut() {
-        if entry.source_event.is_none() {
-            entry.source_event = Some(source_event);
+        if matches!(entry.source, DiscrepancySource::ReadPhaseInference) {
+            entry.source = DiscrepancySource::Event(source_event);
             changed = true;
         }
     }
@@ -1483,7 +1483,8 @@ pub(super) fn plan_finished(runtime: &AgentDecisionRuntime) -> bool {
 mod tests {
     use super::{
         apply_repaired_plan_and_emit, attempt_local_repair_for_invalidated_step,
-        breach_signature_for_step, epistemic_verification_subject, populate_contention_event_refs,
+        breach_signature_for_step, discrepancy_memory_with_source_events,
+        epistemic_verification_subject, populate_contention_event_refs,
         record_failed_repair_attempts, repair_attempt_trace_from_failed, repair_budget_consumed,
         verification_anchor_from_repaired_plan,
     };
@@ -1496,14 +1497,14 @@ mod tests {
         Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
         BreachSignature, CausalLink, CausalProvider, CauseRef, ClaimantOutcome, ContentionClaimant,
         ContentionEventPayload, ContentionResolutionRule, ControlSource, DecisionEventPayload,
-        Discrepancy, DiscrepancyClearing, DiscrepancyEntry, EntityBeliefAspect, EntityId, EventLog,
-        EventPayload, EventTag, EventView, ExpectationBasis, ExpectationId, ExpectationRecord,
-        ExpectationState, ExpectationStore, GoalKey, GoalKind, InstitutionalClaim,
-        InstitutionalRecordEntry, InstitutionalSnapshotSource, InvalidatorTag, MismatchDetail,
-        OpportunityKey, PendingEvent, Permille, Place, PlanningFact, RecordData, RecordEntryId,
-        RecordKind, RecordTopic, RepairAppliedPayload, RepairKind, RepairMemory, Tick, Topology,
-        VerificationProviderKind, ViolationDispositionProfile, VisibilitySpec, WitnessData,
-        test_utils::sample_goal_key,
+        Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DiscrepancySource,
+        EntityBeliefAspect, EntityId, EventId, EventLog, EventPayload, EventTag, EventView,
+        ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
+        GoalKey, GoalKind, InstitutionalClaim, InstitutionalRecordEntry,
+        InstitutionalSnapshotSource, InvalidatorTag, MismatchDetail, OpportunityKey, PendingEvent,
+        Permille, Place, PlanningFact, RecordData, RecordEntryId, RecordKind, RecordTopic,
+        RepairAppliedPayload, RepairKind, RepairMemory, Tick, Topology, VerificationProviderKind,
+        ViolationDispositionProfile, VisibilitySpec, WitnessData, test_utils::sample_goal_key,
     };
     use worldwake_sim::{ActionDefRegistry, ActionHandlerRegistry, PerAgentBeliefView};
 
@@ -1623,8 +1624,26 @@ mod tests {
             observed_tick: Tick(9),
             expires_tick: Tick(10),
             clearing_condition,
-            source_event: None,
+            source: DiscrepancySource::ReadPhaseInference,
         }
+    }
+
+    #[test]
+    fn discrepancy_memory_with_source_events_promotes_read_phase_source() {
+        let source_event = EventId(42);
+        let entry = repair_discrepancy_entry(DiscrepancyClearing::TtlExpiry);
+        assert_eq!(entry.source, DiscrepancySource::ReadPhaseInference);
+        let mut memory = DiscrepancyMemory::default();
+        memory.record(entry);
+
+        let updated = discrepancy_memory_with_source_events(&memory, source_event)
+            .expect("read-phase source should be promoted");
+
+        let recorded = updated
+            .entries
+            .get(&entry.scope)
+            .expect("entry should remain present");
+        assert_eq!(recorded.source, DiscrepancySource::Event(source_event));
     }
 
     fn planned_step(slot: u32, link: Option<CausalLink>) -> PlannedStep {
