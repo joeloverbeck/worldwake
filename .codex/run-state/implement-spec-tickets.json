@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implement-S169-generalized-lawful-verification",
   "base_head": "c486b8fe4deef1c07864218cbde457c893b5abaf",
-  "last_ticket": "archive/tickets/S169GENLAWVER-002.md",
+  "last_ticket": "archive/tickets/S169GENLAWVER-003.md",
   "last_result": "completed_archived",
-  "last_work_commit": "245a4113f9fc05137744303a86d1393db4c7c0f9",
+  "last_work_commit": "0416734b83465a6a3aa9126eddf3040f04b7ea17",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S169GENLAWVER-003.md",
+  "next_target": "tickets/S169GENLAWVER-004.md",
   "queue": [
-    "tickets/S169GENLAWVER-003.md",
     "tickets/S169GENLAWVER-004.md",
     "tickets/S169GENLAWVER-005.md"
   ],
