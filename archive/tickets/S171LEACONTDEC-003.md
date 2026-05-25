@@ -1,6 +1,6 @@
 # S171LEACONTDEC-003: Render learned-context attribution in decision-trace text
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — formatter-only changes in `crates/worldwake-ai/src/decision_trace.rs`. No ranking, planning, or world-state effect.
@@ -23,14 +23,14 @@ After archived `archive/tickets/S171LEACONTDEC-001.md`, the attribution carriers
 1. The two new formatters mirror the existing two-discount formatter style exactly (private `fn`, return `String`, called via `.map_or_else(String::new, ...)`); no new abstraction, no shared formatter trait. Per FND-3: concrete state over abstract scores — each attribution type gets its own concrete formatter rather than a generic Display-trait dispatch.
 2. No backwards-compatibility shim: the new formatters are new symbols; the extended `format_source_reliability_discount_summary` adds new fields to its rendered output unconditionally when `provenance_event_count > 0`, with no parallel old-format path retained.
 
-## Verification Layers
+## Verified Layers
 
 1. New formatters produce expected strings for representative input -> focused unit tests in `decision_trace.rs::tests` constructing `sample_learned_opportunity_bonus_attribution()` / `sample_repair_memory_bonus_attribution()` (from `archive/tickets/S171LEACONTDEC-001.md`'s D8 fixture additions) and asserting the formatter output contains the expected fields.
 2. Extended `format_source_reliability_discount_summary` includes provenance fields when populated -> focused unit test asserts the output contains `provenance_event_count` and `most_recent_provenance_event` when they're non-zero / Some; omits them or renders as `0`/`None` when they're empty.
 3. Suffix-concat sites at lines 317-325, 1794-1802, 2110 thread the new bindings -> existing decision-trace tests at `decision_trace.rs::tests` continue to pass; trace text now contains the new suffixes when attribution is `Some(_)`.
 4. Single-layer ticket — formatter-only; no ranking, planning, or world-state effect. No mixed-layer mapping applies.
 
-## What to Change
+## Landed Changes
 
 ### 1. Add two new formatter functions
 
@@ -94,7 +94,7 @@ Add tests in `decision_trace.rs::tests` (alongside the existing formatter tests)
 - `format_repair_memory_bonus_summary_renders_signature_and_succ_count` — calls the formatter with a sample; asserts both fields appear.
 - `format_source_reliability_discount_summary_includes_provenance_when_non_zero` — calls the extended formatter with `provenance_event_count > 0` and `most_recent_provenance_event = Some(EventId(N))`; asserts both subfields appear in the output. Negative case: `provenance_event_count == 0` produces output identical to the pre-S171 rendered shape.
 
-## Files to Touch
+## Landed Files
 
 - `crates/worldwake-ai/src/decision_trace.rs` (modify) — two new formatters, one extended formatter, three suffix-concat-site extensions, four focused tests
 
@@ -107,29 +107,52 @@ Add tests in `decision_trace.rs::tests` (alongside the existing formatter tests)
 
 ## Acceptance Criteria
 
-### Tests That Must Pass
+### Required Tests Result
 
-1. New focused tests for the two new formatters and the extended `format_source_reliability_discount_summary` pass.
-2. Existing tests in `crates/worldwake-ai/src/decision_trace.rs::tests` that assert rendered trace text continue to pass (the new suffixes only appear when the corresponding attribution is `Some(_)`; pre-S171 fixture data renders unchanged).
-3. Existing suite: `cargo test -p worldwake-ai`.
+1. Focused tests for the two added formatters and the extended `format_source_reliability_discount_summary` passed.
+2. Existing tests in `crates/worldwake-ai/src/decision_trace.rs::tests` that assert rendered trace text passed; the added suffixes only appear when the corresponding attribution is `Some(_)`, and pre-S171 fixture data renders unchanged.
+3. Existing suite passed: `cargo test -p worldwake-ai`.
 
 ### Invariants
 
-1. New formatters render their attribution fields with the contract: source-kind (for learned-opp), signature + success-count (for repair-memory), pre/post motive (both), observed/expires ticks (both).
+1. Added formatters render their attribution fields with the contract: source-kind (for learned-opp), signature + success-count (for repair-memory), pre/post motive (both), observed/expires ticks (both).
 2. Extended `format_source_reliability_discount_summary` renders provenance subfields only when `provenance_event_count > 0`; the zero-count form produces output byte-identical to the pre-S171 shape.
-3. The three suffix-concat sites at `decision_trace.rs:317-325, 1794-1802, 2110` consistently thread both new bindings; no site is silently skipped.
+3. The three suffix-concat sites at `decision_trace.rs:317-325, 1794-1802, 2110` consistently thread both added bindings; no site is silently skipped.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Covered Tests
 
 1. `crates/worldwake-ai/src/decision_trace.rs::tests::format_learned_opportunity_bonus_summary_renders_event_source_form` (new)
 2. `crates/worldwake-ai/src/decision_trace.rs::tests::format_learned_opportunity_bonus_summary_renders_read_phase_form` (new)
 3. `crates/worldwake-ai/src/decision_trace.rs::tests::format_repair_memory_bonus_summary_renders_signature_and_succ_count` (new)
 4. `crates/worldwake-ai/src/decision_trace.rs::tests::format_source_reliability_discount_summary_includes_provenance_when_non_zero` (new)
 
-### Commands
+### Commands Run
 
 1. `cargo test -p worldwake-ai -- decision_trace::tests::format_`
 2. `cargo test -p worldwake-ai`
-3. `./scripts/verify.sh` — confirms fmt/clippy/full-workspace gates before opening the PR.
+3. `./scripts/verify.sh`
+
+## Verification Result
+
+1. Passed `cargo test -p worldwake-ai -- decision_trace::tests::format_` (2026-05-25).
+2. Passed `cargo test -p worldwake-ai -- decision_trace::tests` (2026-05-25).
+3. Passed `cargo test -p worldwake-ai` (2026-05-25).
+4. Passed `cargo test -p worldwake-cli` after final constructor fallout was corrected (2026-05-25).
+5. Passed `./scripts/verify.sh` after the final S171 family archive cleanup (2026-05-25).
+
+## Outcome
+
+Completed 2026-05-25.
+
+Changed:
+- Added learned-opportunity and repair-memory attribution suffix formatters to `decision_trace.rs`.
+- Extended source-reliability discount formatting to render retained provenance count and most-recent event when provenance exists.
+- Threaded the new learned-context suffixes through the selected-planning summary, debug per-ranked output, and alternate planning render path.
+- Added focused formatter tests and extended selected planning summary coverage for the new bonus suffixes.
+- Updated the observer test `AgendaEntry` fixture with the S171 attribution fields after final full-verify constructor fallout.
+
+Deviations:
+- Formatter output uses existing ASCII `pre=` / `post=` field style instead of the draft's arrow notation to match nearby formatter conventions and repository editing defaults.
+- Full S171 family verification found an observer test fixture constructor missing the S171 attribution fields; the fixture was updated with `None` values, and `cargo test -p worldwake-cli` plus `./scripts/verify.sh` passed afterward.

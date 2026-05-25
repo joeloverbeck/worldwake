@@ -43,7 +43,7 @@ Replace the placeholder `0` / `None` values in the production discount path with
 
 ### 3. Truth-sync S171 terminal wording
 
-Update `specs/S171-learned-context-decision-trace-edge.md` and `tickets/S171LEACONTDEC-003.md` if the final source-reliability provenance shape differs from the S171 draft’s `TestimonyReliabilityEntry::provenance_events` wording.
+Update the now-archived `archive/specs/S171-learned-context-decision-trace-edge.md` and `archive/tickets/S171LEACONTDEC-003.md` if the final source-reliability provenance shape differs from the S171 draft’s `TestimonyReliabilityEntry::provenance_events` wording.
 
 ## Files to Touch
 
@@ -52,13 +52,13 @@ Update `specs/S171-learned-context-decision-trace-edge.md` and `tickets/S171LEAC
 - `crates/worldwake-ai/src/agent_tick/mod.rs` (modify, if pending source-failure handling records or projects provenance)
 - `crates/worldwake-ai/src/ranking.rs` (modify)
 - `crates/worldwake-sim/src/save_load.rs` (modify, if save shape changes)
-- `specs/S171-learned-context-decision-trace-edge.md` (modify)
-- `tickets/S171LEACONTDEC-003.md` (modify if dependency/provenance wording changes)
+- `archive/specs/S171-learned-context-decision-trace-edge.md` (modify after archival)
+- `archive/tickets/S171LEACONTDEC-003.md` (modify if dependency/provenance wording changes after archival)
 
 ## Out of Scope
 
 - Learned-opportunity and repair-memory bonus attribution; owned by `archive/tickets/S171LEACONTDEC-002.md`.
-- Decision-trace text formatting; owned by `tickets/S171LEACONTDEC-003.md`.
+- Decision-trace text formatting; owned by the now-archived `archive/tickets/S171LEACONTDEC-003.md`.
 - Changing source-reliability discount arithmetic or ranking order.
 
 ## Acceptance Criteria

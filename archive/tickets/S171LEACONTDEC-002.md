@@ -17,7 +17,7 @@ After archived `archive/tickets/S171LEACONTDEC-001.md`, the attribution types an
 1. `learned_opportunity_bonus` at `ranking.rs:439-460` and `repair_memory_bonus` at `ranking.rs:413-437` both currently return `u32` and are called only from `memory_motive_bonus` at `ranking.rs:397-411` via `.saturating_add()` chain — the integer return is consumed immediately at one site, so changing the shape to `(u32, Option<…>)` is a local refactor with one caller to update. Existing tests `repair_memory_boosts_matching_alternative_only_while_live` (line 5826) and `learned_opportunity_memory_boosts_matching_opportunity_only_while_live` (line 5883) assert bonus behavior today; they will be extended in this ticket to assert the new attribution structure per V1.
 2. Superseded premise: `apply_source_reliability_discount` at `ranking.rs:492-510` does not bind a `TestimonyReliabilityEntry`; it reads `SourceReliability.sources.get(&SourceKey {…})?`, whose value is `ReliabilityRecord` from `crates/worldwake-core/src/experience.rs:77-95`. `ReliabilityRecord` has successful/failed attempt counts, wait/capacity observations, and `last_attempt_tick`, but no event provenance ring. Therefore this ticket cannot truthfully populate `SourceReliabilityDiscount.provenance_event_count` from `TestimonyReliabilityEntry::provenance_events` without expanding the core source-reliability carrier and save shape. That broader source-reliability provenance path is out of this ticket's narrowed implementation scope and must be owned by a follow-up if S171 still wants real non-zero discount provenance.
 3. The `AgendaEntry::pending` construction at `ranking.rs:290-301` already has local bindings `source_reliability_discount` (line 277), `competition_discount` (line 282), and `provenance` (line 273) in scope — the new bonus-attribution fields populate from this same site by extending the `memory_motive_bonus` call to return its tupled attributions alongside the integer.
-4. Shared abstraction boundary under audit: the `AgendaEntry` ranking carrier produced by `ranking.rs:290-301` and the `RankedGoalSummary` per-decision trace record projected by `agent_tick/planning.rs::summarize_ranked_goal`, then consumed by `decision_trace.rs` formatter sites (rendered separately in S171LEACONTDEC-003) and by `observer.rs:1207-1213` (reads `motive_source_contributions` only; unaffected). The contract is that score arithmetic is byte-identical pre/post; only the trace surface gains data.
+4. Shared abstraction boundary under audit: the `AgendaEntry` ranking carrier produced by `ranking.rs:290-301` and the `RankedGoalSummary` per-decision trace record projected by `agent_tick/planning.rs::summarize_ranked_goal`, then consumed by `decision_trace.rs` formatter sites (later rendered in `archive/tickets/S171LEACONTDEC-003.md`) and by `observer.rs:1207-1213` (reads `motive_source_contributions` only; unaffected). The contract is that score arithmetic is byte-identical pre/post; only the trace surface gains data.
 5. Per FND-22A: this ticket closes the spec's named gap — the experience path from learned-store mutation event to ranking-time consumption. The store-side provenance was added by S170; this ticket adds the consumption-side trace. No new learned state is introduced.
 6. AI regression layer: candidate-generation/ranking focused/unit coverage. `agent_tick` and golden E2E remain unaffected (V3 — no new goldens needed; score arithmetic unchanged).
 13. No adjacent contradictions exposed by reassessment — the change is bounded to ranking.rs internals and the function-signature impact is local to one caller (`memory_motive_bonus`).
@@ -32,7 +32,7 @@ After archived `archive/tickets/S171LEACONTDEC-001.md`, the attribution types an
 1. Score arithmetic is byte-identical pre/post -> existing focused tests at `ranking.rs:6418-6805` (the 7 `source_reliability_discount_*` tests), `ranking.rs:5826`, `ranking.rs:5883` continue to pass without modification. This is the spec's V2 contract realized.
 2. Attribution carriers populate when bonuses apply -> extended focused tests in `ranking.rs` assert `Some(_)` with `pre_bonus_motive + bonus == post_bonus_motive` for both learned-opportunity and repair-memory paths (V1.1, V1.2).
 3. `SourceReliabilityDiscount.provenance_event_count` remains `0` and `.most_recent_provenance_event` remains `None` on the live `ReliabilityRecord` path in this ticket; the placeholder fields were added by `archive/tickets/S171LEACONTDEC-001.md` but do not yet have a lawful source-reliability provenance producer.
-4. Single-layer ticket at the ranking-substrate boundary — decision-trace rendering of the landed attribution fields remains deferred to S171LEACONTDEC-003 and was not asserted here.
+4. Single-layer ticket at the ranking-substrate boundary — decision-trace rendering of the landed attribution fields later landed in `archive/tickets/S171LEACONTDEC-003.md` and was not asserted here.
 
 ## Landed Changes
 
@@ -93,7 +93,7 @@ At `crates/worldwake-ai/src/ranking.rs:290-301`, `memory_motive_bonus` is called
 
 ## Out of Scope
 
-- Decision-trace formatter additions and trace-text rendering (D7 — landed by S171LEACONTDEC-003).
+- Decision-trace formatter additions and trace-text rendering (D7 — landed by `archive/tickets/S171LEACONTDEC-003.md`).
 - Any change to motive_score arithmetic, priority class assignment, or candidate ordering (Design Goal 3: no behavior change).
 - Bonus formula tuning (Non-Goal 3: bonus integers returned are identical to pre-S171).
 - Any change to learned-store mutation paths (S170 provenance fields are read here, never written).
@@ -148,7 +148,7 @@ Changed:
 - Threaded those carriers through ranking into `AgendaEntry`, then through `agent_tick/planning.rs::summarize_ranked_goal` into `RankedGoalSummary`.
 - Extended focused ranking tests to assert the attributed entry identity, expiry/source fields, and pre/post motive arithmetic for both bonus axes.
 - Added a focused projection test proving `summarize_ranked_goal` preserves both bonus-attribution fields.
-- Created the now-archived `archive/tickets/S171LEACONTDEC-004.md` for the live source-reliability provenance gap and truth-synced the active S171 spec plus S171LEACONTDEC-003 dependency wording.
+- Created the now-archived `archive/tickets/S171LEACONTDEC-004.md` for the live source-reliability provenance gap and truth-synced the active S171 spec plus the now-archived `archive/tickets/S171LEACONTDEC-003.md` dependency wording.
 
 Deviations:
 - Live reassessment disproved the drafted `TestimonyReliabilityEntry::provenance_events` source-reliability plan. The actual discount path reads `ReliabilityRecord`, which had no event provenance carrier. This ticket did not synthesize provenance from the wrong store; the now-archived `archive/tickets/S171LEACONTDEC-004.md` landed the lawful source-reliability provenance producer.

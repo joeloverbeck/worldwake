@@ -1,6 +1,6 @@
 # S171: Learned-Context Decision-Trace Edge
 
-**Status**: DRAFT
+**Status**: COMPLETED
 
 ## Problem Statement
 
@@ -466,3 +466,36 @@ typed return paths.
   `crates/worldwake-ai/src/goal_model.rs:2200-2225`;
   `crates/worldwake-core/src/learned_opportunity_memory.rs:5-20`;
   `crates/worldwake-core/src/testimony_reliability.rs:7-62`.
+
+## Outcome
+
+Completed 2026-05-25.
+
+Implemented tickets:
+- `archive/tickets/S171LEACONTDEC-001.md`
+- `archive/tickets/S171LEACONTDEC-002.md`
+- `archive/tickets/S171LEACONTDEC-004.md`
+- `archive/tickets/S171LEACONTDEC-003.md`
+
+Changed:
+- Added learned-opportunity and repair-memory attribution carriers to the decision-trace data model.
+- Threaded those carriers through ranking and `RankedGoalSummary` without changing ranking arithmetic.
+- Added lawful source-reliability provenance to `ReliabilityRecord`, advanced the save format to 106, and populated `SourceReliabilityDiscount` from the matched source-reliability entry.
+- Rendered learned-opportunity, repair-memory, and source-reliability provenance attribution in decision-trace text.
+
+Verification:
+- `cargo test -p worldwake-ai -- ranking::tests::source_reliability_discount`
+- `cargo test -p worldwake-ai -- ranking::tests::repair_memory_boosts_matching_alternative_only_while_live`
+- `cargo test -p worldwake-ai -- ranking::tests::learned_opportunity_memory_boosts_matching_opportunity_only_while_live`
+- `cargo test -p worldwake-ai -- agent_tick::planning::tests::summarize_ranked_goal_preserves_learned_context_bonus_attributions`
+- `cargo test -p worldwake-ai -- decision_trace::tests::format_`
+- `cargo test -p worldwake-ai -- decision_trace::tests`
+- `cargo test -p worldwake-ai`
+- `cargo test -p worldwake-cli`
+- `./scripts/verify.sh`
+- S171LEACONTDEC-004 additionally passed focused source-reliability provenance tests in `worldwake-core`, `worldwake-systems`, and `worldwake-sim`, plus package-level `cargo test -p worldwake-core`, `cargo test -p worldwake-systems`, and `cargo test -p worldwake-sim`.
+
+Deviations:
+- Source-reliability discount provenance comes from the live `ReliabilityRecord` ring, not `TestimonyReliabilityEntry::provenance_events`; the original testimony-reliability sketch was disproved by live reassessment.
+- Projection-only or start-time source-reliability seams without a lawful event-log id leave provenance empty rather than synthesizing an event.
+- Final full verification exposed one observer test fixture constructor that still needed the S171 attribution fields; it was updated with `None` values and covered by `cargo test -p worldwake-cli` plus `./scripts/verify.sh`.

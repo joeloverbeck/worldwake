@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` trace/runtime carrier shape plus `worldwake-sim` save-format version bump
-**Deps**: spec `specs/S171-learned-context-decision-trace-edge.md`
+**Deps**: spec `archive/specs/S171-learned-context-decision-trace-edge.md`
 
 ## Problem
 
@@ -28,7 +28,7 @@ Before this ticket, the decision-trace surface had no way to record which learne
 1. Type definitions and field additions exist with the spec's exact shapes -> compile-time check (`cargo build --workspace`).
 2. Existing tests continue to pass -> the spec's V2 contract that motive_score/priority_class/agenda order are byte-identical pre/post is satisfied by the absence of runtime data-flow changes in this ticket; `cargo test -p worldwake-ai` proves the foundation lands cleanly.
 3. Current save/runtime shape advanced, not backward-compatible -> `SAVE_FORMAT_VERSION` assertions and `agent_decision_runtime_bincode_round_trip_preserves_all_fields` prove the new serialized discount fields roundtrip with non-default values.
-4. Single-layer ticket — no mixed-layer mapping applies. Bonus-attribution threading landed in S171LEACONTDEC-002, source-reliability provenance later landed in `archive/tickets/S171LEACONTDEC-004.md`, and trace-text rendering remains deferred to S171LEACONTDEC-003.
+4. Single-layer ticket — no mixed-layer mapping applies. Bonus-attribution threading landed in S171LEACONTDEC-002, source-reliability provenance later landed in `archive/tickets/S171LEACONTDEC-004.md`, and trace-text rendering later landed in `archive/tickets/S171LEACONTDEC-003.md`.
 
 ## Landed Changes
 
@@ -137,7 +137,7 @@ In `crates/worldwake-ai/src/decision_trace.rs:3121-3140`:
 ## Out of Scope
 
 - Threading attribution into `RankedGoalSummary` at ranking time (D5+D6 — bonus fields landed by S171LEACONTDEC-002; source-reliability provenance later landed in `archive/tickets/S171LEACONTDEC-004.md`).
-- Decision-trace formatter additions (D7 — landed by S171LEACONTDEC-003).
+- Decision-trace formatter additions (D7 — landed by `archive/tickets/S171LEACONTDEC-003.md`).
 - Any new behavior or score arithmetic change — this is type-definition-and-construction-site migration only.
 
 ## Acceptance Criteria Result
@@ -160,7 +160,7 @@ In `crates/worldwake-ai/src/decision_trace.rs:3121-3140`:
 
 ### Test Changes
 
-1. No new assertion tests were added; the new sample helpers and the updated `sample_source_reliability_discount` are test infrastructure for S171LEACONTDEC-003. Existing runtime coverage named in Assumption Reassessment item 1 proved the foundation lands without behavior change.
+1. No new assertion tests were added; the new sample helpers and the updated `sample_source_reliability_discount` are test infrastructure for the later `archive/tickets/S171LEACONTDEC-003.md`. Existing runtime coverage named in Assumption Reassessment item 1 proved the foundation lands without behavior change.
 
 ### Commands Run
 
