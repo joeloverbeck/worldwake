@@ -82,11 +82,16 @@ Restored and expanded the producer tests with real `PerAgentBeliefView` fixtures
 
 Completed on 2026-05-24.
 
+Outcome amended: 2026-05-25.
+
 - Re-enabled information-barrier partial-plan production at the selected-plan boundary.
 - Made producer suspension symmetric with the companion consumer by sharing the live witness selector.
 - Added `TickExpiry` as the safety net for produced information-barrier suspensions.
 - Kept `AskWitness` / `ShareBelief` social plans executable instead of suspending the companion path itself.
 - Regenerated the scenario diagnostics fixture to reflect the reactivated D7 information-barrier and AskWitness diagnostics.
+- This implementation was later reverted on PR #130 after the full survival matrix
+  exposed a contested-scenario stuck-idle regression. The final re-enable contract
+  landed in `archive/tickets/S168PARPLASKE-008.md`.
 
 ## Deviations
 

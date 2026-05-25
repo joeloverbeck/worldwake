@@ -366,7 +366,7 @@ fn information_barrier_companion_entry(
     }
 }
 
-fn select_information_barrier_witness(
+pub(crate) fn select_information_barrier_witness(
     actor: EntityId,
     beliefs: &impl GoalBeliefView,
     topic: TellTopic,
