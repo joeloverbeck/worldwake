@@ -39,10 +39,14 @@ already-suspended entries with a `PartialPlanSegment`; it cannot be the first pr
 because it skips entries whose segment is absent. Making the field live at
 information-barrier suspensions therefore requires a producer at the selected/completed
 information-barrier plan boundary, while the companion-spawn path remains a consumer.
-That corrected producer first landed in `archive/tickets/S168PARPLASKE-006.md`, and
-`archive/tickets/S168PARPLASKE-007.md` later re-enabled it with witness gating,
-`TickExpiry` safety, diagnostics fixture refresh, and the originally regressed ignored
-golden proof.
+That corrected producer first landed in `archive/tickets/S168PARPLASKE-006.md`.
+`archive/tickets/S168PARPLASKE-007.md` re-enabled it with witness gating and
+`search_exhaustion_backoff_ticks` expiry, but PR #130 reverted that producer after the
+full survival matrix exposed a contested-scenario idle-window regression.
+`archive/tickets/S168PARPLASKE-008.md` is the final re-enable ticket: it keeps the
+witness gate, adds a homeostatic-pressure gate, switches the safety expiry to
+`transient_block_ticks`, refreshes the diagnostics fixture, and verifies the full
+ignored `golden_ai` matrix.
 
 Accepted in the triage of `reports/ai-architecture-improvements-second-iteration.md`
 (Proposal 3), explicitly the **lowest-benefit** of the accepted set — an optimization
@@ -152,9 +156,11 @@ the information-barrier partial-plan constructor in `partial_plan.rs`, with popu
 terminal, and the corresponding `BarrierFact`, then suspends the matching agenda entry
 so `spawn_information_barrier_companions` can consume it. Combat- and
 target-identity-bound steps are excluded as for D1.a. The corrected producer seam first
-landed in `archive/tickets/S168PARPLASKE-006.md`; `archive/tickets/S168PARPLASKE-007.md`
-re-enabled it with witness gating, `TickExpiry`, and the originally regressed ignored
-golden proof.
+landed in `archive/tickets/S168PARPLASKE-006.md`; the first re-enable attempt in
+`archive/tickets/S168PARPLASKE-007.md` was reverted after a contested-scenario
+regression; the final re-enable landed in `archive/tickets/S168PARPLASKE-008.md` with
+witness gating, a homeostatic-pressure gate, `transient_block_ticks` expiry, and full
+ignored `golden_ai` proof.
 
 ### D2. Skeleton revalidation
 
@@ -310,9 +316,11 @@ No new parameters. Existing sources:
 
 Completed: 2026-05-24
 
+Outcome amended: 2026-05-25
+
 S168 landed the partial-plan skeleton reuse path through the archived ticket family:
 `archive/tickets/S168PARPLASKE-001.md` through
-`archive/tickets/S168PARPLASKE-007.md`. The implementation added belief-backed
+`archive/tickets/S168PARPLASKE-008.md`. The implementation added belief-backed
 skeleton revalidation, a planner-owned skeleton source carrier, budget-exhausted and
 information-barrier skeleton population with validated producer gating, seeded tactical search consumption, and
 `PartialPlanResumeTrace` coverage for reuse versus fallback. Pre-push verification
@@ -324,8 +332,12 @@ Deviations from the draft:
 - Live reassessment disproved `spawn_information_barrier_companions` as the first
   information-barrier producer because it consumes already-suspended entries. The
   corrected selected/completed barrier-plan producer landed in
-  `archive/tickets/S168PARPLASKE-006.md` and was re-enabled with end-to-end regression
-  proof in `archive/tickets/S168PARPLASKE-007.md`.
+  `archive/tickets/S168PARPLASKE-006.md`. The first re-enable attempt in
+  `archive/tickets/S168PARPLASKE-007.md` was reverted after full survival-matrix CI
+  exposed a contested-scenario stuck-idle regression; the final re-enable landed in
+  `archive/tickets/S168PARPLASKE-008.md` with a pressure gate, shorter
+  `transient_block_ticks` expiry, diagnostics fixture refresh, and full ignored
+  `golden_ai` proof.
 - `search_plan_seeded` remained a tactical-search seed/fallback path, not direct
   action replay. Concrete action definitions, bindings, durations, and payloads are
   still rebuilt through ordinary search.
@@ -337,13 +349,16 @@ Verification:
 
 - Passed focused revalidation, skeleton-source, budget-exhaustion population,
   information-barrier producer, seeded-search, and resume-trace tests recorded in the
-  archived S168 tickets.
+  archived S168 tickets, including the final
+  `write_information_barrier_partial_plan_segment` producer family from
+  `archive/tickets/S168PARPLASKE-008.md`.
 - Passed S168 generated golden coverage:
   `golden_s168_information_barrier_resume_reuses_skeleton`,
   `golden_s168_information_barrier_resume_falls_back_when_skeleton_invalid`, and
   `golden_s168_populated_skeleton_survives_save_load_before_resume`.
 - Passed broader no-regression gates recorded by the final S168 tickets, including
-  `cargo test -p worldwake-ai` and generated golden inventory/documentation checks.
+  `cargo test -p worldwake-ai`, the full ignored `golden_ai` matrix, and generated
+  golden inventory/documentation checks.
 - During final pre-push verification, `./scripts/verify.sh` first exposed missing
   `partial_plan_resumes` initializers in `crates/worldwake-cli/src/bin/observer.rs` and
   `crates/worldwake-visualizer/src/trace_buffers.rs`; those were corrected before the

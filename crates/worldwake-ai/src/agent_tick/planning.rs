@@ -1,6 +1,8 @@
 use crate::GoalDispatchKey;
 use crate::GoalKindPlannerExt;
-use crate::agenda_manager::{RejectionLifecycle, classify_rejection};
+use crate::agenda_manager::{
+    RejectionLifecycle, classify_rejection, select_information_barrier_witness,
+};
 use crate::agent_tick::portfolio::{
     FeasibilityVerdict, Portfolio, SlotKind, assemble_portfolio, derive_operating_mode,
 };
@@ -35,16 +37,17 @@ use crate::{
     PlanningStateCacheCounters, RevivalTrigger, authoritative_target,
     budget_exhausted_partial_plan_segment,
     build_planning_snapshot_with_blocked_facility_uses_and_route_preference,
-    planner_ops::committed_source_for_offer, planner_ops::expectation_kind_for_offer,
-    ranking::OrderedRanked, revalidate_next_step, select_best_plan,
+    information_barrier_partial_plan_segment, planner_ops::committed_source_for_offer,
+    planner_ops::expectation_kind_for_offer, ranking::OrderedRanked, revalidate_next_step,
+    select_best_plan,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 use worldwake_core::{
     ActionDefId, BlockerMemory, CognitiveProfile, DecisionEventPayload, DiscrepancyMemory,
-    EntityId, EventLog, EventTag, ExecutionBudget, GoalKind, IntentionFrame, OpportunityAnchor,
-    Permille, PlanAdoptedPayload, RepairKind, RoutePreference, RoutePreferenceSummary,
-    RouteSegment, TestimonyReliabilityKey, TestimonyTrustSummary, Tick,
+    EntityId, EventLog, EventTag, ExecutionBudget, GoalKind, HomeostaticNeedId, IntentionFrame,
+    OpportunityAnchor, Permille, PlanAdoptedPayload, RepairKind, RoutePreference,
+    RoutePreferenceSummary, RouteSegment, TestimonyReliabilityKey, TestimonyTrustSummary, Tick,
     belief_topic_to_topic_scope,
 };
 use worldwake_sim::{
@@ -1176,19 +1179,101 @@ fn write_budget_exhausted_partial_plan_segments(
     written
 }
 
-fn write_information_barrier_partial_plan_segment(
-    _agenda_state: &mut AgendaState,
-    _ranked_candidates: &OrderedRanked<'_>,
-    _selected_plan: &PlannedPlan,
-    _plans: &[CandidatePlanSearch],
-    _tick: Tick,
-    _cognitive: &CognitiveProfile,
+struct InformationBarrierProducerContext<'a, B: GoalBeliefView + ProfileBeliefView> {
+    actor: EntityId,
+    beliefs: &'a B,
+    tick: Tick,
+    cognitive: &'a CognitiveProfile,
+}
+
+fn write_information_barrier_partial_plan_segment<B: GoalBeliefView + ProfileBeliefView>(
+    agenda_state: &mut AgendaState,
+    ranked_candidates: &OrderedRanked<'_>,
+    selected_plan: &PlannedPlan,
+    plans: &[CandidatePlanSearch],
+    context: &InformationBarrierProducerContext<'_, B>,
 ) -> bool {
-    // S168PARPLASKE-006 producer disabled — see tickets/S168PARPLASKE-007.
-    // The D7 chain (suspend → spawn companion → resume) has unproven end-to-end
-    // behavior; producer activation trapped agents in 5+ gated goldens. Skeleton
-    // reuse via the budget-exhausted producer is unaffected.
-    false
+    let crate::PlanTerminalKind::InformationBarrier { topic } = selected_plan.terminal_kind else {
+        return false;
+    };
+    if matches!(
+        selected_plan.goal.kind,
+        GoalKind::AskWitness { .. } | GoalKind::ShareBelief { .. }
+    ) {
+        return false;
+    }
+    if actor_has_active_homeostatic_pressure(context.actor, context.beliefs) {
+        return false;
+    }
+    if select_information_barrier_witness(context.actor, context.beliefs, topic).is_none() {
+        return false;
+    }
+
+    let Some(candidate) = ranked_candidates
+        .iter()
+        .find(|candidate| candidate.key == selected_plan.opportunity)
+    else {
+        return false;
+    };
+    let remaining_skeleton = plans
+        .iter()
+        .find(|plan| {
+            plan.opportunity == selected_plan.opportunity
+                && plan
+                    .selected_plan()
+                    .is_some_and(|plan| plan == selected_plan)
+        })
+        .and_then(|plan| plan.skeleton_source.as_ref())
+        .map(|source| source.remaining_skeleton.clone());
+    let Some(segment) = information_barrier_partial_plan_segment(
+        candidate.offer.clone(),
+        topic,
+        remaining_skeleton,
+        context.tick,
+        0,
+        context.cognitive,
+    ) else {
+        return false;
+    };
+
+    let mut entry = candidate.clone();
+    entry.phase = AgendaPhase::Suspended;
+    entry.last_reconsidered_tick = context.tick;
+    entry.revival_trigger = None;
+    entry.kill_condition = KillCondition::TickExpiry {
+        at_tick: context.tick + u64::from(context.cognitive.transient_block_ticks),
+    };
+    entry.partial_plan_segment = Some(segment);
+    agenda_state.pending.remove(&entry.key);
+    if agenda_state
+        .committed
+        .as_ref()
+        .is_some_and(|committed| committed.key == entry.key)
+    {
+        agenda_state.committed = None;
+    }
+    agenda_state.suspended.insert(entry.key, entry);
+    true
+}
+
+fn actor_has_active_homeostatic_pressure(
+    actor: EntityId,
+    beliefs: &impl ProfileBeliefView,
+) -> bool {
+    let Some(needs) = beliefs.homeostatic_needs(actor) else {
+        return false;
+    };
+    let thresholds = beliefs.drive_thresholds(actor).unwrap_or_default();
+    HomeostaticNeedId::ALL.into_iter().any(|need| {
+        let floor = match need {
+            HomeostaticNeedId::Hunger => thresholds.hunger.low(),
+            HomeostaticNeedId::Thirst => thresholds.thirst.low(),
+            HomeostaticNeedId::Fatigue => thresholds.fatigue.low(),
+            HomeostaticNeedId::Bladder => thresholds.bladder.low(),
+            HomeostaticNeedId::Dirtiness => thresholds.dirtiness.low(),
+        };
+        needs.value(need) > floor
+    })
 }
 
 fn frontier_exhaustion_entry(
@@ -2258,8 +2343,12 @@ fn plan_and_validate_next_step_with_opportunity_index(
                         ranked_candidates,
                         &selected_plan,
                         &plans.plans,
-                        tick,
-                        cognitive,
+                        &InformationBarrierProducerContext {
+                            actor: agent,
+                            beliefs: &refreshed_view,
+                            tick,
+                            cognitive,
+                        },
                     ) {
                         runtime.current_plan = None;
                         runtime.current_step_index = 0;
@@ -2818,8 +2907,12 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
                     ranked_candidates,
                     &selected_plan,
                     &plans.plans,
-                    tick,
-                    cognitive,
+                    &InformationBarrierProducerContext {
+                        actor: agent,
+                        beliefs: &refreshed_view,
+                        tick,
+                        cognitive,
+                    },
                 ) {
                     runtime.current_plan = None;
                     runtime.current_step_index = 0;
@@ -3011,11 +3104,11 @@ fn goal_target_entity(goal: GoalKind) -> Option<EntityId> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CandidatePlanSearch, found_plan_blocks_later_goals, frontier_exhaustion_entry,
-        has_pending_budget_retry, plan_completion_tick_for_adoption, plan_search_result_to_trace,
-        planning_time_target_belief_presence, record_exhausted_goals, selected_plan_value,
-        summarize_ranked_goal, summarize_selected_plan, summarize_snapshot_continuation,
-        write_budget_exhausted_partial_plan_segments,
+        CandidatePlanSearch, InformationBarrierProducerContext, found_plan_blocks_later_goals,
+        frontier_exhaustion_entry, has_pending_budget_retry, plan_completion_tick_for_adoption,
+        plan_search_result_to_trace, planning_time_target_belief_presence, record_exhausted_goals,
+        selected_plan_value, summarize_ranked_goal, summarize_selected_plan,
+        summarize_snapshot_continuation, write_budget_exhausted_partial_plan_segments,
         write_information_barrier_partial_plan_segment,
     };
     use crate::{
@@ -3041,14 +3134,15 @@ mod tests {
     use worldwake_core::{
         AcquisitionQuantity, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef,
         CognitiveProfile, CommodityKind, CommodityPurpose, ContentionIntents, ControlSource,
-        DecisionEventPayload, EntityId, EventId, EventLog, EventTag, EventView, ExecutionBudget,
-        FrameAssumption, GoalCommittedPayload, GoalRejectionReason, HomeostaticNeedId,
-        HomeostaticNeeds, MerchandiseProfile, MotiveSource, MotiveSourceRef, PerceptionSource,
-        Permille, Place, PlanAdoptedPayload, Quantity, RankedGoalComparisonDimensionTag,
-        RepairKind, RoutePreferenceProfile, RoutePreferenceSummary, RouteSegment, SourceKey,
-        TellTopic, TestimonyTrustProfile, TestimonyTrustSummary, Tick, TopicScope, Topology,
-        TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
-        build_believed_entity_state, build_prototype_world,
+        DecisionEventPayload, EntityId, EntityKind, EventId, EventLog, EventTag, EventView,
+        ExecutionBudget, FrameAssumption, GoalCommittedPayload, GoalRejectionReason,
+        HomeostaticNeedId, HomeostaticNeeds, MerchandiseProfile, MotiveSource, MotiveSourceRef,
+        PerceptionSource, Permille, Place, PlanAdoptedPayload, Quantity,
+        RankedGoalComparisonDimensionTag, RepairKind, RoutePreferenceProfile,
+        RoutePreferenceSummary, RouteSegment, SourceKey, TellTopic, TestimonyTrustProfile,
+        TestimonyTrustSummary, Tick, TopicScope, Topology, TravelEdge, TravelEdgeId,
+        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_believed_entity_state,
+        build_prototype_world,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandler,
@@ -7089,12 +7183,117 @@ mod tests {
         assert_eq!(segment.remaining_skeleton, Some(skeleton));
     }
 
+    fn setup_information_barrier_world(with_witness: bool) -> (World, EntityId, EntityId) {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, witness, subject) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Planner", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_homeostatic_needs(agent, HomeostaticNeeds::new_sated())
+                .unwrap();
+            let witness = if with_witness {
+                let witness = txn.create_agent("Witness", ControlSource::Ai).unwrap();
+                txn.set_ground_location(witness, place).unwrap();
+                Some(witness)
+            } else {
+                None
+            };
+            let subject = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(subject, place).unwrap();
+            commit_txn(txn);
+            (agent, witness, subject)
+        };
+        let mut observed = vec![agent, subject];
+        observed.extend(witness);
+        seed_beliefs(&mut world, agent, &observed, Tick(1));
+        (world, agent, subject)
+    }
+
     #[test]
-    fn write_information_barrier_partial_plan_segment_is_disabled() {
-        // S168PARPLASKE-006 producer disabled — see tickets/S168PARPLASKE-007.
-        // The producer is intentionally a no-op; the agenda is left untouched so
-        // the selected plan adopts normally through the standard path.
-        let subject = place_entity(42);
+    fn write_information_barrier_partial_plan_segment_suspends_selected_goal_with_skeleton() {
+        let (world, agent, subject) = setup_information_barrier_world(true);
+        let view = PerAgentBeliefView::from_world(agent, &world);
+        let opportunity = consume_opportunity(CommodityKind::Bread, OpportunityAnchor::None);
+        let ranked = vec![ranked_goal_with_score(
+            opportunity,
+            GoalPriorityClass::Medium,
+            50,
+        )];
+        let selected_plan = information_barrier_plan(opportunity, subject);
+        assert!(
+            crate::agenda_manager::select_information_barrier_witness(
+                agent,
+                &view,
+                TellTopic::EntityBelief { subject }
+            )
+            .is_some()
+        );
+        let skeleton = vec![crate::PlannedSkeletonStep {
+            op: PlannerOpKind::Trade,
+            target_template: crate::htn::PayloadTemplate::FromContext,
+            expected_pre: vec![crate::htn::BeliefPredicate::TargetLastSeenKnown {
+                target: crate::htn::EntityTemplate::Fixed(subject),
+            }],
+        }];
+        let plans = vec![searched_plan_with_skeleton(
+            opportunity,
+            PlanSearchResult::Found(Box::new(selected_plan.clone())),
+            PartialPlanSkeletonSource {
+                remaining_skeleton: skeleton.clone(),
+            },
+        )];
+        let cognitive = CognitiveProfile {
+            search_exhaustion_backoff_ticks: 100,
+            transient_block_ticks: 7,
+            ..CognitiveProfile::default()
+        };
+        let mut agenda_state = AgendaState::default();
+        agenda_state
+            .pending
+            .insert(ranked[0].key, ranked[0].clone());
+
+        let written = write_information_barrier_partial_plan_segment(
+            &mut agenda_state,
+            &ordered(&ranked),
+            &selected_plan,
+            &plans,
+            &InformationBarrierProducerContext {
+                actor: agent,
+                beliefs: &view,
+                tick: Tick(31),
+                cognitive: &cognitive,
+            },
+        );
+
+        assert!(written);
+        assert!(!agenda_state.pending.contains_key(&opportunity));
+        let suspended = agenda_state
+            .suspended
+            .get(&opportunity)
+            .expect("information barrier should suspend the selected primary");
+        assert_eq!(suspended.phase, AgendaPhase::Suspended);
+        assert_eq!(
+            suspended.kill_condition,
+            KillCondition::TickExpiry { at_tick: Tick(38) }
+        );
+        let segment = suspended.partial_plan_segment.as_ref().unwrap();
+        assert_eq!(segment.goal, ranked[0].offer);
+        assert_eq!(
+            segment.terminal_barrier,
+            PlanTerminalKind::InformationBarrier {
+                topic: TellTopic::EntityBelief { subject },
+            }
+        );
+        assert_eq!(segment.remaining_skeleton, Some(skeleton));
+    }
+
+    #[test]
+    fn write_information_barrier_partial_plan_segment_skips_when_no_witness_is_available() {
+        let (world, agent, subject) = setup_information_barrier_world(false);
+        let view = PerAgentBeliefView::from_world(agent, &world);
         let opportunity = consume_opportunity(CommodityKind::Bread, OpportunityAnchor::None);
         let ranked = vec![ranked_goal_with_score(
             opportunity,
@@ -7116,8 +7315,166 @@ mod tests {
             &ordered(&ranked),
             &selected_plan,
             &plans,
-            Tick(31),
-            &CognitiveProfile::default(),
+            &InformationBarrierProducerContext {
+                actor: agent,
+                beliefs: &view,
+                tick: Tick(31),
+                cognitive: &CognitiveProfile::default(),
+            },
+        );
+
+        assert!(!written);
+        assert!(agenda_state.pending.contains_key(&opportunity));
+        assert!(!agenda_state.suspended.contains_key(&opportunity));
+    }
+
+    #[test]
+    fn write_information_barrier_partial_plan_segment_allows_missing_skeleton_source() {
+        let (world, agent, subject) = setup_information_barrier_world(true);
+        let view = PerAgentBeliefView::from_world(agent, &world);
+        let opportunity = consume_opportunity(CommodityKind::Bread, OpportunityAnchor::None);
+        let ranked = vec![ranked_goal_with_score(
+            opportunity,
+            GoalPriorityClass::Medium,
+            50,
+        )];
+        let selected_plan = information_barrier_plan(opportunity, subject);
+        let plans = vec![searched_plan(
+            opportunity,
+            PlanSearchResult::Found(Box::new(selected_plan.clone())),
+        )];
+        let mut agenda_state = AgendaState::default();
+        agenda_state
+            .pending
+            .insert(ranked[0].key, ranked[0].clone());
+
+        let written = write_information_barrier_partial_plan_segment(
+            &mut agenda_state,
+            &ordered(&ranked),
+            &selected_plan,
+            &plans,
+            &InformationBarrierProducerContext {
+                actor: agent,
+                beliefs: &view,
+                tick: Tick(31),
+                cognitive: &CognitiveProfile::default(),
+            },
+        );
+
+        assert!(written);
+        let segment = agenda_state
+            .suspended
+            .get(&opportunity)
+            .and_then(|entry| entry.partial_plan_segment.as_ref())
+            .expect("information barrier should suspend even without a skeleton source");
+        assert_eq!(segment.remaining_skeleton, None);
+    }
+
+    #[test]
+    fn write_information_barrier_partial_plan_segment_does_not_suspend_ask_witness_companion() {
+        let (world, agent, subject) = setup_information_barrier_world(true);
+        let witness = world
+            .entities()
+            .find(|entity| {
+                *entity != agent
+                    && *entity != subject
+                    && world.entity_kind(*entity) == Some(EntityKind::Agent)
+            })
+            .expect("fixture should include a witness");
+        let view = PerAgentBeliefView::from_world(agent, &world);
+        let opportunity = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::AskWitness {
+                witness,
+                topic: TellTopic::EntityBelief { subject },
+            }),
+            anchor: OpportunityAnchor::Entity(witness),
+        };
+        let ranked = vec![ranked_goal_with_score(
+            opportunity,
+            GoalPriorityClass::Medium,
+            50,
+        )];
+        let selected_plan = PlannedPlan::new(
+            opportunity,
+            opportunity.goal_key,
+            Vec::new(),
+            PlanTerminalKind::InformationBarrier {
+                topic: TellTopic::EntityBelief { subject },
+            },
+        );
+        let plans = vec![searched_plan(
+            opportunity,
+            PlanSearchResult::Found(Box::new(selected_plan.clone())),
+        )];
+        let mut agenda_state = AgendaState::default();
+        agenda_state
+            .pending
+            .insert(ranked[0].key, ranked[0].clone());
+
+        let written = write_information_barrier_partial_plan_segment(
+            &mut agenda_state,
+            &ordered(&ranked),
+            &selected_plan,
+            &plans,
+            &InformationBarrierProducerContext {
+                actor: agent,
+                beliefs: &view,
+                tick: Tick(31),
+                cognitive: &CognitiveProfile::default(),
+            },
+        );
+
+        assert!(!written);
+        assert!(agenda_state.pending.contains_key(&opportunity));
+        assert!(!agenda_state.suspended.contains_key(&opportunity));
+    }
+
+    #[test]
+    fn write_information_barrier_partial_plan_segment_skips_under_homeostatic_pressure() {
+        let (mut world, agent, subject) = setup_information_barrier_world(true);
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_component_homeostatic_needs(
+                agent,
+                HomeostaticNeeds::new(
+                    Permille::new(251).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                ),
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        let view = PerAgentBeliefView::from_world(agent, &world);
+        let opportunity = consume_opportunity(CommodityKind::Bread, OpportunityAnchor::None);
+        let ranked = vec![ranked_goal_with_score(
+            opportunity,
+            GoalPriorityClass::Medium,
+            50,
+        )];
+        let selected_plan = information_barrier_plan(opportunity, subject);
+        let plans = vec![searched_plan(
+            opportunity,
+            PlanSearchResult::Found(Box::new(selected_plan.clone())),
+        )];
+        let mut agenda_state = AgendaState::default();
+        agenda_state
+            .pending
+            .insert(ranked[0].key, ranked[0].clone());
+
+        let written = write_information_barrier_partial_plan_segment(
+            &mut agenda_state,
+            &ordered(&ranked),
+            &selected_plan,
+            &plans,
+            &InformationBarrierProducerContext {
+                actor: agent,
+                beliefs: &view,
+                tick: Tick(31),
+                cognitive: &CognitiveProfile::default(),
+            },
         );
 
         assert!(!written);

@@ -62,7 +62,7 @@ Recommended priority follows benefit: **S165 → S167 → S166 → S168.**
   FND-29.**
 - **S168 — Partial-Plan Skeleton Reuse** —
   `archive/specs/S168-partial-plan-skeleton-reuse.md` — *Status: COMPLETED
-  2026-05-24.* Populates and consumes the dead `remaining_skeleton` field for
+  2026-05-25.* Populates and consumes the dead `remaining_skeleton` field for
   information and search-budget barriers, with mandatory belief revalidation before
   reuse so a skeleton seeds tactical search but never authorizes a stale action. Lowest
   benefit of the wave (an optimization over already-working resume). **FND-20, FND-21,
