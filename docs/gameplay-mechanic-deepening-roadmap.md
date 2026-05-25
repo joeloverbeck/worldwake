@@ -164,10 +164,7 @@ Current evidence does not prove that self-care is fully mature under:
 - repeated interruption of long self-care actions;
 - agents competing for the same rest/wash/relief facilities;
 - injury or pursuit disrupting self-care;
-- shelter/safety constraints around sleep;
-- all wash planning branches avoiding budget exhaustion.
-
-The known `Wash` budget-exhaustion exclusion in scattered/contested survival should be treated as a first-class deepening target.
+- shelter/safety constraints around sleep.
 
 ### Future Deep-Research Questions
 
@@ -651,22 +648,19 @@ Do not create a rigid maturity ladder, but future scenarios should usually consi
 
 These are not final designs. They are the first places future specs should look.
 
-1. **Wash/travel planning under discovery and budget pressure**  
-   Current scattered/contested survival excludes Wash from budget-exhaustion checks. Close or formally reframe that gap.
-
-2. **Self-care interruption and recovery**  
+1. **Self-care interruption and recovery**  
    Current scenarios prove sustainment, but deeper mechanics need proof that agents recover from interrupted eat/drink/sleep/relieve/wash actions without rescue scripting.
 
-3. **Material provenance across production, trade, theft, disposal, and decay**  
+2. **Material provenance across production, trade, theft, disposal, and decay**  
    The current proof is promising. Future passes should harden identity, transfer, source/sink, and lineage across more collisions.
 
-4. **Knowledge provenance across tell, ask, consult, search, report, accusation, and pursuit**  
+3. **Knowledge provenance across tell, ask, consult, search, report, accusation, and pursuit**  
    This is the main anti-omniscience risk. Every plan-changing belief should have a carrier and freshness/provenance where relevant.
 
-5. **Institutional artifact lifecycle**  
+4. **Institutional artifact lifecycle**  
    Notices, bounties, office records, accusations, verdicts, and reward encumbrances need deeper lifecycle scenarios.
 
-6. **Injury-to-care chain**  
+5. **Injury-to-care chain**  
    Combat and escort imply care/treatment support. Deepen only as needed to complete the existing wound/escort/care causal chain.
 
 ## Non-Goals
