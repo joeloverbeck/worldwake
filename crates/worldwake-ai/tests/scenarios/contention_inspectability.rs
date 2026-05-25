@@ -246,7 +246,7 @@ fn set_reservation_conflict_blocker(
             facility: affordance.facility,
         },
         baseline_snapshot: None,
-        source_event: None,
+        source: worldwake_core::BlockerSource::Inferred,
     });
     let mut txn = new_txn(&mut h.world, tick.0);
     txn.set_component_blocker_memory(actor, memory).unwrap();

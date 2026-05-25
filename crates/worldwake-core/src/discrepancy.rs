@@ -65,13 +65,21 @@ pub enum MethodFailureKind {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum DiscrepancySource {
+    /// The discrepancy was triggered by a specific world event.
+    Event(EventId),
+    /// The discrepancy emerged from read-phase inference over belief state.
+    ReadPhaseInference,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DiscrepancyEntry {
     pub scope: BlockerScope,
     pub discrepancy: Discrepancy,
     pub observed_tick: Tick,
     pub expires_tick: Tick,
     pub clearing_condition: DiscrepancyClearing,
-    pub source_event: Option<EventId>,
+    pub source: DiscrepancySource,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -126,7 +134,7 @@ impl Component for DiscrepancyMemory {}
 #[cfg(test)]
 mod tests {
     use super::{
-        Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
+        Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DiscrepancySource,
         MethodFailureContext, MethodFailureKind,
     };
     use crate::{
@@ -166,7 +174,7 @@ mod tests {
             observed_tick: Tick(9),
             expires_tick,
             clearing_condition,
-            source_event: Some(EventId(1)),
+            source: DiscrepancySource::Event(EventId(1)),
         }
     }
 
@@ -176,6 +184,7 @@ mod tests {
         assert_value_bounds::<DiscrepancyMemory>();
         assert_copy_value_bounds::<Discrepancy>();
         assert_copy_value_bounds::<DiscrepancyEntry>();
+        assert_copy_value_bounds::<DiscrepancySource>();
         assert_copy_value_bounds::<DiscrepancyClearing>();
         assert_copy_value_bounds::<MethodFailureContext>();
         assert_copy_value_bounds::<MethodFailureKind>();
@@ -287,7 +296,7 @@ mod tests {
     }
 
     #[test]
-    fn discrepancy_entry_preserves_explicit_absent_source_event() {
+    fn discrepancy_entry_preserves_explicit_read_phase_inference_source() {
         let mut entry = discrepancy_entry(
             blocker_key(),
             Discrepancy::RouteUnknown,
@@ -296,12 +305,30 @@ mod tests {
                 target: entity_id(4, 0),
             },
         );
-        entry.source_event = None;
+        entry.source = DiscrepancySource::ReadPhaseInference;
 
         let bytes = bincode::serialize(&entry).unwrap();
         let roundtrip: DiscrepancyEntry = bincode::deserialize(&bytes).unwrap();
 
-        assert_eq!(roundtrip.source_event, None);
+        assert_eq!(roundtrip.source, DiscrepancySource::ReadPhaseInference);
+    }
+
+    #[test]
+    fn discrepancy_entry_with_event_source_roundtrips() {
+        let mut entry = discrepancy_entry(
+            blocker_key(),
+            Discrepancy::RouteUnknown,
+            Tick(19),
+            DiscrepancyClearing::ReobservationOf {
+                target: entity_id(4, 0),
+            },
+        );
+        entry.source = DiscrepancySource::Event(EventId(42));
+
+        let bytes = bincode::serialize(&entry).unwrap();
+        let roundtrip: DiscrepancyEntry = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip.source, DiscrepancySource::Event(EventId(42)));
     }
 
     #[test]
@@ -316,7 +343,7 @@ mod tests {
             observed_tick: Tick(2),
             expires_tick: Tick(20),
             clearing_condition: DiscrepancyClearing::WorldStructureChange,
-            source_event: Some(EventId(7)),
+            source: DiscrepancySource::Event(EventId(7)),
         });
         memory.record(DiscrepancyEntry {
             scope: counterparty_scope,
@@ -324,7 +351,7 @@ mod tests {
             observed_tick: Tick(3),
             expires_tick: Tick(30),
             clearing_condition: DiscrepancyClearing::TtlExpiry,
-            source_event: Some(EventId(8)),
+            source: DiscrepancySource::Event(EventId(8)),
         });
 
         let bytes = bincode::serialize(&memory).unwrap();
@@ -334,12 +361,12 @@ mod tests {
         assert!(roundtrip.is_suppressed(&route_scope, Tick(10)));
         assert!(roundtrip.is_suppressed(&counterparty_scope, Tick(10)));
         assert_eq!(
-            roundtrip.entries[&route_scope].source_event,
-            Some(EventId(7))
+            roundtrip.entries[&route_scope].source,
+            DiscrepancySource::Event(EventId(7))
         );
         assert_eq!(
-            roundtrip.entries[&counterparty_scope].source_event,
-            Some(EventId(8))
+            roundtrip.entries[&counterparty_scope].source,
+            DiscrepancySource::Event(EventId(8))
         );
     }
 

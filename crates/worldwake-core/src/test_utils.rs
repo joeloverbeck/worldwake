@@ -9,11 +9,11 @@ use crate::{
     CommodityValuationProfile, ContentionDispositionProfile, DemandMemory, DemandObservation,
     DemandObservationReason, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
     EdgeExperience, EntityId, GoalKey, GoalKind, InvalidatorTag, LearnedOpportunityMemory,
-    MemoryCapacityProfile, MerchandiseProfile, OpportunityAnchor, OpportunityEntry, OpportunityKey,
-    Permille, PreferenceProfile, Quantity, ReliabilityRecord, RepairEntry, RepairKind,
-    RepairMemory, RouteExperience, Seed, SourceKey, SourceReliability, StockAssignment,
-    StockAssignmentKind, StockStoragePolicy, SubstitutePreferences, Tick, TradeCategory,
-    TradeDispositionProfile, TravelEdgeId, UtilityProfile,
+    LearnedOpportunitySource, MemoryCapacityProfile, MerchandiseProfile, OpportunityAnchor,
+    OpportunityEntry, OpportunityKey, Permille, PreferenceProfile, Quantity, ReliabilityRecord,
+    RepairEntry, RepairKind, RepairMemory, RouteExperience, Seed, SourceKey, SourceReliability,
+    StockAssignment, StockAssignmentKind, StockStoragePolicy, SubstitutePreferences, Tick,
+    TradeCategory, TradeDispositionProfile, TravelEdgeId, UtilityProfile,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::{NonZeroU8, NonZeroU32};
@@ -213,7 +213,7 @@ pub fn sample_blocker() -> Blocker {
         baseline_snapshot: Some(ClearingBaseline::CommodityQuantity {
             quantity: Quantity(2),
         }),
-        source_event: Some(crate::EventId(1)),
+        source: crate::BlockerSource::Event(crate::EventId(1)),
     }
 }
 
@@ -233,7 +233,7 @@ pub fn sample_discrepancy_memory() -> DiscrepancyMemory {
         observed_tick: Tick(12),
         expires_tick: Tick(18),
         clearing_condition: DiscrepancyClearing::TtlExpiry,
-        source_event: Some(crate::EventId(1)),
+        source: crate::DiscrepancySource::Event(crate::EventId(1)),
     };
     let mut entries = BTreeMap::new();
     entries.insert(entry.scope, entry);
@@ -269,6 +269,7 @@ pub fn sample_learned_opportunity_memory() -> LearnedOpportunityMemory {
         observed_tick: Tick(14),
         expires_tick: Tick(74),
         observed_at: entity_id(16, 0),
+        source: LearnedOpportunitySource::ReadPhaseInference,
     };
     let mut opportunities = BTreeMap::new();
     opportunities.insert(entry.opportunity, entry);

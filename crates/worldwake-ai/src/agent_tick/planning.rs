@@ -1685,7 +1685,7 @@ fn apply_committed_rejection_lifecycle(
                     observed_tick: current_tick,
                     expires_tick: Tick(current_tick.0.saturating_add(1)),
                     clearing_condition: worldwake_core::DiscrepancyClearing::TtlExpiry,
-                    source_event: None,
+                    source: worldwake_core::DiscrepancySource::ReadPhaseInference,
                 });
             }
             agenda_state.committed = None;
@@ -4846,9 +4846,11 @@ mod tests {
             EventId(77),
             Tick(19),
         );
-        runtime
-            .route_preference
-            .record_safe(RouteSegment::new(first_place, second_place), tick);
+        runtime.route_preference.record_safe(
+            RouteSegment::new(first_place, second_place),
+            EventId(78),
+            tick,
+        );
         let mut effective_places = BTreeMap::new();
         effective_places.insert(agent, first_place);
         let view = SelectionContextView {

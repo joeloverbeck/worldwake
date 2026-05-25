@@ -564,7 +564,7 @@ mod tests {
             ..RoutePreferenceProfile::default()
         };
         let mut preferred = RoutePreference::default();
-        preferred.record_safe(segment, Tick(9));
+        preferred.record_safe(segment, worldwake_core::EventId(6), Tick(9));
         let mut avoided = RoutePreference::default();
         avoided.record_dangerous(segment, worldwake_core::EventId(7), Tick(9));
 
@@ -618,7 +618,7 @@ mod tests {
             ..RoutePreferenceProfile::default()
         };
         let mut preference = RoutePreference::default();
-        preference.record_safe(segment, Tick(9));
+        preference.record_safe(segment, worldwake_core::EventId(6), Tick(9));
 
         let forward = perceived_direct_travel_cost_from_memory(
             Tick(9),

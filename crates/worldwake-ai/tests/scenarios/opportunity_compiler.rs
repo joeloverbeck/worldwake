@@ -9,9 +9,9 @@ use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
 use worldwake_core::{
     AcquisitionQuantity, BeliefStatusTag, ClaimId, ClaimValue, CommodityKind, CommodityPurpose,
     EntityBeliefAspect, EntityBeliefClaim, GoalKey, GoalKind, HomeostaticNeeds, LawAbidingProfile,
-    LearnedOpportunityMemory, MetabolismProfile, OpportunityEntry, OpportunityKey,
-    PerceptionProfile, PerceptionSource, Permille, Quantity, RiskWeightProfile, Seed, Tick,
-    UtilityProfile, hash_event_log,
+    LearnedOpportunityMemory, LearnedOpportunitySource, MetabolismProfile, OpportunityEntry,
+    OpportunityKey, PerceptionProfile, PerceptionSource, Permille, Quantity, RiskWeightProfile,
+    Seed, Tick, UtilityProfile, hash_event_log,
 };
 use worldwake_sim::PerAgentBeliefView;
 
@@ -302,6 +302,7 @@ fn learned_opportunity_memory_damps_repeated_bread_opportunity() {
         observed_tick: Tick(0),
         expires_tick: Tick(40),
         observed_at: VILLAGE_SQUARE,
+        source: LearnedOpportunitySource::ReadPhaseInference,
     });
     let mut txn = new_txn(&mut damped_h.world, 0);
     txn.set_component_learned_opportunity_memory(damped_agent, memory)

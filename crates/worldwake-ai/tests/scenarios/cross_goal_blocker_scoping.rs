@@ -8,10 +8,10 @@ use worldwake_ai::generate_candidates;
 use worldwake_core::{
     AgentBeliefStore, Blocker, BlockerClearingCondition, BlockerMemory, BlockerScope, BlockingFact,
     CommodityKind, CommunicationProfile, ControlSource, DeprivationExposure, Discrepancy,
-    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EntityId, EventId,
-    GoalKind, HomeostaticNeeds, MerchandiseProfile, MetabolismProfile, PerceptionProfile,
-    PerceptionSource, Permille, Quantity, ResourceSource, RouteSegment, Tick, UtilityProfile,
-    WorkstationTag,
+    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DiscrepancySource, DriveThresholds,
+    EntityId, EventId, GoalKind, HomeostaticNeeds, MerchandiseProfile, MetabolismProfile,
+    PerceptionProfile, PerceptionSource, Permille, Quantity, ResourceSource, RouteSegment, Tick,
+    UtilityProfile, WorkstationTag,
 };
 use worldwake_sim::{PerAgentBeliefView, SpatialBeliefView};
 
@@ -32,7 +32,7 @@ fn active_blocker(scope: BlockerScope, fact: BlockingFact, expires_tick: Tick) -
             BlockerClearingCondition::TtlOnly,
         ),
         baseline_snapshot: None,
-        source_event: None,
+        source: worldwake_core::BlockerSource::Inferred,
     }
 }
 
@@ -376,7 +376,7 @@ fn discrepancy_memory_preserves_parallel_route_scope_suppression() {
         discrepancy: Discrepancy::RouteUnknown,
         observed_tick: Tick(0),
         expires_tick: Tick(30),
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
 
@@ -400,15 +400,18 @@ fn blocker_source_event_points_to_recorded_event() {
         BlockingFact::PatienceExhausted,
         Tick(60),
     );
-    stored_intent.source_event = Some(source_event);
+    stored_intent.source = worldwake_core::BlockerSource::Event(source_event);
     blocked.record(stored_intent);
 
     let recorded = blocked
         .intents
         .get(&BlockerScope::Counterparty(actor))
         .expect("blocker should be stored");
-    assert_eq!(recorded.source_event, Some(source_event));
-    assert!(h.event_log.get(recorded.source_event.unwrap()).is_some());
+    assert_eq!(
+        recorded.source,
+        worldwake_core::BlockerSource::Event(source_event)
+    );
+    assert!(h.event_log.get(source_event).is_some());
 }
 
 #[test]

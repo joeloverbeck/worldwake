@@ -41,26 +41,26 @@ use worldwake_core::{
     ContentionGrant, ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
     DecisionEventPayload, DemandMemory, DemandObservation, DemandObservationReason,
     DeprivationExposure, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
-    DriveThresholds, EmitterTag, EntityBeliefAspect, EntityId, EntityKind, EventLog, EventPayload,
-    EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExecutionBudget, ExpectationBasis,
-    ExpectationFailureCauseTag, ExpectationFailurePhaseTag, ExpectationId, ExpectationKindTag,
-    ExpectationMismatchPayload, ExpectationOutcome, ExpectationRecord, ExpectationState,
-    ExplorationProfile, FrameAssumption, FrameClearReason, FrameState, GoalAbandonReason,
-    GoalAbandonedPayload, GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload,
-    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
-    InstitutionalKnowledgeSource, InstitutionalSnapshotSource, IntentionDispositionProfile,
-    IntentionDomain, IntentionFrame, InvalidatorTag, KnownRecipes, LearnedOpportunityMemory,
-    LoadUnits, MemoryCapacityProfile, MerchandiseProfile, MetabolismProfile, MismatchDetail,
-    ObservationPredicate, OfficeData, OpportunityExpectationKindTag, PatrolProfile, PatrolRoute,
-    PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, PlanningFact, Quantity,
-    QueuedContentionIntent, RecipeId, RecordData, RecordKind, RepairAppliedPayload, RepairKind,
-    RepairMemory, ResourceSource, Seed, SourceAttributionOutcomeTag,
-    SourceExpectationFailurePayload, SourceKey, SourceKeyPayload, StatePredicate, SuccessionLaw,
-    TellMemoryKey, TellProfile, TellTopic, TestimonyTrustSummary, Tick, ToldBeliefMemory,
-    TopicScope, Topology, TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile,
-    ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-    WorldTxn, Wound, WoundCause, WoundId, WoundList, build_believed_entity_state,
-    build_prototype_world,
+    DiscrepancySource, DriveThresholds, EmitterTag, EntityBeliefAspect, EntityId, EntityKind,
+    EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExecutionBudget,
+    ExpectationBasis, ExpectationFailureCauseTag, ExpectationFailurePhaseTag, ExpectationId,
+    ExpectationKindTag, ExpectationMismatchPayload, ExpectationOutcome, ExpectationRecord,
+    ExpectationState, ExplorationProfile, FrameAssumption, FrameClearReason, FrameState,
+    GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload, GoalRejectionReason,
+    GoalSuppressedPayload, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalSnapshotSource,
+    IntentionDispositionProfile, IntentionDomain, IntentionFrame, InvalidatorTag, KnownRecipes,
+    LearnedOpportunityMemory, LearnedOpportunitySource, LoadUnits, MemoryCapacityProfile,
+    MerchandiseProfile, MetabolismProfile, MismatchDetail, ObservationPredicate, OfficeData,
+    OpportunityExpectationKindTag, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
+    PerceptionSource, Permille, Place, PlanningFact, Quantity, QueuedContentionIntent, RecipeId,
+    RecordData, RecordKind, RepairAppliedPayload, RepairKind, RepairMemory, ResourceSource, Seed,
+    SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKey, SourceKeyPayload,
+    StatePredicate, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, TestimonyTrustSummary,
+    Tick, ToldBeliefMemory, TopicScope, Topology, TravelEdge, TravelEdgeId, UniqueItemKind,
+    UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker,
+    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    build_believed_entity_state, build_prototype_world,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
@@ -5137,7 +5137,7 @@ fn persist_blocked_memory_commits_changed_component() {
         expires_tick: Tick(7),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
-        source_event: None,
+        source: worldwake_core::BlockerSource::Inferred,
     });
 
     persist_blocked_memory(
@@ -5154,19 +5154,21 @@ fn persist_blocked_memory_commits_changed_component() {
     let persisted = world
         .get_component_blocker_memory(agent)
         .expect("changed blocker memory should be persisted");
-    let source_event = persisted
+    let source = persisted
         .intents
         .values()
         .next()
         .expect("persisted blocker memory should contain entry")
-        .source_event;
-    let source_event = source_event.expect("persisted blocker should carry commit source event");
+        .source;
+    let worldwake_core::BlockerSource::Event(source_event) = source else {
+        panic!("persisted blocker should carry commit source event");
+    };
     assert!(event_log.get(source_event).is_some());
     let mut expected_blocked = blocked.clone();
     expected_blocked
         .intents
         .values_mut()
-        .for_each(|blocker| blocker.source_event = Some(source_event));
+        .for_each(|blocker| blocker.source = worldwake_core::BlockerSource::Event(source_event));
     assert_eq!(persisted, &expected_blocked);
     assert_eq!(event_log.len(), 3);
     let blocker_events = event_log.events_by_tag(EventTag::BlockerRecorded);
@@ -5347,7 +5349,7 @@ fn persist_discrepancy_memory_emits_blocker_recorded_for_discrepancy_entries() {
         discrepancy: Discrepancy::BeliefContradicted,
         observed_tick: Tick(2),
         expires_tick: Tick(9),
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
 
@@ -5370,15 +5372,16 @@ fn persist_discrepancy_memory_emits_blocker_recorded_for_discrepancy_entries() {
         .values()
         .next()
         .expect("persisted discrepancy memory should contain entry")
-        .source_event;
-    let source_event =
-        source_event.expect("persisted discrepancy should carry commit source event");
+        .source;
+    let DiscrepancySource::Event(source_event) = source_event else {
+        panic!("persisted discrepancy should carry commit source event");
+    };
     assert!(event_log.get(source_event).is_some());
     let mut expected_discrepancy_memory = discrepancy_memory.clone();
     expected_discrepancy_memory
         .entries
         .values_mut()
-        .for_each(|entry| entry.source_event = Some(source_event));
+        .for_each(|entry| entry.source = DiscrepancySource::Event(source_event));
     assert_eq!(persisted, &expected_discrepancy_memory);
     let blocker_events = event_log.events_by_tag(EventTag::BlockerRecorded);
     assert_eq!(blocker_events.len(), 1);
@@ -5438,7 +5441,7 @@ fn persist_discrepancy_memory_captures_belief_snapshot_for_target_belief_discrep
         discrepancy: Discrepancy::BeliefStale,
         observed_tick: Tick(80),
         expires_tick: Tick(90),
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
 
@@ -5516,7 +5519,7 @@ fn read_phase_emits_goal_offered_and_goal_suppressed_events_from_candidate_prove
         expires_tick: Tick(10),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
-        source_event: None,
+        source: worldwake_core::BlockerSource::Inferred,
     });
     let mut txn = new_txn(&mut harness.world, 0);
     txn.set_component_blocker_memory(harness.actor, memory)
@@ -8934,7 +8937,7 @@ fn discrepancy_trace_populated_from_discrepancy_memory() {
         discrepancy: Discrepancy::BeliefContradicted,
         observed_tick: Tick(0),
         expires_tick: Tick(5),
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
     memory.record(DiscrepancyEntry {
@@ -8942,7 +8945,7 @@ fn discrepancy_trace_populated_from_discrepancy_memory() {
         discrepancy: Discrepancy::RouteUnknown,
         observed_tick: Tick(0),
         expires_tick: Tick(6),
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
         clearing_condition: DiscrepancyClearing::WorldStructureChange,
     });
     let mut txn = new_txn(&mut harness.world, 0);
@@ -8993,7 +8996,7 @@ fn blocker_memory_entries_not_in_discrepancy_trace() {
         expires_tick: Tick(5),
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
-        source_event: None,
+        source: worldwake_core::BlockerSource::Inferred,
     });
     let mut txn = new_txn(&mut harness.world, 0);
     txn.set_component_blocker_memory(harness.actor, memory)
@@ -9040,7 +9043,7 @@ fn discrepancy_trace_excludes_expired_entries() {
         discrepancy: Discrepancy::MissingObservation,
         observed_tick: Tick(0),
         expires_tick: Tick(0),
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
     memory.record(DiscrepancyEntry {
@@ -9048,7 +9051,7 @@ fn discrepancy_trace_excludes_expired_entries() {
         discrepancy: Discrepancy::ImproperPlanningState,
         observed_tick: Tick(0),
         expires_tick: Tick(3),
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
         clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
     let mut txn = new_txn(&mut harness.world, 0);
@@ -9423,4 +9426,5 @@ fn in_transit_read_phase_records_learned_opportunity_memory_entry() {
     assert_eq!(entry.observed_tick, Tick(5));
     assert_eq!(entry.expires_tick, Tick(65));
     assert_eq!(entry.observed_at, actor_place);
+    assert_eq!(entry.source, LearnedOpportunitySource::ReadPhaseInference);
 }

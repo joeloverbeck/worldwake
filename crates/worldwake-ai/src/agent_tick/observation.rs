@@ -430,7 +430,8 @@ fn apply_pending_discrepancies(
                     .saturating_add(u64::from(structural_block_ticks)),
             ),
             clearing_condition: pending.clearing_condition,
-            source_event: None,
+            // read-phase inference from PendingDiscrepancyRecord; no triggering event in scope
+            source: worldwake_core::DiscrepancySource::ReadPhaseInference,
         });
     }
 }
@@ -650,7 +651,7 @@ pub(super) fn handle_facility_queue_transitions(
                                 worldwake_core::BlockerClearingCondition::TtlOnly,
                             ),
                         baseline_snapshot: None,
-                        source_event: None,
+                        source: worldwake_core::BlockerSource::Inferred,
                     });
                     changed = true;
                 }
@@ -1106,9 +1107,9 @@ mod tests {
     use worldwake_core::{
         AcquisitionQuantity, ActionDefId, BlockerKey, BlockerReason, CauseRef, CommodityKind,
         ControlSource, DecisionEventPayload, Discrepancy, DiscrepancyClearing, DiscrepancyMemory,
-        EntityId, EventLog, EventTag, EventView, FrameAssumption, GoalKey, GoalKind,
-        HomeostaticNeedId, MaterializationTag, OpportunityAnchor, Quantity, ResourceSource, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
+        DiscrepancySource, EntityId, EventLog, EventTag, EventView, FrameAssumption, GoalKey,
+        GoalKind, HomeostaticNeedId, MaterializationTag, OpportunityAnchor, Quantity,
+        ResourceSource, Tick, VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
     };
     use worldwake_sim::PerAgentBeliefView;
 
@@ -1166,6 +1167,7 @@ mod tests {
         assert_eq!(entry.discrepancy, pending.discrepancy);
         assert_eq!(entry.observed_tick, Tick(7));
         assert_eq!(entry.expires_tick, Tick(19));
+        assert_eq!(entry.source, DiscrepancySource::ReadPhaseInference);
         assert_eq!(
             entry.clearing_condition,
             DiscrepancyClearing::ReobservationOf { target: artifact }

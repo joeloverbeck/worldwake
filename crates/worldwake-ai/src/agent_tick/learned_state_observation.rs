@@ -213,9 +213,11 @@ fn record_route_preference_updates(
         let segment = RouteSegment::new(edge.from(), edge.to());
 
         for _ in before_safe..after_entry.safe_trips {
-            runtime
-                .route_preference
-                .record_safe(segment, observation.tick);
+            runtime.route_preference.record_safe(
+                segment,
+                observation.provenance_event,
+                observation.tick,
+            );
         }
         for _ in before_hostile..after_entry.hostile_encounters {
             let threat_event = latest_threat_event_for_agent(
@@ -500,5 +502,74 @@ mod tests {
         assert_eq!(entry.dangerous_traversals, 1);
         assert_eq!(entry.last_dangerous_tick, Some(tick));
         assert_eq!(entry.last_traversal_event, Some(threat_id));
+    }
+
+    #[test]
+    fn records_safe_route_preference_provenance_from_route_experience_delta() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let destination = entity(11);
+        let tick = Tick(20);
+        let edge_id = TravelEdgeId(7);
+        let segment = RouteSegment::new(origin, destination);
+        let mut runtime = AgentDecisionRuntime::default();
+        let mut topology = Topology::new();
+        topology
+            .add_place(
+                origin,
+                Place {
+                    name: "Origin".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::from([PlaceTag::Village]),
+                },
+            )
+            .unwrap();
+        topology
+            .add_place(
+                destination,
+                Place {
+                    name: "Destination".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::from([PlaceTag::Forest]),
+                },
+            )
+            .unwrap();
+        topology
+            .add_edge(TravelEdge::new(edge_id, origin, destination, 3, None).unwrap())
+            .unwrap();
+
+        let before = RouteExperience::default();
+        let after = RouteExperience {
+            edges: BTreeMap::from([(
+                edge_id,
+                EdgeExperience {
+                    safe_trips: 1,
+                    hostile_encounters: 0,
+                    last_travel_tick: tick,
+                },
+            )]),
+        };
+        let mut event_log = EventLog::new();
+        let mut route_payload = event_payload(tick, BTreeSet::from([EventTag::WorldMutation]));
+        route_payload
+            .state_deltas
+            .push(StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::RouteExperience,
+                before: Some(ComponentValue::RouteExperience(before)),
+                after: ComponentValue::RouteExperience(after),
+            }));
+        let route_event_id = event_log.emit(PendingEvent::from_payload(route_payload));
+
+        record_learned_state_updates(&mut runtime, agent, &event_log, &topology, tick);
+
+        let entry = runtime
+            .route_preference
+            .get(&segment)
+            .expect("route preference entry");
+        assert_eq!(entry.safe_traversals, 1);
+        assert_eq!(entry.dangerous_traversals, 0);
+        assert_eq!(entry.last_safe_tick, Some(tick));
+        assert_eq!(entry.last_traversal_event, Some(route_event_id));
     }
 }

@@ -10,10 +10,10 @@ use worldwake_core::{
     AcquisitionQuantity, ActionDefId, BeliefClaimKey, Blocker, BlockerClearingCondition,
     BlockerKey, BlockerMemory, BlockingFact, BreachSignature, CausalLink, CausalProvider, CauseRef,
     CommodityKind, CommodityPurpose, DecisionEventPayload, Discrepancy, DiscrepancyClearing,
-    DiscrepancyEntry, EntityBeliefAspect, EntityId, EventLog, EventPayload, EventTag, EventView,
-    GoalKey, GoalKind, InvalidatorTag, OpportunityAnchor, OpportunityKey, PendingEvent, Permille,
-    PlanningFact, Quantity, RepairAppliedPayload, RepairEntry, RepairKind, RepairMemory,
-    ReplanReason, ReplanTriggeredPayload, Tick, VisibilitySpec, WitnessData,
+    DiscrepancyEntry, DiscrepancySource, EntityBeliefAspect, EntityId, EventLog, EventPayload,
+    EventTag, EventView, GoalKey, GoalKind, InvalidatorTag, OpportunityAnchor, OpportunityKey,
+    PendingEvent, Permille, PlanningFact, Quantity, RepairAppliedPayload, RepairEntry, RepairKind,
+    RepairMemory, ReplanReason, ReplanTriggeredPayload, Tick, VisibilitySpec, WitnessData,
 };
 
 const fn entity(slot: u32) -> EntityId {
@@ -128,7 +128,7 @@ fn discrepancy_entry(clearing_condition: DiscrepancyClearing) -> DiscrepancyEntr
         observed_tick: Tick(5),
         expires_tick: Tick(50),
         clearing_condition,
-        source_event: None,
+        source: DiscrepancySource::ReadPhaseInference,
     }
 }
 
@@ -520,7 +520,7 @@ fn commodity_availability_changed_clears_blocker_structurally() {
             place: market,
         },
         baseline_snapshot: None,
-        source_event: None,
+        source: worldwake_core::BlockerSource::Inferred,
     });
     blocker_memory.sweep_cleared(|blocker| {
         blocker.clearing_condition

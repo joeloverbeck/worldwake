@@ -78,8 +78,8 @@ Two claims refuted as "this pre-built mechanism does not exist":
   and that scope belongs to a follow-up spec. **FND-1/7/14/14A/14B/15/16/17/
   18/20/21/28/29/29A/31.**
 
-- **`specs/S170-learned-state-provenance-hardening.md`** (Proposal 3,
-  narrowed; absorbs Item E) — closes the three confirmed code-level
+- **`archive/specs/S170-learned-state-provenance-hardening.md`** (Proposal 3,
+  narrowed; absorbs Item E) — closes the confirmed code-level
   provenance gaps: adds `source_event: EventId` to
   `LearnedOpportunityMemory::OpportunityEntry`; populates
   `RoutePreference`'s `last_traversal_event` on the safe-traversal branch

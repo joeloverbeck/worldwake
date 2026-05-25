@@ -160,7 +160,7 @@ fn inject_probe_only_sleep_blocker(harness: &mut GoldenHarness, agent: EntityId,
         diagnostic_context: None,
         observed_tick: Tick(0),
         expires_tick: Tick(8),
-        source_event: None,
+        source: worldwake_core::BlockerSource::Inferred,
         clearing_condition: BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
     });

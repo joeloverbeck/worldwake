@@ -82,10 +82,11 @@ fn permille_from_signed(value: i64) -> Permille {
 }
 
 impl RoutePreference {
-    pub fn record_safe(&mut self, segment: RouteSegment, tick: Tick) {
+    pub fn record_safe(&mut self, segment: RouteSegment, event: EventId, tick: Tick) {
         let entry = self.entry(segment);
         entry.safe_traversals = entry.safe_traversals.saturating_add(1);
         entry.last_safe_tick = Some(tick);
+        entry.last_traversal_event = Some(event);
     }
 
     pub fn record_dangerous(&mut self, segment: RouteSegment, event: EventId, tick: Tick) {
@@ -137,7 +138,7 @@ mod tests {
         let segment = RouteSegment::new(entity(1), entity(2));
         let mut preference = RoutePreference::default();
 
-        preference.record_safe(segment, Tick(5));
+        preference.record_safe(segment, EventId(7), Tick(5));
         preference.record_dangerous(segment, EventId(8), Tick(9));
 
         let entry = preference.get(&segment).expect("entry exists");
@@ -149,12 +150,23 @@ mod tests {
     }
 
     #[test]
+    fn record_safe_populates_last_traversal_event() {
+        let segment = RouteSegment::new(entity(1), entity(2));
+        let mut preference = RoutePreference::default();
+
+        preference.record_safe(segment, EventId(42), Tick(5));
+
+        let entry = preference.get(&segment).expect("entry exists");
+        assert_eq!(entry.last_traversal_event, Some(EventId(42)));
+    }
+
+    #[test]
     fn route_preference_uses_canonical_route_segment_key() {
         let forward = RouteSegment::new(entity(1), entity(2));
         let reverse = RouteSegment::new(entity(2), entity(1));
         let mut preference = RoutePreference::default();
 
-        preference.record_safe(forward, Tick(5));
+        preference.record_safe(forward, EventId(7), Tick(5));
         preference.record_dangerous(reverse, EventId(8), Tick(9));
 
         assert_eq!(preference.iter().count(), 1);
@@ -167,7 +179,7 @@ mod tests {
     fn route_preference_bincode_round_trip_preserves_entries() {
         let segment = RouteSegment::new(entity(3), entity(4));
         let mut preference = RoutePreference::default();
-        preference.record_safe(segment, Tick(11));
+        preference.record_safe(segment, EventId(11), Tick(11));
 
         let encoded = bincode::serialize(&preference).expect("serialize preference");
         let decoded: RoutePreference =

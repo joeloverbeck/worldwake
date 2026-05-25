@@ -32,7 +32,7 @@ fn direct_segment() -> RouteSegment {
 fn positive_preference() -> RoutePreference {
     let mut preference = RoutePreference::default();
     for tick in 0..5 {
-        preference.record_safe(direct_segment(), Tick(tick));
+        preference.record_safe(direct_segment(), EventId(tick), Tick(tick));
     }
     preference
 }
@@ -57,6 +57,7 @@ fn golden_route_preference_safe_traversals_raise_preference() {
 
     assert_eq!(entry.safe_traversals, 5);
     assert_eq!(entry.dangerous_traversals, 0);
+    assert_eq!(entry.last_traversal_event, Some(EventId(4)));
     assert!(entry.preference(&profile(), Tick(5)) > Permille::new_unchecked(500));
 }
 
@@ -101,7 +102,7 @@ fn golden_route_preference_dangerous_traversal_lowers_preference() {
 fn golden_route_preference_decays_to_neutral_after_profile_window() {
     let mut preference = RoutePreference::default();
     for _ in 0..5 {
-        preference.record_safe(direct_segment(), Tick(0));
+        preference.record_safe(direct_segment(), EventId(0), Tick(0));
     }
     let entry = preference
         .get(&direct_segment())
@@ -139,7 +140,7 @@ fn golden_route_preference_and_route_segment_blocker_compose_independently() {
         expires_tick: Tick(50),
         clearing_condition: BlockerClearingCondition::RouteRetraversedSafely(direct_segment()),
         baseline_snapshot: None,
-        source_event: Some(EventId(90)),
+        source: worldwake_core::BlockerSource::Event(EventId(90)),
     });
 
     assert!(entry.preference(&profile(), Tick(6)) > Permille::new_unchecked(500));

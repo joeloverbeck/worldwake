@@ -2,8 +2,8 @@ use crate::{AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind, authorit
 use worldwake_core::{
     AffordanceKey, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
     ClearingBaseline, CognitiveProfile, CommodityKind, ContentionIntents, Discrepancy,
-    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EntityBeliefAspect, EntityId,
-    GoalKey, GoalKind, IntentionFrame, Quantity, Tick,
+    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DiscrepancySource,
+    EntityBeliefAspect, EntityId, GoalKey, GoalKind, IntentionFrame, Quantity, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -257,7 +257,7 @@ pub(crate) fn record_failure_classification(
                     clearing_condition,
                 ),
                 baseline_snapshot,
-                source_event: None,
+                source: worldwake_core::BlockerSource::Inferred,
             });
             FailureClassification::Blocker(blocking_fact)
         }
@@ -274,7 +274,7 @@ pub(crate) fn record_failure_classification(
                     &blocker_key,
                     context.execution_failure,
                 ),
-                source_event: None,
+                source: DiscrepancySource::ReadPhaseInference,
             });
             FailureClassification::Discrepancy(discrepancy)
         }
@@ -1592,10 +1592,11 @@ mod tests {
         BlockerKey, BlockerMemory, BlockingFact, ClearingBaseline, CognitiveProfile, CombatProfile,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, ContentionGrant,
         ContentionIntents, DemandObservation, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
-        DiscrepancyMemory, DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind,
-        HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OmissionReason, Quantity, RecipeId, ResourceSource,
-        Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        DiscrepancyMemory, DiscrepancySource, DriveThresholds, EntityId, EntityKind, FrameState,
+        GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, OmissionReason, Quantity, RecipeId,
+        ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
+        Wound,
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
@@ -2954,7 +2955,7 @@ mod tests {
             baseline_snapshot: Some(ClearingBaseline::CommodityQuantity {
                 quantity: Quantity(0),
             }),
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         };
 
         let mut view = TestBeliefView::default();
@@ -2980,7 +2981,7 @@ mod tests {
             baseline_snapshot: Some(ClearingBaseline::InventoryQuantity {
                 quantity: Quantity(0),
             }),
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         };
 
         let mut view = TestBeliefView::default();
@@ -3003,7 +3004,7 @@ mod tests {
                 kind: UniqueItemKind::SimpleTool,
             },
             baseline_snapshot: Some(ClearingBaseline::UniqueItemCount(0)),
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         };
 
         let mut view = TestBeliefView::default();
@@ -3026,7 +3027,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::PathDiscovered { destination },
             baseline_snapshot: Some(ClearingBaseline::PathKnown(false)),
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         };
 
         let mut view = TestBeliefView::default();
@@ -3057,7 +3058,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::EntityReappeared { entity: target },
             baseline_snapshot: Some(ClearingBaseline::EntityBelieved(false)),
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         };
 
         let mut view = TestBeliefView::default();
@@ -3078,7 +3079,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::DangerReduced { place: entity(10) },
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         };
 
         assert!(is_blocker_cleared(
@@ -3108,7 +3109,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::ContentionChanged { facility },
             baseline_snapshot: Some(ClearingBaseline::ContentionPosition(Some(2))),
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         };
 
         let mut view = TestBeliefView::default();
@@ -3141,7 +3142,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::ContentionChanged { facility },
             baseline_snapshot: Some(ClearingBaseline::ContentionPosition(baseline_position)),
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         }
     }
 
@@ -3272,7 +3273,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         };
 
         assert!(!is_blocker_cleared(
@@ -3304,7 +3305,7 @@ mod tests {
                 place,
             },
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         };
 
         let mut view = TestBeliefView::default();
@@ -3329,7 +3330,7 @@ mod tests {
                 commodity: CommodityKind::Coin,
             },
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         };
 
         let mut view = TestBeliefView::default();
@@ -3357,7 +3358,7 @@ mod tests {
             expires_tick: Tick(20),
             clearing_condition: BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         };
 
         let mut view = TestBeliefView::default();
@@ -3952,7 +3953,7 @@ mod tests {
             baseline_snapshot: Some(ClearingBaseline::CommodityQuantity {
                 quantity: Quantity(0),
             }),
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
         let bk2 = BlockerKey {
             goal_key: GoalKey::from(GoalKind::ProduceCommodity {
@@ -3972,7 +3973,7 @@ mod tests {
                 facility: workstation,
             },
             baseline_snapshot: Some(ClearingBaseline::ContentionPosition(Some(2))),
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
         let bk3 = BlockerKey {
             goal_key: GoalKey::from(GoalKind::Sleep),
@@ -3988,7 +3989,7 @@ mod tests {
             expires_tick: Tick(5),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         view.facility_grants.insert(
@@ -4061,7 +4062,7 @@ mod tests {
             expires_tick: Tick(50),
             clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
             baseline_snapshot: None,
-            source_event: None,
+            source: worldwake_core::BlockerSource::Inferred,
         });
 
         // The blocker should NOT auto-resolve even though the target entity
@@ -4227,7 +4228,7 @@ mod tests {
             discrepancy: Discrepancy::BeliefContradicted,
             observed_tick: Tick(10),
             expires_tick: Tick(200),
-            source_event: None,
+            source: DiscrepancySource::ReadPhaseInference,
             clearing_condition: DiscrepancyClearing::CommodityAvailabilityChanged {
                 commodity: CommodityKind::Apple,
                 place,

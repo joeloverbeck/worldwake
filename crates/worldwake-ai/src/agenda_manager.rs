@@ -2747,7 +2747,7 @@ mod tests {
             discrepancy: worldwake_core::Discrepancy::BeliefStale,
             observed_tick: Tick(1),
             expires_tick: Tick(20),
-            source_event: None,
+            source: worldwake_core::DiscrepancySource::ReadPhaseInference,
             clearing_condition: worldwake_core::DiscrepancyClearing::TtlExpiry,
         });
 

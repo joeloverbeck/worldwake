@@ -310,9 +310,9 @@ mod tests {
     use std::collections::BTreeSet;
     use worldwake_core::{
         AgentBeliefStore, BelievedEntityState, CauseRef, ClaimId, ClaimValue, CognitiveProfile,
-        EntityBeliefClaim, LawAbidingProfile, LearnedOpportunityMemory, OpportunityEntry,
-        PerceptionProfile, PerceptionSource, RiskWeightProfile, SurveyMemory, SurveyRecord,
-        VisibilitySpec, WitnessData,
+        EntityBeliefClaim, LawAbidingProfile, LearnedOpportunityMemory, LearnedOpportunitySource,
+        OpportunityEntry, PerceptionProfile, PerceptionSource, RiskWeightProfile, SurveyMemory,
+        SurveyRecord, VisibilitySpec, WitnessData,
     };
     use worldwake_sim::PerAgentBeliefView;
 
@@ -620,6 +620,7 @@ mod tests {
             observed_tick: Tick(8),
             expires_tick: Tick(40),
             observed_at: entity(1),
+            source: LearnedOpportunitySource::ReadPhaseInference,
         });
         let (world, agent) = view_with_store(
             store,
