@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None (golden scenarios only)
-**Deps**: `archive/tickets/S173SELCARINT-004.md` (wash/toilet contract), `archive/tickets/S173SELCARINT-005.md` (atomic-action abort traces), `archive/tickets/S173SELCARINT-006.md` (emitter filter), `specs/S173-self-care-interruption-occupancy.md` (Scenarios A, B, C)
+**Deps**: `archive/tickets/S173SELCARINT-004.md` (wash/toilet contract), `archive/tickets/S173SELCARINT-005.md` (atomic-action abort traces), `archive/tickets/S173SELCARINT-006.md` (emitter filter), `archive/specs/S173-self-care-interruption-occupancy.md` (Scenarios A, B, C)
 
 ## Problem
 

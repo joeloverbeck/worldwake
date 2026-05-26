@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — new `abort_emit_self_care_interrupted` handler replacing `abort_noop` for eat/drink/relieve_wilderness; `SelfCareUseKind::Sleep`; `tick_step` abort-trace mapping for all six self-care families
-**Deps**: `archive/tickets/S173SELCARINT-002.md` (uses `ActionTraceDetail::SelfCareInterrupted`), `specs/S173-self-care-interruption-occupancy.md` (D2 eat/drink/wilderness/sleep rows)
+**Deps**: `archive/tickets/S173SELCARINT-002.md` (uses `ActionTraceDetail::SelfCareInterrupted`), `archive/specs/S173-self-care-interruption-occupancy.md` (D2 eat/drink/wilderness/sleep rows)
 
 ## Problem
 
@@ -71,7 +71,7 @@ The registration test at L1299 asserts handler identity. After this ticket lands
 - `crates/worldwake-core/src/self_care_occupancy.rs` — added `SelfCareUseKind::Sleep`.
 - `crates/worldwake-sim/src/tick_step.rs` — mapped all self-care abort families to typed trace detail and broadened the focused unit test.
 - `crates/worldwake-systems/src/needs_actions.rs` — replaced eat/drink/wilderness abort registrations, added the state-no-op handler, updated registration proof, and folded a same-file clippy cleanup.
-- `specs/S173-self-care-interruption-occupancy.md` — truth-synced the trace emission boundary.
+- `archive/specs/S173-self-care-interruption-occupancy.md` — truth-synced the trace emission boundary.
 
 ## Out of Scope
 

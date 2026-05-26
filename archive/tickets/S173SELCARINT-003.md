@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — crate-private enum variant additions in `worldwake-systems` + new match arms in `promotable_contention_kind` and `contention_target_matches_kind`
-**Deps**: `specs/S173-self-care-interruption-occupancy.md` (D3)
+**Deps**: `archive/specs/S173-self-care-interruption-occupancy.md` (D3)
 
 ## Problem
 

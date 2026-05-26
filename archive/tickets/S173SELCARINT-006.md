@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes - wash + relieve candidate emitters filter known other-occupant self-care targets through the belief-view surface
-**Deps**: `archive/tickets/S173SELCARINT-001.md` (uses `SelfCareOccupancy`), `specs/S173-self-care-interruption-occupancy.md` (D6, distributed D5 emitter-time read)
+**Deps**: `archive/tickets/S173SELCARINT-001.md` (uses `SelfCareOccupancy`), `archive/specs/S173-self-care-interruption-occupancy.md` (D6, distributed D5 emitter-time read)
 
 ## Problem
 
@@ -44,7 +44,7 @@ Before this ticket, the Wash and Relieve candidate emitters in `crates/worldwake
 - `crates/worldwake-ai/src/candidate_generation.rs`
 - `crates/worldwake-sim/src/belief_view.rs`
 - `crates/worldwake-sim/src/per_agent_belief_view.rs`
-- `specs/S173-self-care-interruption-occupancy.md`
+- `archive/specs/S173-self-care-interruption-occupancy.md`
 
 ## Out of Scope
 

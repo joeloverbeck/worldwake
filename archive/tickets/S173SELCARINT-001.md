@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new core-resident ECS component on `EntityKind::Facility | EntityKind::Place`; SAVE_FORMAT_VERSION bump
-**Deps**: `specs/S173-self-care-interruption-occupancy.md` (D1)
+**Deps**: `archive/specs/S173-self-care-interruption-occupancy.md` (D1)
 
 ## Problem
 

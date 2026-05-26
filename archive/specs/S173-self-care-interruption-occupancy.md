@@ -2,7 +2,7 @@
 
 ## Summary
 
-At draft intake, only `sleep` had a durable interruption contract: `SleepEpisode` carried accumulated recovery, `abort_sleep_episode` ended the episode with `WakeReason::LocalDisturbance`, and the episode preserved partial progress across replans. `eat`, `drink`, `toilet`, `relieve_wilderness`, and `wash` all registered `abort_noop` (`crates/worldwake-systems/src/needs_actions.rs`) and had no occupancy state — interrupting any of them left no state, no structured trace beyond the engine-level `EventTag::ActionAborted` record, and (for Wash and Toilet) no facility release because there was no facility reservation to release. Tickets through `archive/tickets/S173SELCARINT-004.md` have since landed `SelfCareOccupancy`, Wash/Toilet occupancy release, and Wash/Toilet trace detail; `archive/tickets/S173SELCARINT-005.md` added the remaining atomic-action and Sleep trace discriminator mapping; `archive/tickets/S173SELCARINT-006.md` landed the occupancy-aware emitter filter; `archive/tickets/S173SELCARINT-007.md` added the standard golden proof for Scenarios A, B, and C; `archive/tickets/S173SELCARINT-008.md` added the player-POV symmetry proof for Scenario D. The remaining spec family proves repeated-interruption deprivation collapse.
+At draft intake, only `sleep` had a durable interruption contract: `SleepEpisode` carried accumulated recovery, `abort_sleep_episode` ended the episode with `WakeReason::LocalDisturbance`, and the episode preserved partial progress across replans. `eat`, `drink`, `toilet`, `relieve_wilderness`, and `wash` all registered `abort_noop` (`crates/worldwake-systems/src/needs_actions.rs`) and had no occupancy state — interrupting any of them left no state, no structured trace beyond the engine-level `EventTag::ActionAborted` record, and (for Wash and Toilet) no facility release because there was no facility reservation to release. Tickets through `archive/tickets/S173SELCARINT-004.md` landed `SelfCareOccupancy`, Wash/Toilet occupancy release, and Wash/Toilet trace detail; `archive/tickets/S173SELCARINT-005.md` added the remaining atomic-action and Sleep trace discriminator mapping; `archive/tickets/S173SELCARINT-006.md` landed the occupancy-aware emitter filter; `archive/tickets/S173SELCARINT-007.md` added the standard golden proof for Scenarios A, B, and C; `archive/tickets/S173SELCARINT-008.md` added the player-POV symmetry proof for Scenario D; and `archive/tickets/S173SELCARINT-009.md` proved repeated-interruption deprivation collapse through the live hunger-deprivation substrate.
 
 ## Phase
 
@@ -10,7 +10,7 @@ Phase 7: Consequence Carriers
 
 ## Status
 
-Draft
+COMPLETED
 
 ## Crates
 
@@ -308,7 +308,7 @@ D4 modifies action preconditions (`reservation_requirements`); D6 modifies candi
    - Wash interrupted by hostile presence → occupancy released → agent replans to alternate.
    - Repeated Sleep interruption preserves accumulated recovery; eventually agent rests fully.
    - Repeated Toilet interruption → bladder accident → place dirtiness rises → wilderness relief substitution.
-   - Repeated Wash interruption + rising dirtiness → deprivation wound (existing severity ladder) → eventual collapse.
+   - Repeated Wash interruption + rising hunger → starvation wound (existing severity ladder) → eventual collapse.
 
 18. **Save/load and replay**: `SelfCareOccupancy` is standard ECS state; `ActionTraceDetail` is standard action-trace payload. Both are replay-deterministic. No new authoritative event variant means no new save-format consideration beyond the component itself.
 
@@ -460,3 +460,27 @@ Assertions:
 - Self-care patience profiles (when to abandon a queue) — deferred (P1.2 in source report; existing S44 grant-expiry suffices for first pass).
 - Disease, sanitation economy, etiquette, privacy, social shame — deferred (P2 in source report).
 - Adjacent-cluster redesign (pursuit, obligation, trade, theft, justice, combat as interruption sources) — out of scope; this spec uses them only as pressure sources, not as redesign targets.
+
+## Outcome
+
+Completed on 2026-05-26.
+
+- Landed `SelfCareOccupancy` and `SelfCareUseKind` as the concrete occupancy carrier for Wash and LatrineRelief.
+- Replaced the self-care `abort_noop` paths with typed `ActionTraceDetail::SelfCareInterrupted` coverage for eat, drink, sleep, toilet, wilderness relief, and wash.
+- Integrated Wash/Toilet occupancy with action start, commit, abort, candidate filtering, and contention promotion.
+- Added golden coverage for atomic interruption traces, contested basin behavior, interrupted Wash release, player-POV occupancy symmetry, and repeated interruption ending in deprivation collapse.
+- Regenerated the golden inventory, scenario index/details, and coverage matrix.
+
+Deviations from the original draft:
+
+- Scenario E uses repeated Wash interruption plus the existing hunger/starvation wound-death substrate. Live reassessment showed dirtiness and fatigue critical exposure do not currently create deprivation wounds, and bladder exposure causes an accident rather than death.
+- Scenario E uses a controlled cancellation harness after AI-selected Wash starts rather than predator/patrol emergence. The repeated interruption carrier, occupancy release, starvation wounds, and death remain normal system behavior.
+- The repeated-collapse proof lives in `crates/worldwake-ai/tests/scenarios/survival_self_care_interruption.rs` rather than a new scenario file, keeping all S173 self-care interruption goldens together.
+
+Verification:
+
+- Passed focused S173 and self-care interruption golden commands recorded in the archived tickets.
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`.
+- Passed `cargo test -p worldwake-ai`.
+- Passed `cargo clippy -p worldwake-ai --all-targets -- -D warnings`.
+- `./scripts/verify.sh` is the final pre-push gate for the completed family branch.

@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None (CLI/scenario assertion only)
-**Deps**: `archive/tickets/S173SELCARINT-001.md` (uses `SelfCareOccupancy`), `archive/tickets/S173SELCARINT-004.md` (occupancy lifecycle in wash/toilet), `archive/tickets/S173SELCARINT-006.md` (emitter-time read pattern), `specs/S173-self-care-interruption-occupancy.md` (D9, Scenario D)
+**Deps**: `archive/tickets/S173SELCARINT-001.md` (uses `SelfCareOccupancy`), `archive/tickets/S173SELCARINT-004.md` (occupancy lifecycle in wash/toilet), `archive/tickets/S173SELCARINT-006.md` (emitter-time read pattern), `archive/specs/S173-self-care-interruption-occupancy.md` (D9, Scenario D)
 
 ## Problem
 
@@ -50,7 +50,7 @@ The same focused test also creates a co-located view for the authoritative occup
 ## Landed Files
 
 - `crates/worldwake-ai/tests/scenarios/survival_drive_escalation.rs` — modified the existing Scenario D proof.
-- `specs/S173-self-care-interruption-occupancy.md` — truth-synced Scenario D/spec-family status.
+- `archive/specs/S173-self-care-interruption-occupancy.md` — truth-synced Scenario D/spec-family status.
 - No `crates/worldwake-cli/src/...` change was required; the player-POV surface already routes through `PerAgentBeliefView`.
 - No generated golden docs changed because no scenario metadata or test name changed.
 

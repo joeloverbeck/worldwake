@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `reservation_requirements` on wash/toilet action defs; new `abort_release_self_care_occupancy` handler; `SelfCareOccupancy` writes/removes in start, commit, abort flows
-**Deps**: `archive/tickets/S173SELCARINT-001.md` (uses `SelfCareOccupancy`, `SelfCareUseKind`), `archive/tickets/S173SELCARINT-002.md` (uses `ActionTraceDetail::SelfCareInterrupted`), `archive/tickets/S173SELCARINT-003.md` (`PromotableContentionKind::SelfCareWash`/`SelfCareLatrine` queue classification), `specs/S173-self-care-interruption-occupancy.md` (D2 wash/toilet rows, D4, distributed D5 start-gate read)
+**Deps**: `archive/tickets/S173SELCARINT-001.md` (uses `SelfCareOccupancy`, `SelfCareUseKind`), `archive/tickets/S173SELCARINT-002.md` (uses `ActionTraceDetail::SelfCareInterrupted`), `archive/tickets/S173SELCARINT-003.md` (`PromotableContentionKind::SelfCareWash`/`SelfCareLatrine` queue classification), `archive/specs/S173-self-care-interruption-occupancy.md` (D2 wash/toilet rows, D4, distributed D5 start-gate read)
 
 ## Problem
 

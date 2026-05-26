@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: None (golden scenario only)
-**Deps**: `archive/tickets/S173SELCARINT-004.md` (wash/toilet contract), `archive/tickets/S173SELCARINT-005.md` (atomic-action abort traces), `archive/tickets/S173SELCARINT-006.md` (emitter filter), `archive/tickets/S173SELCARINT-007.md` (Scenario C release pattern), `specs/S173-self-care-interruption-occupancy.md` (D8, Scenario E)
+**Deps**: `archive/tickets/S173SELCARINT-004.md` (wash/toilet contract), `archive/tickets/S173SELCARINT-005.md` (atomic-action abort traces), `archive/tickets/S173SELCARINT-006.md` (emitter filter), `archive/tickets/S173SELCARINT-007.md` (Scenario C release pattern), `archive/specs/S173-self-care-interruption-occupancy.md` (D8, Scenario E)
 
 ## Problem
 
@@ -66,7 +66,7 @@ Regenerated `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-sce
 - `docs/generated/golden-scenario-index.md` (regenerated)
 - `docs/generated/golden-scenario-details/` (regenerated subdirectory)
 - `docs/generated/golden-coverage-matrix.md` (regenerated)
-- `specs/S173-self-care-interruption-occupancy.md` (truth-sync for the live hunger-deprivation Scenario E seam)
+- `archive/specs/S173-self-care-interruption-occupancy.md` (truth-sync for the live hunger-deprivation Scenario E seam)
 
 ## Out of Scope
 

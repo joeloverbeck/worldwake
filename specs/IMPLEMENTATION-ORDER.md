@@ -25,11 +25,10 @@ convention); P1.3 / P1.4 narrowed; P2.* deferred. Dismissals and rationale:
 
 ```
 S172 (Wash discovery + budget closure)         ── completed and archived; planner + scenario contract only
-S173 (Self-care interruption + occupancy)      ── depends on archived S172 (budget accounting must be sound
-                                                    before adding contention)
+S173 (Self-care interruption + occupancy)      ── completed and archived; depended on archived S172
 ```
 
-S173 depends on archived S172. S172 is complete.
+S173 depended on archived S172. Both Cluster 1 adjunct specs are complete.
 
 ### Completed
 
@@ -42,16 +41,14 @@ S173 depends on archived S172. S172 is complete.
   scattered/contested topologies; added a single CLI player-POV assertion against
   remote-basin-state leak. No new authoritative state. **FND-3/7/8/14/14A/14B/16/19/26/29A/31.**
 
-### Pending
-
 - **S173 — Self-Care Interruption Contracts and Facility Occupancy** —
-  `specs/S173-self-care-interruption-occupancy.md` — *Status: Draft.*
-  Defines the interruption contract per self-care action family (eat, drink, sleep,
-  toilet, wilderness-relief, wash); introduces `SelfCareOccupancy` on `WashBasin`
-  and latrine `Place`; replaces `abort_noop` with `abort_release_self_care_occupancy`
+  `archive/specs/S173-self-care-interruption-occupancy.md` — *Status: COMPLETED.*
+  Defined the interruption contract per self-care action family (eat, drink, sleep,
+  toilet, wilderness-relief, wash); introduced `SelfCareOccupancy` on `WashBasin`
+  and latrine `Place`; replaced `abort_noop` with `abort_release_self_care_occupancy`
   (Wash, Toilet) and `abort_emit_self_care_interrupted` (Eat, Drink, Wilderness);
-  extends `promotable_contention_kind` to classify Wash and Toilet as exclusive use;
-  layers `SelfCareInterrupted` trace detail uniformly above all six families; proves
+  extended `promotable_contention_kind` to classify Wash and Toilet as exclusive use;
+  layered `SelfCareInterrupted` trace detail uniformly above all six families; proved
   repeated-interruption deprivation collapse end-to-end via Scenario E.
   **FND-1/3/4/8/9/10/11/19/21/26/28/29/29A/31.**
 
