@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None (CLI/scenario assertion only)
-**Deps**: S173SELCARINT-001 (uses `SelfCareOccupancy`), S173SELCARINT-004 (occupancy lifecycle in wash/toilet), S173SELCARINT-006 (emitter-time read pattern), `specs/S173-self-care-interruption-occupancy.md` (D9, Scenario D)
+**Deps**: `archive/tickets/S173SELCARINT-001.md` (uses `SelfCareOccupancy`), S173SELCARINT-004 (occupancy lifecycle in wash/toilet), S173SELCARINT-006 (emitter-time read pattern), `specs/S173-self-care-interruption-occupancy.md` (D9, Scenario D)
 
 ## Problem
 

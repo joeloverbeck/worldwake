@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new variant on `ActionTraceDetail` (trace-sink type; not serialized)
-**Deps**: S173SELCARINT-001 (uses `SelfCareUseKind`), `specs/S173-self-care-interruption-occupancy.md` (D7)
+**Deps**: `archive/tickets/S173SELCARINT-001.md` (uses `SelfCareUseKind`), `specs/S173-self-care-interruption-occupancy.md` (D7)
 
 ## Problem
 

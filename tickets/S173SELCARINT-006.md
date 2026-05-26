@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — wash + relieve candidate emitters gain occupancy filtering with FND-14A/14B source-class split
-**Deps**: S173SELCARINT-001 (uses `SelfCareOccupancy`), `specs/S173-self-care-interruption-occupancy.md` (D6, distributed D5 emitter-time read)
+**Deps**: `archive/tickets/S173SELCARINT-001.md` (uses `SelfCareOccupancy`), `specs/S173-self-care-interruption-occupancy.md` (D6, distributed D5 emitter-time read)
 
 ## Problem
 

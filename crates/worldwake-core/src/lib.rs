@@ -106,6 +106,7 @@ pub mod rights;
 pub mod risk_weight_profile;
 pub mod route_preference;
 pub mod route_preference_profile;
+pub mod self_care_occupancy;
 pub mod sleep_episode;
 pub mod slot_kind;
 pub mod social_artifact;
@@ -312,6 +313,7 @@ pub use rights::{EffectiveRight, RightKind};
 pub use risk_weight_profile::RiskWeightProfile;
 pub use route_preference::{RoutePreference, RoutePreferenceEntry};
 pub use route_preference_profile::RoutePreferenceProfile;
+pub use self_care_occupancy::{SelfCareOccupancy, SelfCareUseKind};
 pub use sleep_episode::{
     GroundComfortTag, ShelterTag, SleepEpisode, SleepQualityProfile, SleepRecoveryModifier,
     WakeCondition,
