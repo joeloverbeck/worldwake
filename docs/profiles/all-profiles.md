@@ -78,7 +78,7 @@ Stable per-agent agenda memory and retry parameters used by the AI layer.
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/agent_schema_context_profile.rs:55`
+**Source**: `crates/worldwake-core/src/agent_schema_context_profile.rs:57`
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -114,7 +114,6 @@ Stable per-agent cognitive reasoning parameters used by the AI layer.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `max_candidates_to_plan` | `u8` | Maximum number of top-scoring goal candidates the planner evaluates per decision cycle. (default: `2`) |
 | `max_candidates_per_expansion` | `u16` | Maximum action successors expanded per search node during plan search. (default: `default_max_candidates_per_expansion()`) |
 | `max_plan_depth` | `u8` | Maximum number of sequential actions allowed in a single plan. (default: `8`) |
 | `max_travel_candidates_per_expansion` | `Option<u16>` | Optional per-expansion cap on travel candidates kept for successor construction. `None` preserves the uncapped historical behavior. (default: `None`) |
@@ -278,6 +277,7 @@ Per-agent physiology parameters that drive metabolism and recovery.
 | `toilet_ticks` | `NonZeroU32` | Duration in ticks to complete a toilet action. (default: `nz(8)`) |
 | `wash_ticks` | `NonZeroU32` | Duration in ticks to complete a washing action. (default: `nz(12)`) |
 | `min_sleep_ticks` | `NonZeroU32` | Minimum duration in ticks for a sleep episode. (default: `default_min_sleep_ticks()`) |
+| `rough_sleep_recovery_floor` | `Permille` | Hard ceiling on per-tick fatigue recovery when sleeping rough without a known rest site. (default: `default_rough_sleep_recovery_floor()`) |
 | `travel_fatigue_multiplier` | `Permille` | Multiplier applied to fatigue rate while traveling. (default: `pm(0)`) |
 | `travel_thirst_multiplier` | `Permille` | Multiplier applied to thirst rate while traveling. (default: `pm(0)`) |
 | `travel_bladder_multiplier` | `Permille` | Multiplier applied to bladder rate while traveling. (default: `pm(0)`) |
@@ -306,7 +306,7 @@ Per-agent parameters controlling how obligation-class goals decay after repeated
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/belief.rs:2644`
+**Source**: `crates/worldwake-core/src/belief.rs:2719`
 
 Per-agent parameters controlling belief retention and observation quality.
 
@@ -354,7 +354,7 @@ Per-agent portfolio slot weights and planning breadth caps.
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/experience.rs:182`
+**Source**: `crates/worldwake-core/src/experience.rs:214`
 
 Per-agent experience-based route and source preference parameters.
 
@@ -407,7 +407,7 @@ Per-agent parameters for deriving route preference from traversal history.
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/belief.rs:2716`
+**Source**: `crates/worldwake-core/src/belief.rs:2791`
 
 Per-agent parameters controlling what information an agent relays and accepts.
 
@@ -570,7 +570,7 @@ Concrete merchant sale intent for an agent.
 
 **Category**: Optional (scenario-specified only)
 
-**Source**: `crates/worldwake-core/src/patrol.rs:17`
+**Source**: `crates/worldwake-core/src/patrol.rs:54`
 
 Stable per-agent parameters that shape patrol behavior.
 

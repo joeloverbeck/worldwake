@@ -27,11 +27,12 @@ use worldwake_core::{
     OfficeForceProfile, OfficeForceState, PatrolRoute, PendingEvent, PerceptionProfile,
     PerceptionSource, Permille, PersonalityAssignedPayload, Place, PlaceDirtiness,
     PortfolioWeightsProfile, ProductionOutputOwner, ProductionOutputOwnershipPolicy, RecordData,
-    RecordKind, ResourceExtractionQueues, ResourceSource, RewardSource, RiskWeightProfile,
-    RoutePreferenceProfile, Seed, SleepQualityProfile, SocialObservation, SocialObservationDetail,
-    SurveyMemory, TestimonyTrustProfile, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
-    WashBasinState, WitnessData, WorkstationMarker, World, WorldTxn, default_commodity_decay_map,
-    default_uniform_five_archetypes, hash_serializable, hash_world, load_per_unit, template_for,
+    RecordKind, ResourceExtractionQueues, ResourceSource, RestCapacity, RewardSource,
+    RiskWeightProfile, RoutePreferenceProfile, Seed, SleepQualityProfile, SocialObservation,
+    SocialObservationDetail, SurveyMemory, TestimonyTrustProfile, Tick, Topology, TravelEdge,
+    TravelEdgeId, VisibilitySpec, WashBasinState, WitnessData, WorkstationMarker, World, WorldTxn,
+    default_commodity_decay_map, default_uniform_five_archetypes, hash_serializable, hash_world,
+    load_per_unit, template_for,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -296,6 +297,16 @@ fn spawn_entities(
             .map_err(ScenarioError::Validation)?
             .unwrap_or_default();
         txn.set_component_sleep_quality_profile(place_id, profile)?;
+
+        if let Some(capacity) = place_def.rest_capacity {
+            let capacity = NonZeroU32::new(capacity).ok_or_else(|| {
+                ScenarioError::Validation(format!(
+                    "place '{}' rest_capacity must be greater than zero",
+                    place_def.name
+                ))
+            })?;
+            txn.set_component_rest_capacity(place_id, RestCapacity(capacity))?;
+        }
 
         let dirtiness: PlaceDirtiness = place_def
             .place_dirtiness
@@ -1999,6 +2010,7 @@ mod tests {
                 name: "Village".into(),
                 tags: vec![PlaceTag::Village],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -2062,6 +2074,48 @@ mod tests {
                     .is_some_and(|n| n.0 == name)
             })
             .expect("named entity should exist")
+    }
+
+    #[test]
+    fn spawn_place_writes_authored_rest_capacity() {
+        let mut def = minimal_def();
+        def.places[0].rest_capacity = Some(2);
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let village = place_by_name(world, "Village");
+
+        assert_eq!(
+            world.get_component_rest_capacity(village),
+            Some(&RestCapacity(NonZeroU32::new(2).unwrap()))
+        );
+    }
+
+    #[test]
+    fn spawn_place_omits_rest_capacity_when_unset() {
+        let def = minimal_def();
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let village = place_by_name(world, "Village");
+
+        assert_eq!(world.get_component_rest_capacity(village), None);
+    }
+
+    #[test]
+    fn spawn_place_rejects_zero_rest_capacity() {
+        let mut def = minimal_def();
+        def.places[0].rest_capacity = Some(0);
+
+        let err = match spawn_scenario(&def) {
+            Ok(_) => panic!("zero rest_capacity should be rejected"),
+            Err(err) => err,
+        };
+
+        assert!(
+            matches!(err, ScenarioError::Validation(ref message) if message.contains("rest_capacity must be greater than zero")),
+            "expected rest_capacity validation error, got {err:?}"
+        );
     }
 
     #[test]
@@ -2357,6 +2411,7 @@ mod tests {
                 name: "Square".into(),
                 tags: vec![PlaceTag::Village],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -2441,6 +2496,7 @@ mod tests {
                 name: "Square".into(),
                 tags: vec![PlaceTag::Village],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -2518,6 +2574,7 @@ mod tests {
                 name: "Square".into(),
                 tags: vec![PlaceTag::Village],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -2633,6 +2690,7 @@ mod tests {
                 name: "Square".into(),
                 tags: vec![PlaceTag::Village],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -2790,6 +2848,7 @@ mod tests {
                     name: "Town".into(),
                     tags: vec![],
                     visibility_profile: None,
+                    rest_capacity: None,
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
@@ -2798,6 +2857,7 @@ mod tests {
                     name: "Forest".into(),
                     tags: vec![],
                     visibility_profile: None,
+                    rest_capacity: None,
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
@@ -2855,6 +2915,7 @@ mod tests {
                 name: "Town".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -2897,6 +2958,7 @@ mod tests {
                 name: "Town".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -2939,6 +3001,7 @@ mod tests {
                 name: "Town".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -2990,6 +3053,7 @@ mod tests {
                 visibility_profile: Some(PlaceVisibilityProfile {
                     base_concealment: Permille::new(400).unwrap(),
                 }),
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -3111,6 +3175,7 @@ mod tests {
                 name: "Market".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -3170,6 +3235,7 @@ mod tests {
                 name: "Camp".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -3236,6 +3302,7 @@ mod tests {
                     name: "A".into(),
                     tags: vec![],
                     visibility_profile: None,
+                    rest_capacity: None,
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
@@ -3244,6 +3311,7 @@ mod tests {
                     name: "B".into(),
                     tags: vec![],
                     visibility_profile: None,
+                    rest_capacity: None,
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
@@ -3303,6 +3371,7 @@ mod tests {
                     name: "X".into(),
                     tags: vec![],
                     visibility_profile: None,
+                    rest_capacity: None,
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
@@ -3311,6 +3380,7 @@ mod tests {
                     name: "Y".into(),
                     tags: vec![],
                     visibility_profile: None,
+                    rest_capacity: None,
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
@@ -3383,6 +3453,7 @@ mod tests {
                 name: "Town".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -3428,6 +3499,7 @@ mod tests {
                     name: "Smithy".into(),
                     tags: vec![],
                     visibility_profile: None,
+                    rest_capacity: None,
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
@@ -3436,6 +3508,7 @@ mod tests {
                     name: "Orchard".into(),
                     tags: vec![],
                     visibility_profile: None,
+                    rest_capacity: None,
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
@@ -3519,6 +3592,7 @@ mod tests {
                 name: "Orchard".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -3580,6 +3654,7 @@ mod tests {
                 name: "Orchard".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -3650,6 +3725,7 @@ mod tests {
                 name: "Village".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -3750,6 +3826,7 @@ mod tests {
                 name: "Market".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -3834,6 +3911,7 @@ mod tests {
                 name: "Village".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -3900,6 +3978,7 @@ mod tests {
                 name: "Void".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -3945,6 +4024,7 @@ mod tests {
                 name: "Home".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -4341,6 +4421,7 @@ mod tests {
                 name: "Town".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -4395,6 +4476,7 @@ mod tests {
                 name: "Home".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -4448,6 +4530,7 @@ mod tests {
                 name: "Hall".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -4528,6 +4611,7 @@ mod tests {
                 name: "Home".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -4652,6 +4736,7 @@ mod tests {
                 name: "Town".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -4730,6 +4815,7 @@ mod tests {
                 name: "Town".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -4790,6 +4876,7 @@ mod tests {
                 name: "Town".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -4877,6 +4964,7 @@ mod tests {
                     name: "Gate".into(),
                     tags: vec![],
                     visibility_profile: None,
+                    rest_capacity: None,
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
@@ -4885,6 +4973,7 @@ mod tests {
                     name: "Market".into(),
                     tags: vec![],
                     visibility_profile: None,
+                    rest_capacity: None,
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
@@ -5012,6 +5101,7 @@ mod tests {
                 name: "Gate".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -5055,6 +5145,7 @@ mod tests {
                 name: "Square".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
@@ -5142,6 +5233,7 @@ mod tests {
                 name: "Square".into(),
                 tags: vec![],
                 visibility_profile: None,
+                rest_capacity: None,
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,

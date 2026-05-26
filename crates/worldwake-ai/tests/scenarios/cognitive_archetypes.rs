@@ -72,6 +72,7 @@ fn scenario_with_agents(agents: Vec<AgentDef>) -> ScenarioDef {
             name: "Village".into(),
             tags: vec![PlaceTag::Village],
             visibility_profile: None,
+            rest_capacity: None,
             sleep_quality: None,
             place_dirtiness: None,
             latrine_fullness: None,
