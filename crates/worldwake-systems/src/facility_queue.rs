@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDomain, CauseRef, ContentionEventPayload, ContentionPolicy, ContentionQueue, EntityId,
-    EntityKind, EventLog, EventTag, ReliabilityRecord, SourceKey, Tick, VisibilitySpec,
+    EntityKind, EventLog, EventTag, PlaceTag, ReliabilityRecord, SourceKey, Tick, VisibilitySpec,
     WitnessData, WorkstationTag, World, WorldTxn, build_contention_event_payload,
 };
 use worldwake_sim::{
@@ -30,6 +30,8 @@ enum PromotableContentionKind {
     FacilityExclusive(WorkstationTag),
     Corpse,
     Care,
+    SelfCareWash,
+    SelfCareLatrine,
 }
 
 pub fn contention_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
@@ -468,6 +470,8 @@ fn promotable_contention_kind(def: &worldwake_sim::ActionDef) -> Option<Promotab
     match (def.domain, def.name.as_str()) {
         (ActionDomain::Corpse, "loot" | "bury") => Some(PromotableContentionKind::Corpse),
         (ActionDomain::Care, "heal") => Some(PromotableContentionKind::Care),
+        (ActionDomain::Needs, "wash") => Some(PromotableContentionKind::SelfCareWash),
+        (ActionDomain::Needs, "toilet") => Some(PromotableContentionKind::SelfCareLatrine),
         _ => None,
     }
 }
@@ -497,6 +501,17 @@ fn contention_target_matches_kind(
                 && world
                     .get_component_wound_list(entity)
                     .is_some_and(|wounds| !wounds.wounds.is_empty())
+        }
+        PromotableContentionKind::SelfCareWash => {
+            world.entity_kind(entity) == Some(EntityKind::Facility)
+                && world.is_alive(entity)
+                && world
+                    .get_component_workstation_marker(entity)
+                    .is_some_and(|marker| marker.0 == WorkstationTag::WashBasin)
+        }
+        PromotableContentionKind::SelfCareLatrine => {
+            world.entity_kind(entity) == Some(EntityKind::Place)
+                && world.place_has_tag(entity, PlaceTag::Latrine)
         }
     }
 }
@@ -597,10 +612,13 @@ fn actor_has_matching_contention_intent(
 
 #[cfg(test)]
 mod tests {
-    use super::contention_system;
+    use super::{
+        PromotableContentionKind, contention_system, contention_target_matches_kind,
+        promotable_contention_kind,
+    };
     use crate::{
         register_craft_actions, register_harvest_actions, register_heal_action,
-        register_loot_action,
+        register_loot_action, register_needs_actions,
     };
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
@@ -608,7 +626,7 @@ mod tests {
         ActionDefId, BodyPart, CauseRef, ClaimantOutcome, CommodityKind,
         ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
         ContentionResolutionRule, ControlSource, DeadAt, DeprivationKind, EntityId, EntityKind,
-        EventLog, EventTag, EventView, GoalKey, GoalKind, KnownRecipes, ProductionJob,
+        EventLog, EventTag, EventView, GoalKey, GoalKind, KnownRecipes, PlaceTag, ProductionJob,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, QueuedContentionIntent,
         ResourceSource, Seed, SourceKey, Tick, UniqueItemKind, VisibilitySpec, WitnessData,
         WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
@@ -874,6 +892,107 @@ mod tests {
             local_state: Some(ActionState::Empty),
             body_cost_override: None,
         }
+    }
+
+    fn find_action_id(defs: &ActionDefRegistry, name: &str) -> ActionDefId {
+        defs.iter()
+            .find_map(|def| (def.name == name).then_some(def.id))
+            .unwrap_or_else(|| panic!("expected action {name} to be registered"))
+    }
+
+    #[test]
+    fn promotable_contention_kind_classifies_wash_action_as_self_care_wash() {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        register_needs_actions(&mut defs, &mut handlers);
+        let wash = defs.get(find_action_id(&defs, "wash")).unwrap();
+
+        assert!(matches!(
+            promotable_contention_kind(wash),
+            Some(PromotableContentionKind::SelfCareWash)
+        ));
+    }
+
+    #[test]
+    fn promotable_contention_kind_classifies_toilet_action_as_self_care_latrine() {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        register_needs_actions(&mut defs, &mut handlers);
+        let toilet = defs.get(find_action_id(&defs, "toilet")).unwrap();
+
+        assert!(matches!(
+            promotable_contention_kind(toilet),
+            Some(PromotableContentionKind::SelfCareLatrine)
+        ));
+    }
+
+    #[test]
+    fn promotable_contention_kind_unchanged_for_existing_actions() {
+        let recipes = build_recipe_registry();
+        let (defs, _handlers, harvest_id, craft_id) = setup_registries(&recipes);
+
+        assert!(matches!(
+            promotable_contention_kind(defs.get(harvest_id).unwrap()),
+            Some(PromotableContentionKind::FacilityExclusive(
+                WorkstationTag::OrchardRow
+            ))
+        ));
+        assert!(matches!(
+            promotable_contention_kind(defs.get(craft_id).unwrap()),
+            Some(PromotableContentionKind::FacilityExclusive(
+                WorkstationTag::Mill
+            ))
+        ));
+
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let loot_id = register_loot_action(&mut defs, &mut handlers);
+        let heal_id = register_heal_action(&mut defs, &mut handlers);
+
+        assert!(matches!(
+            promotable_contention_kind(defs.get(loot_id).unwrap()),
+            Some(PromotableContentionKind::Corpse)
+        ));
+        assert!(matches!(
+            promotable_contention_kind(defs.get(heal_id).unwrap()),
+            Some(PromotableContentionKind::Care)
+        ));
+    }
+
+    #[test]
+    fn self_care_contention_kinds_match_only_their_eligible_targets() {
+        let (world, place, wash_basin) = setup_world(WorkstationTag::WashBasin, 0);
+        let non_latrine_place = world
+            .topology()
+            .place_ids()
+            .find(|candidate| !world.place_has_tag(*candidate, PlaceTag::Latrine))
+            .unwrap();
+        let latrine = world
+            .topology()
+            .place_ids()
+            .find(|candidate| world.place_has_tag(*candidate, PlaceTag::Latrine))
+            .unwrap();
+
+        assert!(contention_target_matches_kind(
+            &world,
+            wash_basin,
+            PromotableContentionKind::SelfCareWash
+        ));
+        assert!(!contention_target_matches_kind(
+            &world,
+            place,
+            PromotableContentionKind::SelfCareWash
+        ));
+        assert!(contention_target_matches_kind(
+            &world,
+            latrine,
+            PromotableContentionKind::SelfCareLatrine
+        ));
+        assert!(!contention_target_matches_kind(
+            &world,
+            non_latrine_place,
+            PromotableContentionKind::SelfCareLatrine
+        ));
     }
 
     fn assert_single_contention_grant_event(

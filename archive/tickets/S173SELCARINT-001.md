@@ -135,7 +135,7 @@ Implementation corrected the draft assumption about macro expansion sites: `delt
 
 - Writing `SelfCareOccupancy` from any action handler — tickets 004 (wash, toilet start/commit/abort) and 005 (atomic-action abort trace detail) own that.
 - `ActionTraceDetail::SelfCareInterrupted` variant — owned by ticket 002.
-- `PromotableContentionKind` extension — owned by ticket 003 (independent of this ticket).
+- `PromotableContentionKind` extension — owned by the now-archived `archive/tickets/S173SELCARINT-003.md` (independent of this ticket).
 - Belief-view accessor for `SelfCareOccupancy` — per spec D5 "no new accessor on `GoalBeliefView` is required" claim; ticket 006 verifies whether the consumer can compose without one, or whether a thin `facility_self_care_occupancy_observed` accessor is needed.
 - Scenario authoring — `SelfCareOccupancy` is runtime-managed, no `*Def` wrapper.
 

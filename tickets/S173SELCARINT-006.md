@@ -121,5 +121,5 @@ Existing tests (`emit_wash_goal_produces_one_candidate_per_basin_at_place`, etc.
 
 1. `cargo test -p worldwake-ai candidate_generation`
 2. `cargo test -p worldwake-sim belief_view` (if the new accessor lands)
-3. `cargo build --workspace -- -D warnings`
+3. `cargo build --workspace`
 4. `./scripts/verify.sh` before commit.

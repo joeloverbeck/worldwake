@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `reservation_requirements` on wash/toilet action defs; new `abort_release_self_care_occupancy` handler; `SelfCareOccupancy` writes/removes in start, commit, abort flows
-**Deps**: `archive/tickets/S173SELCARINT-001.md` (uses `SelfCareOccupancy`, `SelfCareUseKind`), `archive/tickets/S173SELCARINT-002.md` (uses `ActionTraceDetail::SelfCareInterrupted`), S173SELCARINT-003 (`PromotableContentionKind::SelfCareWash`/`SelfCareLatrine` queue classification), `specs/S173-self-care-interruption-occupancy.md` (D2 wash/toilet rows, D4, distributed D5 start-gate read)
+**Deps**: `archive/tickets/S173SELCARINT-001.md` (uses `SelfCareOccupancy`, `SelfCareUseKind`), `archive/tickets/S173SELCARINT-002.md` (uses `ActionTraceDetail::SelfCareInterrupted`), `archive/tickets/S173SELCARINT-003.md` (`PromotableContentionKind::SelfCareWash`/`SelfCareLatrine` queue classification), `specs/S173-self-care-interruption-occupancy.md` (D2 wash/toilet rows, D4, distributed D5 start-gate read)
 
 ## Problem
 
@@ -100,7 +100,7 @@ If reservation-requirement plumbing requires extending shared sim infrastructure
 
 - Atomic-action abort handlers (eat, drink, relieve_wilderness, sleep enrichment) — owned by ticket 005.
 - Candidate-emitter occupancy filtering (emitter-time read of `SelfCareOccupancy`) — owned by ticket 006.
-- `PromotableContentionKind` extension — owned by ticket 003 (prerequisite).
+- `PromotableContentionKind` extension — landed in `archive/tickets/S173SELCARINT-003.md` (prerequisite).
 - Belief-view accessor for `SelfCareOccupancy` if needed for remote queries — verified by ticket 006; this ticket reads only co-located occupancy at start time (FND-14A path).
 - Scenario goldens — owned by ticket 007 (A/B/C), 008 (D), 009 (E).
 - New `EventTag` variant — explicitly rejected per spec Non-Goals; `EventTag::ActionAborted` reused.
@@ -136,5 +136,5 @@ If reservation-requirement plumbing requires extending shared sim infrastructure
 
 1. `cargo test -p worldwake-systems needs_actions`
 2. `cargo test -p worldwake-sim --test save_load` (sanity: SAVE_FORMAT_VERSION 107 round-trips with `SelfCareOccupancy` instances created by wash/toilet)
-3. `cargo build --workspace -- -D warnings`
+3. `cargo build --workspace`
 4. `./scripts/verify.sh` before commit.

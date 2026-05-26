@@ -131,5 +131,5 @@ The registration test at L1299 asserts handler identity. After this ticket lands
 ### Commands
 
 1. `cargo test -p worldwake-systems needs_actions`
-2. `cargo build --workspace -- -D warnings`
+2. `cargo build --workspace`
 3. `./scripts/verify.sh` before commit.
