@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implement-S173-self-care-interruption-occupancy",
   "base_head": "eabebbd411adec171097499375bdf309432d6470",
-  "last_ticket": "archive/tickets/S173SELCARINT-006.md",
+  "last_ticket": "archive/tickets/S173SELCARINT-007.md",
   "last_result": "completed_archived",
-  "last_work_commit": "13d05130b60e96af4ffe5f9d36e713fc8b811655",
+  "last_work_commit": "0aeb8494a29c72a282f8872b91fd9f6c29afcf6e",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S173SELCARINT-007.md",
+  "next_target": "tickets/S173SELCARINT-008.md",
   "queue": [
-    "tickets/S173SELCARINT-007.md",
     "tickets/S173SELCARINT-008.md",
     "tickets/S173SELCARINT-009.md"
   ],
