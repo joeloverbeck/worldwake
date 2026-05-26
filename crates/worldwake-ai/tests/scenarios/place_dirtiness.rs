@@ -4,10 +4,11 @@ use crate::golden_harness::*;
 use std::num::{NonZeroU8, NonZeroU32};
 use worldwake_ai::{DecisionOutcome, GoalKey, GoalKind, PlanSearchOutcome};
 use worldwake_core::{
-    AgentData, CommodityKind, ControlSource, DecisionEventPayload, DeprivationExposure, EntityId,
-    EventTag, EventView, HomeostaticNeedId, HomeostaticNeeds, LatrineFullness, MetabolismProfile,
-    OpportunityAnchor, OpportunityKey, PerceptionSource, PlaceDirtiness, Quantity, ResourceSource,
-    Seed, SleepQualityProfile, Tick, UtilityProfile, WashBasinState, WorkstationTag,
+    AgentData, BelievedContentionState, CommodityKind, ControlSource, DecisionEventPayload,
+    DeprivationExposure, EntityId, EventTag, EventView, HomeostaticNeedId, HomeostaticNeeds,
+    LatrineFullness, MetabolismProfile, OpportunityAnchor, OpportunityKey, PerceptionSource,
+    PlaceDirtiness, Quantity, ResourceSource, RestCapacity, Seed, SleepQualityProfile, Tick,
+    UtilityProfile, WashBasinState, WorkstationTag, build_believed_entity_state,
 };
 use worldwake_sim::{ActionRequestMode, ActionTraceKind, InputKind, RequestProvenance};
 
@@ -249,6 +250,8 @@ fn sleep_ranking_prefers_clean_place_over_dirty_place() {
     for place in [VILLAGE_SQUARE, ORCHARD_FARM] {
         txn.set_component_sleep_quality_profile(place, SleepQualityProfile::default())
             .unwrap();
+        txn.set_component_rest_capacity(place, RestCapacity(NonZeroU32::new(1).unwrap()))
+            .unwrap();
     }
     commit_txn(txn, &mut h.event_log);
     let agent = seed_agent(
@@ -267,6 +270,7 @@ fn sleep_ranking_prefers_clean_place_over_dirty_place() {
         Tick(0),
         PerceptionSource::Inference,
     );
+    seed_empty_rest_contention_belief(&mut h, agent, ORCHARD_FARM);
 
     h.step_once();
     let planning = planning_trace_at(&h, agent, Tick(0));
@@ -284,6 +288,27 @@ fn sleep_ranking_prefers_clean_place_over_dirty_place() {
     let ranked = planning.candidates.ranked_summaries_for_goal(sleep_goal);
     assert_eq!(ranked[0].opportunity, clean);
     assert_eq!(planning.selection.selected_opportunity, Some(clean));
+}
+
+fn seed_empty_rest_contention_belief(h: &mut GoldenHarness, actor: EntityId, place: EntityId) {
+    let mut store = h
+        .world
+        .get_component_agent_belief_store(actor)
+        .cloned()
+        .expect("seeded actor should have a belief store");
+    let mut state =
+        build_believed_entity_state(&h.world, place, Tick(0), PerceptionSource::Inference)
+            .expect("rest place should be observable for belief seeding");
+    state.believed_contention = Some(BelievedContentionState {
+        grant_holder: None,
+        queue_length: 0,
+        observed_tick: Tick(0),
+    });
+    store.update_entity(place, state);
+    let mut txn = new_txn(&mut h.world, h.scheduler.current_tick().0);
+    txn.set_component_agent_belief_store(actor, store)
+        .expect("golden harness should keep belief stores writable");
+    commit_txn(txn, &mut h.event_log);
 }
 
 // Scenario 364: Wash Partial Success Uses Basin State

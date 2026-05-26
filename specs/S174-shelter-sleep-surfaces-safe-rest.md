@@ -108,7 +108,7 @@ Component registration in `crates/worldwake-core/src/component_schema.rs` (prece
 | `\|kind\| kind == EntityKind::Place` | `RestCapacity` | Optional; scenario-authored on `PlaceDef`. Absence means the place is not a known rest site. |
 | `\|kind\| kind == EntityKind::Place` | `RestOccupancy` | Runtime-managed; written/updated at sleep action start; cleared on commit/abort/abandon/actor-death/place-departure. Initialized empty on first occupancy. |
 
-`BTreeSet<EntityId>` (not `HashSet`) is required for determinism per the Critical Invariants in `CLAUDE.md`.
+`BTreeSet<EntityId>` (not `HashSet`) is required for determinism per the Critical Invariants in `AGENTS.md`.
 
 **Capacity exhaustion is the precondition gate, not planner intent.** Sleep action start checks `RestOccupancy.occupants.len() < RestCapacity.0.get()` for `KnownRestSite` candidates. A full site fails to start the action; the planner replans next tick.
 
@@ -124,7 +124,7 @@ When the KnownRestSite precondition fails because the rest site is full, `start_
 
 The S44 contention substrate is reused for queueing on full rest sites. A new `PromotableContentionKind::RestSite` variant is added to `crates/worldwake-systems/src/facility_queue.rs::PromotableContentionKind` (precedent: `SelfCareWash` and `SelfCareLatrine` from S173), and `promotable_contention_kind` recognizes `(ActionDomain::Needs, "sleep")` when the target place carries `RestCapacity`. Per-place `ContentionPolicy` applies; no per-kind policy routing. The exhaustive match on `PromotableContentionKind` in `contention_target_matches_kind` (`crates/worldwake-systems/src/facility_queue.rs`) gains a new arm for `RestSite` that matches when the target is a Place carrying `RestCapacity`.
 
-`RoughSleep` candidates are not classified for contention (rough sleep is location-flexible; the candidate's effective place is the actor's current place, and the place need not carry `RestCapacity`).
+`RoughSleep` candidates are not classified for contention (rough sleep is targetless; the candidate carries the actor's current place only as evidence, and the place need not carry `RestCapacity`).
 
 ### D3. `WakeReason::LocalDisturbance` restructuring and `SleepFailureCause` enum
 
@@ -169,26 +169,28 @@ pub enum SleepFailureCause {
 
 **Prerequisite: `FeasibilityStrategy::CandidateBacked` variant.** The current `FeasibilityStrategy` enum in `crates/worldwake-ai/src/goal_schema.rs` (variants: `OwnedCommodityCheck`, `EvidencePlaceLocal`, `AlwaysLikely`, `CommodityPresenceCheck`, `ColocationOrDead`, `NoOpinion`, `SellCheck`, `CargoDestinationCheck`, `CorpseBurialCheck`, `PlaceMatch`) does not include a "feasibility = any lawful candidate exists" strategy. This spec adds `CandidateBacked` as a new variant with that semantic: the goal is feasible iff the dispatch loop produces at least one candidate from any registered emitter (no separate pre-flight feasibility check). The variant is consumed by the Sleep two-path schema below; no other goal currently needs it, but it is generally reusable for any goal whose feasibility is "anything to do" rather than belief-checked. Update points: enum variant addition in `goal_schema.rs`, `Default` or match-arm sites (verify per `New Enum Variant on Cross-Crate Enum` audit — `FeasibilityStrategy` is consumed by the planner dispatch path; enumerate exhaustive match sites within `worldwake-ai`).
 
-With the variant added, `DECL_SLEEP` (the `GoalSchema` static in `crates/worldwake-ai/src/goal_schema.rs`) is rewritten. The current `FeasibilityStrategy::AlwaysLikely` is removed. The Sleep goal declares two op-relevance branches and a two-stage candidate enumerator:
+With the variant added, `DECL_SLEEP` (the `GoalSchema` static in `crates/worldwake-ai/src/goal_schema.rs`) is rewritten. The current `FeasibilityStrategy::AlwaysLikely` is removed. The Sleep goal declares a broader relevant-operator set, preserves Sleep-only progress barriers, and uses a two-stage candidate enumerator:
 
 ```rust
-const SLEEP_OPS: &[PlannerOpKind] = &[
+const SLEEP_RELEVANT_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Sleep,                 // existing
     PlannerOpKind::QueueForFacilityUse,   // existing; new for rest-site queueing
 ];
+const SLEEP_PROGRESS_BARRIER_OPS: &[PlannerOpKind] = &[PlannerOpKind::Sleep];
 
 pub static DECL_SLEEP: GoalSchema = GoalSchema {
     // ... existing fields ...
     feasibility_strategy: FeasibilityStrategy::CandidateBacked,
-    relevant_ops: SLEEP_OPS,
+    relevant_ops: SLEEP_RELEVANT_OPS,
+    progress_barrier_ops: SLEEP_PROGRESS_BARRIER_OPS,
     // ...
 };
 ```
 
 The Sleep candidate emitter is restructured. The current single-pass emitter `emit_sleep_goal` in `crates/worldwake-ai/src/candidate_generation.rs` is replaced by a two-pass function `sleep_rest_opportunities` that enumerates:
 
-1. **`KnownRestSite` pass (belief-backed)**: For each rest-site Place in the actor's belief view (places carrying `RestCapacity`, observed directly by co-location or remembered via belief), emit a Sleep candidate with `target_place = <known rest site>` only if the belief view's `rest_site_occupant_count(<place>)` is less than capacity (FND-14A for co-located, belief-backed for remote per FND-14B).
-2. **`RoughSleep` pass (current-place fallback)**: Emit a single Sleep candidate with `target_place = <actor's current effective place>`. This candidate carries a flag indicating rough sleep. No `RestCapacity` is required; no `RestOccupancy` is consulted (rough sleep has no per-place exclusivity).
+1. **`KnownRestSite` pass (belief-backed)**: For each rest-site Place in the actor's belief view (places carrying `RestCapacity`, observed directly by co-location or remembered via belief), emit a Sleep candidate with `OpportunityAnchor::Place(<known rest site>)` only if the belief view's `rest_site_occupant_count(<place>)` is less than capacity (FND-14A for co-located, belief-backed for remote per FND-14B).
+2. **`RoughSleep` pass (current-place fallback)**: Emit a single targetless Sleep candidate with `OpportunityAnchor::None` and the actor's current effective place in `evidence_places`. The action handler derives rough sleep from the absence of an action target. No `RestCapacity` is required; no `RestOccupancy` is consulted (rough sleep has no per-place exclusivity).
 
 If pass 1 produces zero candidates (no known rest sites believed available) and pass 2 fires, the actor will rough-sleep at their current place. Per FND-21, the planner does not silently reserve a rest slot — the actor must arrive at the rest site and pass D2's start-time precondition.
 
@@ -301,11 +303,11 @@ The CLI must not display `RestOccupancy.occupants` for a place the controlled ag
 
 ## Authoritative-to-AI Impact Analysis
 
-D2 modifies action preconditions (rest-site capacity gate). D4 modifies candidate emission and goal schema. D8 extends forensics. Per CLAUDE.md's 7-point Authoritative-to-AI Impact Rule:
+D2 modifies action preconditions (rest-site capacity gate). D4 modifies candidate emission and goal schema. D8 extends forensics. Per `AGENTS.md`'s 7-point Authoritative-to-AI Impact Rule:
 
 1. `get_affordances` — **flag**: D4's two-path emitter is the new affordance discovery surface; verify the affordance enumerator surface reads `RestCapacity`/`RestOccupancy` via D5's source-classified belief view, not authoritative world state on behalf of remote actors.
-2. `generate_candidates` — **flag**: `sleep_rest_opportunities` is a new candidate emitter replacing the implicit `AlwaysLikely` Sleep enumeration. The KnownRestSite pass filters on belief-view rest-site capacity/occupancy; the RoughSleep pass emits a single current-place candidate.
-3. `search_plan` — **flag**: `SLEEP_OPS` gains `QueueForFacilityUse`. Verify the planner can compose travel + sleep + queue chains for KnownRestSite candidates.
+2. `generate_candidates` — **flag**: `sleep_rest_opportunities` is a new candidate emitter replacing the implicit `AlwaysLikely` Sleep enumeration. The KnownRestSite pass filters on belief-view rest-site capacity/occupancy; the RoughSleep pass emits a single targetless current-place fallback candidate.
+3. `search_plan` — **flag**: `DECL_SLEEP.relevant_ops` gains `QueueForFacilityUse` while `progress_barrier_ops` remains Sleep-only. Verify the planner can compose travel + sleep + queue chains for KnownRestSite candidates without treating sleep-facility queueing as Sleep progress.
 4. `BestEffort` action start — **flag**: D2's `RestSiteFull` start failure must propagate to a clean replan. The existing failure-attribution code in `agent_tick.rs::handle_plan_failure` should cover this via generic precondition rejection; spec validation confirms at ticket time.
 5. `handle_plan_failure` — **flag**: replan after rest-site precondition rejection. The actor's next tick reads current `RestOccupancy` via FND-14A (co-located) or belief; may emit `RoughSleep` candidate.
 6. Payload revalidation — **flag**: sleep actions use `ActionPayload::None`, so payload revalidation passes through `requested_affordance_matches`. The rest-site precondition is a precondition check, not a payload-override check; verify the precondition path is exercised for None-payload actions.
@@ -476,7 +478,7 @@ Assertions:
 1. Both agents emit Sleep candidates targeting `shelter_north` via FND-14A direct observation.
 2. One agent's action starts and writes `RestOccupancy.occupants = {agent_a}`.
 3. The other agent's action start fails the rest-site precondition; planner replans next tick.
-4. The losing agent either emits a `RoughSleep` candidate at `shelter_north` (which is allowed even though the place has `RestCapacity`, because rough sleep is location-flexible and reuses the current place without consuming a rest slot) OR travels to `open_camp` and rough-sleeps.
+4. The losing agent either emits a targetless `RoughSleep` candidate with `shelter_north` as current-place evidence (allowed even though the place has `RestCapacity`, because rough sleep does not consume a rest slot) OR travels to `open_camp` and rough-sleeps.
 5. Recovery modifier comparison: the shelter occupant accumulates recovery at ≈ 1.1x; the rough-sleeping agent accumulates at the capped `rough_sleep_recovery_floor` (≈ 0.3x).
 6. `RestOccupancy` releases on commit; `EventTag::SleepEpisodeEnded` carries `WakeReason::TargetRecovery`.
 7. `FailedRestOpportunity::PreconditionRejected` is recorded in the losing agent's active critical window.
@@ -489,7 +491,7 @@ Agents: three tired agents co-located.
 
 Assertions:
 1. Two agents occupy `barracks` (`RestOccupancy.occupants.len() == 2`).
-2. Third agent fails rest-site precondition; either queues via S44 or rough-sleeps at the same place (rough-sleep falls back to current place, ignoring `RestCapacity`).
+2. Third agent fails rest-site precondition; either queues via S44 or rough-sleeps at the same place (rough sleep is targetless and uses current-place evidence, ignoring `RestCapacity`).
 3. Queue grant promotion fires when one occupant releases; the third agent transitions to KnownRestSite occupancy.
 4. No stuck idle window under elevated fatigue (no agent fails to make progress).
 5. Deterministic replay.
@@ -532,6 +534,6 @@ Assertions:
 
 ## Open Questions
 
-1. Should `RoughSleep` candidates be emittable at places that DO carry `RestCapacity` (i.e., rough-sleeping on the shelter floor even when the bed slot is taken)? D4 currently allows this; it makes the fallback always available. Alternative: forbid rough sleep at a place with `RestCapacity`, forcing the agent to travel. The current design preserves the report's "always-legal rough sleep" stance; if scenario play surfaces a reason to forbid same-place rough sleep, restrict it then.
+1. Should targetless `RoughSleep` candidates remain legal while the actor is standing at places that DO carry `RestCapacity` (i.e., rough-sleeping on the shelter floor even when the bed slot is taken)? D4 currently allows this; it makes the fallback always available. Alternative: forbid rough sleep when current-place evidence points at a rest-capable place, forcing the agent to travel. The current design preserves the report's "always-legal rough sleep" stance; if scenario play surfaces a reason to forbid same-place rough sleep, restrict it then.
 2. Should `FailedRestOpportunity::PreemptedByHigherNeed` be recorded eagerly (every time the actor abandons a sleep intention) or only during active critical windows? Current design ties it to the active critical window (matching the existing `SurvivalForensicExtractor` window-scoped semantics). If S175 needs records outside critical windows, the extractor's scope expands; that decision is taken at S175 ticket time.
 3. Should the `Generic` `SleepFailureCause` variant be removed before merge once all current call sites map to specific causes? If yes, `WakeReason::LocalDisturbance` becomes a proper exhaustive structured cause. Current spec keeps `Generic` as a transitional bucket; the spec marks this as a hardening question for the implementation tickets.

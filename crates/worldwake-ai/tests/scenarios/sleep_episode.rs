@@ -5,12 +5,12 @@ use std::num::NonZeroU32;
 use crate::golden_harness::*;
 use worldwake_ai::DecisionOutcome;
 use worldwake_core::{
-    AgentData, ControlSource, DecisionEventPayload, EntityId, EventTag, EventView,
-    ExpectationStore, FrameAssumption, FrameState, GoalKey, GoalKind, GroundComfortTag,
+    AgentData, BelievedContentionState, ControlSource, DecisionEventPayload, EntityId, EventTag,
+    EventView, ExpectationStore, FrameAssumption, FrameState, GoalKey, GoalKind, GroundComfortTag,
     HomeostaticNeedId, HomeostaticNeeds, IntentionDomain, IntentionFrame, MetabolismProfile,
     OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, RestCapacity, Seed, ShelterTag,
     SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepQualityProfile,
-    SleepRecoveryModifier, Tick, WakeCondition, WakeReason,
+    SleepRecoveryModifier, Tick, WakeCondition, WakeReason, build_believed_entity_state,
 };
 use worldwake_sim::{ActionRequestMode, ActionTraceKind, InputKind, RequestProvenance};
 
@@ -72,6 +72,27 @@ fn set_rest_capacity(h: &mut GoldenHarness, place: EntityId, capacity: u32) {
     let mut txn = new_txn(&mut h.world, 0);
     txn.set_component_rest_capacity(place, RestCapacity(NonZeroU32::new(capacity).unwrap()))
         .unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn seed_empty_rest_contention_belief(h: &mut GoldenHarness, actor: EntityId, place: EntityId) {
+    let mut store = h
+        .world
+        .get_component_agent_belief_store(actor)
+        .cloned()
+        .expect("seeded actor should have a belief store");
+    let mut state =
+        build_believed_entity_state(&h.world, place, Tick(0), PerceptionSource::Inference)
+            .expect("rest place should be observable for belief seeding");
+    state.believed_contention = Some(BelievedContentionState {
+        grant_holder: None,
+        queue_length: 0,
+        observed_tick: Tick(0),
+    });
+    store.update_entity(place, state);
+    let mut txn = new_txn(&mut h.world, h.scheduler.current_tick().0);
+    txn.set_component_agent_belief_store(actor, store)
+        .expect("golden harness should keep belief stores writable");
     commit_txn(txn, &mut h.event_log);
 }
 
@@ -329,6 +350,8 @@ fn site_preference_adopts_higher_quality_sleep_place() {
     h.driver.enable_tracing();
     set_sleep_quality(&mut h, VILLAGE_SQUARE, 900);
     set_sleep_quality(&mut h, ORCHARD_FARM, 1000);
+    set_rest_capacity(&mut h, VILLAGE_SQUARE, 1);
+    set_rest_capacity(&mut h, ORCHARD_FARM, 1);
     let agent = sleep_agent(&mut h, "Chooser", VILLAGE_SQUARE, 500);
     seed_actor_world_beliefs(
         &mut h.world,
@@ -337,6 +360,7 @@ fn site_preference_adopts_higher_quality_sleep_place() {
         Tick(0),
         PerceptionSource::Inference,
     );
+    seed_empty_rest_contention_belief(&mut h, agent, ORCHARD_FARM);
 
     h.step_once();
     let trace = h
