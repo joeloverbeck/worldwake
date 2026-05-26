@@ -362,7 +362,7 @@ fn scheduler_driven_care_actions_apply_effects_and_preserve_conservation() {
     commit_txn(txn);
     harness.place = public_latrine;
 
-    harness.queue_action("toilet", Vec::new());
+    harness.queue_action("toilet", vec![public_latrine]);
     harness.run_queued_action_to_completion(5);
     assert_eq!(actor_needs(&harness).bladder, pm(0));
     assert_eq!(waste_count_at_place(&harness), 1);
