@@ -8,7 +8,7 @@
 
 ## Problem
 
-S174's Scenario E is the feed for S175's exhaustion-collapse golden. The scenario exercises a sustained pattern of failed-rest opportunities: a tired agent must repeatedly attempt and fail rest at a perpetually-occupied shelter, then fall back to rough-sleep at an open camp. Over N cycles, the agent accumulates ≥ N `FailedRestOpportunity` records in the active critical-fatigue window. `HomeostaticNeeds.fatigue` enters critical exposure; `DeprivationExposure.fatigue_critical_ticks` accumulates. S175's spec proves the collapse cascade on top of this scenario — S174 owns proving the carrier exists.
+S174's Scenario E is the feed for S175's exhaustion-collapse golden. The original draft framed the scenario as repeated rest-site start failures; implementation reassessment corrected the live contract to repeated failed-rest opportunities where a tired agent first loses the one-slot rest-site race, then repeatedly falls back to rough sleep from a known rest-site opportunity while fatigue remains critical. Over N cycles, the agent accumulates ≥ N `FailedRestOpportunity` records in the active critical-fatigue window. `HomeostaticNeeds.fatigue` enters critical exposure; `DeprivationExposure.fatigue_critical_ticks` accumulates. S175's spec proves the collapse cascade on top of this scenario — S174 owns proving the carrier exists.
 
 Without this scenario, the failed-rest accumulation chain has no E2E proof, and S175 has no shared scenario substrate to extend.
 
@@ -75,7 +75,7 @@ In the test file's comment block, explicitly document: "This scenario is the fee
 ## Out of Scope
 
 - No collapse / wound creation / death path (S175 spec territory)
-- No `FailedRestKind::PreemptedByHigherNeed` exercise — archived ticket 006 covers that path with focused forensics tests, and this scenario intentionally concentrates on repeated rest-site precondition rejection.
+- No `FailedRestKind::PreemptedByHigherNeed` exercise — archived ticket 006 covers that path with focused forensics tests, and this scenario intentionally concentrates on repeated known-rest-site unavailability plus rough fallback.
 - No hostile interruption — that's Scenario C / ticket 009
 - No CLI surface — that's Scenario D / ticket 010
 - No authored/scripted external action requests
