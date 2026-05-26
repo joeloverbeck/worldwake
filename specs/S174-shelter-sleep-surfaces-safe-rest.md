@@ -2,7 +2,7 @@
 
 ## Summary
 
-At draft intake, sleep is the weakest major self-care family. `SleepEpisode` (per `archive/specs/S128-sleep-episode-place-quality.md`) carries duration and partial recovery; `SleepQualityProfile` modulates recovery by place; `WakeReason` discriminates IntendedDuration / TargetRecovery / ProjectedNeedBreach / ScheduledCommitment / LocalDisturbance (`crates/worldwake-core/src/decision_event_payload.rs:98`); and `SelfCareUseKind::Sleep` was reserved by `archive/specs/S173-self-care-interruption-occupancy.md` for future use. But sleep currently has no rest-site occupancy: multiple agents can intend to sleep in the same shelter without contention, the planner treats sleep as `FeasibilityStrategy::AlwaysLikely` (`crates/worldwake-ai/src/goal_schema.rs:345`), `WakeReason::LocalDisturbance` is a single coarse variant with no structured cause, and "why did this sleep fail or recover poorly?" cannot be answered with typed evidence. This spec introduces rest-site identity, multi-occupant rest capacity, a two-path Sleep goal schema (known rest site vs. rough sleep fallback), structured wake-reason causes, and a failed-rest forensic record — the consequence carriers that turn fatigue recovery into a situated survival decision.
+At draft intake, sleep is the weakest major self-care family. `SleepEpisode` (per `archive/specs/S128-sleep-episode-place-quality.md`) carries duration and partial recovery; `SleepQualityProfile` modulates recovery by place; `WakeReason` discriminates IntendedDuration / TargetRecovery / ProjectedNeedBreach / ScheduledCommitment / LocalDisturbance (`crates/worldwake-core/src/decision_event_payload.rs`); and `SelfCareUseKind::Sleep` was added by `archive/specs/S173-self-care-interruption-occupancy.md` for trace-detail completeness — it is currently constructed at `crates/worldwake-sim/src/tick_step.rs::abort_trace_detail_for_instance` for sleep aborts, and this spec replaces that use with the new structured `SleepInterrupted` variant. But sleep currently has no rest-site occupancy: multiple agents can intend to sleep in the same shelter without contention, the planner treats sleep as `FeasibilityStrategy::AlwaysLikely` in `crates/worldwake-ai/src/goal_schema.rs::DECL_SLEEP`, `WakeReason::LocalDisturbance` is a single coarse variant with no structured cause, and "why did this sleep fail or recover poorly?" cannot be answered with typed evidence. This spec introduces rest-site identity, multi-occupant rest capacity, a two-path Sleep goal schema (known rest site vs. rough sleep fallback), structured wake-reason causes, and a failed-rest forensic record — the consequence carriers that turn fatigue recovery into a situated survival decision.
 
 S173 explicitly deferred this work in its Non-Goals: "No shelter or sleep-surface scarcity model. Sleep contention remains place-level capacity (or unimplemented) until a future spec proves sleep-surface scarcity matters." This spec is that future spec.
 
@@ -114,21 +114,21 @@ Component registration in `crates/worldwake-core/src/component_schema.rs` (prece
 
 ### D2. Sleep action handler writes / releases `RestOccupancy`
 
-The current sleep action handler (`crates/worldwake-systems/src/needs_actions.rs::start_sleep_episode` line 481+) is extended to:
+The current sleep action handler `start_sleep_episode` in `crates/worldwake-systems/src/needs_actions.rs` (which returns `Result<Option<ActionState>, ActionError>` per the standard action-handler contract) is extended to:
 
 - On action start, if the target place has `RestCapacity` and the action is enumerated as a `KnownRestSite` candidate (see D4): insert the actor into `RestOccupancy.occupants`. If `RestCapacity` is absent OR the candidate was `RoughSleep`, no `RestOccupancy` write occurs.
 - On commit (`end_sleep_episode` natural wake), abort (`abort_sleep_episode` interruption), or actor death/incapacitation: remove the actor from `RestOccupancy.occupants` if present.
 - On actor place-departure mid-sleep (e.g., forced movement by combat knockback): the existing `SleepEpisode` cleanup path also removes the actor from `RestOccupancy`.
 
-`start_sleep_episode` returns either `Ok(SleepEpisode)` or `Err(StartFailure::RestSiteFull)`. The action framework treats `StartFailure::RestSiteFull` as a planner-replan signal; the planner next tick reads current occupancy and may emit a `RoughSleep` candidate, a different `KnownRestSite` candidate, or queue via the existing S44 `PlannerOpKind::QueueForFacilityUse` operator.
+When the KnownRestSite precondition fails because the rest site is full, `start_sleep_episode` returns `Err(ActionError)` through the standard action-handler precondition-failure path. The action framework's generic precondition-rejection handling (existing `agent_tick.rs::handle_plan_failure`) treats this as a planner-replan signal; the planner next tick reads current occupancy and may emit a `RoughSleep` candidate, a different `KnownRestSite` candidate, or queue via the existing S44 `PlannerOpKind::QueueForFacilityUse` operator. No new error variant is introduced — rest-site-full uses the same `ActionError` contract as every other precondition rejection.
 
-The S44 contention substrate is reused for queueing on full rest sites. A new `PromotableContentionKind::RestSite` variant is added to `crates/worldwake-systems/src/facility_queue.rs::PromotableContentionKind` (precedent: `SelfCareWash` and `SelfCareLatrine` from S173), and `promotable_contention_kind` recognizes `(ActionDomain::Needs, "sleep")` when the target place carries `RestCapacity`. Per-place `ContentionPolicy` applies; no per-kind policy routing.
+The S44 contention substrate is reused for queueing on full rest sites. A new `PromotableContentionKind::RestSite` variant is added to `crates/worldwake-systems/src/facility_queue.rs::PromotableContentionKind` (precedent: `SelfCareWash` and `SelfCareLatrine` from S173), and `promotable_contention_kind` recognizes `(ActionDomain::Needs, "sleep")` when the target place carries `RestCapacity`. Per-place `ContentionPolicy` applies; no per-kind policy routing. The exhaustive match on `PromotableContentionKind` in `contention_target_matches_kind` (`crates/worldwake-systems/src/facility_queue.rs`) gains a new arm for `RestSite` that matches when the target is a Place carrying `RestCapacity`.
 
 `RoughSleep` candidates are not classified for contention (rough sleep is location-flexible; the candidate's effective place is the actor's current place, and the place need not carry `RestCapacity`).
 
 ### D3. `WakeReason::LocalDisturbance` restructuring and `SleepFailureCause` enum
 
-The existing `WakeReason` enum (`crates/worldwake-core/src/decision_event_payload.rs:98`) is extended in place — the `LocalDisturbance` variant gains a structured cause payload (FND-28: replace, do not duplicate):
+The existing `WakeReason` enum in `crates/worldwake-core/src/decision_event_payload.rs` is extended in place — the `LocalDisturbance` variant gains a structured cause payload (FND-28: replace, do not duplicate):
 
 ```rust
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -161,13 +161,15 @@ pub enum SleepFailureCause {
 }
 ```
 
-The matching `WakeCondition` enum (`crates/worldwake-core/src/sleep_episode.rs:31`) gains the same structured payload on its `LocalDisturbance` variant.
+**`WakeCondition::LocalDisturbance` is left bare** in `crates/worldwake-core/src/sleep_episode.rs`. The asymmetry between `WakeReason` (outcome carrying a cause) and `WakeCondition` (trigger predicate without a cause) is intentional: `WakeCondition::LocalDisturbance` is currently a soft trigger configuration pushed onto sleep-episode condition lists by `crates/worldwake-systems/src/sleep_synthesis.rs` (4 push sites) and is matched by `sleep_wake_reason()` in `needs_actions.rs` to `None` — meaning natural-wake `LocalDisturbance` does not currently produce a `WakeReason` at all. The only path that constructs `WakeReason::LocalDisturbance` is the forced-abort path (`abort_sleep_episode` → `end_sleep_episode` with `forced_reason: Some(WakeReason::LocalDisturbance { cause })`), where the cause is known by the caller. Treating `WakeReason` and `WakeCondition` as semantically distinct avoids manufacturing a synthetic cause at the `sleep_synthesis.rs` push sites (the cause arises at abort time, not at sleep-start time). Aligns with FND-28: one structured cause surface, not two.
 
-`abort_sleep_episode` callers thread a `SleepFailureCause` value through. The two-line callers in `crates/worldwake-systems` and `crates/worldwake-sim` (existing `WakeReason::LocalDisturbance` use sites) are updated. No `WakeReason::LocalDisturbance` value remains constructible without an explicit cause.
+`abort_sleep_episode` is updated to thread a `SleepFailureCause` value through to `end_sleep_episode`. The single `WakeReason::LocalDisturbance` construction site at `crates/worldwake-systems/src/needs_actions.rs::abort_sleep_episode` is updated to accept and forward the cause. No `WakeReason::LocalDisturbance` value remains constructible without an explicit cause.
 
 ### D4. Two-path Sleep goal schema
 
-`crates/worldwake-ai/src/goal_schema.rs::DECL_SLEEP` (line 340-351) is replaced. The current `FeasibilityStrategy::AlwaysLikely` is removed. The Sleep goal declares two op-relevance branches and a two-stage candidate enumerator:
+**Prerequisite: `FeasibilityStrategy::CandidateBacked` variant.** The current `FeasibilityStrategy` enum in `crates/worldwake-ai/src/goal_schema.rs` (variants: `OwnedCommodityCheck`, `EvidencePlaceLocal`, `AlwaysLikely`, `CommodityPresenceCheck`, `ColocationOrDead`, `NoOpinion`, `SellCheck`, `CargoDestinationCheck`, `CorpseBurialCheck`, `PlaceMatch`) does not include a "feasibility = any lawful candidate exists" strategy. This spec adds `CandidateBacked` as a new variant with that semantic: the goal is feasible iff the dispatch loop produces at least one candidate from any registered emitter (no separate pre-flight feasibility check). The variant is consumed by the Sleep two-path schema below; no other goal currently needs it, but it is generally reusable for any goal whose feasibility is "anything to do" rather than belief-checked. Update points: enum variant addition in `goal_schema.rs`, `Default` or match-arm sites (verify per `New Enum Variant on Cross-Crate Enum` audit — `FeasibilityStrategy` is consumed by the planner dispatch path; enumerate exhaustive match sites within `worldwake-ai`).
+
+With the variant added, `DECL_SLEEP` (the `GoalSchema` static in `crates/worldwake-ai/src/goal_schema.rs`) is rewritten. The current `FeasibilityStrategy::AlwaysLikely` is removed. The Sleep goal declares two op-relevance branches and a two-stage candidate enumerator:
 
 ```rust
 const SLEEP_OPS: &[PlannerOpKind] = &[
@@ -175,24 +177,24 @@ const SLEEP_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::QueueForFacilityUse,   // existing; new for rest-site queueing
 ];
 
-pub static DECL_SLEEP: GoalDecl = GoalDecl {
-    kind: GoalKind::Sleep,
+pub static DECL_SLEEP: GoalSchema = GoalSchema {
+    // ... existing fields ...
     feasibility_strategy: FeasibilityStrategy::CandidateBacked,
     relevant_ops: SLEEP_OPS,
     // ...
 };
 ```
 
-The Sleep candidate emitter (new function `sleep_rest_opportunities` in `crates/worldwake-ai/src/candidate_generation.rs`) enumerates in two passes:
+The Sleep candidate emitter is restructured. The current single-pass emitter `emit_sleep_goal` in `crates/worldwake-ai/src/candidate_generation.rs` is replaced by a two-pass function `sleep_rest_opportunities` that enumerates:
 
 1. **`KnownRestSite` pass (belief-backed)**: For each rest-site Place in the actor's belief view (places carrying `RestCapacity`, observed directly by co-location or remembered via belief), emit a Sleep candidate with `target_place = <known rest site>` only if the belief view's `rest_site_occupant_count(<place>)` is less than capacity (FND-14A for co-located, belief-backed for remote per FND-14B).
 2. **`RoughSleep` pass (current-place fallback)**: Emit a single Sleep candidate with `target_place = <actor's current effective place>`. This candidate carries a flag indicating rough sleep. No `RestCapacity` is required; no `RestOccupancy` is consulted (rough sleep has no per-place exclusivity).
 
 If pass 1 produces zero candidates (no known rest sites believed available) and pass 2 fires, the actor will rough-sleep at their current place. Per FND-21, the planner does not silently reserve a rest slot — the actor must arrive at the rest site and pass D2's start-time precondition.
 
-`FeasibilityStrategy::CandidateBacked` is the existing strategy for goals whose feasibility is determined by whether any lawful candidate exists. Sleep is no longer `AlwaysLikely`; it is "lawful when at least one of {KnownRestSite, RoughSleep} produces a candidate."
+`FeasibilityStrategy::CandidateBacked` (added by this spec) determines feasibility by whether any lawful candidate is produced. Sleep is no longer `AlwaysLikely`; it is "lawful when at least one of {KnownRestSite, RoughSleep} produces a candidate."
 
-`RoughSleep` recovery is gated by a per-agent profile field `rough_sleep_recovery_floor: Permille` (added to `MetabolismProfile` in `crates/worldwake-core/src/needs.rs:140`). The sleep action handler applies this floor as a hard ceiling on rough-sleep `SleepRecoveryModifier` regardless of the place's `SleepQualityProfile`. Default value `Permille::new(300)` (≈ 0.3x), scenario-overridable.
+`RoughSleep` recovery is gated by a per-agent profile field `rough_sleep_recovery_floor: Permille` (added to `MetabolismProfile` in `crates/worldwake-core/src/needs.rs`). The sleep action handler applies this floor as a hard ceiling on rough-sleep `SleepRecoveryModifier` regardless of the place's `SleepQualityProfile`. Default value `Permille::new(300)` (≈ 0.3x), scenario-overridable.
 
 ### D5. Belief-view accessor `rest_site_occupant_count` and `rest_site_capacity`
 
@@ -207,13 +209,19 @@ The Sleep candidate emitter reads rest-site occupancy through the existing belie
 
 The `rest_site_occupant_count` and `rest_site_capacity` accessors return `None` for places with no `RestCapacity` registered — those are not known rest sites; the actor can only rough-sleep there.
 
+**Belief-view surface (deliverable bullets).** The three new accessors are integrated into the existing belief-view trait pipeline (precedent: `FacilityBeliefView::self_care_occupant` from S173, defined at `crates/worldwake-sim/src/belief_view.rs`):
+
+- Add `rest_site_capacity(place_id) -> Option<NonZeroU32>`, `rest_site_occupant_count(place_id) -> Option<u32>`, and `is_co_located_with_rest_site(place_id) -> bool` as methods on the `FacilityBeliefView` trait alongside the existing `self_care_occupant`.
+- Provide backing implementations on `RuntimeBeliefView` (the aggregator trait at `crates/worldwake-sim/src/belief_view.rs` that wires authoritative-state reads under the FND-14A/14B source-class discipline). The implementations follow `self_care_occupant`'s pattern: read authoritative `RestCapacity` / `RestOccupancy` when co-located, return belief-backed/topology values when remote, return `None` when no lawful source exists.
+- Update the blanket `impl<T> GoalBeliefView for T where T: ... + FacilityBeliefView + ...` (at the bottom of `belief_view.rs`) to forward the new methods. No new trait is introduced; the additions are method-level extensions of `FacilityBeliefView` flowing through the existing aggregation pattern.
+
 ### D6. `EventTag::SleepEpisodeEnded` payload extension
 
 The existing `SleepEpisodeEndedPayload` (`crates/worldwake-core/src/decision_event_payload.rs:53`) carries the wake reason. The structured cause from D3 flows through the existing field — no new event-tag variant. This is FND-28 alignment: enrich the existing record, do not parallel it.
 
 ### D7. `ActionTraceDetail::SleepInterrupted` variant
 
-A new variant is added to `ActionTraceDetail` (`crates/worldwake-sim/src/action_trace.rs:32-63`):
+A new variant is added to `ActionTraceDetail` in `crates/worldwake-sim/src/action_trace.rs`:
 
 ```rust
 SleepInterrupted {
@@ -268,7 +276,7 @@ Add to `MetabolismProfile` in `crates/worldwake-core/src/needs.rs`:
 pub rough_sleep_recovery_floor: Permille,
 ```
 
-Default: `Permille::new(300)` (≈ 0.3x). Scenario-overridable via the existing `MetabolismProfileDef`. The sleep handler caps rough-sleep recovery rate (per-tick `Permille` added to `fatigue` reduction) at this floor; the place's `SleepQualityProfile.recovery_modifier` is ignored when the candidate was `RoughSleep`. Known-rest-site sleep continues to use the existing `SleepQualityProfile` modifier path unchanged.
+Default: `Permille::new(300)` (≈ 0.3x). Scenario-overridable via the existing `metabolism_profile: Option<MetabolismProfile>` field on `AgentDef` in `crates/worldwake-cli/src/scenario/types.rs` (the profile is set directly on `AgentDef`; no `MetabolismProfileDef` wrapper exists). The sleep handler caps rough-sleep recovery rate (per-tick `Permille` added to `fatigue` reduction) at this floor; the place's `SleepQualityProfile.recovery_modifier` is ignored when the candidate was `RoughSleep`. Known-rest-site sleep continues to use the existing `SleepQualityProfile` modifier path unchanged.
 
 ### D10. Scenario contract: `RestCapacity` on `PlaceDef`
 
@@ -425,7 +433,7 @@ Social/relational facts about the rest site (who owns the shelter, who has acces
 
 ## Agent Profile Scenario Contract
 
-`MetabolismProfile.rough_sleep_recovery_floor` is a new field on an existing universal profile (`MetabolismProfile` is registered on `EntityKind::Agent` per `archive/specs/S128`). The profile is universal (every agent has it) and has a `Default` impl. The new field gets a default value (`Permille::new(300)`) and is scenario-overridable via the existing `MetabolismProfileDef` in `crates/worldwake-cli/src/scenario/types.rs`.
+`MetabolismProfile.rough_sleep_recovery_floor` is a new field on an existing universal profile (`MetabolismProfile` is registered on `EntityKind::Agent` per `archive/specs/S128`). The profile is universal (every agent has it) and has a `Default` impl. The new field gets a default value (`Permille::new(300)`) and is scenario-overridable via the existing `metabolism_profile: Option<MetabolismProfile>` field on `AgentDef` (`crates/worldwake-cli/src/scenario/types.rs`).
 
 No new component is added to `EntityKind::Agent`; `RestCapacity` and `RestOccupancy` are on `EntityKind::Place`. The agent profile change is field-only.
 
