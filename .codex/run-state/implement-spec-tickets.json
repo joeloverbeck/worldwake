@@ -5,14 +5,13 @@
   "starting_branch": "implement-S173-self-care-interruption-occupancy",
   "current_branch": "implement-S174-shelter-sleep-surfaces-safe-rest",
   "base_head": "107d825ff1e649158d9067b0915da67cc62ee0bf",
-  "last_ticket": "archive/tickets/S174SHESLESUR-012.md",
+  "last_ticket": "archive/tickets/S174SHESLESUR-010.md",
   "last_result": "completed_archived",
-  "last_work_commit": "ec905643c76d36f401acb623cb8ae69202fdb210",
+  "last_work_commit": "26c42ab69d51bd07e0c57fd8d79e8c3cc4636abe",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S174SHESLESUR-010.md",
+  "next_target": "tickets/S174SHESLESUR-011.md",
   "queue": [
-    "tickets/S174SHESLESUR-010.md",
     "tickets/S174SHESLESUR-011.md"
   ],
   "implement_ticket_audit": "done",
