@@ -10,8 +10,9 @@
   "last_work_commit": "421105cfe23681a44bbf9ba12f91055cd00e02bb",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S174SHESLESUR-010.md",
+  "next_target": "tickets/S174SHESLESUR-012.md",
   "queue": [
+    "tickets/S174SHESLESUR-012.md",
     "tickets/S174SHESLESUR-010.md",
     "tickets/S174SHESLESUR-011.md"
   ],

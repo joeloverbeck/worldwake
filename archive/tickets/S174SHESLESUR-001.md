@@ -117,7 +117,7 @@ pub enum WakeReason {
 
 ### 4. Update the single `WakeReason::LocalDisturbance` construction site
 
-`crates/worldwake-systems/src/needs_actions.rs` now constructs `WakeReason::LocalDisturbance { cause: SleepFailureCause::Generic }` in `abort_sleep_episode`. The now-archived `archive/tickets/S174SHESLESUR-004.md` (sleep handler `RestOccupancy` lifecycle) refined this per the abort context; ticket 009 owns the HostileProximity scenario proof.
+`crates/worldwake-systems/src/needs_actions.rs` now constructs `WakeReason::LocalDisturbance { cause: SleepFailureCause::Generic }` in `abort_sleep_episode`. The now-archived `archive/tickets/S174SHESLESUR-004.md` (sleep handler `RestOccupancy` lifecycle) refined this per the abort context; the now-archived `archive/tickets/S174SHESLESUR-009.md` owns the HostileProximity scenario proof.
 
 ### 5. ActionTraceDetail::SleepInterrupted variant at `crates/worldwake-sim/src/action_trace.rs`
 
