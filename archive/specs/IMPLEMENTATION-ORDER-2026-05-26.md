@@ -1,6 +1,6 @@
 # Implementation Order
 
-**Status**: HELD — no active implementation directive
+**Status**: ✅ COMPLETED
 
 The post-consolidation AI-architecture wave (S165–S168) completed and was archived to
 `archive/specs/IMPLEMENTATION-ORDER-2026-05-25.md`. That order intentionally excluded
@@ -73,7 +73,10 @@ against `S60`–`S66` is a separate decision for the activating directive.
 
 ## Outcome
 
-- Not yet activated.
-- This file is an authored-but-held order; archive it under
-  `archive/specs/IMPLEMENTATION-ORDER-<date>.md` only when the wave completes or is
-  superseded.
+- **Completion date**: 2026-05-26.
+- **Cluster 1 adjunct wave finished.** Both adjunct specs completed and archived:
+  - S172 — Wash Discovery and Budget Closure → `archive/specs/S172-wash-discovery-budget-closure.md`.
+  - S173 — Self-Care Interruption Contracts and Facility Occupancy → `archive/specs/S173-self-care-interruption-occupancy.md`.
+- **Gameplay backlog (S60–S66) disposition unchanged.** Those specs remain authored-but-held in `specs/` per the original "authored, held until core AI architecture is stabilized" framing. They are not part of any active implementation order; lifting that hold is a separate directive that will produce its own ordering file when warranted.
+- **Deviation from original plan**: none. The file's own activation clause anticipated archival "when the wave completes or is superseded" — the Cluster 1 wave is complete, so archival now matches the documented exit condition.
+- **Verification**: `specs/IMPLEMENTATION-ORDER.md` listed S172 and S173 as the only active wave items; both are archived with COMPLETED status. No remaining active directives reference this file. `CLAUDE.md` already cites `archive/specs/IMPLEMENTATION-ORDER-final-2026-05-21.md` as the final implementation-order authority, so no documentation update is required.
