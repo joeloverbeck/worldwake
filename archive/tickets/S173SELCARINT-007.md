@@ -1,6 +1,6 @@
 # S173SELCARINT-007: Scenarios A + B + C — per-family abort traces, contested basin, interrupted release
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None (golden scenarios only)
@@ -32,7 +32,7 @@ The behavioral contract from tickets 001-006 needs end-to-end verification throu
 2. The scenarios use only existing world-modeling primitives (Facility + WashBasin tag, Place + Latrine tag, two-agent setup, hostile predator from existing combat infrastructure for the interruption source in Scenario C). No new scenario-authoring primitives are introduced.
 3. Per FND-31, each scenario declares both a positive invariant (the expected behavior) and a negative case (the forbidden alternative — silent rescue, planner-intent lock, parallel use of the same basin). The negative cases are surfaced in scenario assertions.
 
-## Verification Layers
+## Verified Layers
 
 1. Scenario A: per-action-family abort trace fires correctly.
    - Action-trace `detail` → typed `ActionTraceDetail::SelfCareInterrupted` payload with correct `kind` and `basin` per family.
@@ -46,48 +46,47 @@ The behavioral contract from tickets 001-006 needs end-to-end verification throu
 3. Scenario C: interrupted wash releases basin; recovery happens through normal channels.
    - Action trace → Agent A's abort detail populated; abort tick equals interruption tick.
    - Authoritative world state → occupancy removed by abort.
-   - Event log → `EventTag::QueueGrantPromoted` fires within the grant-expiry window (if Agent B is queued); OR Agent A's next-tick candidate emission produces a fresh wash candidate (`emit_wash_goal_produces_one_candidate_per_basin_at_place` semantics).
-   - Decision trace → Agent A's replan exposes the abort cause + the new candidate.
+   - Event log → `EventTag::QueueGrantPromoted` fires within the grant-expiry window (if Agent B is queued); OR Agent A's later candidate emission produces a fresh wash candidate (`emit_wash_goal_produces_one_candidate_per_basin_at_place` semantics).
+   - Decision trace → Agent A's replan exposes the abort cause plus the refreshed candidate.
 
-## What to Change
+## Landed Changes
 
-### 1. Author Scenario A golden
+### 1. Authored Scenario A golden
 
-Create `crates/worldwake-ai/tests/scenarios/survival_self_care_interruption_traces.rs` (or per the canonical naming convention in `docs/generated/golden-scenario-index.md` — verify at implementation time):
+Added `crates/worldwake-ai/tests/scenarios/survival_self_care_interruption.rs::golden_self_care_abort_traces_cover_every_family`:
 
-- One agent set up with all six self-care interruption families exercised through the trace surface.
-- Scenario controller forces the agent to start each action family in sequence, then interrupts each before commit.
+- Human-controlled agents start each of the six self-care action families and cancel before commit.
 - Assertions cover per-family `ActionTraceDetail::SelfCareInterrupted` payloads and per-family `EventTag::ActionAborted` event-log entries.
+- Eat and Drink retain their item quantities after abort, Sleep emits `SleepEpisodeEnded`, and Wash/Toilet remove `SelfCareOccupancy`.
 
-### 2. Author Scenario B golden
+### 2. Authored Scenario B golden
 
-Create `crates/worldwake-ai/tests/scenarios/survival_self_care_contested_basin.rs`:
+Added `crates/worldwake-ai/tests/scenarios/survival_self_care_interruption.rs::golden_self_care_contested_basin_promotes_one_occupant`:
 
-- Two dirty agents co-located at the same `WashBasin`-tagged `Facility`.
-- Both attempt wash same tick.
-- Assertions cover the action-lifecycle ordering (exactly one commits) and the contention-substrate event chain (`EventTag::ContentionResolved`).
+- Two dirty agents wait in the same `WashBasin`-tagged facility queue.
+- The contention system grants the head claimant through `EventTag::ContentionResolved` and `EventTag::QueueGrantPromoted`.
+- The granted claimant starts a real `wash` action and becomes the sole `SelfCareOccupancy` occupant; the queued sibling does not commit wash while the basin is occupied.
 
-### 3. Author Scenario C golden
+### 3. Authored Scenario C golden
 
-Create `crates/worldwake-ai/tests/scenarios/survival_self_care_interrupted_release.rs`:
+Added `crates/worldwake-ai/tests/scenarios/survival_self_care_interruption.rs::golden_interrupted_wash_releases_basin_and_promotes_waiter`:
 
-- Agent A wash setup; interruption source (hostile predator, or a higher-priority commitment emerging) fires before commit.
-- Optional Agent B queued or co-present.
-- Assertions cover the abort trace + occupancy-release + recovery path (queue grant or next-tick re-emission).
+- Agent A starts wash and writes `SelfCareOccupancy`.
+- Agent B waits in the same basin queue.
+- Cancelling Agent A's wash emits the typed abort detail, removes `SelfCareOccupancy`, and lets the ordinary post-action contention-system pass promote Agent B in the same tick.
 
-### 4. Update the golden inventory
+### 4. Updated the golden inventory
 
-Regenerate `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-scenario-index.md`, and `docs/generated/golden-scenario-details/` via `python3 scripts/golden_inventory.py --write --check-docs`.
+Regenerated `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-scenario-index.md`, `docs/generated/golden-coverage-matrix.md`, and `docs/generated/golden-scenario-details/survival-self-care-interruption.md` via `python3 scripts/golden_inventory.py --write --check-docs`.
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-ai/tests/scenarios/survival_self_care_interruption_traces.rs` (new — Scenario A)
-- `crates/worldwake-ai/tests/scenarios/survival_self_care_contested_basin.rs` (new — Scenario B)
-- `crates/worldwake-ai/tests/scenarios/survival_self_care_interrupted_release.rs` (new — Scenario C)
+- `crates/worldwake-ai/tests/scenarios/survival_self_care_interruption.rs` (new)
+- `crates/worldwake-ai/tests/scenarios/mod.rs` (registered the new module)
 - `docs/generated/golden-e2e-inventory.md` (regenerated)
 - `docs/generated/golden-scenario-index.md` (regenerated)
-- `docs/generated/golden-scenario-details/` (regenerated subdirectory)
-- Likely: a parent `tests/scenarios/mod.rs` or `tests/lib.rs` that registers new modules — verify at implementation time per the existing test-binary layout.
+- `docs/generated/golden-coverage-matrix.md` (regenerated)
+- `docs/generated/golden-scenario-details/survival-self-care-interruption.md` (new generated detail page)
 
 ## Out of Scope
 
@@ -95,33 +94,61 @@ Regenerate `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-scen
 - Repeated-interruption deprivation collapse (Scenario E) — owned by ticket 009.
 - New abort handler or emitter logic — those land in tickets 004, 005, 006.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests That Passed
 
-1. New golden: `survival_self_care_interruption_traces` — all six self-care action families abort with correct typed payload.
-2. New golden: `survival_self_care_contested_basin` — exactly one wash commits per tick; the other agent's path is lawful (queued OR replanned).
-3. New golden: `survival_self_care_interrupted_release` — abort releases occupancy; recovery happens through normal channels (grant promotion OR re-emission).
-4. Existing survival-lane goldens pass: `cargo test -p worldwake-ai --test golden_ai survival`.
-5. Golden inventory regenerates cleanly: `python3 scripts/golden_inventory.py --write --check-docs` exits 0.
+1. Passed `golden_self_care_abort_traces_cover_every_family` — all six self-care action families abort with correct typed payload.
+2. Passed `golden_self_care_contested_basin_promotes_one_occupant` — self-care facility contention grants one claimant and only the granted claimant becomes the wash occupant.
+3. Passed `golden_interrupted_wash_releases_basin_and_promotes_waiter` — abort releases occupancy and recovery happens through ordinary grant promotion.
+4. Passed existing non-ignored survival-lane selector: `cargo test -p worldwake-ai --test golden_ai survival`.
+5. Passed golden inventory regeneration: `python3 scripts/golden_inventory.py --write --check-docs`.
 
-### Invariants
+### Verified Invariants
 
 1. The typed trace surface (`ActionTraceDetail::SelfCareInterrupted`) is populated for every self-care abort, distinguishing the six families by `kind`.
 2. The authoritative event log (`EventTag::ActionAborted`) is the single causal surface for the abort fact; no parallel `EventTag::SelfCareInterrupted` variant exists in the workspace.
 3. Contention resolution through `SelfCareOccupancy` + `PromotableContentionKind` substrate is observable through `EventTag::ContentionResolved` / `EventTag::QueueGrantPromoted`.
 4. No silent rescue: an interrupted wash that replans goes through normal candidate emission (no "resume from saved state" or "secret reservation" path).
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
-1. Three new golden scenario files in `crates/worldwake-ai/tests/scenarios/` (see Files to Touch).
+1. One new golden scenario file in `crates/worldwake-ai/tests/scenarios/` with three S173 scenario blocks and tests.
 2. `docs/generated/*` regenerated.
 
-### Commands
+### Commands Run
 
-1. `cargo test -p worldwake-ai --test golden_ai survival_self_care`
-2. `cargo test -p worldwake-ai --test golden_ai survival` (full survival lane)
-3. `python3 scripts/golden_inventory.py --write --check-docs`
-4. `./scripts/verify.sh` before commit.
+1. Passed `cargo test -p worldwake-ai --test golden_ai self_care_interruption -- --list`.
+2. Passed `cargo test -p worldwake-ai --test golden_ai survival_self_care`.
+3. Passed `cargo test -p worldwake-ai --test golden_ai survival`.
+4. Passed `cargo clippy -p worldwake-ai --all-targets -- -D warnings`.
+5. Passed `python3 scripts/golden_inventory.py --write --check-docs`.
+6. Waived per-ticket `./scripts/verify.sh` because this run is inside `$implement-spec-tickets`; the harness final branch phase still owns the full pre-PR gate before push.
+
+## Outcome
+
+Completed on 2026-05-26.
+
+- Added three S173 golden scenario blocks in `survival_self_care_interruption.rs`, registered under `golden_ai`.
+- Proved Scenario A through all six typed self-care abort trace details plus `ActionAborted` event emission and family-specific aftermath.
+- Proved Scenario B through a self-care wash-basin facility queue promotion, a `ContentionResolved` / `QueueGrantPromoted` payload, and one granted `SelfCareOccupancy` occupant.
+- Proved Scenario C through wash abort cleanup, `SelfCareOccupancy` removal in the abort event delta, and ordinary queue promotion for the waiting actor.
+- Regenerated golden inventory/docs. The generator also refreshed an already-present `survival_drive_escalation.rs` test count in `golden-e2e-inventory.md`; this was generated-doc freshness fallout, not new S173 behavior.
+
+## Deviations
+
+- The three drafted scenario files landed as one cohesive `survival_self_care_interruption.rs` module because the live golden harness already groups scenario families by module under the single `golden_ai` integration binary.
+- Scenario B uses a pre-seeded self-care facility queue to isolate contention promotion and occupancy, rather than relying on autonomous same-tick race timing.
+- Scenario C observes same-tick post-abort queue promotion. The live `step_tick` order runs systems after input cancellation, so the released basin can promote the waiting actor in the same tick instead of waiting for the next tick.
+- No replay companion tests were added because these are deterministic direct scheduler/action fixtures, not authored long-run autonomous scenarios. The tests assert the action trace, event log, component state, and queue grant state at the causal boundary they create.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --test golden_ai self_care_interruption -- --list`.
+- Passed `cargo test -p worldwake-ai --test golden_ai survival_self_care`.
+- Passed `cargo test -p worldwake-ai --test golden_ai survival`.
+- Passed `cargo clippy -p worldwake-ai --all-targets -- -D warnings`.
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`.
+- Waived `./scripts/verify.sh` for this ticket because `$implement-spec-tickets` owns the final pre-push verification gate for the whole S173 family.
