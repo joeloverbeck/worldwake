@@ -7,7 +7,7 @@ Scenarios: 9
 
 ### Scenario 362: Place Dirtiness Accumulates From Wilderness Relief
 
-- Source: `place_dirtiness.rs:167`
+- Source: `place_dirtiness.rs:168`
 - Primary tests: `place_dirtiness_accumulates_from_repeated_wilderness_relief`
 - Replay tests: None
 - All tests: `place_dirtiness_accumulates_from_repeated_wilderness_relief`
@@ -20,7 +20,7 @@ Scenarios: 9
 
 ### Scenario 363: Sleep Ranking Prefers Clean Place
 
-- Source: `place_dirtiness.rs:224`
+- Source: `place_dirtiness.rs:225`
 - Primary tests: `sleep_ranking_prefers_clean_place_over_dirty_place`
 - Replay tests: None
 - All tests: `sleep_ranking_prefers_clean_place_over_dirty_place`
@@ -33,7 +33,7 @@ Scenarios: 9
 
 ### Scenario 364: Wash Partial Success Uses Basin State
 
-- Source: `place_dirtiness.rs:289`
+- Source: `place_dirtiness.rs:314`
 - Primary tests: `wash_partial_success_proportional_dirtiness_reduction`
 - Replay tests: None
 - All tests: `wash_partial_success_proportional_dirtiness_reduction`
@@ -46,7 +46,7 @@ Scenarios: 9
 
 ### Scenario 365: Latrine Overflow Creates Waste And Place Dirtiness
 
-- Source: `place_dirtiness.rs:342`
+- Source: `place_dirtiness.rs:367`
 - Primary tests: `latrine_overflow_creates_waste_at_place_and_increments_place_dirtiness`
 - Replay tests: None
 - All tests: `latrine_overflow_creates_waste_at_place_and_increments_place_dirtiness`
@@ -59,7 +59,7 @@ Scenarios: 9
 
 ### Scenario 366: Basin Natural Refill Draws From Co-Located Water
 
-- Source: `place_dirtiness.rs:409`
+- Source: `place_dirtiness.rs:434`
 - Primary tests: `basin_natural_refill_from_colocated_water_source`
 - Replay tests: None
 - All tests: `basin_natural_refill_from_colocated_water_source`
@@ -72,7 +72,7 @@ Scenarios: 9
 
 ### Scenario 367: AI Selects Non-Empty Basin After Empty Basin Is Unusable
 
-- Source: `place_dirtiness.rs:465`
+- Source: `place_dirtiness.rs:490`
 - Primary tests: `wash_ai_selects_non_empty_basin_when_other_basin_is_empty`
 - Replay tests: None
 - All tests: `wash_ai_selects_non_empty_basin_when_other_basin_is_empty`
@@ -85,7 +85,7 @@ Scenarios: 9
 
 ### Scenario 367A: Wash Re-emerges After First Cycle Relief
 
-- Source: `place_dirtiness.rs:555`
+- Source: `place_dirtiness.rs:580`
 - Primary tests: `wash_re_emerges_after_first_cycle_drops_dirtiness_below_critical`
 - Replay tests: None
 - All tests: `wash_re_emerges_after_first_cycle_drops_dirtiness_below_critical`
@@ -98,7 +98,7 @@ Scenarios: 9
 
 ### Scenario 368: Place Dirtiness Saturates With Zero Decay
 
-- Source: `place_dirtiness.rs:654`
+- Source: `place_dirtiness.rs:679`
 - Primary tests: `place_dirtiness_saturates_with_zero_decay`
 - Replay tests: None
 - All tests: `place_dirtiness_saturates_with_zero_decay`
@@ -111,7 +111,7 @@ Scenarios: 9
 
 ### Scenario 369: Wash Basin Plateaus At Zero With Zero Refill
 
-- Source: `place_dirtiness.rs:699`
+- Source: `place_dirtiness.rs:724`
 - Primary tests: `wash_basin_plateaus_at_zero_with_zero_refill`
 - Replay tests: None
 - All tests: `wash_basin_plateaus_at_zero_with_zero_refill`

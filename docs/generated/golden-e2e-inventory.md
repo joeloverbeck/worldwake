@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden scenario source files: 60
-- Files contributing `golden_*` tests: 60
-- Total `golden_*` tests: 302
+- Golden scenario source files: 63
+- Files contributing `golden_*` tests: 63
+- Total `golden_*` tests: 308
 
 ## Per-Scenario-File Inventory
 
@@ -66,8 +66,11 @@ Do not hand-edit it.
 | `survival_patrol.rs` | 2 |
 | `survival_preferences.rs` | 3 |
 | `survival_production.rs` | 2 |
+| `survival_rest_interrupted_by_danger.rs` | 2 |
+| `survival_safe_rest.rs` | 2 |
 | `survival_scattered.rs` | 8 |
 | `survival_self_care_interruption.rs` | 5 |
+| `survival_sleep_contention.rs` | 2 |
 | `survival_tell.rs` | 2 |
 | `survival_theft.rs` | 2 |
 | `survival_trade.rs` | 2 |
@@ -499,6 +502,16 @@ Do not hand-edit it.
 - `survival_production_lands_row_eight`
 - `survival_production_replays_deterministically`
 
+### `survival_rest_interrupted_by_danger.rs`
+
+- `scenario_c_hostile_proximity_wake`
+- `scenario_c_hostile_proximity_wake_replays_deterministically`
+
+### `survival_safe_rest.rs`
+
+- `scenario_a_rest_site_contention`
+- `scenario_a_rest_site_contention_replays_deterministically`
+
 ### `survival_scattered.rs`
 
 - `all_agents_survive_1440_ticks`
@@ -517,6 +530,11 @@ Do not hand-edit it.
 - `golden_interrupted_wash_releases_basin_and_promotes_waiter`
 - `golden_repeated_self_care_interruption_can_end_in_deprivation_death`
 - `golden_repeated_self_care_interruption_collapse_replays_deterministically`
+
+### `survival_sleep_contention.rs`
+
+- `scenario_b_multi_slot_contention`
+- `scenario_b_multi_slot_contention_replays_deterministically`
 
 ### `survival_tell.rs`
 

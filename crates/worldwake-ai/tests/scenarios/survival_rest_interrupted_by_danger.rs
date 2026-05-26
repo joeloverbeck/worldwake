@@ -342,6 +342,10 @@ fn observe_interruption() -> RestInterruptedObservation {
     );
 }
 
+// Scenario 484: S174 Hostile-Proximity Rest Interruption
+// Setup: A fatigued agent sleeps at a one-slot roofed shelter while a hostile agent travels in from an adjacent outpost.
+// Proves: hostile co-location interrupts active Sleep with HostileProximity cause, preserves partial recovery, releases RestOccupancy, records failed-rest forensics, and replans away from local Sleep.
+// Chain: external hostile travel -> local hostile co-location -> authoritative sleep interruption -> SleepInterrupted trace -> SleepEpisodeEnded wake cause -> SurvivalForensicExtractor -> post-interrupt decision trace.
 #[test]
 fn scenario_c_hostile_proximity_wake() {
     let observation = observe_interruption();

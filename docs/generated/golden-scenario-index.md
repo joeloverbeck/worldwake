@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 232
-- Contributing golden scenario source files: 55
-- Associated tests: 283
+- Scenario blocks: 235
+- Contributing golden scenario source files: 58
+- Associated tests: 289
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -331,7 +331,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 447: S152 Seeded Assignment Is Deterministic
 
-- Source: `cognitive_archetypes.rs:127`
+- Source: `cognitive_archetypes.rs:129`
 - Systems: Scenario, AI
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -343,7 +343,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 448: S152 Cautious Backoff Exceeds Bold Backoff
 
-- Source: `cognitive_archetypes.rs:178`
+- Source: `cognitive_archetypes.rs:180`
 - Systems: Scenario, AI
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -355,7 +355,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 449: S152 Sociable Reasks Sooner Than Skeptical
 
-- Source: `cognitive_archetypes.rs:212`
+- Source: `cognitive_archetypes.rs:214`
 - Systems: Scenario, AI
 - GoalKinds: AskWitness
 - ActionDomains: Social
@@ -367,7 +367,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 450: S152 Greedy Boosts Economic Portfolio Weight
 
-- Source: `cognitive_archetypes.rs:243`
+- Source: `cognitive_archetypes.rs:245`
 - Systems: Scenario, AI
 - GoalKinds: ProduceCommodity, Trade
 - ActionDomains: Portfolio
@@ -379,7 +379,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 451: S152 PersonalityAssigned Event Per Agent
 
-- Source: `cognitive_archetypes.rs:285`
+- Source: `cognitive_archetypes.rs:287`
 - Systems: Scenario, EventLog
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -391,7 +391,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 452: S152 Explicit Override Pins Archetype
 
-- Source: `cognitive_archetypes.rs:327`
+- Source: `cognitive_archetypes.rs:329`
 - Systems: Scenario, AI
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -403,7 +403,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 453: S152 Save Load Preserves Archetype State
 
-- Source: `cognitive_archetypes.rs:367`
+- Source: `cognitive_archetypes.rs:369`
 - Systems: Scenario, SaveLoad
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -1655,7 +1655,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 362: Place Dirtiness Accumulates From Wilderness Relief
 
-- Source: `place_dirtiness.rs:167`
+- Source: `place_dirtiness.rs:168`
 
 **Setup**: Three human-controlled agents at an outdoor farm each relieve twice.
 
@@ -1665,7 +1665,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 363: Sleep Ranking Prefers Clean Place
 
-- Source: `place_dirtiness.rs:224`
+- Source: `place_dirtiness.rs:225`
 
 **Setup**: A fatigued AI agent knows an equally comfortable dirty current camp and clean reachable farm.
 
@@ -1675,7 +1675,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 364: Wash Partial Success Uses Basin State
 
-- Source: `place_dirtiness.rs:289`
+- Source: `place_dirtiness.rs:314`
 
 **Setup**: A dirty human-controlled agent washes at a one-unit basin requiring two units for full success.
 
@@ -1685,7 +1685,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 365: Latrine Overflow Creates Waste And Place Dirtiness
 
-- Source: `place_dirtiness.rs:342`
+- Source: `place_dirtiness.rs:367`
 
 **Setup**: A human-controlled agent uses an already-critical latrine.
 
@@ -1695,7 +1695,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 366: Basin Natural Refill Draws From Co-Located Water
 
-- Source: `place_dirtiness.rs:409`
+- Source: `place_dirtiness.rs:434`
 
 **Setup**: An empty basin shares a place with a finite water ResourceSource and no agent actions.
 
@@ -1705,7 +1705,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 367: AI Selects Non-Empty Basin After Empty Basin Is Unusable
 
-- Source: `place_dirtiness.rs:465`
+- Source: `place_dirtiness.rs:490`
 
 **Setup**: A dirty AI agent knows two local basins; one is empty and the other has water.
 
@@ -1715,7 +1715,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 367A: Wash Re-emerges After First Cycle Relief
 
-- Source: `place_dirtiness.rs:555`
+- Source: `place_dirtiness.rs:580`
 
 **Setup**: A dirty AI agent washes at a stocked local basin, then its dirtiness
 
@@ -1725,7 +1725,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 368: Place Dirtiness Saturates With Zero Decay
 
-- Source: `place_dirtiness.rs:654`
+- Source: `place_dirtiness.rs:679`
 
 **Setup**: Repeated wilderness relief occurs at a zero-decay outdoor place.
 
@@ -1735,7 +1735,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 369: Wash Basin Plateaus At Zero With Zero Refill
 
-- Source: `place_dirtiness.rs:699`
+- Source: `place_dirtiness.rs:724`
 
 **Setup**: One partial wash drains a zero-refill basin, then maintenance advances.
 
@@ -2116,7 +2116,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 356: Sleep Episode Lifecycle
 
-- Source: `sleep_episode.rs:165`
+- Source: `sleep_episode.rs:202`
 
 **Setup**: One fatigued AI agent at a default-quality place with no competing needs.
 
@@ -2126,7 +2126,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 357: Projected Hunger Breach Wakes Sleep
 
-- Source: `sleep_episode.rs:224`
+- Source: `sleep_episode.rs:261`
 
 **Setup**: A scripted human-controlled sleep start preserves a preloaded S126 NeedSafeUntilTick(Hunger) assumption.
 
@@ -2136,7 +2136,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 358: Sleep Place Quality Modulates Recovery
 
-- Source: `sleep_episode.rs:253`
+- Source: `sleep_episode.rs:290`
 
 **Setup**: Two human-controlled sleepers start identical episodes at places with 900 and 700 recovery modifiers.
 
@@ -2146,7 +2146,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 359: Interrupted Sleep Records Partial Recovery
 
-- Source: `sleep_episode.rs:279`
+- Source: `sleep_episode.rs:318`
 
 **Setup**: A projected hunger breach cuts off sleep before full recovery.
 
@@ -2156,7 +2156,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 360: Sleep Site Preference Ranks Higher Quality Place
 
-- Source: `sleep_episode.rs:304`
+- Source: `sleep_episode.rs:343`
 
 **Setup**: A fatigued AI agent knows both its current 900-quality camp and a reachable 1000-quality orchard.
 
@@ -2166,7 +2166,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 361: Sleep Episode Events Carry Decision-History Payloads
 
-- Source: `sleep_episode.rs:356`
+- Source: `sleep_episode.rs:398`
 
 **Setup**: A minimal scripted sleep episode runs to completion through the full action registry.
 
@@ -2622,6 +2622,26 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: local mill + possessed Firewood belief -> selected ProduceCommodity
 
+### Scenario 484: S174 Hostile-Proximity Rest Interruption
+
+- Source: `survival_rest_interrupted_by_danger.rs:345`
+
+**Setup**: A fatigued agent sleeps at a one-slot roofed shelter while a hostile agent travels in from an adjacent outpost.
+
+**Proves**: hostile co-location interrupts active Sleep with HostileProximity cause, preserves partial recovery, releases RestOccupancy, records failed-rest forensics, and replans away from local Sleep.
+
+**Cross-system chain**: external hostile travel -> local hostile co-location -> authoritative sleep interruption -> SleepInterrupted trace -> SleepEpisodeEnded wake cause -> SurvivalForensicExtractor -> post-interrupt decision trace.
+
+### Scenario 483: S174 Safe Rest Contention
+
+- Source: `survival_safe_rest.rs:379`
+
+**Setup**: Two critically tired agents are co-located at a one-slot roofed shelter.
+
+**Proves**: both agents see the KnownRestSite candidate, one occupant writes RestOccupancy, the loser records a precondition-rejected failed-rest opportunity, then rough-sleeps under the recovery floor.
+
+**Cross-system chain**: rest capacity belief -> Sleep candidate -> RestOccupancy start gate -> StartFailed trace -> rough Sleep fallback -> SleepEpisodeEnded recovery delta -> SurvivalForensicExtractor.
+
 ### Scenario 153: Scattered Survival Keeps All Agents Alive For 1440 Ticks
 
 - Source: `survival_scattered.rs:366`
@@ -2748,11 +2768,11 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Setup**: Human-controlled agents start each self-care action family and cancel before commit.
 
-**Proves**: Every self-care abort keeps the authoritative ActionAborted event and adds the typed ActionTraceDetail::SelfCareInterrupted discriminator.
+**Proves**: Every self-care abort keeps the authoritative ActionAborted event and adds the typed action-trace discriminator; sleep uses the structured SleepInterrupted detail.
 
 ### Scenario 479: S173 Contested Wash Basin Promotes One Occupant
 
-- Source: `survival_self_care_interruption.rs:630`
+- Source: `survival_self_care_interruption.rs:671`
 
 **Setup**: Two dirty agents wait in the same wash-basin facility queue; the queue system grants the head claimant, and that claimant starts a real wash action.
 
@@ -2760,7 +2780,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 480: S173 Interrupted Wash Releases Basin And Promotes Waiter
 
-- Source: `survival_self_care_interruption.rs:719`
+- Source: `survival_self_care_interruption.rs:760`
 
 **Setup**: Agent A starts wash and writes occupancy; Agent B waits in the same basin queue. Cancelling A's wash releases occupancy, then the same tick's post-action system pass promotes B.
 
@@ -2768,11 +2788,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 481: S173 Repeated Self-Care Interruption Can End In Deprivation Death
 
-- Source: `survival_self_care_interruption.rs:799`
+- Source: `survival_self_care_interruption.rs:840`
 
 **Setup**: An AI-controlled dirty agent repeatedly selects a local wash action. The harness applies repeated external local cancellations before commit, while hunger rises under the normal needs system and no food source is available.
 
 **Proves**: repeated self-care aborts leave typed ActionAborted/ActionTraceDetail evidence, release occupancy between retries, and do not rescue the agent from the existing hunger-deprivation wound/death substrate.
+
+### Scenario 482: S174 Multi-Slot Rest Contention
+
+- Source: `survival_sleep_contention.rs:338`
+
+**Setup**: Three critically tired agents are co-located at a two-slot barracks.
+
+**Proves**: two agents occupy the barracks, the loser queues, promotion fires after release, and the promoted agent sleeps.
+
+**Cross-system chain**: rest capacity belief -> Sleep candidate -> RestOccupancy capacity gate -> queue join -> QueueGrantPromoted -> promoted targeted Sleep.
 
 ### Scenario 169: Survival Tell Lands Roadmap Row Five
 

@@ -376,7 +376,7 @@ fn observe_safe_rest() -> SafeRestObservation {
     }
 }
 
-// Scenario 481: S174 Safe Rest Contention
+// Scenario 483: S174 Safe Rest Contention
 // Setup: Two critically tired agents are co-located at a one-slot roofed shelter.
 // Proves: both agents see the KnownRestSite candidate, one occupant writes RestOccupancy, the loser records a precondition-rejected failed-rest opportunity, then rough-sleeps under the recovery floor.
 // Chain: rest capacity belief -> Sleep candidate -> RestOccupancy start gate -> StartFailed trace -> rough Sleep fallback -> SleepEpisodeEnded recovery delta -> SurvivalForensicExtractor.
