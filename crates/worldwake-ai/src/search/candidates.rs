@@ -1113,6 +1113,22 @@ pub(super) fn search_candidates_from_affordance(
             expansion_trace_index: None,
         }];
     };
+    if goal.key.kind == GoalKind::Sleep
+        && def.name == "sleep"
+        && affordance.bound_targets.is_empty()
+        && let OpportunityAnchor::Place(place) = goal.anchor
+        && state.effective_place(state.snapshot().actor()) == Some(place)
+    {
+        return vec![SearchCandidate {
+            def_id: affordance.def_id,
+            authoritative_targets: vec![place],
+            planning_targets: vec![PlanningEntityRef::Authoritative(place)],
+            payload_override: affordance.payload_override.clone(),
+            planner_only: false,
+            trace_index: None,
+            expansion_trace_index: None,
+        }];
+    }
     let planning_targets = match (&goal.key.kind, def.name.as_str()) {
         // Accusation payload binds to the accused entity, but the lawful
         // execution location is the crime register's home place.

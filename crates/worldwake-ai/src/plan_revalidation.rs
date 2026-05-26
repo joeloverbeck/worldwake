@@ -8,8 +8,8 @@ use worldwake_core::{
     MismatchDetail, Permille, Tick, belief_confidence,
 };
 use worldwake_sim::{
-    ActionDefRegistry, ActionHandlerRegistry, Affordance, RuntimeBeliefView, TargetSpec,
-    belief_view::BeliefStatus, evaluate_constraint, evaluate_precondition,
+    ActionDefRegistry, ActionHandlerRegistry, Affordance, BindingStrictness, RuntimeBeliefView,
+    TargetSpec, belief_view::BeliefStatus, evaluate_constraint, evaluate_precondition,
     get_affordances_for_defs, requested_affordance_matches,
 };
 
@@ -93,6 +93,7 @@ pub fn classify_revalidation(
         });
     if affordance_match
         || revalidate_best_effort_payload_override_step(view, actor, step, &targets, def, handler)
+        || revalidate_any_legal_target_step(view, actor, def, &targets)
         || revalidate_exact_target_step(view, actor, step, &targets, def, handler)
     {
         RevalidationOutcome::Valid
@@ -337,6 +338,31 @@ fn revalidate_best_effort_payload_override_step(
     }
 
     (handler.payload_override_is_valid)(def, actor, targets, payload_override, view)
+}
+
+fn revalidate_any_legal_target_step(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    def: &worldwake_sim::ActionDef,
+    targets: &[EntityId],
+) -> bool {
+    if def.name != "sleep"
+        || def.binding_strictness != BindingStrictness::AnyLegalTarget
+        || !def.targets.is_empty()
+    {
+        return false;
+    }
+    if !def
+        .actor_constraints
+        .iter()
+        .all(|constraint| evaluate_constraint(constraint, actor, view))
+    {
+        return false;
+    }
+    def.preconditions
+        .iter()
+        .copied()
+        .all(|precondition| evaluate_precondition(precondition, actor, targets, view))
 }
 
 fn revalidate_exact_target_step(

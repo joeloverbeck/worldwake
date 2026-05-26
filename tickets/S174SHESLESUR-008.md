@@ -72,7 +72,7 @@ Add `mod survival_sleep_contention;` to `tests/scenarios/mod.rs`.
 
 ## Out of Scope
 
-- Single-slot rest-site contention (Scenario A / ticket 007)
+- Single-slot rest-site contention (Scenario A / `archive/tickets/S174SHESLESUR-007.md`)
 - Hostile-proximity interruption (Scenario C / ticket 009)
 - CLI player-POV (Scenario D / ticket 010)
 - Failed-rest cascade for S175 (Scenario E / ticket 011)
