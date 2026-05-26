@@ -64,7 +64,6 @@ The ticket was reassessed from a test-only task to a narrow production change be
 - Hostile-proximity interruption (Scenario C / ticket 009)
 - CLI player-POV (Scenario D / ticket 010)
 - Failed-rest cascade for S175 (Scenario E / ticket 011)
-- No production code changes
 
 ## Acceptance Criteria
 
