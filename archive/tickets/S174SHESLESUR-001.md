@@ -16,7 +16,7 @@ Sleep currently has no rest-site occupancy carrier — multiple agents can inten
 2. Spec assumption verified against S174 D1, D3, D6, D7 and `docs/spec-drafting-rules.md` (Component Registration, Belief-View Accessor Source-Class Rule). The asymmetric WakeReason vs. WakeCondition design (only WakeReason carries structured cause) was approved during reassessment Q1=(b) — `WakeCondition::LocalDisturbance` stays bare, with the rationale documented at S174 D3.
 3. Shared abstraction boundary under audit: serialized event-payload shape (`WakeReason`) + ECS component registration (`RestCapacity`, `RestOccupancy` on `EntityKind::Place`) + action-trace sink shape (`ActionTraceDetail`). All three changes touch cross-crate serialized formats, so the SAVE_FORMAT_VERSION bump is attributed to this ticket (the first ticket carrying an incompatible serialized-format change).
 4. The only production `WakeReason::LocalDisturbance` construction site in the workspace remains `abort_sleep_episode` at `crates/worldwake-systems/src/needs_actions.rs`; this ticket updated it to construct `WakeReason::LocalDisturbance { cause: SleepFailureCause::Generic }`. Sibling spec S175 will read the structured cause from `WakeReason::LocalDisturbance { cause }` but does not need to construct it.
-5. Belief-view accessor read surface is unchanged by this ticket — the new components are introduced but their belief-view accessors land in ticket 003. Per the placeholder-replace pattern, the components are usable by ticket 003 immediately (read paths just don't exist yet); no transient dead-code issue because component absence is the well-defined "no rest capacity here" state.
+5. Belief-view accessor read surface is unchanged by this ticket — the new components are introduced but their belief-view accessors land in the now-archived `archive/tickets/S174SHESLESUR-003.md`. Per the placeholder-replace pattern, the components are usable by ticket 003 immediately (read paths just don't exist yet); no transient dead-code issue because component absence is the well-defined "no rest capacity here" state.
 6. Cross-crate enum variant addition: `ActionTraceDetail::SleepInterrupted` landed as an additive variant. The existing sleep-abort trace routing still emits `SelfCareInterrupted { kind: Sleep, ... }`; ticket 006 owns switching the abort helper to populate `SleepInterrupted`.
 7. Existing inline tests exercising the affected types remained compatible: `crates/worldwake-core/src/sleep_episode.rs` still asserts bare `WakeCondition::LocalDisturbance`; `crates/worldwake-ai/tests/scenarios/sleep_episode.rs` sleep goldens passed without assertion edits because they do not construct the bare `WakeReason::LocalDisturbance` variant directly.
 
@@ -157,7 +157,7 @@ In `crates/worldwake-sim/src/save_load.rs`, bumped `SAVE_FORMAT_VERSION` from `1
 ## Out of Scope
 
 - No `WakeCondition::LocalDisturbance` restructuring (stays bare per Q1=(b))
-- No belief-view accessors for `RestCapacity`/`RestOccupancy` (ticket 003)
+- No belief-view accessors for `RestCapacity`/`RestOccupancy` (now archived in `archive/tickets/S174SHESLESUR-003.md`)
 - No sleep action handler changes to write/release `RestOccupancy` (ticket 004)
 - No goal schema changes (ticket 005)
 - No forensic record additions (ticket 006)

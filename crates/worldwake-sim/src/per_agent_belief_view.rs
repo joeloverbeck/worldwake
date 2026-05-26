@@ -2272,6 +2272,31 @@ impl FacilityBeliefView for PerAgentBeliefView<'_> {
             .and_then(|contention| contention.grant_holder)
     }
 
+    fn rest_site_capacity(&self, place: EntityId) -> Option<NonZeroU32> {
+        self.world
+            .get_component_rest_capacity(place)
+            .map(|capacity| capacity.0)
+    }
+
+    fn rest_site_occupant_count(&self, place: EntityId) -> Option<u32> {
+        self.rest_site_capacity(place)?;
+        if self.world.effective_place(self.agent) == Some(place) {
+            let count = self
+                .world
+                .get_component_rest_occupancy(place)
+                .map_or(0, |occupancy| occupancy.occupants.len());
+            return Some(u32::try_from(count).expect("rest occupancy count should fit in u32"));
+        }
+
+        self.believed_contention_state_of(place)
+            .map(|contention| u32::from(contention.grant_holder.is_some()))
+    }
+
+    fn is_co_located_with_rest_site(&self, place: EntityId) -> bool {
+        self.world.effective_place(self.agent) == Some(place)
+            && self.rest_site_capacity(place).is_some()
+    }
+
     fn last_harvest_trace(&self, entity: EntityId) -> Option<LastHarvestTrace> {
         // FND-14A: only co-located agents can perceive a source's harvest
         // trace directly. Off-place propagation is the responsibility of
@@ -2360,11 +2385,11 @@ mod tests {
         ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PerceptionProfile,
         PerceptionSource, Permille, Place, PlaceTag, PreferenceProfile, Quantity,
         RecipientKnowledgeStatus, RecordData, RecordKind, ResourceExtractionQueues, ResourceSource,
-        RightKind, RiskWeightProfile, RouteExperience, SelfCareOccupancy, SelfCareUseKind,
-        StockStoragePolicy, SuccessionLaw, TellMemoryKey, TellTopic, Tick, TickRange,
-        ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
-        WoundId, build_believed_entity_state, build_prototype_world,
+        RestCapacity, RestOccupancy, RightKind, RiskWeightProfile, RouteExperience,
+        SelfCareOccupancy, SelfCareUseKind, StockStoragePolicy, SuccessionLaw, TellMemoryKey,
+        TellTopic, Tick, TickRange, ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId,
+        UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+        WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state, build_prototype_world,
         test_utils::{
             sample_blocker_memory, sample_commodity_valuation_profile, sample_discrepancy_memory,
             sample_learned_opportunity_memory, sample_preference_profile, sample_repair_memory,
@@ -2484,6 +2509,163 @@ mod tests {
             FacilityBeliefView::self_care_occupant(&view, basin),
             Some(occupant)
         );
+    }
+
+    #[test]
+    fn rest_site_capacity_reads_public_topology_for_local_and_remote_places() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let home = places[0];
+        let remote = places[1];
+        let ordinary_place = places[2];
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, home).unwrap();
+            txn.set_component_rest_capacity(home, RestCapacity(NonZeroU32::new(2).unwrap()))
+                .unwrap();
+            txn.set_component_rest_capacity(remote, RestCapacity(NonZeroU32::new(3).unwrap()))
+                .unwrap();
+            commit_txn(txn);
+            actor
+        };
+        let view = PerAgentBeliefView::from_world(actor, &world);
+
+        assert_eq!(
+            FacilityBeliefView::rest_site_capacity(&view, home).map(NonZeroU32::get),
+            Some(2)
+        );
+        assert_eq!(
+            FacilityBeliefView::rest_site_capacity(&view, remote).map(NonZeroU32::get),
+            Some(3)
+        );
+        assert_eq!(
+            FacilityBeliefView::rest_site_capacity(&view, ordinary_place),
+            None
+        );
+    }
+
+    #[test]
+    fn rest_site_occupant_count_reads_colocated_world_state() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (actor, occupant) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let occupant = txn.create_agent("Bryn", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(occupant, place).unwrap();
+            txn.set_component_rest_capacity(place, RestCapacity(NonZeroU32::new(2).unwrap()))
+                .unwrap();
+            txn.set_component_rest_occupancy(
+                place,
+                RestOccupancy {
+                    occupants: BTreeSet::from([occupant]),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (actor, occupant)
+        };
+        let view = PerAgentBeliefView::from_world(actor, &world);
+
+        assert_eq!(
+            FacilityBeliefView::rest_site_occupant_count(&view, place),
+            Some(1)
+        );
+        assert!(FacilityBeliefView::is_co_located_with_rest_site(
+            &view, place
+        ));
+        assert_eq!(world.effective_place(occupant), Some(place));
+    }
+
+    #[test]
+    fn rest_site_occupant_count_uses_belief_not_remote_world_state() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let home = places[0];
+        let remote = places[1];
+        let (actor, occupant) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let occupant = txn.create_agent("Bryn", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, home).unwrap();
+            txn.set_ground_location(occupant, remote).unwrap();
+            txn.set_component_rest_capacity(remote, RestCapacity(NonZeroU32::new(2).unwrap()))
+                .unwrap();
+            txn.set_component_rest_occupancy(
+                remote,
+                RestOccupancy {
+                    occupants: BTreeSet::from([occupant]),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (actor, occupant)
+        };
+
+        let mut no_occupancy_belief = AgentBeliefStore::default();
+        let mut rest_site_state = BelievedEntityState::single_observation_defaults(
+            Tick(1),
+            PerceptionSource::DirectObservation,
+        );
+        rest_site_state.believed_kind = Some(EntityKind::Place);
+        rest_site_state.last_known_place = Some(remote);
+        no_occupancy_belief.update_entity(remote, rest_site_state.clone());
+        let view = PerAgentBeliefView::new(actor, &world, &no_occupancy_belief);
+        assert_eq!(
+            FacilityBeliefView::rest_site_occupant_count(&view, remote),
+            None
+        );
+
+        rest_site_state.believed_contention = Some(worldwake_core::BelievedContentionState {
+            grant_holder: Some(occupant),
+            queue_length: 0,
+            observed_tick: Tick(1),
+        });
+        let mut occupancy_belief = AgentBeliefStore::default();
+        occupancy_belief.update_entity(remote, rest_site_state);
+        let view = PerAgentBeliefView::new(actor, &world, &occupancy_belief);
+        assert_eq!(
+            FacilityBeliefView::rest_site_occupant_count(&view, remote),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn is_co_located_with_rest_site_requires_place_and_capacity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let home = places[0];
+        let remote = places[1];
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, home).unwrap();
+            txn.set_component_rest_capacity(remote, RestCapacity(NonZeroU32::new(1).unwrap()))
+                .unwrap();
+            commit_txn(txn);
+            actor
+        };
+        let view = PerAgentBeliefView::from_world(actor, &world);
+
+        assert!(!FacilityBeliefView::is_co_located_with_rest_site(
+            &view, home
+        ));
+        assert!(!FacilityBeliefView::is_co_located_with_rest_site(
+            &view, remote
+        ));
+
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_component_rest_capacity(home, RestCapacity(NonZeroU32::new(1).unwrap()))
+                .unwrap();
+            commit_txn(txn);
+        }
+        let view = PerAgentBeliefView::from_world(actor, &world);
+        assert!(FacilityBeliefView::is_co_located_with_rest_site(
+            &view, home
+        ));
     }
 
     fn entity_belief(

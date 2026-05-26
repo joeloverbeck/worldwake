@@ -102,7 +102,7 @@ In `needs_actions.rs:77-87`, the sleep action's `reservation_requirements` is cu
 ## Out of Scope
 
 - No emitter changes (ticket 005 owns the two-path candidate emission)
-- No belief-view accessors (ticket 003)
+- No belief-view accessors (archived `archive/tickets/S174SHESLESUR-003.md`)
 - No `FailedRestOpportunity` records (ticket 006)
 - No `ActionTraceDetail::SleepInterrupted` population (ticket 006)
 - No CLI player-POV gating (ticket 010)

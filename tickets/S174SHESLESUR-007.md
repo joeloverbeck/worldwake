@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None (golden scenario + test file only; no production code changes)
-**Deps**: `archive/tickets/S174SHESLESUR-001.md`, 002, 003, 004, 005, 006
+**Deps**: `archive/tickets/S174SHESLESUR-001.md`, `archive/tickets/S174SHESLESUR-002.md`, `archive/tickets/S174SHESLESUR-003.md`, 004, 005, 006
 
 ## Problem
 
@@ -14,7 +14,7 @@ S174's Scenario A is the first collision proof for the rest-site contention mode
 
 1. Verified current code state: scenario files live under `scenarios/*.ron`; their corresponding test harness files live under `crates/worldwake-ai/tests/scenarios/<name>.rs` and use `GoldenHarness` (path: `crates/worldwake-ai/tests/golden_harness/mod.rs`). Existing precedent scenarios: `survival-baseline.ron`, `survival-contested.ron`, `survival-trade.ron`, `survival-theft.ron`. The harness pattern: load the scenario via `worldwake_cli::scenario::load_scenario_file`, spawn, then step ticks via `step_tick` while asserting on event log + action trace + decision trace + authoritative state.
 2. Spec assumption verified against S174 Scenario A. The scenario uses two places (`shelter_north` with `RestCapacity(1)` + `SleepQualityProfile { shelter: Roofed, recovery_modifier: 1100 permille }`; `open_camp` with no `SleepQualityProfile`) and two tired agents. Per spec, the assertions include candidate emission via FND-14A direct observation, occupancy write/release, recovery modifier comparison, and `FailedRestOpportunity::PreconditionRejected` recording.
-3. Shared abstraction boundary under audit: scenario-level E2E composition of the rest-site model — exercises Ticket 001 (foundation types), 002 (scenario contract), 003 (belief-view), 004 (handler RestOccupancy lifecycle), 005 (goal schema two-path), 006 (forensics records). Any failure in this golden likely indicates a regression in one of the upstream tickets.
+3. Shared abstraction boundary under audit: scenario-level E2E composition of the rest-site model — exercises archived tickets 001-003 (foundation types, scenario contract, belief-view), plus active tickets 004 (handler RestOccupancy lifecycle), 005 (goal schema two-path), and 006 (forensics records). Any failure in this golden likely indicates a regression in one of the upstream tickets.
 4. Live `GoalKind` under test: `GoalKind::Sleep`. Current operator surface (post-ticket-005): `SLEEP_OPS = &[PlannerOpKind::Sleep, PlannerOpKind::QueueForFacilityUse]`. The scenario primarily exercises `PlannerOpKind::Sleep` (queue-based promotion is exercised in Scenario B / ticket 008).
 5. Cumulative arithmetic: per spec, the shelter occupant accumulates recovery at ≈ 1.1x while the rough sleeper accumulates at ≈ 0.3x (= `rough_sleep_recovery_floor`). Recovery delta per tick is determined by `MetabolismProfile.rest_efficiency` multiplied by the recovery modifier. Pick agent metabolisms such that 30-50 ticks of sleep are sufficient to observe a clear recovery delta between the two paths.
 6. Scenario isolation: the intended branch under test is rest-site contention + recovery modifier divergence. Lawful competing affordances the architecture would permit but this scenario excludes: other survival actions (eat, drink, wash, relieve) — the agents must be near-sated for all non-fatigue needs so the only meaningful goal is Sleep.

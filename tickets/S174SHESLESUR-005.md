@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new `FeasibilityStrategy::CandidateBacked` variant on existing AI-crate enum; rewritten `DECL_SLEEP` goal schema; existing `emit_sleep_goal` replaced with two-path `sleep_rest_opportunities`
-**Deps**: `archive/tickets/S174SHESLESUR-001.md` (RestCapacity/RestOccupancy types), `archive/tickets/S174SHESLESUR-002.md` (rough_sleep_recovery_floor — read by candidate marker), 003 (belief-view accessors)
+**Deps**: `archive/tickets/S174SHESLESUR-001.md` (RestCapacity/RestOccupancy types), `archive/tickets/S174SHESLESUR-002.md` (rough_sleep_recovery_floor — read by candidate marker), `archive/tickets/S174SHESLESUR-003.md` (belief-view accessors)
 
 ## Problem
 
@@ -124,7 +124,7 @@ Verify each test's intent at ticket-implementation time and update assertions ac
 ## Out of Scope
 
 - No `RestCapacity` / `RestOccupancy` component definitions (ticket 001)
-- No belief-view accessor implementations (ticket 003)
+- No belief-view accessor implementations (archived `archive/tickets/S174SHESLESUR-003.md`)
 - No `RestOccupancy` writes at sleep action start (ticket 004)
 - No `rough_sleep_recovery_floor` application (ticket 004 reads the floor at sleep-tick)
 - No `FailedRestOpportunity` records (ticket 006)

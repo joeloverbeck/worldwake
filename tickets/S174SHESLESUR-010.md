@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — CLI player-POV gating for `RestCapacity`/`RestOccupancy` reads (S163-style); scenario file + test file
-**Deps**: `archive/tickets/S174SHESLESUR-001.md` (RestCapacity/RestOccupancy components), `archive/tickets/S174SHESLESUR-002.md` (PlaceDef.rest_capacity), 003 (belief-view accessors — CLI uses the same view), 004 (RestOccupancy lifecycle), 005 (sleep schema for candidate emission), 006 (forensic records — CLI may surface these)
+**Deps**: `archive/tickets/S174SHESLESUR-001.md` (RestCapacity/RestOccupancy components), `archive/tickets/S174SHESLESUR-002.md` (PlaceDef.rest_capacity), `archive/tickets/S174SHESLESUR-003.md` (belief-view accessors — CLI uses the same view), 004 (RestOccupancy lifecycle), 005 (sleep schema for candidate emission), 006 (forensic records — CLI may surface these)
 
 ## Problem
 
@@ -13,7 +13,7 @@ S174 D11 requires the CLI to not surface `RestOccupancy` for a place the control
 ## Assumption Reassessment (2026-05-26)
 
 1. Verified current code state: S163 (`archive/specs/S163-cli-player-pov-boundary.md`) established the player-POV gating pattern. The CLI binary at `crates/worldwake-cli/src/bin/observer.rs` (and any player-facing display code in `crates/worldwake-cli/src/handlers/`) reads world state via belief-view accessors when in player mode. Per S163, the controlled agent's belief view is the authoritative arbiter of "what does the player see?".
-2. Spec assumption verified against S174 D11. The gating pattern: CLI player-mode display calls `is_co_located_with_rest_site(place)` from ticket 003's belief view; for non-co-located places, calls `rest_site_occupant_count(place)` which returns `None` when no belief carrier exists. The `None` case must result in CLI displaying "unknown" / "not visible" rather than authoritative state.
+2. Spec assumption verified against S174 D11. The gating pattern: CLI player-mode display calls `is_co_located_with_rest_site(place)` from the archived ticket 003 belief view (`archive/tickets/S174SHESLESUR-003.md`); for non-co-located places, calls `rest_site_occupant_count(place)` which returns `None` when no belief carrier exists. The `None` case must result in CLI displaying "unknown" / "not visible" rather than authoritative state.
 3. Shared abstraction boundary under audit: the CLI player-POV / authoritative-state separation. The same belief-view accessors used by candidate generation (ticket 005) must be used by the CLI for display gating — no parallel "CLI-only" state-read path. This matches the S163 architecture.
 4. Existing inline tests for CLI player-POV: locate via `grep -rn "player_pov\|player_mode\|controlled_agent" crates/worldwake-cli/`. Update existing CLI tests for related accessors (e.g., wash-basin player POV per S172) to mirror the new rest-site gating.
 5. Information-path classification: this is an information-path refactor for the new components — `RestCapacity` and `RestOccupancy` are added with two transport paths from the start (authoritative + belief view). The canonical end-state path for player display is belief view; authoritative reads in player mode are an FND-14 violation.

@@ -500,6 +500,18 @@ pub trait GoalBeliefView: BelievedAuthorityView + LocalPhysicalObservationView {
         let _ = entity;
         None
     }
+    fn rest_site_capacity(&self, place: EntityId) -> Option<NonZeroU32> {
+        let _ = place;
+        None
+    }
+    fn rest_site_occupant_count(&self, place: EntityId) -> Option<u32> {
+        let _ = place;
+        None
+    }
+    fn is_co_located_with_rest_site(&self, place: EntityId) -> bool {
+        let _ = place;
+        false
+    }
     fn last_harvest_trace(&self, entity: EntityId) -> Option<LastHarvestTrace> {
         let _ = entity;
         None
@@ -1594,6 +1606,18 @@ pub trait FacilityBeliefView {
         let _ = entity;
         None
     }
+    fn rest_site_capacity(&self, place: EntityId) -> Option<NonZeroU32> {
+        let _ = place;
+        None
+    }
+    fn rest_site_occupant_count(&self, place: EntityId) -> Option<u32> {
+        let _ = place;
+        None
+    }
+    fn is_co_located_with_rest_site(&self, place: EntityId) -> bool {
+        let _ = place;
+        false
+    }
     fn last_harvest_trace(&self, entity: EntityId) -> Option<LastHarvestTrace> {
         let _ = entity;
         None
@@ -2014,6 +2038,18 @@ where
         entity: worldwake_core::EntityId,
     ) -> Option<worldwake_core::EntityId> {
         FacilityBeliefView::self_care_occupant(self, entity)
+    }
+
+    fn rest_site_capacity(&self, place: worldwake_core::EntityId) -> Option<std::num::NonZeroU32> {
+        FacilityBeliefView::rest_site_capacity(self, place)
+    }
+
+    fn rest_site_occupant_count(&self, place: worldwake_core::EntityId) -> Option<u32> {
+        FacilityBeliefView::rest_site_occupant_count(self, place)
+    }
+
+    fn is_co_located_with_rest_site(&self, place: worldwake_core::EntityId) -> bool {
+        FacilityBeliefView::is_co_located_with_rest_site(self, place)
     }
 
     fn last_harvest_trace(
