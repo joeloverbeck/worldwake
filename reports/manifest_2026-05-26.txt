@@ -306,6 +306,7 @@ archive/specs/S16b-force-legitimacy-emergence-golden-suites.md
 archive/specs/S17-wound-lifecycle-golden-suites.md
 archive/specs/S170-learned-state-provenance-hardening.md
 archive/specs/S171-learned-context-decision-trace-edge.md
+archive/specs/S172-wash-discovery-budget-closure.md
 archive/specs/S18-prerequisite-aware-emergent-chain-goldens.md
 archive/specs/S19-institutional-record-consultation-golden-suites.md
 archive/specs/S20-structural-cleanup.md
@@ -1187,6 +1188,10 @@ archive/tickets/S171LEACONTDEC-001.md
 archive/tickets/S171LEACONTDEC-002.md
 archive/tickets/S171LEACONTDEC-003.md
 archive/tickets/S171LEACONTDEC-004.md
+archive/tickets/S172WASDISBUD-001.md
+archive/tickets/S172WASDISBUD-002.md
+archive/tickets/S172WASDISBUD-003.md
+archive/tickets/S172WASDISBUD-004.md
 archive/tickets/S18AIPLTRACE-002.md
 archive/tickets/S20STRCLE-001-agent-tick-scaffold-mod-directory.md
 archive/tickets/S20STRCLE-002-extract-agent-tick-observation.md
@@ -2499,6 +2504,7 @@ docs/triage/2026-05-22-ai-architecture-improvements-first-iteration-triage.md
 docs/triage/2026-05-22-ai-architecture-improvements-second-iteration-triage.md
 docs/triage/2026-05-25-ai-architecture-improvements-fourth-iteration-triage.md
 docs/triage/2026-05-25-ai-architecture-improvements-third-iteration-triage.md
+docs/triage/2026-05-25-cluster-1-gameplay-mechanics-triage.md
 reports/ai-architecture-improvements-first-iteration.md
 reports/ai-architecture-improvements-fourth-iteration.md
 reports/ai-architecture-improvements-second-iteration.md
@@ -2509,6 +2515,7 @@ reports/cli-evaluation-transcripts/eval-2.txt
 reports/cli-evaluation-transcripts/eval-3.txt
 reports/cli-evaluation-transcripts/eval-4.txt
 reports/cli-evaluation.md
+reports/cluster-1-gameplay-mechanics-improvements-first-iteration.md
 reports/iterative-improvement-logic.md
 reports/manifest_2026-05-25.txt
 rust-toolchain.toml
@@ -2539,6 +2546,8 @@ scripts/golden_inventory.py
 scripts/profile_docs.py
 scripts/test_golden_inventory.py
 scripts/verify.sh
+specs/IMPLEMENTATION-ORDER.md
+specs/S173-self-care-interruption-occupancy.md
 specs/S60-persistent-site-occupancy.md
 specs/S61-predator-ecology-dens.md
 specs/S62-boundary-processes-remote-shocks.md
@@ -2547,4 +2556,13 @@ specs/S64-scarcity-response-debt-rationing.md
 specs/S65-social-aftermath-memory.md
 specs/S66-settlement-decline-reoccupation.md
 tickets/README.md
+tickets/S173SELCARINT-001.md
+tickets/S173SELCARINT-002.md
+tickets/S173SELCARINT-003.md
+tickets/S173SELCARINT-004.md
+tickets/S173SELCARINT-005.md
+tickets/S173SELCARINT-006.md
+tickets/S173SELCARINT-007.md
+tickets/S173SELCARINT-008.md
+tickets/S173SELCARINT-009.md
 tickets/_TEMPLATE.md
