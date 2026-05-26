@@ -47,6 +47,7 @@ use crate::{
     },
     pursuit::PursuitProfile,
     repair_memory::RepairMemory,
+    rest_site::{RestCapacity, RestOccupancy},
     reward_encumbrance::RewardEncumbrance,
     risk_weight_profile::RiskWeightProfile,
     route_preference_profile::RoutePreferenceProfile,

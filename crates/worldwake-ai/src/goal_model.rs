@@ -1150,6 +1150,7 @@ impl GoalKindPlannerExt for GoalKind {
                     | GoalKind::TreatWounds { .. }
                     | GoalKind::ProduceCommodity { .. }
                     | GoalKind::RestockCommodity { .. }
+                    | GoalKind::Sleep
             );
         }
 
@@ -7212,7 +7213,7 @@ mod tests {
             }
             .is_progress_barrier(&queue_step)
         );
-        assert!(!GoalKind::Sleep.is_progress_barrier(&queue_step));
+        assert!(GoalKind::Sleep.is_progress_barrier(&queue_step));
     }
 
     #[test]

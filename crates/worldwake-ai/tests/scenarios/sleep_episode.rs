@@ -5,12 +5,12 @@ use std::num::NonZeroU32;
 use crate::golden_harness::*;
 use worldwake_ai::DecisionOutcome;
 use worldwake_core::{
-    AgentData, ControlSource, DecisionEventPayload, EntityId, EventTag, EventView,
-    ExpectationStore, FrameAssumption, FrameState, GoalKey, GoalKind, GroundComfortTag,
+    AgentData, BelievedContentionState, ControlSource, DecisionEventPayload, EntityId, EventTag,
+    EventView, ExpectationStore, FrameAssumption, FrameState, GoalKey, GoalKind, GroundComfortTag,
     HomeostaticNeedId, HomeostaticNeeds, IntentionDomain, IntentionFrame, MetabolismProfile,
-    OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Seed, ShelterTag,
+    OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, RestCapacity, Seed, ShelterTag,
     SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepQualityProfile,
-    SleepRecoveryModifier, Tick, WakeCondition, WakeReason,
+    SleepRecoveryModifier, Tick, WakeCondition, WakeReason, build_believed_entity_state,
 };
 use worldwake_sim::{ActionRequestMode, ActionTraceKind, InputKind, RequestProvenance};
 
@@ -27,6 +27,15 @@ fn set_control_source(
 }
 
 fn request_simple_action(h: &mut GoldenHarness, actor: EntityId, def_name: &str) {
+    request_action_with_targets(h, actor, def_name, vec![]);
+}
+
+fn request_action_with_targets(
+    h: &mut GoldenHarness,
+    actor: EntityId,
+    def_name: &str,
+    targets: Vec<EntityId>,
+) {
     let def_id = h.defs.iter().find(|def| def.name == def_name).map_or_else(
         || panic!("full registries should include {def_name}"),
         |def| def.id,
@@ -37,7 +46,7 @@ fn request_simple_action(h: &mut GoldenHarness, actor: EntityId, def_name: &str)
         InputKind::RequestAction {
             actor,
             def_id,
-            targets: vec![],
+            targets,
             payload_override: None,
             mode: ActionRequestMode::BestEffort,
             provenance: RequestProvenance::External,
@@ -56,6 +65,34 @@ fn set_sleep_quality(h: &mut GoldenHarness, place: EntityId, recovery_modifier: 
         },
     )
     .unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn set_rest_capacity(h: &mut GoldenHarness, place: EntityId, capacity: u32) {
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_rest_capacity(place, RestCapacity(NonZeroU32::new(capacity).unwrap()))
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn seed_empty_rest_contention_belief(h: &mut GoldenHarness, actor: EntityId, place: EntityId) {
+    let mut store = h
+        .world
+        .get_component_agent_belief_store(actor)
+        .cloned()
+        .expect("seeded actor should have a belief store");
+    let mut state =
+        build_believed_entity_state(&h.world, place, Tick(0), PerceptionSource::Inference)
+            .expect("rest place should be observable for belief seeding");
+    state.believed_contention = Some(BelievedContentionState {
+        grant_holder: None,
+        queue_length: 0,
+        observed_tick: Tick(0),
+    });
+    store.update_entity(place, state);
+    let mut txn = new_txn(&mut h.world, h.scheduler.current_tick().0);
+    txn.set_component_agent_belief_store(actor, store)
+        .expect("golden harness should keep belief stores writable");
     commit_txn(txn, &mut h.event_log);
 }
 
@@ -259,12 +296,14 @@ fn place_quality_modulates_per_tick_recovery() {
     let mut h = GoldenHarness::new(Seed([0x83; 32]));
     set_sleep_quality(&mut h, VILLAGE_SQUARE, 900);
     set_sleep_quality(&mut h, ORCHARD_FARM, 700);
+    set_rest_capacity(&mut h, VILLAGE_SQUARE, 1);
+    set_rest_capacity(&mut h, ORCHARD_FARM, 1);
     let better = sleep_agent(&mut h, "Better", VILLAGE_SQUARE, 800);
     let worse = sleep_agent(&mut h, "Worse", ORCHARD_FARM, 800);
-    for agent in [better, worse] {
-        set_control_source(&mut h, agent, ControlSource::Human, 0);
-        request_simple_action(&mut h, agent, "sleep");
-    }
+    set_control_source(&mut h, better, ControlSource::Human, 0);
+    set_control_source(&mut h, worse, ControlSource::Human, 0);
+    request_action_with_targets(&mut h, better, "sleep", vec![VILLAGE_SQUARE]);
+    request_action_with_targets(&mut h, worse, "sleep", vec![ORCHARD_FARM]);
 
     let better_end = run_until_sleep_ended(&mut h, better, 16);
     let worse_end = run_until_sleep_ended(&mut h, worse, 16);
@@ -311,6 +350,8 @@ fn site_preference_adopts_higher_quality_sleep_place() {
     h.driver.enable_tracing();
     set_sleep_quality(&mut h, VILLAGE_SQUARE, 900);
     set_sleep_quality(&mut h, ORCHARD_FARM, 1000);
+    set_rest_capacity(&mut h, VILLAGE_SQUARE, 1);
+    set_rest_capacity(&mut h, ORCHARD_FARM, 1);
     let agent = sleep_agent(&mut h, "Chooser", VILLAGE_SQUARE, 500);
     seed_actor_world_beliefs(
         &mut h.world,
@@ -319,6 +360,7 @@ fn site_preference_adopts_higher_quality_sleep_place() {
         Tick(0),
         PerceptionSource::Inference,
     );
+    seed_empty_rest_contention_belief(&mut h, agent, ORCHARD_FARM);
 
     h.step_once();
     let trace = h

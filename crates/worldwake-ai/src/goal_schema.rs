@@ -39,6 +39,8 @@ pub enum FeasibilityStrategy {
     OwnedCommodityCheck,
     EvidencePlaceLocal,
     AlwaysLikely,
+    /// Feasible when the goal entered ranking through at least one lawful candidate emitter.
+    CandidateBacked,
     CommodityPresenceCheck,
     ColocationOrDead,
     NoOpinion,
@@ -96,7 +98,9 @@ const ACQUIRE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Craft,
     PlannerOpKind::MoveCargo,
 ];
-const SLEEP_OPS: &[PlannerOpKind] = &[PlannerOpKind::Sleep];
+const SLEEP_RELEVANT_OPS: &[PlannerOpKind] =
+    &[PlannerOpKind::Sleep, PlannerOpKind::QueueForFacilityUse];
+const SLEEP_PROGRESS_BARRIER_OPS: &[PlannerOpKind] = &[PlannerOpKind::Sleep];
 const RELIEVE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Relieve, PlannerOpKind::Travel];
 const WASH_OPS: &[PlannerOpKind] = &[PlannerOpKind::Wash, PlannerOpKind::Travel];
 const FREE_CARRY_CAPACITY_OPS: &[PlannerOpKind] = &[PlannerOpKind::DropItem];
@@ -340,12 +344,12 @@ static DECL_ACQUIRE_RESTOCK: GoalSchema = GoalSchema {
 static DECL_SLEEP: GoalSchema = GoalSchema {
     trace_label: "Sleep",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
-    relevant_ops: SLEEP_OPS,
+    relevant_ops: SLEEP_RELEVANT_OPS,
     invalidation_strategy: InvalidationStrategy::NeedWithFacilities(HomeostaticNeedId::Fatigue),
-    feasibility_strategy: FeasibilityStrategy::AlwaysLikely,
+    feasibility_strategy: FeasibilityStrategy::CandidateBacked,
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::CooldownRetry,
     family_policy: SELF_CARE_POLICY,
-    progress_barrier_ops: SLEEP_OPS,
+    progress_barrier_ops: SLEEP_PROGRESS_BARRIER_OPS,
     candidate_extractors: &[CandidateExtractorId::Need],
     planning_budget: GoalPlanningBudget::SELF_CARE,
 };
@@ -1218,6 +1222,22 @@ mod tests {
     }
 
     #[test]
+    fn sleep_declaration_is_candidate_backed_and_queue_relevant_without_queue_barrier() {
+        let declaration = GoalDispatchKey::Sleep.declaration();
+
+        assert_eq!(declaration.trace_label, "Sleep");
+        assert_eq!(
+            declaration.relevant_ops,
+            &[PlannerOpKind::Sleep, PlannerOpKind::QueueForFacilityUse]
+        );
+        assert_eq!(declaration.progress_barrier_ops, &[PlannerOpKind::Sleep]);
+        assert_eq!(
+            declaration.feasibility_strategy,
+            FeasibilityStrategy::CandidateBacked
+        );
+    }
+
+    #[test]
     fn ask_witness_declaration_uses_epistemic_sensing_policy() {
         let declaration = GoalDispatchKey::AskWitness.declaration();
 
@@ -1422,6 +1442,7 @@ mod tests {
                 FeasibilityStrategy::OwnedCommodityCheck
                 | FeasibilityStrategy::EvidencePlaceLocal
                 | FeasibilityStrategy::AlwaysLikely
+                | FeasibilityStrategy::CandidateBacked
                 | FeasibilityStrategy::CommodityPresenceCheck
                 | FeasibilityStrategy::ColocationOrDead
                 | FeasibilityStrategy::NoOpinion
@@ -1455,7 +1476,11 @@ mod tests {
         );
         assert_eq!(
             GoalDispatchKey::Sleep.declaration().feasibility_strategy,
-            GoalDispatchKey::Relieve.declaration().feasibility_strategy
+            FeasibilityStrategy::CandidateBacked
+        );
+        assert_eq!(
+            GoalDispatchKey::Relieve.declaration().feasibility_strategy,
+            FeasibilityStrategy::AlwaysLikely
         );
         assert_eq!(
             GoalDispatchKey::EngageHostile

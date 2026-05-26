@@ -167,6 +167,9 @@ pub struct MetabolismProfile {
     /// Minimum duration in ticks for a sleep episode.
     #[serde(default = "default_min_sleep_ticks")]
     pub min_sleep_ticks: NonZeroU32,
+    /// Hard ceiling on per-tick fatigue recovery when sleeping rough without a known rest site.
+    #[serde(default = "default_rough_sleep_recovery_floor")]
+    pub rough_sleep_recovery_floor: Permille,
     /// Multiplier applied to fatigue rate while traveling.
     pub travel_fatigue_multiplier: Permille,
     /// Multiplier applied to thirst rate while traveling.
@@ -225,6 +228,7 @@ impl MetabolismProfile {
             toilet_ticks,
             wash_ticks,
             min_sleep_ticks,
+            rough_sleep_recovery_floor: default_rough_sleep_recovery_floor(),
             travel_fatigue_multiplier,
             travel_thirst_multiplier,
             travel_bladder_multiplier,
@@ -237,6 +241,10 @@ impl Component for MetabolismProfile {}
 
 fn default_min_sleep_ticks() -> NonZeroU32 {
     nz(8)
+}
+
+const fn default_rough_sleep_recovery_floor() -> Permille {
+    pm(300)
 }
 
 impl Default for MetabolismProfile {
@@ -255,6 +263,7 @@ impl Default for MetabolismProfile {
             toilet_ticks: nz(8),
             wash_ticks: nz(12),
             min_sleep_ticks: default_min_sleep_ticks(),
+            rough_sleep_recovery_floor: default_rough_sleep_recovery_floor(),
             travel_fatigue_multiplier: pm(0),
             travel_thirst_multiplier: pm(0),
             travel_bladder_multiplier: pm(0),
@@ -449,6 +458,7 @@ mod tests {
         assert_eq!(profile.toilet_ticks, nz(14));
         assert_eq!(profile.wash_ticks, nz(16));
         assert_eq!(profile.min_sleep_ticks, nz(18));
+        assert_eq!(profile.rough_sleep_recovery_floor, pm(300));
         assert_eq!(profile.travel_fatigue_multiplier, pm(200));
         assert_eq!(profile.travel_thirst_multiplier, pm(300));
         assert_eq!(profile.travel_bladder_multiplier, pm(400));
@@ -476,10 +486,11 @@ mod tests {
         assert!(profile.toilet_ticks.get() > 0);
         assert!(profile.wash_ticks.get() > 0);
         assert_eq!(profile.min_sleep_ticks, nz(8));
+        assert_eq!(profile.rough_sleep_recovery_floor, pm(300));
     }
 
     #[test]
-    fn metabolism_profile_ron_omits_min_sleep_ticks_to_default() {
+    fn metabolism_profile_ron_omits_defaulted_sleep_fields() {
         let ron = r"(
             hunger_rate: 2,
             thirst_rate: 3,
@@ -505,6 +516,37 @@ mod tests {
             .unwrap();
 
         assert_eq!(profile.min_sleep_ticks, nz(8));
+        assert_eq!(profile.rough_sleep_recovery_floor, pm(300));
+    }
+
+    #[test]
+    fn metabolism_profile_ron_accepts_explicit_rough_sleep_recovery_floor() {
+        let ron = r"(
+            hunger_rate: 2,
+            thirst_rate: 3,
+            fatigue_rate: 4,
+            bladder_rate: 5,
+            dirtiness_rate: 6,
+            rest_efficiency: 20,
+            starvation_tolerance_ticks: 480,
+            dehydration_tolerance_ticks: 240,
+            exhaustion_collapse_ticks: 120,
+            bladder_accident_tolerance_ticks: 40,
+            toilet_ticks: 8,
+            wash_ticks: 12,
+            rough_sleep_recovery_floor: 500,
+            travel_fatigue_multiplier: 0,
+            travel_thirst_multiplier: 0,
+            travel_bladder_multiplier: 0,
+            wilderness_relief_dirtiness_penalty: 0,
+        )";
+
+        let profile: MetabolismProfile = ron::Options::default()
+            .with_default_extension(ron::extensions::Extensions::UNWRAP_NEWTYPES)
+            .from_str(ron)
+            .unwrap();
+
+        assert_eq!(profile.rough_sleep_recovery_floor, pm(500));
     }
 
     #[test]

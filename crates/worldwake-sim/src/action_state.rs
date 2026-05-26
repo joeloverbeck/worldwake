@@ -39,6 +39,10 @@ pub enum ActionState {
         responder_last_offer: Option<Quantity>,
         agreed_price: Option<Quantity>,
     },
+    Sleep {
+        rough: bool,
+        place: EntityId,
+    },
 }
 
 #[cfg(test)]
@@ -121,6 +125,13 @@ mod tests {
                 initiator_last_offer: Some(Quantity(3)),
                 responder_last_offer: Some(Quantity(5)),
                 agreed_price: Some(Quantity(4)),
+            },
+            ActionState::Sleep {
+                rough: false,
+                place: EntityId {
+                    slot: 11,
+                    generation: 0,
+                },
             },
         ] {
             let bytes = bincode::serialize(&state).unwrap();

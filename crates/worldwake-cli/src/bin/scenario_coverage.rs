@@ -1273,12 +1273,17 @@ fn authored_place_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str> {
             name: _,
             tags: _,
             visibility_profile,
+            rest_capacity,
             sleep_quality,
             place_dirtiness,
             latrine_fullness,
+            contention_policy,
         } = place;
         if visibility_profile.is_some() {
             fields.insert("visibility_profile");
+        }
+        if rest_capacity.is_some() {
+            fields.insert("rest_capacity");
         }
         if sleep_quality.is_some() {
             fields.insert("sleep_quality");
@@ -1288,6 +1293,9 @@ fn authored_place_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str> {
         }
         if latrine_fullness.is_some() {
             fields.insert("latrine_fullness");
+        }
+        if contention_policy.is_some() {
+            fields.insert("contention_policy");
         }
     }
     fields

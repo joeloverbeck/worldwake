@@ -7032,6 +7032,7 @@ mod tests {
                     top_blocker: None,
                 }),
                 local_authoritative_summary: sample_local_survival_state_summary(),
+                failed_rest_opportunities: Vec::new(),
             }],
         }
     }

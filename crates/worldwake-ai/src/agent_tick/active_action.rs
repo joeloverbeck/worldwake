@@ -1,7 +1,7 @@
 use worldwake_core::{
     ActionInterruptReasonTag, BlockerMemory, CauseRef, CognitiveProfile, ContentionIntents,
-    DiscrepancyMemory, EntityId, FrameState, IntentionFrame, Permille, PlanInvalidationReason,
-    ReplanReason, Tick,
+    DiscrepancyMemory, EntityId, FrameState, GoalKind, IntentionFrame, Permille,
+    PlanInvalidationReason, ReplanReason, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionHandlerRegistry, InterruptReason, Interruptibility, PerAgentBeliefView,
@@ -123,6 +123,8 @@ pub(super) fn handle_active_action_phase(
         &decision_context,
     );
     if let InterruptDecision::InterruptForReplan { trigger: _ } = decision {
+        let interrupt_reason =
+            interrupt_reason_for_decision(active_goal_key, ranked_candidates, decision_context);
         let replan = ctx
             .scheduler
             .interrupt_active_action(
@@ -140,7 +142,7 @@ pub(super) fn handle_active_action_phase(
                     recipe_registry: ctx.recipe_registry,
                     action_defs,
                 },
-                worldwake_sim::InterruptReason::Reprioritized,
+                interrupt_reason,
             )
             .map_err(|error| TickInputError::new(format!("{error:?}")))?;
         // Pass the agent's real discrepancy_memory through. A throwaway
@@ -168,6 +170,32 @@ pub(super) fn handle_active_action_phase(
     }
 
     Ok(decision)
+}
+
+fn interrupt_reason_for_decision(
+    active_goal: Option<worldwake_core::GoalKey>,
+    ranked_candidates: &OrderedRanked<'_>,
+    decision_context: DecisionContext,
+) -> InterruptReason {
+    if decision_context.danger_class < crate::GoalPriorityClass::High {
+        return InterruptReason::Reprioritized;
+    }
+
+    let danger_challenger = ranked_candidates
+        .iter()
+        .find(|candidate| Some(candidate.offer.key) != active_goal)
+        .is_some_and(|candidate| {
+            matches!(
+                candidate.offer.key.kind,
+                GoalKind::ReduceDanger | GoalKind::EngageHostile { .. }
+            )
+        });
+
+    if danger_challenger {
+        InterruptReason::DangerNearby
+    } else {
+        InterruptReason::Reprioritized
+    }
 }
 
 pub(super) fn effective_goal_switch_margin(
@@ -247,7 +275,9 @@ pub(super) fn advance_completed_step(
             runtime.current_step_index = 0;
             runtime.dirty.insert(DirtySet::PLAN_FINISHED);
             runtime.materialization_bindings.clear();
-            facility_intents.intents.clear();
+            if completed_op_kind != crate::PlannerOpKind::QueueForFacilityUse {
+                facility_intents.intents.clear();
+            }
         }
         PlanTerminalKind::GoalSatisfied | PlanTerminalKind::CombatCommitment => {
             if completed_plan_relation == Some(crate::FramePlanRelation::SuspendsFrame) {

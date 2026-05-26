@@ -2408,6 +2408,20 @@ impl FacilityBeliefView for PlanningState<'_> {
             .and_then(|snapshot| snapshot.facility.workstation_tag)
     }
 
+    fn rest_site_capacity(&self, place: EntityId) -> Option<std::num::NonZeroU32> {
+        self.snapshot
+            .entities
+            .get(&place)
+            .and_then(|snapshot| snapshot.rest_site.capacity)
+    }
+
+    fn rest_site_occupant_count(&self, place: EntityId) -> Option<u32> {
+        self.snapshot
+            .entities
+            .get(&place)
+            .and_then(|snapshot| snapshot.rest_site.occupant_count)
+    }
+
     fn stock_storage_policy(
         &self,
         facility: EntityId,

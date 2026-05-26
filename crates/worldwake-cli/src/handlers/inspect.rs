@@ -8,7 +8,7 @@
 use worldwake_core::{
     drives::ThresholdBand, ids::EntityId, load::load_of_entity, numerics::Permille, world::World,
 };
-use worldwake_sim::SimulationState;
+use worldwake_sim::{FacilityBeliefView, PerAgentBeliefView, SimulationState};
 
 use crate::commands::{CommandError, CommandOutcome, CommandResult};
 use crate::display::{
@@ -44,6 +44,38 @@ fn need_band(world: &World, entity: EntityId, need: &str) -> ThresholdBand {
         };
     }
     default_display_band()
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PlayerRestSiteStatus {
+    capacity: u32,
+    occupant_count: Option<u32>,
+}
+
+fn player_rest_site_status(
+    view: &impl FacilityBeliefView,
+    place: EntityId,
+) -> Option<PlayerRestSiteStatus> {
+    let capacity = FacilityBeliefView::rest_site_capacity(view, place)?;
+    let occupant_count = FacilityBeliefView::rest_site_occupant_count(view, place);
+    Some(PlayerRestSiteStatus {
+        capacity: capacity.get(),
+        occupant_count,
+    })
+}
+
+fn format_player_rest_site_status(
+    view: &impl FacilityBeliefView,
+    place: EntityId,
+) -> Option<String> {
+    let status = player_rest_site_status(view, place)?;
+    Some(match status.occupant_count {
+        Some(count) => format!("  Rest site: {count}/{} occupied", status.capacity),
+        None => format!(
+            "  Rest site: capacity {}, occupancy unknown",
+            status.capacity
+        ),
+    })
 }
 
 /// Format a `ResolveError` into a user-friendly `CommandError`.
@@ -94,6 +126,12 @@ pub fn handle_look(sim: &SimulationState) -> CommandResult {
         }
     } else {
         println!("{}", entity_display_name(world, place_id));
+    }
+
+    let view =
+        PerAgentBeliefView::from_world_at_tick(entity, sim.scheduler().current_tick(), sim.world());
+    if let Some(line) = format_player_rest_site_status(&view, place_id) {
+        println!("{line}");
     }
 
     // Entities at the same place (excluding self).
@@ -638,8 +676,11 @@ pub fn handle_relations(sim: &SimulationState, entity_input: &str) -> CommandRes
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scenario::{SpawnedSimulation, spawn_scenario, types::*};
+    use crate::scenario::{SpawnedSimulation, load_scenario_file, spawn_scenario, types::*};
+    use std::{collections::BTreeSet, path::PathBuf};
     use worldwake_core::{
+        AgentBeliefStore, AgentData, BelievedContentionState, BelievedEntityState, CauseRef,
+        EntityKind, PerceptionSource, RestOccupancy, Tick, VisibilitySpec, WitnessData, WorldTxn,
         control::ControlSource,
         ids::EntityId,
         items::CommodityKind,
@@ -661,17 +702,21 @@ mod tests {
                     name: "Market Square".into(),
                     tags: vec![PlaceTag::Village, PlaceTag::Store],
                     visibility_profile: None,
+                    rest_capacity: None,
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
+                    contention_policy: None,
                 },
                 PlaceDef {
                     name: "Dark Forest".into(),
                     tags: vec![PlaceTag::Forest],
                     visibility_profile: None,
+                    rest_capacity: None,
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
+                    contention_policy: None,
                 },
             ],
             edges: vec![EdgeDef {
@@ -821,6 +866,104 @@ mod tests {
         (spawned, human_id)
     }
 
+    fn rest_cli_scenario_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scenarios/survival-rest-cli.ron")
+    }
+
+    fn load_rest_cli_scenario() -> SpawnedSimulation {
+        let def =
+            load_scenario_file(&rest_cli_scenario_path()).expect("rest CLI scenario should parse");
+        spawn_scenario(&def).expect("rest CLI scenario should spawn")
+    }
+
+    fn agent_named(spawned: &SpawnedSimulation, name: &str) -> EntityId {
+        spawned
+            .state
+            .world()
+            .query_name_and_agent_data()
+            .find(|(_, agent_name, _)| agent_name.0 == name)
+            .map_or_else(
+                || panic!("scenario should include agent {name}"),
+                |(entity, _, _)| entity,
+            )
+    }
+
+    fn place_named(spawned: &SpawnedSimulation, name: &str) -> EntityId {
+        spawned
+            .state
+            .world()
+            .topology()
+            .place_ids()
+            .find(|place| {
+                spawned
+                    .state
+                    .world()
+                    .topology()
+                    .place(*place)
+                    .is_some_and(|place_data| place_data.name == name)
+            })
+            .unwrap_or_else(|| panic!("scenario should include place {name}"))
+    }
+
+    fn set_rest_occupancy(
+        spawned: &mut SpawnedSimulation,
+        place: EntityId,
+        occupants: BTreeSet<EntityId>,
+    ) {
+        let tick = spawned.state.scheduler().current_tick();
+        let (world, event_log) = spawned.state.world_and_event_log_mut();
+        let mut txn = WorldTxn::new(
+            world,
+            tick,
+            CauseRef::ExternalInput(0),
+            None,
+            None,
+            VisibilitySpec::Hidden,
+            WitnessData::default(),
+        );
+        txn.set_component_rest_occupancy(place, RestOccupancy { occupants })
+            .expect("test should set rest occupancy");
+        txn.commit(event_log);
+    }
+
+    fn set_agent_control_source(
+        spawned: &mut SpawnedSimulation,
+        agent: EntityId,
+        control_source: ControlSource,
+    ) {
+        let tick = spawned.state.scheduler().current_tick();
+        let (world, event_log) = spawned.state.world_and_event_log_mut();
+        let mut txn = WorldTxn::new(
+            world,
+            tick,
+            CauseRef::ExternalInput(0),
+            Some(agent),
+            None,
+            VisibilitySpec::Hidden,
+            WitnessData::default(),
+        );
+        txn.set_component_agent_data(agent, AgentData { control_source })
+            .expect("test should set control source");
+        txn.commit(event_log);
+    }
+
+    fn believed_rest_site_store(remote: EntityId, occupant: EntityId) -> AgentBeliefStore {
+        let mut store = AgentBeliefStore::default();
+        let mut state = BelievedEntityState::single_observation_defaults(
+            Tick(1),
+            PerceptionSource::DirectObservation,
+        );
+        state.believed_kind = Some(EntityKind::Place);
+        state.last_known_place = Some(remote);
+        state.believed_contention = Some(BelievedContentionState {
+            grant_holder: Some(occupant),
+            queue_length: 0,
+            observed_tick: Tick(1),
+        });
+        store.update_entity(remote, state);
+        store
+    }
+
     // ---- look tests ----
 
     #[test]
@@ -869,6 +1012,65 @@ mod tests {
         );
         let result = handle_look(&spawned.state);
         assert_eq!(result.unwrap(), CommandOutcome::Continue);
+    }
+
+    #[test]
+    fn test_rest_site_status_uses_pov_belief_view_for_remote_occupancy() {
+        let mut spawned = load_rest_cli_scenario();
+        let aster = agent_named(&spawned, "Aster");
+        let bram = agent_named(&spawned, "Bram");
+        let home = place_named(&spawned, "Home Camp");
+        let remote = place_named(&spawned, "Remote Shelter");
+        set_rest_occupancy(&mut spawned, remote, BTreeSet::from([bram]));
+
+        let world = spawned.state.world();
+        assert_eq!(
+            world
+                .get_component_rest_occupancy(remote)
+                .expect("remote shelter should have authoritative occupancy")
+                .occupants,
+            BTreeSet::from([bram])
+        );
+
+        let view = PerAgentBeliefView::from_world(aster, world);
+        assert_eq!(
+            format_player_rest_site_status(&view, home).as_deref(),
+            Some("  Rest site: 0/1 occupied")
+        );
+        assert_eq!(
+            format_player_rest_site_status(&view, remote).as_deref(),
+            Some("  Rest site: capacity 2, occupancy unknown")
+        );
+
+        let believed_store = believed_rest_site_store(remote, bram);
+        let believed_view = PerAgentBeliefView::new(aster, world, &believed_store);
+        assert_eq!(
+            format_player_rest_site_status(&believed_view, remote).as_deref(),
+            Some("  Rest site: 1/2 occupied")
+        );
+    }
+
+    #[test]
+    fn test_rest_site_status_is_control_source_symmetric() {
+        let mut spawned = load_rest_cli_scenario();
+        let aster = agent_named(&spawned, "Aster");
+        let bram = agent_named(&spawned, "Bram");
+        let remote = place_named(&spawned, "Remote Shelter");
+        set_rest_occupancy(&mut spawned, remote, BTreeSet::from([bram]));
+
+        let human_view = PerAgentBeliefView::from_world(aster, spawned.state.world());
+        let human_status = format_player_rest_site_status(&human_view, remote);
+
+        set_agent_control_source(&mut spawned, aster, ControlSource::Ai);
+        let ai_view = PerAgentBeliefView::from_world(aster, spawned.state.world());
+        let ai_status = format_player_rest_site_status(&ai_view, remote);
+
+        set_agent_control_source(&mut spawned, aster, ControlSource::Human);
+        let human_again_view = PerAgentBeliefView::from_world(aster, spawned.state.world());
+        let human_again_status = format_player_rest_site_status(&human_again_view, remote);
+
+        assert_eq!(human_status, ai_status);
+        assert_eq!(human_status, human_again_status);
     }
 
     // ---- inspect tests ----

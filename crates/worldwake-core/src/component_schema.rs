@@ -1700,6 +1700,7 @@ macro_rules! with_component_schema_entries {
                 |kind| {
                     kind == EntityKind::Agent
                         || kind == EntityKind::Facility
+                        || kind == EntityKind::Place
                         || kind == EntityKind::SocialArtifact
                         || kind == EntityKind::UniqueItem
                 },
@@ -1730,6 +1731,7 @@ macro_rules! with_component_schema_entries {
                 |kind| {
                     kind == EntityKind::Agent
                         || kind == EntityKind::Facility
+                        || kind == EntityKind::Place
                         || kind == EntityKind::SocialArtifact
                         || kind == EntityKind::UniqueItem
                 },
@@ -1962,6 +1964,56 @@ macro_rules! with_component_schema_entries {
                 crate::SleepQualityProfile,
                 set_component_sleep_quality_profile,
                 clear_component_sleep_quality_profile,
+                txn_simple_set
+            }
+            {
+                rest_capacities,
+                RestCapacity,
+                insert_rest_capacity,
+                get_rest_capacity,
+                get_rest_capacity_mut,
+                remove_rest_capacity,
+                has_rest_capacity,
+                iter_rest_capacities,
+                insert_component_rest_capacity,
+                get_component_rest_capacity,
+                get_component_rest_capacity_mut,
+                remove_component_rest_capacity,
+                has_component_rest_capacity,
+                entities_with_rest_capacity,
+                query_rest_capacity,
+                count_with_rest_capacity,
+                "RestCapacity",
+                |kind| kind == EntityKind::Place,
+                RestCapacity,
+                crate::RestCapacity,
+                set_component_rest_capacity,
+                clear_component_rest_capacity,
+                txn_simple_set
+            }
+            {
+                rest_occupancies,
+                RestOccupancy,
+                insert_rest_occupancy,
+                get_rest_occupancy,
+                get_rest_occupancy_mut,
+                remove_rest_occupancy,
+                has_rest_occupancy,
+                iter_rest_occupancies,
+                insert_component_rest_occupancy,
+                get_component_rest_occupancy,
+                get_component_rest_occupancy_mut,
+                remove_component_rest_occupancy,
+                has_component_rest_occupancy,
+                entities_with_rest_occupancy,
+                query_rest_occupancy,
+                count_with_rest_occupancy,
+                "RestOccupancy",
+                |kind| kind == EntityKind::Place,
+                RestOccupancy,
+                crate::RestOccupancy,
+                set_component_rest_occupancy,
+                clear_component_rest_occupancy,
                 txn_simple_set
             }
             {
@@ -2632,10 +2684,11 @@ pub(crate) use with_component_schema_entries;
 mod tests {
     use crate::{
         CommodityKind, EntityKind, GroundComfortTag, Permille, PlaceVisibilityProfile, Quantity,
-        RewardEncumbrance, SceneEvidence, SelfCareOccupancy, SelfCareUseKind, ShelterTag,
-        SleepEpisode, SleepQualityProfile, SleepRecoveryModifier, Tick, Topology, WakeCondition,
-        World, WorldError,
+        RestCapacity, RestOccupancy, RewardEncumbrance, SceneEvidence, SelfCareOccupancy,
+        SelfCareUseKind, ShelterTag, SleepEpisode, SleepQualityProfile, SleepRecoveryModifier,
+        Tick, Topology, WakeCondition, World, WorldError,
     };
+    use std::collections::BTreeSet;
     use std::num::NonZeroU32;
 
     #[test]
@@ -2706,6 +2759,42 @@ mod tests {
 
         let error = world
             .insert_component_sleep_quality_profile(agent, profile)
+            .unwrap_err();
+        assert!(matches!(error, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn rest_capacity_and_occupancy_are_registered_for_places_only() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let place = world.create_entity(EntityKind::Place, Tick(1));
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let capacity = RestCapacity(NonZeroU32::new(2).unwrap());
+        let occupancy = RestOccupancy {
+            occupants: BTreeSet::from([agent]),
+        };
+
+        world
+            .insert_component_rest_capacity(place, capacity)
+            .unwrap();
+        world
+            .insert_component_rest_occupancy(place, occupancy.clone())
+            .unwrap();
+
+        assert_eq!(world.get_component_rest_capacity(place), Some(&capacity));
+        assert_eq!(world.get_component_rest_occupancy(place), Some(&occupancy));
+        assert!(world.has_component_rest_capacity(place));
+        assert!(world.has_component_rest_occupancy(place));
+        assert_eq!(world.count_with_rest_capacity(), 1);
+        assert_eq!(world.count_with_rest_occupancy(), 1);
+        world.remove_component_rest_occupancy(place).unwrap();
+        assert!(!world.has_component_rest_occupancy(place));
+
+        let error = world
+            .insert_component_rest_capacity(agent, capacity)
+            .unwrap_err();
+        assert!(matches!(error, WorldError::InvalidOperation(_)));
+        let error = world
+            .insert_component_rest_occupancy(agent, occupancy)
             .unwrap_err();
         assert!(matches!(error, WorldError::InvalidOperation(_)));
     }

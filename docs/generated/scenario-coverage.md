@@ -20,6 +20,7 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 - survival-combat: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-contested: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-escort: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
+- survival-failed-rest-cascade: place field `rest_capacity` is not mapped by any FeatureDef
 - survival-items-decay: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-justice: agent field `expectation_store` is not mapped by any FeatureDef
 - survival-justice: agent field `last_seen_memory` is not mapped by any FeatureDef
@@ -35,54 +36,60 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 - survival-patrol: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-preferences: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-production: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
+- survival-rest-cli: place field `rest_capacity` is not mapped by any FeatureDef
+- survival-rest-interrupted-by-danger: place field `rest_capacity` is not mapped by any FeatureDef
+- survival-rest-interrupted-by-danger: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
+- survival-safe-rest: place field `rest_capacity` is not mapped by any FeatureDef
 - survival-scattered: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
+- survival-sleep-contention: place field `contention_policy` is not mapped by any FeatureDef
+- survival-sleep-contention: place field `rest_capacity` is not mapped by any FeatureDef
 - survival-tell: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-theft: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-trade: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 
 ## Feature x Scenario Matrix
 
-| Feature | cli-evaluation | cognitive-archetypes-divergence | final-integration | survival-ask-consult | survival-baseline | survival-combat | survival-contested | survival-drive-escalation | survival-escort | survival-items-decay | survival-justice | survival-need-projection | survival-offices | survival-patrol | survival-preferences | survival-production | survival-scattered | survival-tell | survival-theft | survival-trade |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| Basic needs (Eat) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Basic needs (Drink) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Basic needs (Sleep) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Basic needs (Relieve) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Basic needs (Wash) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Travel physiology | ⚠ | ✅ | ✅ | ✅ | ⚠ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ |
-| Drive escalation | — | — | ✅ | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | ✅ | — | — |
-| Need-driven exploration | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ⚠ | ✅ | ✅ | ✅ | ✅ |
-| Activation-decay perception | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ |
-| Place concealment | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — |
-| Tell / peer info transfer | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | — | — | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ |
-| Ask-about-person | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ⚠ |
-| Consult-record | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ⚠ |
-| Obligation satiation | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — |
-| Diversification / curiosity | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — |
-| Experience preferences | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — |
-| Production (facility-backed craft) | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Merchant selling | ✅ | — | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ |
-| Trade negotiation | ✅ | — | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ |
-| Commodity valuation | ✅ | ✅ | ✅ | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | ✅ |
-| Substitute preferences | ✅ | ✅ | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ |
-| Item decay | — | — | ✅ | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — |
-| Disposal | ✅ | — | ✅ | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — |
-| Facility-queue contention | ⚠ | — | ⚠ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ |
-| Offices / succession / force-claim | — | — | ✅ | ✅ | — | — | — | — | — | — | ✅ | — | ✅ | — | — | — | — | — | — | — |
-| Bounty posting | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Notice posting | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Theft | ✅ | — | ✅ | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | ✅ | — |
-| Justice / accusation | ✅ | — | ✅ | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — |
-| Violation investigation | ✅ | — | ✅ | ✅ | — | — | — | — | — | — | ✅ | — | ✅ | — | — | — | — | — | ✅ | — |
-| Patrol | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — |
-| Pursuit | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — |
-| Combat | ✅ | — | ✅ | — | — | ✅ | — | — | ✅ | — | — | — | — | ✅ | — | — | — | — | — | — |
-| Escort | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Bandit camps | — | — | ✅ | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| Report / witness | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Search | ✅ | — | ✅ | ✅ | — | — | — | — | — | — | ✅ | — | ✅ | — | — | — | — | — | ✅ | — |
-| Stock / transport | ✅ | — | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ |
-| Cognitive archetypes | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| Feature | cli-evaluation | cognitive-archetypes-divergence | final-integration | survival-ask-consult | survival-baseline | survival-combat | survival-contested | survival-drive-escalation | survival-escort | survival-failed-rest-cascade | survival-items-decay | survival-justice | survival-need-projection | survival-offices | survival-patrol | survival-preferences | survival-production | survival-rest-cli | survival-rest-interrupted-by-danger | survival-safe-rest | survival-scattered | survival-sleep-contention | survival-tell | survival-theft | survival-trade |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Basic needs (Eat) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | — | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ |
+| Basic needs (Drink) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | — | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ |
+| Basic needs (Sleep) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ |
+| Basic needs (Relieve) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ |
+| Basic needs (Wash) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | — | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ |
+| Travel physiology | ⚠ | ✅ | ✅ | ✅ | ⚠ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | — | ⚠ | — | ✅ | — | ✅ | ⚠ | ⚠ |
+| Drive escalation | — | — | ✅ | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — |
+| Need-driven exploration | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ⚠ | — | — | — | ✅ | — | ✅ | ✅ | ✅ |
+| Activation-decay perception | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | ✅ | — | — | ✅ | ✅ |
+| Place concealment | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — |
+| Tell / peer info transfer | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | — | ⚠ | ⚠ | — | — | ⚠ | ⚠ | ⚠ | — | — | — | ⚠ | — | ✅ | ⚠ | ⚠ |
+| Ask-about-person | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ⚠ |
+| Consult-record | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ⚠ |
+| Obligation satiation | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — |
+| Diversification / curiosity | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — |
+| Experience preferences | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — |
+| Production (facility-backed craft) | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | — | — | — | ⚠ | — | ⚠ | ⚠ | ⚠ |
+| Merchant selling | ✅ | — | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ |
+| Trade negotiation | ✅ | — | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ |
+| Commodity valuation | ✅ | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ |
+| Substitute preferences | ✅ | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ |
+| Item decay | — | — | ✅ | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| Disposal | ✅ | — | ✅ | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| Facility-queue contention | ⚠ | — | ⚠ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ⚠ | — | — | ✅ |
+| Offices / succession / force-claim | — | — | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — |
+| Bounty posting | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
+| Notice posting | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
+| Theft | ✅ | — | ✅ | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | ✅ | — |
+| Justice / accusation | ✅ | — | ✅ | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| Violation investigation | ✅ | — | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | ✅ | — |
+| Patrol | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Pursuit | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Combat | ✅ | — | ✅ | — | — | ✅ | — | — | ✅ | — | — | — | — | — | ✅ | — | — | — | ✅ | — | — | — | — | — | — |
+| Escort | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
+| Bandit camps | — | — | ✅ | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| Report / witness | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | — | — | ⚠ | — | ⚠ | ⚠ | ⚠ |
+| Search | ✅ | — | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | ✅ | — |
+| Stock / transport | ✅ | — | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ |
+| Cognitive archetypes | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 
 Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absent.
 
@@ -628,6 +635,66 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - resource sources: 6
 - known_recipes union: Harvest Apples, Harvest Water
 
+### scenarios/survival-failed-rest-cascade.ron
+
+- Seed: 174011
+- Agents: 2 Ai
+- Places: 1
+- Survival contract: absent
+
+**Active features**
+- Basic needs (Sleep)
+
+**Present-but-inactive features**
+- Basic needs (Eat)
+- Basic needs (Drink)
+- Basic needs (Relieve)
+- Basic needs (Wash)
+- Travel physiology
+- Ask-about-person
+- Consult-record
+- Bounty posting
+- Notice posting
+- Escort
+
+**Absent features**
+- Drive escalation
+- Need-driven exploration
+- Activation-decay perception
+- Place concealment
+- Tell / peer info transfer
+- Obligation satiation
+- Diversification / curiosity
+- Experience preferences
+- Production (facility-backed craft)
+- Merchant selling
+- Trade negotiation
+- Commodity valuation
+- Substitute preferences
+- Item decay
+- Disposal
+- Facility-queue contention
+- Offices / succession / force-claim
+- Theft
+- Justice / accusation
+- Violation investigation
+- Patrol
+- Pursuit
+- Combat
+- Bandit camps
+- Report / witness
+- Search
+- Stock / transport
+- Cognitive archetypes
+
+**World features**
+- commodity_decay: disabled
+- visibility_profile places: none
+- sleep_quality places: Shelter
+- facilities: 0
+- resource sources: 0
+- known_recipes union: none
+
 ### scenarios/survival-items-decay.ron
 
 - Seed: 610010
@@ -1048,6 +1115,189 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - resource sources: 1
 - known_recipes union: Bake Bread, Harvest Water
 
+### scenarios/survival-rest-cli.ron
+
+- Seed: 174010
+- Agents: 1 Ai, 1 Human
+- Places: 2
+- Survival contract: absent
+
+**Active features**
+- none
+
+**Present-but-inactive features**
+- none
+
+**Absent features**
+- Basic needs (Eat)
+- Basic needs (Drink)
+- Basic needs (Sleep)
+- Basic needs (Relieve)
+- Basic needs (Wash)
+- Travel physiology
+- Drive escalation
+- Need-driven exploration
+- Activation-decay perception
+- Place concealment
+- Tell / peer info transfer
+- Ask-about-person
+- Consult-record
+- Obligation satiation
+- Diversification / curiosity
+- Experience preferences
+- Production (facility-backed craft)
+- Merchant selling
+- Trade negotiation
+- Commodity valuation
+- Substitute preferences
+- Item decay
+- Disposal
+- Facility-queue contention
+- Offices / succession / force-claim
+- Bounty posting
+- Notice posting
+- Theft
+- Justice / accusation
+- Violation investigation
+- Patrol
+- Pursuit
+- Combat
+- Escort
+- Bandit camps
+- Report / witness
+- Search
+- Stock / transport
+- Cognitive archetypes
+
+**World features**
+- commodity_decay: disabled
+- visibility_profile places: none
+- sleep_quality places: Home Camp, Remote Shelter
+- facilities: 0
+- resource sources: 0
+- known_recipes union: none
+
+### scenarios/survival-rest-interrupted-by-danger.ron
+
+- Seed: 174009
+- Agents: 1 Ai, 1 Human
+- Places: 2
+- Survival contract: absent
+
+**Active features**
+- Basic needs (Sleep)
+- Basic needs (Relieve)
+- Combat
+
+**Present-but-inactive features**
+- Basic needs (Eat)
+- Basic needs (Drink)
+- Basic needs (Wash)
+- Travel physiology
+- Ask-about-person
+- Consult-record
+- Bounty posting
+- Notice posting
+- Escort
+
+**Absent features**
+- Drive escalation
+- Need-driven exploration
+- Activation-decay perception
+- Place concealment
+- Tell / peer info transfer
+- Obligation satiation
+- Diversification / curiosity
+- Experience preferences
+- Production (facility-backed craft)
+- Merchant selling
+- Trade negotiation
+- Commodity valuation
+- Substitute preferences
+- Item decay
+- Disposal
+- Facility-queue contention
+- Offices / succession / force-claim
+- Theft
+- Justice / accusation
+- Violation investigation
+- Patrol
+- Pursuit
+- Bandit camps
+- Report / witness
+- Search
+- Stock / transport
+- Cognitive archetypes
+
+**World features**
+- commodity_decay: disabled
+- visibility_profile places: none
+- sleep_quality places: Shelter
+- facilities: 0
+- resource sources: 0
+- known_recipes union: none
+
+### scenarios/survival-safe-rest.ron
+
+- Seed: 174007
+- Agents: 2 Ai
+- Places: 2
+- Survival contract: absent
+
+**Active features**
+- none
+
+**Present-but-inactive features**
+- Basic needs (Eat)
+- Basic needs (Drink)
+- Basic needs (Sleep)
+- Basic needs (Relieve)
+- Basic needs (Wash)
+- Ask-about-person
+- Consult-record
+- Bounty posting
+- Notice posting
+- Escort
+
+**Absent features**
+- Travel physiology
+- Drive escalation
+- Need-driven exploration
+- Activation-decay perception
+- Place concealment
+- Tell / peer info transfer
+- Obligation satiation
+- Diversification / curiosity
+- Experience preferences
+- Production (facility-backed craft)
+- Merchant selling
+- Trade negotiation
+- Commodity valuation
+- Substitute preferences
+- Item decay
+- Disposal
+- Facility-queue contention
+- Offices / succession / force-claim
+- Theft
+- Justice / accusation
+- Violation investigation
+- Patrol
+- Pursuit
+- Combat
+- Bandit camps
+- Report / witness
+- Search
+- Stock / transport
+- Cognitive archetypes
+
+**World features**
+- commodity_decay: disabled
+- visibility_profile places: none
+- sleep_quality places: Shelter North, Open Camp
+- facilities: 0
+- resource sources: 0
+- known_recipes union: none
+
 ### scenarios/survival-scattered.ron
 
 - Seed: 205005
@@ -1107,6 +1357,67 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - facilities: 5
 - resource sources: 4
 - known_recipes union: Harvest Apples, Harvest Grain, Harvest Water
+
+### scenarios/survival-sleep-contention.ron
+
+- Seed: 174008
+- Agents: 3 Ai
+- Places: 1
+- Survival contract: absent
+
+**Active features**
+- none
+
+**Present-but-inactive features**
+- Basic needs (Eat)
+- Basic needs (Drink)
+- Basic needs (Sleep)
+- Basic needs (Relieve)
+- Basic needs (Wash)
+- Ask-about-person
+- Consult-record
+- Facility-queue contention
+- Bounty posting
+- Notice posting
+- Escort
+
+**Absent features**
+- Travel physiology
+- Drive escalation
+- Need-driven exploration
+- Activation-decay perception
+- Place concealment
+- Tell / peer info transfer
+- Obligation satiation
+- Diversification / curiosity
+- Experience preferences
+- Production (facility-backed craft)
+- Merchant selling
+- Trade negotiation
+- Commodity valuation
+- Substitute preferences
+- Item decay
+- Disposal
+- Offices / succession / force-claim
+- Theft
+- Justice / accusation
+- Violation investigation
+- Patrol
+- Pursuit
+- Combat
+- Bandit camps
+- Report / witness
+- Search
+- Stock / transport
+- Cognitive archetypes
+
+**World features**
+- commodity_decay: disabled
+- visibility_profile places: none
+- sleep_quality places: Barracks
+- facilities: 0
+- resource sources: 0
+- known_recipes union: none
 
 ### scenarios/survival-tell.ron
 

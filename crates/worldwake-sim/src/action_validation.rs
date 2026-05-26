@@ -72,6 +72,7 @@ pub(crate) fn evaluate_precondition_authoritatively(
                 return false;
             };
             world.effective_place(target) == Some(actor_place)
+                || (target == actor_place && world.entity_kind(target) == Some(EntityKind::Place))
         }
         Precondition::TargetAdjacentToActor(index) => {
             let Some(target) = targets.get(usize::from(index)).copied() else {
@@ -677,6 +678,26 @@ mod tests {
             Precondition::TargetAtActorPlace(0),
             actor,
             &[target],
+        ));
+    }
+
+    #[test]
+    fn target_at_actor_place_accepts_actor_place_target() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            commit_txn(txn);
+            actor
+        };
+
+        assert!(evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetAtActorPlace(0),
+            actor,
+            &[place],
         ));
     }
 

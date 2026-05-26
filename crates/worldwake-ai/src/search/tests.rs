@@ -10108,6 +10108,46 @@ fn test_binding_flexible_goal_unaffected() {
 }
 
 #[test]
+fn place_anchored_sleep_materializes_rest_site_target() {
+    let (snapshot, mut goal, registry, handlers) = local_sleep_search_fixture();
+    let town = entity(10);
+    goal.anchor = worldwake_core::OpportunityAnchor::Place(town);
+    let mut rejections = Vec::new();
+
+    let result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockerMemory::default(),
+        Tick(0),
+        Some(&mut rejections),
+        None,
+    );
+
+    let plan = result
+        .into_plan()
+        .expect("co-located place-anchored Sleep should find a plan");
+    let sleep_step = plan
+        .steps
+        .iter()
+        .find(|step| step.op_kind == PlannerOpKind::Sleep)
+        .expect("plan should contain a Sleep step");
+    assert_eq!(
+        sleep_step.targets,
+        vec![PlanningEntityRef::Authoritative(town)],
+        "place-anchored Sleep must target the rest site; targetless Sleep is the rough fallback"
+    );
+    assert!(
+        rejections.is_empty(),
+        "place-anchored Sleep should not produce binding rejections, got: {rejections:?}"
+    );
+}
+
+#[test]
 fn search_plan_seeded_satisfies_walkable_skeleton() {
     let (snapshot, goal, registry, handlers) = local_sleep_search_fixture();
     let skeleton = vec![crate::PlannedSkeletonStep {

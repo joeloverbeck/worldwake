@@ -471,11 +471,15 @@ pub struct PlaceDef {
     #[serde(default)]
     pub visibility_profile: Option<PlaceVisibilityProfile>,
     #[serde(default)]
+    pub rest_capacity: Option<u32>,
+    #[serde(default)]
     pub sleep_quality: Option<SleepQualityProfileDef>,
     #[serde(default)]
     pub place_dirtiness: Option<PlaceDirtinessDef>,
     #[serde(default)]
     pub latrine_fullness: Option<LatrineFullnessDef>,
+    #[serde(default)]
+    pub contention_policy: Option<ContentionPolicy>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]

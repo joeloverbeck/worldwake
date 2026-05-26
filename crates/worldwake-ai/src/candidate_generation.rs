@@ -1279,7 +1279,7 @@ fn extract_need_candidates(
     };
 
     emit_self_consume_candidates(candidates, diagnostics, ctx, needs, thresholds);
-    emit_sleep_goal(candidates, diagnostics, ctx, needs, thresholds);
+    sleep_rest_opportunities(candidates, diagnostics, ctx, needs, thresholds);
     emit_relieve_goal(candidates, diagnostics, ctx, needs, thresholds);
     emit_wash_goal(candidates, diagnostics, ctx, needs, thresholds);
     emit_dirtiness_water_acquisition_candidates(candidates, diagnostics, ctx, needs, thresholds);
@@ -3955,7 +3955,7 @@ fn relief_path_actionable_consumable(
 }
 
 fn relief_path_actionable_sleep(ctx: &GenerationContext<'_>) -> bool {
-    !sleep_candidate_places(ctx).is_empty()
+    ctx.place.is_some()
 }
 
 fn relief_path_actionable_relieve() -> bool {
@@ -4485,7 +4485,7 @@ fn local_trade_only_opportunities(
         })
 }
 
-fn emit_sleep_goal(
+fn sleep_rest_opportunities(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
@@ -4493,37 +4493,73 @@ fn emit_sleep_goal(
     thresholds: DriveThresholds,
 ) {
     if needs.fatigue >= thresholds.fatigue.low() {
-        for place in sleep_candidate_places(ctx) {
-            let mut trace = EvidenceTrace::default();
-            if ctx.tracing_enabled {
-                trace
-                    .knowledge_path
-                    .self_knowledge
-                    .push(SelfKnowledgeProvenance::NeedLevel {
-                        need: HomeostaticNeedId::Fatigue,
-                        permille: needs.fatigue,
-                    });
+        let current_place = ctx.place;
+        let local_hostile_present = !ctx.view.visible_hostiles_for(ctx.agent).is_empty();
+        for place in available_rest_site_candidate_places(ctx) {
+            if local_hostile_present && Some(place) == current_place {
+                continue;
             }
-            let mut evidence = Evidence::with_entity(ctx.agent);
-            evidence.places.insert(place);
-            emit_candidate_with_trace(
+            emit_sleep_candidate(
                 candidates,
                 diagnostics,
-                EmitterTag::HomeostaticNeeds,
-                combined_evidence(
-                    EvidenceKindTag::HomeostaticPressure,
-                    EvidenceKindTag::PerceptionObservation,
-                ),
-                GoalKind::Sleep,
+                ctx,
+                needs,
                 OpportunityAnchor::Place(place),
-                evidence,
-                trace,
+                place,
+            );
+        }
+
+        if let Some(current_place) = current_place
+            && !local_hostile_present
+        {
+            emit_sleep_candidate(
+                candidates,
+                diagnostics,
+                ctx,
+                needs,
+                OpportunityAnchor::None,
+                current_place,
             );
         }
     }
 }
 
-fn sleep_candidate_places(ctx: &GenerationContext<'_>) -> Vec<EntityId> {
+fn emit_sleep_candidate(
+    candidates: &mut Vec<GoalOffer>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+    needs: HomeostaticNeeds,
+    anchor: OpportunityAnchor,
+    evidence_place: EntityId,
+) {
+    let mut trace = EvidenceTrace::default();
+    if ctx.tracing_enabled {
+        trace
+            .knowledge_path
+            .self_knowledge
+            .push(SelfKnowledgeProvenance::NeedLevel {
+                need: HomeostaticNeedId::Fatigue,
+                permille: needs.fatigue,
+            });
+    }
+    let mut evidence = Evidence::with_entity(ctx.agent);
+    evidence.places.insert(evidence_place);
+    emit_candidate_with_trace(
+        candidates,
+        diagnostics,
+        EmitterTag::HomeostaticNeeds,
+        combined_evidence(
+            EvidenceKindTag::HomeostaticPressure,
+            EvidenceKindTag::PerceptionObservation,
+        ),
+        GoalKind::Sleep,
+        anchor,
+        evidence,
+        trace,
+    );
+}
+
+fn available_rest_site_candidate_places(ctx: &GenerationContext<'_>) -> Vec<EntityId> {
     let Some(origin) = ctx.place else {
         return Vec::new();
     };
@@ -4536,7 +4572,15 @@ fn sleep_candidate_places(ctx: &GenerationContext<'_>) -> Vec<EntityId> {
             .into_keys()
             .filter(|place| reachable.contains(place)),
     );
-    places.into_iter().collect()
+    places
+        .into_iter()
+        .filter(|place| {
+            let Some(_capacity) = ctx.view.rest_site_capacity(*place) else {
+                return false;
+            };
+            ctx.view.rest_site_occupant_count(*place).is_some()
+        })
+        .collect()
 }
 
 fn emit_relieve_goal(
@@ -7675,6 +7719,8 @@ mod tests {
         sources_at: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
         wash_basin_states: BTreeMap<EntityId, WashBasinState>,
         self_care_occupants: BTreeMap<EntityId, EntityId>,
+        rest_site_capacities: BTreeMap<EntityId, NonZeroU32>,
+        rest_site_occupant_counts: BTreeMap<EntityId, u32>,
         place_tags: BTreeMap<EntityId, BTreeSet<worldwake_core::PlaceTag>>,
         trade_disposition_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
@@ -7773,6 +7819,8 @@ mod tests {
                 sources_at: BTreeMap::new(),
                 wash_basin_states: BTreeMap::new(),
                 self_care_occupants: BTreeMap::new(),
+                rest_site_capacities: BTreeMap::new(),
+                rest_site_occupant_counts: BTreeMap::new(),
                 place_tags: BTreeMap::new(),
                 trade_disposition_profiles: BTreeMap::new(),
                 demand_memory: BTreeMap::new(),
@@ -8718,6 +8766,18 @@ mod tests {
 
         fn self_care_occupant(&self, entity: EntityId) -> Option<EntityId> {
             self.self_care_occupants.get(&entity).copied()
+        }
+
+        fn rest_site_capacity(&self, place: EntityId) -> Option<NonZeroU32> {
+            self.rest_site_capacities.get(&place).copied()
+        }
+
+        fn rest_site_occupant_count(&self, place: EntityId) -> Option<u32> {
+            self.rest_site_occupant_counts.get(&place).copied()
+        }
+
+        fn is_co_located_with_rest_site(&self, place: EntityId) -> bool {
+            self.rest_site_capacities.contains_key(&place)
         }
 
         fn has_production_job(&self, entity: EntityId) -> bool {
@@ -13031,6 +13091,9 @@ mod tests {
         view.sleep_quality_profiles.insert(camp, sleep_profile(900));
         view.sleep_quality_profiles
             .insert(shelter, sleep_profile(1000));
+        view.rest_site_capacities
+            .insert(shelter, NonZeroU32::new(1).unwrap());
+        view.rest_site_occupant_counts.insert(shelter, 0);
 
         let candidates = generate_candidates(
             &view,
@@ -13047,10 +13110,7 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert_eq!(
             sleep_anchors,
-            BTreeSet::from([
-                OpportunityAnchor::Place(camp),
-                OpportunityAnchor::Place(shelter),
-            ])
+            BTreeSet::from([OpportunityAnchor::None, OpportunityAnchor::Place(shelter),])
         );
         assert!(contains_goal(&candidates, GoalKind::Relieve));
     }
@@ -13179,7 +13239,7 @@ mod tests {
     }
 
     #[test]
-    fn sleep_candidate_emission_at_current_place_only() {
+    fn sleep_candidate_emission_without_known_rest_site_is_targetless_rough_sleep() {
         let agent = entity(1);
         let camp = entity(10);
         let mut view = TestBeliefView::default();
@@ -13206,8 +13266,112 @@ mod tests {
             .filter(|candidate| candidate.key.kind == GoalKind::Sleep)
             .collect::<Vec<_>>();
         assert_eq!(sleep_candidates.len(), 1);
-        assert_eq!(sleep_candidates[0].anchor, OpportunityAnchor::Place(camp));
+        assert_eq!(sleep_candidates[0].anchor, OpportunityAnchor::None);
         assert_eq!(sleep_candidates[0].evidence_places, BTreeSet::from([camp]));
+    }
+
+    #[test]
+    fn sleep_rest_opportunities_emit_known_rest_site_and_targetless_rough_sleep() {
+        let agent = entity(1);
+        let camp = entity(10);
+        let shelter = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, camp);
+        view.adjacent_places.insert(camp, vec![shelter]);
+        view.adjacent_places.insert(shelter, vec![camp]);
+        view.homeostatic_needs.insert(agent, fatigue(350));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.beliefs.insert(
+            agent,
+            vec![(
+                shelter,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Place),
+                    alive: true,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        PerceptionSource::DirectObservation,
+                    )
+                },
+            )],
+        );
+        view.rest_site_capacities
+            .insert(shelter, NonZeroU32::new(2).unwrap());
+        view.rest_site_occupant_counts.insert(shelter, 1);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        let sleep_candidates = candidates
+            .iter()
+            .filter(|candidate| candidate.key.kind == GoalKind::Sleep)
+            .collect::<Vec<_>>();
+        assert_eq!(sleep_candidates.len(), 2);
+        assert!(sleep_candidates.iter().any(|candidate| {
+            candidate.anchor == OpportunityAnchor::Place(shelter)
+                && candidate.evidence_places == BTreeSet::from([shelter])
+        }));
+        assert!(sleep_candidates.iter().any(|candidate| {
+            candidate.anchor == OpportunityAnchor::None
+                && candidate.evidence_places == BTreeSet::from([camp])
+        }));
+    }
+
+    #[test]
+    fn sleep_rest_opportunities_keep_full_rest_site_for_queue_planning_and_rough_sleep() {
+        let agent = entity(1);
+        let camp = entity(10);
+        let shelter = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, camp);
+        view.adjacent_places.insert(camp, vec![shelter]);
+        view.adjacent_places.insert(shelter, vec![camp]);
+        view.homeostatic_needs.insert(agent, fatigue(350));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.beliefs.insert(
+            agent,
+            vec![(
+                shelter,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Place),
+                    alive: true,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        PerceptionSource::DirectObservation,
+                    )
+                },
+            )],
+        );
+        view.rest_site_capacities
+            .insert(shelter, NonZeroU32::new(1).unwrap());
+        view.rest_site_occupant_counts.insert(shelter, 1);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        let sleep_anchors = candidates
+            .iter()
+            .filter(|candidate| candidate.key.kind == GoalKind::Sleep)
+            .map(|candidate| candidate.anchor)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            sleep_anchors,
+            vec![OpportunityAnchor::Place(shelter), OpportunityAnchor::None]
+        );
     }
 
     #[test]

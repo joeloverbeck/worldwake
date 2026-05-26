@@ -111,10 +111,10 @@ fn goal_specific_feasibility(
         (FeasibilityStrategy::EvidencePlaceLocal, _) => {
             check_evidence_places_local(view, agent, goal)
         }
-        (
-            FeasibilityStrategy::AlwaysLikely,
-            GoalKind::Sleep | GoalKind::Relieve | GoalKind::FreeCarryCapacity,
-        ) => Some(FeasibilityHint::Likely),
+        (FeasibilityStrategy::AlwaysLikely, GoalKind::Relieve | GoalKind::FreeCarryCapacity) => {
+            Some(FeasibilityHint::Likely)
+        }
+        (FeasibilityStrategy::CandidateBacked, GoalKind::Sleep) => Some(FeasibilityHint::Likely),
         (FeasibilityStrategy::CommodityPresenceCheck, GoalKind::Wash) => {
             if view.commodity_quantity(agent, CommodityKind::Water) > Quantity(0) {
                 Some(FeasibilityHint::Likely)
@@ -700,10 +700,10 @@ mod tests {
         assert_eq!(hint, FeasibilityHint::Uncertain);
     }
 
-    // ── Test 7: Sleep → Likely ──
+    // ── Test 7: Sleep candidate-backed goal → Likely ──
 
     #[test]
-    fn test_sleep_always_likely() {
+    fn test_sleep_candidate_backed_likely() {
         let view = MockView::default();
         let goal = ranked_goal(GoalKind::Sleep);
         let blocked = empty_blocked_memory();
@@ -1192,6 +1192,10 @@ mod tests {
         assert_eq!(
             goal_specific_feasibility_strategy(&ranked_goal(GoalKind::FreeCarryCapacity)),
             crate::FeasibilityStrategy::AlwaysLikely
+        );
+        assert_eq!(
+            goal_specific_feasibility_strategy(&ranked_goal(GoalKind::Sleep)),
+            crate::FeasibilityStrategy::CandidateBacked
         );
     }
 

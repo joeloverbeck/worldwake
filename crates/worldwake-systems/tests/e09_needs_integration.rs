@@ -339,7 +339,11 @@ fn scheduler_driven_care_actions_apply_effects_and_preserve_conservation() {
 
     harness.queue_action("sleep", Vec::new());
     harness.run_queued_action_to_completion(15);
-    assert_eq!(actor_needs(&harness).fatigue, pm(0));
+    assert_eq!(
+        actor_needs(&harness).fatigue,
+        pm(268),
+        "targetless sleep is rough sleep and uses the rough-sleep recovery floor"
+    );
     assert_eq!(
         harness
             .event_log

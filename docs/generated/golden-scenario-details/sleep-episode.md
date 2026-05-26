@@ -7,7 +7,7 @@ Scenarios: 6
 
 ### Scenario 356: Sleep Episode Lifecycle
 
-- Source: `sleep_episode.rs:165`
+- Source: `sleep_episode.rs:202`
 - Primary tests: `sleep_episode_at_default_place_runs_to_intended_max`
 - Replay tests: None
 - All tests: `sleep_episode_at_default_place_runs_to_intended_max`
@@ -20,7 +20,7 @@ Scenarios: 6
 
 ### Scenario 357: Projected Hunger Breach Wakes Sleep
 
-- Source: `sleep_episode.rs:224`
+- Source: `sleep_episode.rs:261`
 - Primary tests: `projected_hunger_breach_wakes_sleep_early`
 - Replay tests: None
 - All tests: `projected_hunger_breach_wakes_sleep_early`
@@ -33,7 +33,7 @@ Scenarios: 6
 
 ### Scenario 358: Sleep Place Quality Modulates Recovery
 
-- Source: `sleep_episode.rs:253`
+- Source: `sleep_episode.rs:290`
 - Primary tests: `place_quality_modulates_per_tick_recovery`
 - Replay tests: None
 - All tests: `place_quality_modulates_per_tick_recovery`
@@ -46,7 +46,7 @@ Scenarios: 6
 
 ### Scenario 359: Interrupted Sleep Records Partial Recovery
 
-- Source: `sleep_episode.rs:279`
+- Source: `sleep_episode.rs:318`
 - Primary tests: `interrupted_sleep_records_partial_recovery`
 - Replay tests: None
 - All tests: `interrupted_sleep_records_partial_recovery`
@@ -59,7 +59,7 @@ Scenarios: 6
 
 ### Scenario 360: Sleep Site Preference Ranks Higher Quality Place
 
-- Source: `sleep_episode.rs:304`
+- Source: `sleep_episode.rs:343`
 - Primary tests: `site_preference_adopts_higher_quality_sleep_place`
 - Replay tests: None
 - All tests: `site_preference_adopts_higher_quality_sleep_place`
@@ -72,7 +72,7 @@ Scenarios: 6
 
 ### Scenario 361: Sleep Episode Events Carry Decision-History Payloads
 
-- Source: `sleep_episode.rs:356`
+- Source: `sleep_episode.rs:398`
 - Primary tests: `sleep_episode_events_render_in_decision_trace`
 - Replay tests: None
 - All tests: `sleep_episode_events_render_in_decision_trace`

@@ -1,0 +1,85 @@
+// S174 Scenario A: rest-site contention plus rough-sleep fallback.
+//
+// Purpose: two critically tired agents see the same one-slot shelter. One
+// sleeps in the shelter; the other is rejected by the rest-site precondition
+// and falls back to rough sleep without writing RestOccupancy.
+(
+    seed: 174007,
+    compaction_interval: 0,
+    places: [
+        (
+            name: "Shelter North",
+            tags: [Camp],
+            rest_capacity: 1,
+            sleep_quality: (shelter: Roofed, ground_comfort: Soft, recovery_modifier: 1100),
+        ),
+        (
+            name: "Open Camp",
+            tags: [Camp],
+            sleep_quality: (shelter: Open, ground_comfort: Earth, recovery_modifier: 700),
+        ),
+    ],
+    edges: [
+        (from: "Shelter North", to: "Open Camp", travel_ticks: 2, bidirectional: true),
+    ],
+    agents: [
+        (
+            name: "Aster",
+            location: "Shelter North",
+            control: Ai,
+            needs: (
+                hunger: 0,
+                thirst: 0,
+                fatigue: 930,
+                bladder: 0,
+                dirtiness: 0,
+            ),
+            utility_profile: (
+                hunger_weight: 50,
+                thirst_weight: 50,
+                fatigue_weight: 1000,
+                bladder_weight: 50,
+                dirtiness_weight: 50,
+                pain_weight: 0,
+                danger_weight: 0,
+                enterprise_weight: 0,
+                social_weight: 0,
+                activity_awareness_weight: 0,
+                side_benefit_weight: 0,
+                bounty_posting_weight: 0,
+                notice_posting_weight: 0,
+                courage: 0,
+                care_weight: 0,
+            ),
+        ),
+        (
+            name: "Bram",
+            location: "Shelter North",
+            control: Ai,
+            needs: (
+                hunger: 0,
+                thirst: 0,
+                fatigue: 930,
+                bladder: 0,
+                dirtiness: 0,
+            ),
+            utility_profile: (
+                hunger_weight: 50,
+                thirst_weight: 50,
+                fatigue_weight: 1000,
+                bladder_weight: 50,
+                dirtiness_weight: 50,
+                pain_weight: 0,
+                danger_weight: 0,
+                enterprise_weight: 0,
+                social_weight: 0,
+                activity_awareness_weight: 0,
+                side_benefit_weight: 0,
+                bounty_posting_weight: 0,
+                notice_posting_weight: 0,
+                courage: 0,
+                care_weight: 0,
+            ),
+        ),
+    ],
+)

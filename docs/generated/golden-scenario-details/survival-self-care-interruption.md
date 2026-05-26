@@ -14,11 +14,11 @@ Scenarios: 4
 
 **Setup**: Human-controlled agents start each self-care action family and cancel before commit.
 
-**Proves**: Every self-care abort keeps the authoritative ActionAborted event and adds the typed ActionTraceDetail::SelfCareInterrupted discriminator.
+**Proves**: Every self-care abort keeps the authoritative ActionAborted event and adds the typed action-trace discriminator; sleep uses the structured SleepInterrupted detail.
 
 ### Scenario 479: S173 Contested Wash Basin Promotes One Occupant
 
-- Source: `survival_self_care_interruption.rs:630`
+- Source: `survival_self_care_interruption.rs:671`
 - Primary tests: `golden_self_care_contested_basin_promotes_one_occupant`
 - Replay tests: None
 - All tests: `golden_self_care_contested_basin_promotes_one_occupant`
@@ -29,7 +29,7 @@ Scenarios: 4
 
 ### Scenario 480: S173 Interrupted Wash Releases Basin And Promotes Waiter
 
-- Source: `survival_self_care_interruption.rs:719`
+- Source: `survival_self_care_interruption.rs:760`
 - Primary tests: `golden_interrupted_wash_releases_basin_and_promotes_waiter`
 - Replay tests: None
 - All tests: `golden_interrupted_wash_releases_basin_and_promotes_waiter`
@@ -40,7 +40,7 @@ Scenarios: 4
 
 ### Scenario 481: S173 Repeated Self-Care Interruption Can End In Deprivation Death
 
-- Source: `survival_self_care_interruption.rs:799`
+- Source: `survival_self_care_interruption.rs:840`
 - Primary tests: `golden_repeated_self_care_interruption_can_end_in_deprivation_death`
 - Replay tests: `golden_repeated_self_care_interruption_collapse_replays_deterministically`
 - All tests: `golden_repeated_self_care_interruption_can_end_in_deprivation_death`, `golden_repeated_self_care_interruption_collapse_replays_deterministically`

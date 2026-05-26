@@ -1,19 +1,20 @@
 use crate::scheduler::SchedulerActionRuntime;
 use crate::{
     ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandlerRegistry,
-    ActionInstanceId, ActionTraceDetail, ActionTraceEvent, ActionTraceKind, ActionTraceSink,
-    ControlError, ControllerState, DeterministicRng, ExternalAbortReason, InputKind,
-    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink, RecipeRegistry,
-    RequestBindingKind, RequestResolutionOutcome, RequestResolutionRejectionReason,
-    RequestResolutionTraceEvent, RequestResolutionTraceSink, Scheduler, SystemDispatchTable,
-    SystemError, TickInputContext, TickInputError, TickInputProducer, TickOutcome,
-    derive_start_failure_legality_trace, get_affordances,
+    ActionInstanceId, ActionState, ActionTraceDetail, ActionTraceEvent, ActionTraceKind,
+    ActionTraceSink, ControlError, ControllerState, DeterministicRng, ExternalAbortReason,
+    InputKind, InstitutionalKnowledgeTraceSink, InterruptReason, PerceptionTraceSink,
+    PoliticalTraceSink, RecipeRegistry, RequestBindingKind, RequestResolutionOutcome,
+    RequestResolutionRejectionReason, RequestResolutionTraceEvent, RequestResolutionTraceSink,
+    Scheduler, SystemDispatchTable, SystemError, TickInputContext, TickInputError,
+    TickInputProducer, TickOutcome, derive_start_failure_legality_trace, get_affordances,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use worldwake_core::{
-    ActionDefId, CauseRef, EntityId, EventLog, EventPayload, EventTag, PendingEvent,
-    SelfCareUseKind, Tick, VisibilitySpec, WitnessData, World,
+    ActionDefId, CauseRef, DecisionEventPayload, EntityId, EventLog, EventPayload, EventTag,
+    EventView, PendingEvent, Permille, SelfCareUseKind, SleepFailureCause, Tick, VisibilitySpec,
+    WakeReason, WitnessData, World,
 };
 
 pub struct TickStepServices<'a> {
@@ -67,7 +68,10 @@ fn action_trace_detail_for_affordance(
 
 fn abort_trace_detail_for_instance(
     defs: &ActionDefRegistry,
+    event_log: &EventLog,
+    tick: Tick,
     instance: &crate::ActionInstance,
+    fallback_cause: SleepFailureCause,
 ) -> Option<ActionTraceDetail> {
     let def = defs.get(instance.def_id)?;
     match def.name.as_str() {
@@ -79,10 +83,7 @@ fn abort_trace_detail_for_instance(
             kind: SelfCareUseKind::Drink,
             basin: None,
         }),
-        "sleep" => Some(ActionTraceDetail::SelfCareInterrupted {
-            kind: SelfCareUseKind::Sleep,
-            basin: None,
-        }),
+        "sleep" => sleep_interrupted_detail(event_log, tick, instance, fallback_cause),
         "wash" => Some(ActionTraceDetail::SelfCareInterrupted {
             kind: SelfCareUseKind::Wash,
             basin: instance.targets.first().copied(),
@@ -96,6 +97,71 @@ fn abort_trace_detail_for_instance(
             basin: None,
         }),
         _ => ActionTraceDetail::from_payload(&instance.payload),
+    }
+}
+
+fn sleep_interrupted_detail(
+    event_log: &EventLog,
+    tick: Tick,
+    instance: &crate::ActionInstance,
+    fallback_cause: SleepFailureCause,
+) -> Option<ActionTraceDetail> {
+    let (was_rough_sleep, fallback_place) = match instance.local_state {
+        Some(ActionState::Sleep { rough, place }) => (rough, place),
+        _ => (false, *instance.targets.first()?),
+    };
+    let ended_payload = sleep_episode_ended_payload(event_log, tick, instance.actor);
+    let cause = ended_payload.map_or(fallback_cause, |payload| match payload.end_reason {
+        WakeReason::LocalDisturbance { cause } => cause,
+        _ => fallback_cause,
+    });
+
+    Some(ActionTraceDetail::SleepInterrupted {
+        place: ended_payload.map_or(fallback_place, |payload| payload.place),
+        cause,
+        accumulated_recovery: ended_payload
+            .map_or(Permille::ZERO, |payload| payload.accumulated_recovery),
+        was_rough_sleep,
+    })
+}
+
+fn sleep_episode_ended_payload(
+    event_log: &EventLog,
+    tick: Tick,
+    actor: EntityId,
+) -> Option<&worldwake_core::SleepEpisodeEndedPayload> {
+    event_log
+        .events_at_tick(tick)
+        .iter()
+        .rev()
+        .filter_map(|event_id| event_log.get(*event_id))
+        .find_map(|record| match record.decision_payload()? {
+            DecisionEventPayload::SleepEpisodeEnded(payload) if payload.sleeper == actor => {
+                Some(payload)
+            }
+            _ => None,
+        })
+}
+
+fn sleep_failure_cause_for_abort_reason(reason: &crate::AbortReason) -> SleepFailureCause {
+    match reason {
+        crate::AbortReason::Interrupted {
+            kind: InterruptReason::DangerNearby,
+            ..
+        } => SleepFailureCause::HostileProximity,
+        crate::AbortReason::CommitConditionFailed {
+            condition: crate::Precondition::ActorAlive,
+        }
+        | crate::AbortReason::ExternalAbort {
+            kind: ExternalAbortReason::ActorMarkedDead,
+            ..
+        } => SleepFailureCause::ActorIncapacitated,
+        crate::AbortReason::AuthoritativeRevalidationFailed { detail }
+            if detail.contains("rest site") && detail.contains("full") =>
+        {
+            SleepFailureCause::RestSiteContended
+        }
+        _ => SleepFailureCause::Generic,
     }
 }
 
@@ -197,6 +263,8 @@ pub fn step_tick(
     let pre_progress_dead_aborts = abort_actions_for_dead_actors(&mut runtime, tick, &services)?;
     let (inputs_processed, actions_started, actions_aborted) =
         process_inputs(&mut runtime, controller, tick, &services)?;
+    let hostile_sleep_interrupts =
+        interrupt_sleep_for_local_hostiles(&mut runtime, tick, &services)?;
     let (actions_completed, progressed_action_aborts) =
         progress_active_actions(&mut runtime, tick, &mut services)?;
     let systems_ran = pre_action_systems_ran
@@ -213,6 +281,8 @@ pub fn step_tick(
         actions_completed,
         actions_aborted: pre_progress_dead_aborts
             .checked_add(actions_aborted)
+            .expect("tick-step action-abort counter overflowed")
+            .checked_add(hostile_sleep_interrupts)
             .expect("tick-step action-abort counter overflowed")
             .checked_add(progressed_action_aborts)
             .expect("tick-step action-abort counter overflowed")
@@ -513,7 +583,10 @@ fn apply_input(
                     )
                     .with_detail(abort_trace_detail_for_instance(
                         services.action_defs,
+                        runtime.event_log,
+                        tick,
                         &instance,
+                        SleepFailureCause::Generic,
                     )),
                 );
             }
@@ -644,6 +717,93 @@ fn validate_cancel_actor(
     Ok(())
 }
 
+fn interrupt_sleep_for_local_hostiles(
+    runtime: &mut TickStepRuntime<'_>,
+    tick: Tick,
+    services: &TickStepServices<'_>,
+) -> Result<u32, TickStepError> {
+    let active_sleep_ids = runtime
+        .scheduler
+        .active_actions()
+        .iter()
+        .filter_map(|(instance_id, instance)| {
+            let def = services.action_defs.get(instance.def_id)?;
+            (def.name == "sleep" && local_hostile_present(runtime.world, instance.actor))
+                .then_some(*instance_id)
+        })
+        .collect::<Vec<_>>();
+    let mut interrupted = 0u32;
+
+    for instance_id in active_sleep_ids {
+        let Some(instance) = runtime
+            .scheduler
+            .active_actions()
+            .get(&instance_id)
+            .cloned()
+        else {
+            continue;
+        };
+        let replan = runtime
+            .scheduler
+            .interrupt_active_action(
+                instance_id,
+                SchedulerActionRuntime {
+                    action_defs: services.action_defs,
+                    action_handlers: services.action_handlers,
+                    world: runtime.world,
+                    event_log: runtime.event_log,
+                    rng: runtime.rng,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::SystemTick(tick),
+                    tick,
+                    recipe_registry: services.recipe_registry,
+                    action_defs: services.action_defs,
+                },
+                InterruptReason::DangerNearby,
+            )
+            .map_err(TickStepError::Action)?;
+
+        let action_name = lookup_action_name(services.action_defs, instance.def_id);
+        runtime.record_action_trace(
+            ActionTraceEvent::new(
+                tick,
+                instance.actor,
+                instance.def_id,
+                action_name,
+                ActionTraceKind::Aborted {
+                    instance_id,
+                    reason: format!("{:?}", replan.reason),
+                },
+            )
+            .with_detail(abort_trace_detail_for_instance(
+                services.action_defs,
+                runtime.event_log,
+                tick,
+                &instance,
+                SleepFailureCause::HostileProximity,
+            )),
+        );
+        runtime.scheduler.retain_replan(replan);
+        interrupted = interrupted
+            .checked_add(1)
+            .expect("tick-step hostile sleep interrupt counter overflowed");
+    }
+
+    Ok(interrupted)
+}
+
+fn local_hostile_present(world: &World, actor: EntityId) -> bool {
+    let Some(actor_place) = world.effective_place(actor) else {
+        return false;
+    };
+
+    world.hostile_targets_of(actor).into_iter().any(|target| {
+        world.get_component_dead_at(target).is_none()
+            && world.effective_place(target) == Some(actor_place)
+    })
+}
+
 fn progress_active_actions(
     runtime: &mut TickStepRuntime<'_>,
     tick: Tick,
@@ -739,7 +899,13 @@ fn progress_active_actions(
                             reason: format!("{reason:?}"),
                         },
                     )
-                    .with_detail(ActionTraceDetail::from_payload(&instance.payload)),
+                    .with_detail(abort_trace_detail_for_instance(
+                        services.action_defs,
+                        runtime.event_log,
+                        tick,
+                        &instance,
+                        sleep_failure_cause_for_abort_reason(&reason),
+                    )),
                 );
                 runtime.scheduler.retain_replan(replan);
                 actions_aborted = actions_aborted
@@ -858,7 +1024,13 @@ fn abort_actions_for_dead_actors(
                         reason: "ActorMarkedDead".to_string(),
                     },
                 )
-                .with_detail(abort_trace_detail_for_instance(services.action_defs, &inst)),
+                .with_detail(abort_trace_detail_for_instance(
+                    services.action_defs,
+                    runtime.event_log,
+                    tick,
+                    &inst,
+                    SleepFailureCause::ActorIncapacitated,
+                )),
             );
         }
         aborted = aborted
@@ -970,7 +1142,7 @@ fn emit_end_of_tick_marker(event_log: &mut EventLog, tick: Tick) {
 mod tests {
     use super::{
         RequestedAction, TickStepError, TickStepResult, TickStepServices,
-        abort_trace_detail_for_instance, resolve_affordance, step_tick,
+        abort_trace_detail_for_instance, local_hostile_present, resolve_affordance, step_tick,
     };
     use crate::{
         ActionDef, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandler,
@@ -983,13 +1155,14 @@ mod tests {
         SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest, TargetSpec,
         TellActionPayload, TickInputContext, TickInputError, TickInputProducer, get_affordances,
     };
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
-        ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, ControlSource, DeadAt, EntityId,
-        EntityKind, EventLog, EventTag, EventView, Seed, SelfCareUseKind, Tick, VisibilitySpec,
-        WitnessData, World, WorldTxn, build_prototype_world,
+        ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, ControlSource, DeadAt, DeathCause,
+        DecisionEventPayload, EntityId, EntityKind, EventLog, EventPayload, EventTag, EventView,
+        PendingEvent, Permille, Seed, SelfCareUseKind, SleepEpisodeEndedPayload, SleepFailureCause,
+        Tick, VisibilitySpec, WakeReason, WitnessData, World, WorldTxn, build_prototype_world,
     };
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -1315,19 +1488,19 @@ mod tests {
         }
     }
 
+    fn sleep_instance(def_id: ActionDefId, place: EntityId, rough: bool) -> ActionInstance {
+        ActionInstance {
+            local_state: Some(ActionState::Sleep { rough, place }),
+            ..active_instance(def_id, Vec::new())
+        }
+    }
+
     #[test]
     fn abort_trace_detail_for_self_care_actions_uses_action_family_and_target() {
         let mut registry = action_registry();
-        for (offset, name) in [
-            "eat",
-            "drink",
-            "sleep",
-            "wash",
-            "toilet",
-            "relieve_wilderness",
-        ]
-        .into_iter()
-        .enumerate()
+        for (offset, name) in ["eat", "drink", "wash", "toilet", "relieve_wilderness"]
+            .into_iter()
+            .enumerate()
         {
             registry.register(self_care_def(ActionDefId(3 + offset as u32), name));
         }
@@ -1352,14 +1525,6 @@ mod tests {
             ),
             (
                 ActionDefId(5),
-                Vec::new(),
-                ActionTraceDetail::SelfCareInterrupted {
-                    kind: SelfCareUseKind::Sleep,
-                    basin: None,
-                },
-            ),
-            (
-                ActionDefId(6),
                 vec![basin],
                 ActionTraceDetail::SelfCareInterrupted {
                     kind: SelfCareUseKind::Wash,
@@ -1367,7 +1532,7 @@ mod tests {
                 },
             ),
             (
-                ActionDefId(7),
+                ActionDefId(6),
                 vec![basin],
                 ActionTraceDetail::SelfCareInterrupted {
                     kind: SelfCareUseKind::LatrineRelief,
@@ -1375,7 +1540,7 @@ mod tests {
                 },
             ),
             (
-                ActionDefId(8),
+                ActionDefId(7),
                 Vec::new(),
                 ActionTraceDetail::SelfCareInterrupted {
                     kind: SelfCareUseKind::WildernessRelief,
@@ -1384,10 +1549,138 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                abort_trace_detail_for_instance(&registry, &active_instance(def_id, targets)),
+                abort_trace_detail_for_instance(
+                    &registry,
+                    &EventLog::new(),
+                    Tick(12),
+                    &active_instance(def_id, targets),
+                    SleepFailureCause::Generic,
+                ),
                 Some(expected)
             );
         }
+    }
+
+    #[test]
+    fn abort_trace_detail_for_sleep_uses_structured_sleep_interrupted_detail() {
+        let mut registry = action_registry();
+        registry.register(self_care_def(ActionDefId(3), "sleep"));
+        let place = entity(40);
+
+        assert_eq!(
+            abort_trace_detail_for_instance(
+                &registry,
+                &EventLog::new(),
+                Tick(12),
+                &sleep_instance(ActionDefId(3), place, true),
+                SleepFailureCause::HostileProximity,
+            ),
+            Some(ActionTraceDetail::SleepInterrupted {
+                place,
+                cause: SleepFailureCause::HostileProximity,
+                accumulated_recovery: Permille::ZERO,
+                was_rough_sleep: true,
+            })
+        );
+    }
+
+    #[test]
+    fn local_hostile_present_ignores_dead_hostile_targets() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world
+            .topology()
+            .place_ids()
+            .next()
+            .expect("prototype topology should include a place");
+        let mut log = EventLog::new();
+        let (actor, target) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Actor", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(target, place).unwrap();
+            txn.add_hostility(actor, target).unwrap();
+            let _ = txn.commit(&mut log);
+            (actor, target)
+        };
+
+        assert!(
+            local_hostile_present(&world, actor),
+            "living co-located hostile target should interrupt sleep"
+        );
+
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_component_dead_at(
+                target,
+                DeadAt {
+                    tick: Tick(2),
+                    cause: DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
+            let _ = txn.commit(&mut log);
+        }
+
+        assert!(
+            !local_hostile_present(&world, actor),
+            "dead co-located hostile target should not interrupt sleep"
+        );
+    }
+
+    #[test]
+    fn abort_trace_detail_for_sleep_reads_sleep_episode_end_payload() {
+        let mut registry = action_registry();
+        registry.register(self_care_def(ActionDefId(3), "sleep"));
+        let actor = entity(9);
+        let place = entity(40);
+        let mut event_log = EventLog::new();
+        event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(12),
+            cause: CauseRef::SystemTick(Tick(12)),
+            actor_id: Some(actor),
+            action_name: Some("sleep".to_string()),
+            target_ids: Vec::new(),
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::PublicRecord,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::SleepEpisodeEnded]),
+            contention_event_payload: None,
+            decision_payload: Some(DecisionEventPayload::SleepEpisodeEnded(
+                SleepEpisodeEndedPayload {
+                    sleeper: actor,
+                    place,
+                    start_tick: Tick(8),
+                    end_tick: Tick(12),
+                    end_reason: WakeReason::LocalDisturbance {
+                        cause: SleepFailureCause::RestSiteContended,
+                    },
+                    accumulated_recovery: Permille::new(125).unwrap(),
+                    final_fatigue: Permille::new(875).unwrap(),
+                },
+            )),
+            artifact_transition_payload: None,
+            personality_assigned_payload: None,
+        }));
+
+        assert_eq!(
+            abort_trace_detail_for_instance(
+                &registry,
+                &event_log,
+                Tick(12),
+                &sleep_instance(ActionDefId(3), entity(99), false),
+                SleepFailureCause::Generic,
+            ),
+            Some(ActionTraceDetail::SleepInterrupted {
+                place,
+                cause: SleepFailureCause::RestSiteContended,
+                accumulated_recovery: Permille::new(125).unwrap(),
+                was_rough_sleep: false,
+            })
+        );
     }
 
     fn reservation_action_registry() -> ActionDefRegistry {

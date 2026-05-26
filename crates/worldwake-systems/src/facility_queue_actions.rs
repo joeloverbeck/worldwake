@@ -37,16 +37,12 @@ fn queue_for_facility_use_action_def(id: ActionDefId, handler: ActionHandlerId) 
         name: "queue_for_facility_use".to_string(),
         domain: worldwake_core::ActionDomain::Production,
         actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorNotInTransit],
-        targets: vec![TargetSpec::EntityAtActorPlace {
-            kind: EntityKind::Facility,
+        targets: vec![TargetSpec::EntityAtActorPlaceAnyOf {
+            kinds: [EntityKind::Facility, EntityKind::Place],
         }],
         preconditions: vec![
             Precondition::TargetExists(0),
             Precondition::TargetAtActorPlace(0),
-            Precondition::TargetKind {
-                target_index: 0,
-                kind: EntityKind::Facility,
-            },
         ],
         reservation_requirements: Vec::new(),
         duration: DurationExpr::Fixed(NonZeroU32::MIN),
@@ -56,10 +52,6 @@ fn queue_for_facility_use_action_def(id: ActionDefId, handler: ActionHandlerId) 
         commit_conditions: vec![
             Precondition::TargetExists(0),
             Precondition::TargetAtActorPlace(0),
-            Precondition::TargetKind {
-                target_index: 0,
-                kind: EntityKind::Facility,
-            },
         ],
         visibility: VisibilitySpec::SamePlace,
         causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
@@ -116,15 +108,9 @@ fn validate_queue_payload_authoritatively(
     world: &World,
 ) -> Result<(), ActionError> {
     let payload = queue_payload(def, payload)?;
-    let facility = *targets.first().ok_or(ActionError::InvalidTarget(actor))?;
-    let facility_marker = world
-        .get_component_workstation_marker(facility)
-        .copied()
-        .ok_or_else(|| {
-            ActionError::PreconditionFailed(format!("facility {facility} lacks workstation marker"))
-        })?;
+    let entity = *targets.first().ok_or(ActionError::InvalidTarget(actor))?;
 
-    validate_contention_queue_admission(world, actor, facility)?;
+    validate_contention_queue_admission(world, actor, entity)?;
 
     let intended_def = registry.get(payload.intended_action).ok_or_else(|| {
         ActionError::PreconditionFailed(format!(
@@ -132,6 +118,23 @@ fn validate_queue_payload_authoritatively(
             payload.intended_action
         ))
     })?;
+    if intended_def.domain == worldwake_core::ActionDomain::Needs && intended_def.name == "sleep" {
+        if world.entity_kind(entity) != Some(EntityKind::Place)
+            || world.get_component_rest_capacity(entity).is_none()
+        {
+            return Err(ActionError::PreconditionFailed(format!(
+                "entity {entity} is not a rest-capable place"
+            )));
+        }
+        return Ok(());
+    }
+
+    let facility_marker = world
+        .get_component_workstation_marker(entity)
+        .copied()
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("facility {entity} lacks workstation marker"))
+        })?;
     let intended_tag = exclusive_facility_workstation_tag(intended_def).ok_or_else(|| {
         ActionError::PreconditionFailed(format!(
             "intended action {:?} is not an exclusive facility operation",
@@ -141,7 +144,7 @@ fn validate_queue_payload_authoritatively(
 
     if facility_marker != WorkstationMarker(intended_tag) {
         return Err(ActionError::PreconditionFailed(format!(
-            "facility {facility} workstation {:?} does not match intended action {:?} workstation {:?}",
+            "facility {entity} workstation {:?} does not match intended action {:?} workstation {:?}",
             facility_marker.0, payload.intended_action, intended_tag
         )));
     }

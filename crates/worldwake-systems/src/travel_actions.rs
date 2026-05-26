@@ -89,7 +89,8 @@ fn travel_state(
             | ActionState::Heal { .. }
             | ActionState::Escort { .. }
             | ActionState::Investigate { .. }
-            | ActionState::Trade { .. },
+            | ActionState::Trade { .. }
+            | ActionState::Sleep { .. },
         )
         | None => Err(ActionError::InternalError(format!(
             "travel action instance {} is missing travel state",
