@@ -798,10 +798,10 @@ fn local_hostile_present(world: &World, actor: EntityId) -> bool {
         return false;
     };
 
-    world
-        .hostile_targets_of(actor)
-        .into_iter()
-        .any(|target| world.is_alive(target) && world.effective_place(target) == Some(actor_place))
+    world.hostile_targets_of(actor).into_iter().any(|target| {
+        world.get_component_dead_at(target).is_none()
+            && world.effective_place(target) == Some(actor_place)
+    })
 }
 
 fn progress_active_actions(
@@ -1142,7 +1142,7 @@ fn emit_end_of_tick_marker(event_log: &mut EventLog, tick: Tick) {
 mod tests {
     use super::{
         RequestedAction, TickStepError, TickStepResult, TickStepServices,
-        abort_trace_detail_for_instance, resolve_affordance, step_tick,
+        abort_trace_detail_for_instance, local_hostile_present, resolve_affordance, step_tick,
     };
     use crate::{
         ActionDef, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandler,
@@ -1159,7 +1159,7 @@ mod tests {
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
-        ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, ControlSource, DeadAt,
+        ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, ControlSource, DeadAt, DeathCause,
         DecisionEventPayload, EntityId, EntityKind, EventLog, EventPayload, EventTag, EventView,
         PendingEvent, Permille, Seed, SelfCareUseKind, SleepEpisodeEndedPayload, SleepFailureCause,
         Tick, VisibilitySpec, WakeReason, WitnessData, World, WorldTxn, build_prototype_world,
@@ -1581,6 +1581,50 @@ mod tests {
                 accumulated_recovery: Permille::ZERO,
                 was_rough_sleep: true,
             })
+        );
+    }
+
+    #[test]
+    fn local_hostile_present_ignores_dead_hostile_targets() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world
+            .topology()
+            .place_ids()
+            .next()
+            .expect("prototype topology should include a place");
+        let mut log = EventLog::new();
+        let (actor, target) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Actor", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(target, place).unwrap();
+            txn.add_hostility(actor, target).unwrap();
+            let _ = txn.commit(&mut log);
+            (actor, target)
+        };
+
+        assert!(
+            local_hostile_present(&world, actor),
+            "living co-located hostile target should interrupt sleep"
+        );
+
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_component_dead_at(
+                target,
+                DeadAt {
+                    tick: Tick(2),
+                    cause: DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
+            let _ = txn.commit(&mut log);
+        }
+
+        assert!(
+            !local_hostile_present(&world, actor),
+            "dead co-located hostile target should not interrupt sleep"
         );
     }
 
