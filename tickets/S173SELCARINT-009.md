@@ -74,7 +74,7 @@ Regenerate `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-scen
 - New deprivation-wound mechanism — existing S17/S81 substrate is reused.
 - New `EventTag` variant — `EventTag::Death` reused.
 - Scenario A/B/C (standard goldens) — owned by ticket 007.
-- Scenario D (player POV) — owned by ticket 008.
+- Scenario D (player POV) — landed by `archive/tickets/S173SELCARINT-008.md`.
 - Recovery-memory blocker (deferred per spec P1.3 and `Out of Scope (Tracked Elsewhere)` section).
 - Profile-driven re-balancing of `dirtiness_rate` or threshold defaults — the scenario authors its own profile values; production defaults are untouched.
 

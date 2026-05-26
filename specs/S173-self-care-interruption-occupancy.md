@@ -2,7 +2,7 @@
 
 ## Summary
 
-At draft intake, only `sleep` had a durable interruption contract: `SleepEpisode` carried accumulated recovery, `abort_sleep_episode` ended the episode with `WakeReason::LocalDisturbance`, and the episode preserved partial progress across replans. `eat`, `drink`, `toilet`, `relieve_wilderness`, and `wash` all registered `abort_noop` (`crates/worldwake-systems/src/needs_actions.rs`) and had no occupancy state — interrupting any of them left no state, no structured trace beyond the engine-level `EventTag::ActionAborted` record, and (for Wash and Toilet) no facility release because there was no facility reservation to release. Tickets through `archive/tickets/S173SELCARINT-004.md` have since landed `SelfCareOccupancy`, Wash/Toilet occupancy release, and Wash/Toilet trace detail; `archive/tickets/S173SELCARINT-005.md` added the remaining atomic-action and Sleep trace discriminator mapping; `archive/tickets/S173SELCARINT-006.md` landed the occupancy-aware emitter filter; `archive/tickets/S173SELCARINT-007.md` added the standard golden proof for Scenarios A, B, and C. The remaining spec family proves player-POV symmetry and repeated-interruption deprivation collapse.
+At draft intake, only `sleep` had a durable interruption contract: `SleepEpisode` carried accumulated recovery, `abort_sleep_episode` ended the episode with `WakeReason::LocalDisturbance`, and the episode preserved partial progress across replans. `eat`, `drink`, `toilet`, `relieve_wilderness`, and `wash` all registered `abort_noop` (`crates/worldwake-systems/src/needs_actions.rs`) and had no occupancy state — interrupting any of them left no state, no structured trace beyond the engine-level `EventTag::ActionAborted` record, and (for Wash and Toilet) no facility release because there was no facility reservation to release. Tickets through `archive/tickets/S173SELCARINT-004.md` have since landed `SelfCareOccupancy`, Wash/Toilet occupancy release, and Wash/Toilet trace detail; `archive/tickets/S173SELCARINT-005.md` added the remaining atomic-action and Sleep trace discriminator mapping; `archive/tickets/S173SELCARINT-006.md` landed the occupancy-aware emitter filter; `archive/tickets/S173SELCARINT-007.md` added the standard golden proof for Scenarios A, B, and C; `archive/tickets/S173SELCARINT-008.md` added the player-POV symmetry proof for Scenario D. The remaining spec family proves repeated-interruption deprivation collapse.
 
 ## Phase
 
@@ -426,7 +426,7 @@ Assertions:
 
 ### Scenario D — Player POV symmetry for occupancy
 
-Same as S172 Scenario D but extended: controlled agent at a place without a co-located basin and without belief about a remote basin must not see remote `SelfCareOccupancy` state in any CLI accessor output. Follows the S163 player-POV gating pattern.
+Landed by `archive/tickets/S173SELCARINT-008.md`: `crates/worldwake-ai/tests/scenarios/survival_drive_escalation.rs::cli_does_not_leak_remote_wash_basin_state_for_controlled_agent` extends the S172 Scenario D player-POV surface with `SelfCareOccupancy`. The controlled agent remains at a place without a co-located basin and without belief about the remote basin; the remote basin carries authoritative occupancy, but `FacilityBeliefView::self_care_occupant` returns `None` for the controlled agent. The same test also asserts the co-located occupant can see the occupancy via the FND-14A path.
 
 ### Scenario E — Repeated interruption → lawful deprivation collapse
 

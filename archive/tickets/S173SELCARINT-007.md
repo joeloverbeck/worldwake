@@ -90,7 +90,7 @@ Regenerated `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-sce
 
 ## Out of Scope
 
-- Player POV symmetry (Scenario D) — owned by ticket 008.
+- Player POV symmetry (Scenario D) — landed by `archive/tickets/S173SELCARINT-008.md`.
 - Repeated-interruption deprivation collapse (Scenario E) — owned by ticket 009.
 - New abort handler or emitter logic — those land in tickets 004, 005, 006.
 

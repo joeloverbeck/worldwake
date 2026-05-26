@@ -11,9 +11,9 @@ use worldwake_cli::scenario::{
 };
 use worldwake_core::{
     ActionDefId, AgentBeliefStore, CommodityKind, ContentionGrant, ContentionQueue,
-    DriveThresholds, EntityId, EventTag, EventView, ExplorationProfile, HomeostaticNeedId,
-    HomeostaticNeeds, MetabolismProfile, PerceptionSource, Quantity, ResourceSource, Seed, Tick,
-    UtilityProfile, WashBasinState, WorkstationTag,
+    DriveThresholds, EntityId, EventTag, EventView, ExplorationProfile, GoalKey, HomeostaticNeedId,
+    HomeostaticNeeds, MetabolismProfile, PerceptionSource, Quantity, ResourceSource, Seed,
+    SelfCareOccupancy, SelfCareUseKind, Tick, UtilityProfile, WashBasinState, WorkstationTag,
 };
 use worldwake_sim::{
     ActionTraceKind, FacilityBeliefView, GoalBeliefView, PerAgentBeliefView, TemporalBeliefView,
@@ -343,6 +343,16 @@ fn build_belief_only_wash_harness() -> (GoldenHarness, EntityId, EntityId) {
     .expect("belief-barrier harness should keep remote wash basin state writable");
     txn.set_component_contention_queue(remote_wash, remote_queue)
         .expect("belief-barrier harness should keep remote wash basin contention writable");
+    txn.set_component_self_care_occupancy(
+        remote_wash,
+        SelfCareOccupancy {
+            occupant: remote_holder,
+            use_kind: SelfCareUseKind::Wash,
+            started_tick: Tick(8),
+            goal_key: GoalKey::from(GoalKind::Wash),
+        },
+    )
+    .expect("belief-barrier harness should keep remote wash basin occupancy writable");
     commit_txn(txn, &mut h.event_log);
     seed_actor_local_beliefs(
         &mut h.world,
@@ -422,18 +432,30 @@ fn remote_wash_basin_pov_reads() -> (
     Option<WashBasinState>,
     Option<u32>,
     bool,
+    Option<EntityId>,
+    EntityId,
+    Option<EntityId>,
 ) {
     let (h, agent, remote_wash) = build_belief_only_wash_harness();
     let authoritative_state = *h
         .world
         .get_component_wash_basin_state(remote_wash)
         .expect("remote basin should carry authoritative non-default wash state");
+    let authoritative_occupant = h
+        .world
+        .get_component_self_care_occupancy(remote_wash)
+        .expect("remote basin should carry authoritative self-care occupancy")
+        .occupant;
     let view = PerAgentBeliefView::from_world(agent, &h.world);
     let goal_view_state = GoalBeliefView::wash_basin_state(&view, agent, remote_wash);
     let facility_view_state = FacilityBeliefView::wash_basin_state(&view, remote_wash);
     let remote_queue_position =
         TemporalBeliefView::facility_queue_position(&view, remote_wash, agent);
     let remote_grant_visible = TemporalBeliefView::facility_grant(&view, remote_wash).is_some();
+    let remote_self_care_occupant = FacilityBeliefView::self_care_occupant(&view, remote_wash);
+    let colocated_view = PerAgentBeliefView::from_world(authoritative_occupant, &h.world);
+    let colocated_self_care_occupant =
+        FacilityBeliefView::self_care_occupant(&colocated_view, remote_wash);
 
     assert_ne!(
         authoritative_state,
@@ -447,6 +469,9 @@ fn remote_wash_basin_pov_reads() -> (
         facility_view_state,
         remote_queue_position,
         remote_grant_visible,
+        remote_self_care_occupant,
+        authoritative_occupant,
+        colocated_self_care_occupant,
     )
 }
 
@@ -778,6 +803,9 @@ fn cli_does_not_leak_remote_wash_basin_state_for_controlled_agent() {
         facility_view_state,
         remote_queue_position,
         remote_grant_visible,
+        remote_self_care_occupant,
+        authoritative_occupant,
+        colocated_self_care_occupant,
     ) = remote_wash_basin_pov_reads();
 
     assert_eq!(
@@ -796,6 +824,15 @@ fn cli_does_not_leak_remote_wash_basin_state_for_controlled_agent() {
     assert!(
         !remote_grant_visible,
         "controlled agent POV leaked remote basin {remote_wash} contention grant"
+    );
+    assert_eq!(
+        remote_self_care_occupant, None,
+        "controlled agent POV leaked remote basin {remote_wash} self-care occupant: occupant={remote_self_care_occupant:?}"
+    );
+    assert_eq!(
+        colocated_self_care_occupant,
+        Some(authoritative_occupant),
+        "co-located controlled-agent POV hid observable self-care occupancy on basin {remote_wash}"
     );
 }
 
