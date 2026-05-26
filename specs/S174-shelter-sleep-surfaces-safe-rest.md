@@ -261,13 +261,17 @@ pub enum FailedRestKind {
     /// Sleep candidate was emitted but precondition rejected at start
     /// (rest site became full between candidate emission and arrival).
     PreconditionRejected,
+    /// A known rest-site Sleep opportunity was emitted, but the selected
+    /// Sleep opportunity was targetless rough sleep during the same
+    /// fatigue-critical window.
+    RoughFallbackToKnownRestSite,
     /// Sleep candidate was emitted but the actor was preempted by a
     /// higher-priority need before reaching the rest site.
     PreemptedByHigherNeed { need: HomeostaticNeedId },
 }
 ```
 
-A record is appended to the current critical window's `failed_rest_opportunities` when: (a) sleep aborts mid-episode, (b) sleep action start fails the rest-site precondition, or (c) an active fatigue critical window observes the actor abandon a Sleep intention for another need.
+A record is appended to the current critical window's `failed_rest_opportunities` when: (a) sleep aborts mid-episode, (b) sleep action start fails the rest-site precondition, (c) an active fatigue critical window observes a known rest-site Sleep opportunity but selected targetless rough sleep, or (d) an active fatigue critical window observes the actor abandon a Sleep intention for another need.
 
 This field is the consumer surface S175 reads to prove "fatigue collapse follows N failed-rest opportunities."
 
@@ -348,6 +352,7 @@ D2 modifies action preconditions (rest-site capacity gate). D4 modifies candidat
 
 7. **Partial failures and aftermath**: Five lawful Sleep abort/failure shapes:
    - Sleep candidate emitted but precondition rejected at start (rest site full on arrival): no episode created; no `RestOccupancy` write; `FailedRestOpportunity { kind: PreconditionRejected }` recorded.
+   - Known rest-site Sleep candidate emitted but the actor selects targetless rough sleep while fatigue-critical: rough sleep proceeds without `RestOccupancy`; `FailedRestOpportunity { kind: RoughFallbackToKnownRestSite, was_rough: true }` recorded.
    - Sleep started at KnownRestSite, interrupted by structured cause: `SleepEpisode` ends with partial recovery; `RestOccupancy` releases; `WakeReason::LocalDisturbance { cause }` + `ActionTraceDetail::SleepInterrupted` fire.
    - Sleep started as RoughSleep, interrupted: same as above but `was_rough_sleep: true`, no `RestOccupancy` cleanup needed.
    - Sleep completed normally at low recovery rate (rough sleep): `SleepEpisode` ends with capped recovery via `rough_sleep_recovery_floor`.
@@ -523,12 +528,12 @@ Assertions (CLI surface, per S163 gating pattern):
 
 ### Scenario E — Repeated Failed Rest Feeds S175 (`survival-failed-rest-cascade.ron`)
 
-Topology: `shelter` with `RestCapacity(1)` perpetually occupied by a non-cooperating agent (e.g., a sleeping invalid actor). Adjacent `open_field` supports only rough sleep.
+Topology: `shelter` with `RestCapacity(1)` occupied for a long sleep episode by a non-cooperating agent. Targetless rough sleep at the current place is the lawful fallback and writes no `RestOccupancy`.
 
-Agents: one tired agent that must repeatedly attempt and fail rest at `shelter`, then fall back to rough sleep at `open_field`.
+Agents: one tired agent that first loses the contested rest-site race, then repeatedly emits the known-rest-site Sleep opportunity but rationally selects targetless rough sleep while the rest site remains unavailable.
 
 Assertions:
-1. Over N cycles, agent accumulates ≥ N `FailedRestOpportunity` records in the active critical window (PreconditionRejected at shelter, then Interrupted or capped at open_field).
+1. Over N cycles, agent accumulates ≥ N `FailedRestOpportunity` records in the active critical window (initial `PreconditionRejected` if the one-slot race loses at start, then repeated `RoughFallbackToKnownRestSite` records for the known shelter).
 2. `HomeostaticNeeds.fatigue` enters critical exposure; `DeprivationExposure.fatigue_critical_ticks` accumulates.
 3. The scenario is the feed for S175's exhaustion-collapse golden — S174 proves the carrier exists; S175 proves the collapse.
 4. No hidden rescue refills fatigue; recovery comes only from concrete rough-sleep recovery (capped at floor).

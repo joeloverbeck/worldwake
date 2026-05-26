@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 235
-- Contributing golden scenario source files: 58
-- Associated tests: 289
+- Scenario blocks: 236
+- Contributing golden scenario source files: 59
+- Associated tests: 291
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -2512,6 +2512,16 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 ### Scenario 348: Survival Escort Lands Coordinated Care Travel
 
 - Source: `survival_escort.rs:265`
+
+### Scenario 485: S174 Failed Rest Cascade Feed
+
+- Source: `survival_failed_rest_cascade.rs:231`
+
+**Setup**: Aster is critically tired at a one-slot roofed shelter while Sleeper occupies it for a long sleep episode.
+
+**Proves**: Aster repeatedly emits the KnownRestSite sleep candidate, records failed-rest opportunities through rough fallback while the rest site remains occupied, and falls back to capped rough sleep while critical fatigue exposure accumulates without collapse.
+
+**Cross-system chain**: rest capacity belief -> Sleep candidate -> RestOccupancy start gate -> StartFailed trace -> rough Sleep fallback -> FailedRestOpportunity::RoughFallbackToKnownRestSite -> DeprivationExposure fatigue ticks.
 
 ### Scenario 174: Survival Item Decay Lands Roadmap Row Ten
 

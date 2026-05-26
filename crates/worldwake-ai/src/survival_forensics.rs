@@ -56,6 +56,7 @@ pub struct FailedRestOpportunity {
 pub enum FailedRestKind {
     Interrupted { cause: SleepFailureCause },
     PreconditionRejected,
+    RoughFallbackToKnownRestSite,
     PreemptedByHigherNeed { need: HomeostaticNeedId },
 }
 
@@ -339,6 +340,7 @@ fn failed_rest_opportunities(
     if let Some(opportunity) = preempted_sleep_failed_rest(tick, decision_trace, local_state) {
         opportunities.push(opportunity);
     }
+    opportunities.extend(rough_fallback_failed_rest(tick, decision_trace));
     opportunities
 }
 
@@ -405,6 +407,46 @@ fn preempted_sleep_failed_rest(
         kind: FailedRestKind::PreemptedByHigherNeed { need },
         was_rough: false,
     })
+}
+
+fn rough_fallback_failed_rest(
+    tick: Tick,
+    decision_trace: Option<&AgentDecisionTrace>,
+) -> Vec<FailedRestOpportunity> {
+    let Some(trace) = decision_trace else {
+        return Vec::new();
+    };
+    let DecisionOutcome::Planning(planning) = &trace.outcome else {
+        return Vec::new();
+    };
+    let selected = planning.selection.selected_opportunity;
+    let selected_rough_sleep = selected.is_some_and(|opportunity| {
+        opportunity.goal_key.kind == worldwake_core::GoalKind::Sleep
+            && opportunity.anchor == crate::OpportunityAnchor::None
+    });
+    if !selected_rough_sleep {
+        return Vec::new();
+    }
+
+    planning
+        .candidates
+        .generated
+        .iter()
+        .filter_map(|opportunity| {
+            if opportunity.goal_key.kind != worldwake_core::GoalKind::Sleep {
+                return None;
+            }
+            let crate::OpportunityAnchor::Place(place) = opportunity.anchor else {
+                return None;
+            };
+            Some(FailedRestOpportunity {
+                tick,
+                place,
+                kind: FailedRestKind::RoughFallbackToKnownRestSite,
+                was_rough: true,
+            })
+        })
+        .collect()
 }
 
 fn goal_kind_need(kind: worldwake_core::GoalKind) -> Option<HomeostaticNeedId> {
@@ -784,7 +826,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_rest_types_cover_interrupted_precondition_and_preemption_kinds() {
+    fn failed_rest_types_cover_interrupted_precondition_fallback_and_preemption_kinds() {
         let interrupted = FailedRestOpportunity {
             tick: Tick(7),
             place: entity(50),
@@ -803,6 +845,10 @@ mod tests {
         assert_eq!(
             FailedRestKind::PreconditionRejected,
             FailedRestKind::PreconditionRejected
+        );
+        assert_eq!(
+            FailedRestKind::RoughFallbackToKnownRestSite,
+            FailedRestKind::RoughFallbackToKnownRestSite
         );
         assert_eq!(
             FailedRestKind::PreemptedByHigherNeed {
@@ -929,6 +975,53 @@ mod tests {
                 place: local.place.unwrap(),
                 kind: FailedRestKind::PreconditionRejected,
                 was_rough: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn critical_fatigue_window_records_rough_fallback_from_known_rest_site() {
+        let agent = entity(1);
+        let shelter = entity(50);
+        let mut extractor = SurvivalForensicExtractor::new(agent);
+        let thresholds = DriveThresholds::default();
+        let goal = GoalKey::from(GoalKind::Sleep);
+        let mut trace = planning_trace(agent, Tick(10), goal);
+        let DecisionOutcome::Planning(planning) = &mut trace.outcome else {
+            unreachable!();
+        };
+        planning.candidates.generated = vec![
+            OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(shelter),
+            },
+            OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::None,
+            },
+        ];
+        planning.selection.selected_opportunity = Some(OpportunityKey {
+            goal_key: goal,
+            anchor: OpportunityAnchor::None,
+        });
+
+        extractor.observe(
+            Tick(10),
+            &HomeostaticNeeds::new(pm(0), pm(0), pm(930), pm(0), pm(0)),
+            &thresholds,
+            Some(&trace),
+            &ActionTraceSnapshot::empty(),
+            &sample_local_summary(),
+        );
+
+        let reports = extractor.finalize();
+        assert_eq!(
+            reports[0].frames[0].failed_rest_opportunities,
+            vec![FailedRestOpportunity {
+                tick: Tick(10),
+                place: shelter,
+                kind: FailedRestKind::RoughFallbackToKnownRestSite,
+                was_rough: true,
             }]
         );
     }

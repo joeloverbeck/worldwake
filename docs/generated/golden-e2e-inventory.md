@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden scenario source files: 63
-- Files contributing `golden_*` tests: 63
-- Total `golden_*` tests: 308
+- Golden scenario source files: 64
+- Files contributing `golden_*` tests: 64
+- Total `golden_*` tests: 310
 
 ## Per-Scenario-File Inventory
 
@@ -60,6 +60,7 @@ Do not hand-edit it.
 | `survival_contested.rs` | 9 |
 | `survival_drive_escalation.rs` | 4 |
 | `survival_escort.rs` | 2 |
+| `survival_failed_rest_cascade.rs` | 2 |
 | `survival_items_decay.rs` | 2 |
 | `survival_justice.rs` | 5 |
 | `survival_offices.rs` | 2 |
@@ -467,6 +468,11 @@ Do not hand-edit it.
 
 - `survival_escort_proves_coordinated_care_travel`
 - `survival_escort_replay_is_deterministic`
+
+### `survival_failed_rest_cascade.rs`
+
+- `scenario_e_failed_rest_feed`
+- `scenario_e_failed_rest_feed_replays_deterministically`
 
 ### `survival_items_decay.rs`
 
