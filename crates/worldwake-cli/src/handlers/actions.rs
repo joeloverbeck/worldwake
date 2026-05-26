@@ -331,6 +331,7 @@ mod tests {
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
+                contention_policy: None,
             }],
             edges: vec![],
             bandit_camps: Vec::new(),
@@ -429,6 +430,7 @@ mod tests {
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
+                contention_policy: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -509,6 +511,7 @@ mod tests {
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
+                    contention_policy: None,
                 },
                 PlaceDef {
                     name: "Market".into(),
@@ -518,6 +521,7 @@ mod tests {
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
+                    contention_policy: None,
                 },
             ],
             edges: vec![EdgeDef {

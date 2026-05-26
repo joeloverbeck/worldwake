@@ -665,6 +665,7 @@ mod tests {
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
+                    contention_policy: None,
                 },
                 PlaceDef {
                     name: "Dark Forest".into(),
@@ -674,6 +675,7 @@ mod tests {
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
+                    contention_policy: None,
                 },
             ],
             edges: vec![EdgeDef {

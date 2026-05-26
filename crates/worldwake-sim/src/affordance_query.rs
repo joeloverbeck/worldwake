@@ -499,19 +499,23 @@ fn enumerate_targets(
             let Some(place) = view.effective_place(actor) else {
                 return Vec::new();
             };
-            actor_place_entity_cache
+            let mut targets = actor_place_entity_cache
                 .entry(place)
                 .or_insert_with(|| view.entities_at(place))
                 .iter()
                 .copied()
                 .filter(|entity| view.entity_kind(*entity) == Some(*kind))
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+            if *kind == EntityKind::Place {
+                targets.push(place);
+            }
+            targets
         }
         TargetSpec::EntityAtActorPlaceAnyOf { kinds } => {
             let Some(place) = view.effective_place(actor) else {
                 return Vec::new();
             };
-            actor_place_entity_cache
+            let mut targets = actor_place_entity_cache
                 .entry(place)
                 .or_insert_with(|| view.entities_at(place))
                 .iter()
@@ -520,7 +524,11 @@ fn enumerate_targets(
                     view.entity_kind(*entity)
                         .is_some_and(|kind| kinds.contains(&kind))
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+            if kinds.contains(&EntityKind::Place) {
+                targets.push(place);
+            }
+            targets
         }
         TargetSpec::EntityDirectlyPossessedByActor { kind } => view
             .direct_possessions(actor)
@@ -1357,6 +1365,30 @@ mod tests {
 
         let targets =
             enumerate_targets(&TargetSpec::ActorPlace, actor, &view, &mut BTreeMap::new());
+
+        assert_eq!(targets, vec![place]);
+    }
+
+    #[test]
+    fn enumerate_targets_any_of_includes_actor_place_when_place_is_allowed() {
+        let actor = entity(1);
+        let place = entity(10);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.places.insert(actor, place);
+        view.colocated.insert(place, vec![actor]);
+
+        let targets = enumerate_targets(
+            &TargetSpec::EntityAtActorPlaceAnyOf {
+                kinds: [EntityKind::Facility, EntityKind::Place],
+            },
+            actor,
+            &view,
+            &mut BTreeMap::new(),
+        );
 
         assert_eq!(targets, vec![place]);
     }

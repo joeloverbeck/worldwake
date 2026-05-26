@@ -205,6 +205,12 @@ pub(crate) struct SnapshotFacility {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SnapshotRestSite {
+    pub(crate) capacity: Option<NonZeroU32>,
+    pub(crate) occupant_count: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SnapshotControl {
     pub(crate) owner: Option<EntityId>,
     pub(crate) controllable_by_actor: bool,
@@ -234,6 +240,7 @@ pub(crate) struct SnapshotEntity {
     pub(crate) temporal: SnapshotTemporal,
     pub(crate) profiles: SnapshotProfiles,
     pub(crate) facility: SnapshotFacility,
+    pub(crate) rest_site: SnapshotRestSite,
     pub(crate) control: SnapshotControl,
 }
 
@@ -309,6 +316,10 @@ impl Default for SnapshotEntity {
                 resource_source: None,
                 wash_basin_state: None,
                 has_production_job: false,
+            },
+            rest_site: SnapshotRestSite {
+                capacity: None,
+                occupant_count: None,
             },
             control: SnapshotControl {
                 owner: None,
@@ -1143,6 +1154,8 @@ fn build_snapshot_entity(
     let reservation_ranges = view.reservation_ranges(entity);
     let facility_queue = snapshot_facility_queue(view, actor, entity);
     let office_data = view.office_data(entity);
+    let rest_site_capacity = view.rest_site_capacity(entity);
+    let rest_site_occupant_count = view.rest_site_occupant_count(entity);
 
     SnapshotEntity {
         admission,
@@ -1214,6 +1227,10 @@ fn build_snapshot_entity(
             resource_source,
             wash_basin_state,
             has_production_job,
+        },
+        rest_site: SnapshotRestSite {
+            capacity: rest_site_capacity,
+            occupant_count: rest_site_occupant_count,
         },
         control: SnapshotControl {
             owner,

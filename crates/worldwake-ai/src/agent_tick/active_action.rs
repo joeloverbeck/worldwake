@@ -247,7 +247,9 @@ pub(super) fn advance_completed_step(
             runtime.current_step_index = 0;
             runtime.dirty.insert(DirtySet::PLAN_FINISHED);
             runtime.materialization_bindings.clear();
-            facility_intents.intents.clear();
+            if completed_op_kind != crate::PlannerOpKind::QueueForFacilityUse {
+                facility_intents.intents.clear();
+            }
         }
         PlanTerminalKind::GoalSatisfied | PlanTerminalKind::CombatCommitment => {
             if completed_plan_relation == Some(crate::FramePlanRelation::SuspendsFrame) {

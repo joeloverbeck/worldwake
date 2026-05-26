@@ -1700,6 +1700,7 @@ macro_rules! with_component_schema_entries {
                 |kind| {
                     kind == EntityKind::Agent
                         || kind == EntityKind::Facility
+                        || kind == EntityKind::Place
                         || kind == EntityKind::SocialArtifact
                         || kind == EntityKind::UniqueItem
                 },
@@ -1730,6 +1731,7 @@ macro_rules! with_component_schema_entries {
                 |kind| {
                     kind == EntityKind::Agent
                         || kind == EntityKind::Facility
+                        || kind == EntityKind::Place
                         || kind == EntityKind::SocialArtifact
                         || kind == EntityKind::UniqueItem
                 },

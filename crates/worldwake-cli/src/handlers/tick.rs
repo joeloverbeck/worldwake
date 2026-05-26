@@ -195,6 +195,7 @@ mod tests {
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
+                contention_policy: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -288,6 +289,7 @@ mod tests {
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
+                contention_policy: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {

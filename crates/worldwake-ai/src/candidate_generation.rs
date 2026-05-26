@@ -4568,12 +4568,10 @@ fn available_rest_site_candidate_places(ctx: &GenerationContext<'_>) -> Vec<Enti
     places
         .into_iter()
         .filter(|place| {
-            let Some(capacity) = ctx.view.rest_site_capacity(*place) else {
+            let Some(_capacity) = ctx.view.rest_site_capacity(*place) else {
                 return false;
             };
-            ctx.view
-                .rest_site_occupant_count(*place)
-                .is_some_and(|count| count < capacity.get())
+            ctx.view.rest_site_occupant_count(*place).is_some()
         })
         .collect()
 }
@@ -13320,7 +13318,7 @@ mod tests {
     }
 
     #[test]
-    fn sleep_rest_opportunities_skip_full_rest_site_but_keep_rough_sleep() {
+    fn sleep_rest_opportunities_keep_full_rest_site_for_queue_planning_and_rough_sleep() {
         let agent = entity(1);
         let camp = entity(10);
         let shelter = entity(11);
@@ -13363,7 +13361,10 @@ mod tests {
             .filter(|candidate| candidate.key.kind == GoalKind::Sleep)
             .map(|candidate| candidate.anchor)
             .collect::<Vec<_>>();
-        assert_eq!(sleep_anchors, vec![OpportunityAnchor::None]);
+        assert_eq!(
+            sleep_anchors,
+            vec![OpportunityAnchor::Place(shelter), OpportunityAnchor::None]
+        );
     }
 
     #[test]

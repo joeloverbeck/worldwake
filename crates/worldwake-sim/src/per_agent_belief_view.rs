@@ -295,6 +295,7 @@ impl<'w> PerAgentBeliefView<'w> {
             return false;
         };
         self.world.effective_place(entity) == Some(agent_place)
+            || (entity == agent_place && self.world.entity_kind(entity) == Some(EntityKind::Place))
     }
 
     fn knows_entity(&self, entity: EntityId) -> bool {

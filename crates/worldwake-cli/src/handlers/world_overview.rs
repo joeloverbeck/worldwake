@@ -196,6 +196,7 @@ mod tests {
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
+                    contention_policy: None,
                 },
                 PlaceDef {
                     name: "Forest Clearing".into(),
@@ -205,6 +206,7 @@ mod tests {
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
+                    contention_policy: None,
                 },
                 PlaceDef {
                     name: "Mountain Pass".into(),
@@ -214,6 +216,7 @@ mod tests {
                     sleep_quality: None,
                     place_dirtiness: None,
                     latrine_fullness: None,
+                    contention_policy: None,
                 },
             ],
             edges: vec![
@@ -425,6 +428,7 @@ mod tests {
                 sleep_quality: None,
                 place_dirtiness: None,
                 latrine_fullness: None,
+                contention_policy: None,
             }],
             edges: vec![],
             agents: vec![],

@@ -76,6 +76,7 @@ fn scenario_with_agents(agents: Vec<AgentDef>) -> ScenarioDef {
             sleep_quality: None,
             place_dirtiness: None,
             latrine_fullness: None,
+            contention_policy: None,
         }],
         edges: vec![],
         agents,

@@ -54,6 +54,7 @@ pub mod survival_production;
 pub mod survival_safe_rest;
 pub mod survival_scattered;
 pub mod survival_self_care_interruption;
+pub mod survival_sleep_contention;
 pub mod survival_tell;
 pub mod survival_theft;
 pub mod survival_trade;

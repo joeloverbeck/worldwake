@@ -11,8 +11,8 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance, EconomicBeliefView,
-    FacilityBeliefView, InventoryBeliefView, QueueForFacilityUsePayload, RecipeRegistry,
-    SpatialBeliefView, get_affordances_for_defs,
+    EntityBeliefView, FacilityBeliefView, InventoryBeliefView, QueueForFacilityUsePayload,
+    RecipeRegistry, SpatialBeliefView, TemporalBeliefView, get_affordances_for_defs,
 };
 
 use super::SearchNode;
@@ -808,6 +808,21 @@ fn payload_commodity_filter_outcome(
     (true, None)
 }
 
+fn rest_site_is_full_and_queue_managed(state: &PlanningState<'_>, place: EntityId) -> bool {
+    state.has_contention_policy(place)
+        && state
+            .rest_site_capacity(place)
+            .zip(state.rest_site_occupant_count(place))
+            .is_some_and(|(capacity, count)| count >= capacity.get())
+}
+
+fn rest_site_is_full(state: &PlanningState<'_>, place: EntityId) -> bool {
+    state
+        .rest_site_capacity(place)
+        .zip(state.rest_site_occupant_count(place))
+        .is_some_and(|(capacity, count)| count >= capacity.get())
+}
+
 fn direct_possession_quantity(
     state: &PlanningState<'_>,
     commodity: worldwake_core::CommodityKind,
@@ -1119,6 +1134,9 @@ pub(super) fn search_candidates_from_affordance(
         && let OpportunityAnchor::Place(place) = goal.anchor
         && state.effective_place(state.snapshot().actor()) == Some(place)
     {
+        if rest_site_is_full(state, place) {
+            return Vec::new();
+        }
         return vec![SearchCandidate {
             def_id: affordance.def_id,
             authoritative_targets: vec![place],
@@ -1128,6 +1146,16 @@ pub(super) fn search_candidates_from_affordance(
             trace_index: None,
             expansion_trace_index: None,
         }];
+    }
+    if goal.key.kind == GoalKind::Sleep
+        && def.name == "sleep"
+        && affordance.bound_targets.is_empty()
+        && matches!(goal.anchor, OpportunityAnchor::None)
+        && let Some(place) = state.effective_place(state.snapshot().actor())
+        && (state.is_actor_queued_at_facility(place)
+            || state.has_actor_facility_grant(place, affordance.def_id))
+    {
+        return Vec::new();
     }
     let planning_targets = match (&goal.key.kind, def.name.as_str()) {
         // Accusation payload binds to the accused entity, but the lawful
@@ -1259,6 +1287,18 @@ fn queue_intended_actions_for(
 ) -> Option<Vec<ActionDefId>> {
     let actions = match queue_action_name {
         "queue_for_facility_use" => {
+            if goal.key.kind == GoalKind::Sleep
+                && state.entity_kind(entity) == Some(worldwake_core::EntityKind::Place)
+                && state.rest_site_capacity(entity).is_some()
+            {
+                if !rest_site_is_full_and_queue_managed(state, entity) {
+                    return None;
+                }
+                return registry
+                    .iter()
+                    .find(|def| def.name == "sleep")
+                    .map(|def| vec![def.id]);
+            }
             let workstation_tag = state.workstation_tag(entity)?;
             match goal.key.kind {
                 GoalKind::ProduceCommodity { recipe_id } => registry

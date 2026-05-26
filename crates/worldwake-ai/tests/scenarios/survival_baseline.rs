@@ -497,6 +497,7 @@ fn survival_contract_guard_rejects_missing_authored_contract() {
             sleep_quality: None,
             place_dirtiness: None,
             latrine_fullness: None,
+            contention_policy: None,
         }],
         edges: vec![],
         agents: vec![],

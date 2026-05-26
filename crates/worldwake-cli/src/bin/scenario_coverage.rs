@@ -1277,6 +1277,7 @@ fn authored_place_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str> {
             sleep_quality,
             place_dirtiness,
             latrine_fullness,
+            contention_policy,
         } = place;
         if visibility_profile.is_some() {
             fields.insert("visibility_profile");
@@ -1292,6 +1293,9 @@ fn authored_place_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str> {
         }
         if latrine_fullness.is_some() {
             fields.insert("latrine_fullness");
+        }
+        if contention_policy.is_some() {
+            fields.insert("contention_policy");
         }
     }
     fields

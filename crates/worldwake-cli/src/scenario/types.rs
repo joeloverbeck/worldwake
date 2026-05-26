@@ -478,6 +478,8 @@ pub struct PlaceDef {
     pub place_dirtiness: Option<PlaceDirtinessDef>,
     #[serde(default)]
     pub latrine_fullness: Option<LatrineFullnessDef>,
+    #[serde(default)]
+    pub contention_policy: Option<ContentionPolicy>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]

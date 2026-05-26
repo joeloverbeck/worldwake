@@ -56,7 +56,7 @@ pub fn contention_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
             continue;
         }
 
-        prune_invalid_waiters(world, event_log, facility, tick)?;
+        prune_invalid_waiters(world, event_log, action_defs, facility, tick)?;
         prune_patience_exceeded(world, event_log, facility, tick)?;
         expire_stale_grant(world, event_log, facility, tick)?;
         prune_structurally_invalid_heads(world, event_log, action_defs, facility, tick)?;
@@ -158,10 +158,11 @@ fn sync_ground_unique_item_contention(
 fn prune_invalid_waiters(
     world: &mut World,
     event_log: &mut EventLog,
+    action_defs: &ActionDefRegistry,
     facility: EntityId,
     tick: Tick,
 ) -> Result<(), SystemError> {
-    let facility_place = world.effective_place(facility);
+    let facility_place = contention_entity_place(world, facility);
     let Some(mut queue) = world.get_component_contention_queue(facility).cloned() else {
         return Ok(());
     };
@@ -172,12 +173,12 @@ fn prune_invalid_waiters(
             world.entity_kind(queued.actor).is_none()
                 || world.get_component_dead_at(queued.actor).is_some()
                 || world.effective_place(queued.actor) != facility_place
-                || !actor_has_matching_contention_intent(
+                || (!actor_has_matching_contention_intent(
                     world,
                     queued.actor,
                     facility,
                     queued.intended_action,
-                )
+                ) && !waiter_can_persist_without_intent(world, action_defs, facility, queued))
         })
         .cloned()
         .collect::<Vec<_>>();
@@ -207,6 +208,21 @@ fn prune_invalid_waiters(
     }
 
     Ok(())
+}
+
+fn waiter_can_persist_without_intent(
+    world: &World,
+    action_defs: &ActionDefRegistry,
+    facility: EntityId,
+    queued: &worldwake_core::ContentionWaiter,
+) -> bool {
+    action_defs
+        .get(queued.intended_action)
+        .and_then(promotable_contention_kind)
+        .is_some_and(|kind| {
+            matches!(kind, PromotableContentionKind::RestSite)
+                && contention_target_matches_kind(world, facility, kind)
+        })
 }
 
 fn prune_patience_exceeded(
@@ -374,9 +390,8 @@ fn promote_ready_head(
         .try_into()
         .unwrap_or(u32::MAX);
     let queue_snapshot = queue.clone();
-    let facility_place = world
-        .effective_place(facility)
-        .ok_or_else(|| SystemError::new("contention facility has no effective place"))?;
+    let facility_place = contention_entity_place(world, facility)
+        .ok_or_else(|| SystemError::new("contention entity has no effective place"))?;
 
     let granted = queue
         .promote_head(tick, policy.grant_hold_ticks)
@@ -442,10 +457,24 @@ fn head_is_ready_to_start(
     if !contention_target_matches_kind(world, entity, kind) {
         return false;
     }
+    if matches!(kind, PromotableContentionKind::RestSite) && !rest_site_has_open_slot(world, entity)
+    {
+        return false;
+    }
     let targets = [entity];
 
     validate_action_def_authoritatively(world, def, actor, &targets).is_ok()
         && !active_exclusive_action_on_entity(active_actions, action_defs, entity)
+}
+
+fn rest_site_has_open_slot(world: &World, place: EntityId) -> bool {
+    let Some(capacity) = world.get_component_rest_capacity(place) else {
+        return false;
+    };
+    let occupied = world
+        .get_component_rest_occupancy(place)
+        .map_or(0, |occupancy| occupancy.occupants.len());
+    occupied < capacity.0.get() as usize
 }
 
 fn active_exclusive_action_on_entity(
@@ -459,7 +488,7 @@ fn active_exclusive_action_on_entity(
             && action_defs
                 .get(instance.def_id)
                 .and_then(promotable_contention_kind)
-                .is_some()
+                .is_some_and(|kind| !matches!(kind, PromotableContentionKind::RestSite))
     })
 }
 
@@ -535,7 +564,7 @@ fn commit_queue_update(
         tick,
         CauseRef::SystemTick(tick),
         None,
-        world.effective_place(facility),
+        contention_entity_place(world, facility),
         VisibilitySpec::SamePlace,
         WitnessData::default(),
     );
@@ -600,6 +629,14 @@ fn commit_queue_update(
     Ok(())
 }
 
+fn contention_entity_place(world: &World, entity: EntityId) -> Option<EntityId> {
+    if world.entity_kind(entity) == Some(EntityKind::Place) {
+        Some(entity)
+    } else {
+        world.effective_place(entity)
+    }
+}
+
 fn actor_has_matching_contention_intent(
     world: &World,
     actor: EntityId,
@@ -626,7 +663,7 @@ mod tests {
         register_craft_actions, register_harvest_actions, register_heal_action,
         register_loot_action, register_needs_actions,
     };
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
         ActionDefId, BodyPart, CauseRef, ClaimantOutcome, CommodityKind,
@@ -634,9 +671,9 @@ mod tests {
         ContentionResolutionRule, ControlSource, DeadAt, DeprivationKind, EntityId, EntityKind,
         EventLog, EventTag, EventView, GoalKey, GoalKind, KnownRecipes, PlaceTag, ProductionJob,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, QueuedContentionIntent,
-        ResourceSource, RestCapacity, Seed, SourceKey, Tick, UniqueItemKind, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
-        WoundId, WoundList, build_prototype_world,
+        ResourceSource, RestCapacity, RestOccupancy, Seed, SourceKey, Tick, UniqueItemKind,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
+        WoundCause, WoundId, WoundList, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
@@ -1042,6 +1079,94 @@ mod tests {
             wash_basin,
             PromotableContentionKind::RestSite
         ));
+    }
+
+    #[test]
+    fn active_rest_site_sleep_does_not_make_capacity_slot_exclusive() {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        register_needs_actions(&mut defs, &mut handlers);
+        let sleep_id = find_action_id(&defs, "sleep");
+        let (mut world, place, _facility) = setup_world(WorkstationTag::WashBasin, 0);
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_component_rest_capacity(place, RestCapacity(NonZeroU32::new(2).unwrap()))
+            .unwrap();
+        commit_txn(txn);
+        let active_actions = BTreeMap::from([(
+            ActionInstanceId(1),
+            active_action(sleep_id, ActionPayload::None, entity(20), place),
+        )]);
+
+        assert!(
+            !super::active_exclusive_action_on_entity(&active_actions, &defs, place),
+            "rest-site readiness is governed by RestCapacity, not exclusive active-action presence"
+        );
+    }
+
+    #[test]
+    fn full_rest_site_waiter_promotes_after_capacity_opens() {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        register_needs_actions(&mut defs, &mut handlers);
+        let sleep_id = find_action_id(&defs, "sleep");
+        let (mut world, place, _facility) = setup_world(WorkstationTag::WashBasin, 0);
+        let (waiter, _first_sleeper, second_sleeper) = {
+            let mut txn = new_txn(&mut world, 2);
+            let waiter = txn.create_agent("Waiter", ControlSource::Ai).unwrap();
+            let first_sleeper = txn.create_agent("First", ControlSource::Ai).unwrap();
+            let second_sleeper = txn.create_agent("Second", ControlSource::Ai).unwrap();
+            for actor in [waiter, first_sleeper, second_sleeper] {
+                txn.set_ground_location(actor, place).unwrap();
+            }
+            txn.set_component_rest_capacity(place, RestCapacity(nz(2)))
+                .unwrap();
+            txn.set_component_rest_occupancy(
+                place,
+                RestOccupancy {
+                    occupants: BTreeSet::from([first_sleeper, second_sleeper]),
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_policy(
+                place,
+                ContentionPolicy {
+                    grant_hold_ticks: nz(3),
+                    auto_promote: true,
+                    max_waiters: None,
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_queue(place, ContentionQueue::default())
+                .unwrap();
+            commit_txn(txn);
+            (waiter, first_sleeper, second_sleeper)
+        };
+        enqueue(&mut world, place, waiter, sleep_id);
+        let mut log = EventLog::new();
+
+        run_system(&mut world, &mut log, &defs, &BTreeMap::new(), 5);
+        let queue = world.get_component_contention_queue(place).unwrap();
+        assert_eq!(queue.position_of(waiter), Some(0));
+        assert!(queue.granted.is_none());
+        assert!(log.events_by_tag(EventTag::QueueGrantPromoted).is_empty());
+
+        let mut txn = new_txn(&mut world, 44);
+        txn.set_component_rest_occupancy(
+            place,
+            RestOccupancy {
+                occupants: BTreeSet::from([second_sleeper]),
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+        run_system(&mut world, &mut log, &defs, &BTreeMap::new(), 45);
+
+        let queue = world.get_component_contention_queue(place).unwrap();
+        assert_eq!(
+            queue.granted.as_ref().map(|grant| grant.actor),
+            Some(waiter)
+        );
+        assert_eq!(log.events_by_tag(EventTag::QueueGrantPromoted).len(), 1);
     }
 
     fn assert_single_contention_grant_event(
