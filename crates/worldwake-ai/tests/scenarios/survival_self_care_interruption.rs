@@ -9,8 +9,8 @@ use worldwake_core::{
     ContentionIntents, ContentionPolicy, ContentionQueue, ContentionResolutionRule, ControlSource,
     DeathCause, DecisionEventPayload, DeprivationKind, EntityId, EventId, EventTag, EventView,
     GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile, Quantity,
-    QueuedContentionIntent, Seed, SelfCareUseKind, StateDelta, Tick, UtilityProfile,
-    WashBasinState, WorkstationTag, prototype_place_entity,
+    QueuedContentionIntent, Seed, SelfCareUseKind, SleepFailureCause, StateDelta, Tick,
+    UtilityProfile, WashBasinState, WorkstationTag, prototype_place_entity,
 };
 use worldwake_sim::{
     ActionRequestMode, ActionTraceDetail, ActionTraceKind, InputKind, RequestProvenance,
@@ -456,7 +456,7 @@ fn run_repeated_interruption_deprivation_collapse(seed: Seed) -> InterruptionCol
 //
 // Setup: Human-controlled agents start each self-care action family and cancel before commit.
 //
-// Proves: Every self-care abort keeps the authoritative ActionAborted event and adds the typed ActionTraceDetail::SelfCareInterrupted discriminator.
+// Proves: Every self-care abort keeps the authoritative ActionAborted event and adds the typed action-trace discriminator; sleep uses the structured SleepInterrupted detail.
 //
 // Cross-system chain: external lawful request -> action start -> input cancellation -> handler abort cleanup -> EventTag::ActionAborted + action-trace detail.
 #[test]
@@ -533,15 +533,56 @@ fn golden_self_care_abort_traces_cover_every_family() {
         HomeostaticNeeds::new(pm(0), pm(0), pm(900), pm(0), pm(0)),
     );
     let started = start_requested_action(&mut h, sleeper, "sleep", vec![]);
-    cancel_and_expect_detail(
-        &mut h,
-        sleeper,
-        started,
-        "sleep",
-        &ActionTraceDetail::SelfCareInterrupted {
-            kind: SelfCareUseKind::Sleep,
-            basin: None,
-        },
+    let sleep_aborted_before = h.event_log.events_by_tag(EventTag::ActionAborted).len();
+    cancel_action(&mut h, sleeper, started.instance_id);
+    h.step_once();
+    assert_eq!(
+        h.event_log.events_by_tag(EventTag::ActionAborted).len(),
+        sleep_aborted_before + 1,
+        "sleep abort should emit one authoritative ActionAborted event"
+    );
+    let sleep_payload = h
+        .event_log
+        .events_by_tag(EventTag::SleepEpisodeEnded)
+        .iter()
+        .find_map(|event_id| {
+            h.event_log
+                .get(*event_id)
+                .and_then(|record| match record.decision_payload() {
+                    Some(DecisionEventPayload::SleepEpisodeEnded(payload))
+                        if payload.sleeper == sleeper =>
+                    {
+                        Some(payload)
+                    }
+                    _ => None,
+                })
+        })
+        .expect("aborted sleep should end the SleepEpisode through the existing event surface");
+    let sleep_abort = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled")
+        .events_for(sleeper)
+        .into_iter()
+        .find(|event| {
+            event.def_id == started.def_id
+                && event.action_name == "sleep"
+                && matches!(
+                    event.kind,
+                    ActionTraceKind::Aborted {
+                        instance_id,
+                        ..
+                    } if instance_id == started.instance_id
+                )
+        })
+        .expect("sleep should record an abort trace");
+    assert_eq!(
+        sleep_abort.detail.as_ref(),
+        Some(&ActionTraceDetail::SleepInterrupted {
+            place: sleep_payload.place,
+            cause: SleepFailureCause::Generic,
+            accumulated_recovery: sleep_payload.accumulated_recovery,
+            was_rough_sleep: true,
+        })
     );
     assert!(
         h.event_log

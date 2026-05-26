@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None (golden scenario + test file only)
-**Deps**: `archive/tickets/S174SHESLESUR-001.md`, `archive/tickets/S174SHESLESUR-002.md`, `archive/tickets/S174SHESLESUR-003.md`, `archive/tickets/S174SHESLESUR-004.md`, `archive/tickets/S174SHESLESUR-005.md`, 006
+**Deps**: `archive/tickets/S174SHESLESUR-001.md`, `archive/tickets/S174SHESLESUR-002.md`, `archive/tickets/S174SHESLESUR-003.md`, `archive/tickets/S174SHESLESUR-004.md`, `archive/tickets/S174SHESLESUR-005.md`, `archive/tickets/S174SHESLESUR-006.md`
 
 ## Problem
 
@@ -14,9 +14,9 @@ Without this scenario, the failed-rest accumulation chain has no E2E proof, and 
 
 ## Assumption Reassessment (2026-05-26)
 
-1. Verified current code state: `DeprivationExposure.fatigue_critical_ticks` at `crates/worldwake-core/src/needs.rs:120` is incremented by the needs tick when fatigue is at critical level. `FailedRestOpportunity` and `FailedRestKind` types are introduced by ticket 006. `CriticalWindowFrame.failed_rest_opportunities` is the consumer surface.
+1. Verified current code state: `DeprivationExposure.fatigue_critical_ticks` at `crates/worldwake-core/src/needs.rs:120` is incremented by the needs tick when fatigue is at critical level. `FailedRestOpportunity` and `FailedRestKind` types are introduced by archived ticket 006. `CriticalWindowFrame.failed_rest_opportunities` is the consumer surface.
 2. Spec assumption verified against S174 Scenario E. The scenario uses one `shelter` with `RestCapacity(1)` perpetually occupied by a non-cooperating agent (e.g., a sleeping invalid actor or a perpetually-sleeping NPC) and one adjacent `open_field` supporting only rough sleep. The tired agent fails at `shelter`, falls back to rough-sleep, capped recovery is insufficient to prevent fatigue critical exposure accumulation.
-3. Shared abstraction boundary under audit: the `FailedRestOpportunity` aggregation across cycles. Per ticket 006's three populating paths: (a) sleep aborts mid-episode produce `Interrupted { cause }`, (b) sleep start failures produce `PreconditionRejected`, (c) preempted-by-higher-need is deferred per ticket 006 Assumption 5. This scenario primarily exercises (b) — the shelter is always full, so the tired agent's KnownRestSite emissions consistently fail at start.
+3. Shared abstraction boundary under audit: the `FailedRestOpportunity` aggregation across cycles. Per archived ticket 006's three populating paths: (a) sleep aborts mid-episode produce `Interrupted { cause }`, (b) sleep start failures produce `PreconditionRejected`, (c) preempted-by-higher-need produces `PreemptedByHigherNeed`. This scenario primarily exercises (b) — the shelter is always full, so the tired agent's KnownRestSite emissions consistently fail at start.
 4. Live `GoalKind` under test: `GoalKind::Sleep`. The scenario doesn't terminate the agent (S175 owns the collapse and death path); it terminates when N `FailedRestOpportunity` records have accumulated (e.g., N = 5).
 5. Cumulative arithmetic: the rough-sleep recovery cap (`Permille::new(300)` ≈ 0.3x of `MetabolismProfile.rest_efficiency`) yields per-tick fatigue reduction insufficient to offset the metabolism's `fatigue_rate` accumulation between sleep attempts. Pick metabolism values such that: rest_efficiency × 0.3 < fatigue_rate × (interrupt_interval / sleep_interval), so each rough-sleep cycle leaves the agent's net fatigue trending upward. Verify the math at ticket-implementation time by running the scenario and observing `fatigue_critical_ticks` accumulation.
 6. Scenario isolation: the intended branch under test is `FailedRestOpportunity` accumulation across cycles. Excluded: starvation/dehydration depletion (agent must be near-sated); the perpetually-sleeping `Sleeper` NPC must not interact with the tired agent socially.
@@ -25,7 +25,7 @@ Without this scenario, the failed-rest accumulation chain has no E2E proof, and 
 ## Architecture Check
 
 1. The scenario produces failed-rest opportunities through ordinary world processes (shelter capacity full + rough-sleep cap insufficient) — no hidden script or director. This is the canonical FND-1 maximal emergence test for the rest model.
-2. Reusing ticket 006's `FailedRestOpportunity` records (rather than introducing a new aggregator) preserves the single-truth contract for forensic data. S175 reads the same records.
+2. Reusing archived ticket 006's `FailedRestOpportunity` records (rather than introducing a new aggregator) preserves the single-truth contract for forensic data. S175 reads the same records.
 3. The terminating condition (N records accumulated) is a scenario-imposed bound, not an architectural cap. S175 will extend the same scenario shape to provoke collapse-via-wound; this scenario stops short of that and just proves the feed.
 
 ## Verification Layers
@@ -74,7 +74,7 @@ In the test file's comment block, explicitly document: "This scenario is the fee
 ## Out of Scope
 
 - No collapse / wound creation / death path (S175 spec territory)
-- No `FailedRestKind::PreemptedByHigherNeed` exercise (ticket 006 deferred path (c); if path (c) lands within ticket 006, an additional assertion could cover it, but the scenario does not depend on it)
+- No `FailedRestKind::PreemptedByHigherNeed` exercise — archived ticket 006 covers that path with focused forensics tests, and this scenario intentionally concentrates on repeated rest-site precondition rejection.
 - No hostile interruption — that's Scenario C / ticket 009
 - No CLI surface — that's Scenario D / ticket 010
 - No production code changes

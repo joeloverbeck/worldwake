@@ -241,6 +241,7 @@ This variant is populated by `tick_step.rs::abort_trace_detail_for_instance` whe
 `SurvivalForensicExtractor` (`crates/worldwake-ai/src/survival_forensics.rs:157`) is extended to capture failed-rest opportunities. A new field on `CriticalWindowFrame` (`survival_forensics.rs:19-40`):
 
 ```rust
+#[serde(default)]
 pub failed_rest_opportunities: Vec<FailedRestOpportunity>,
 ```
 

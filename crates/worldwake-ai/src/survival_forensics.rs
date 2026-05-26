@@ -6,9 +6,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
     BlockerScope, CommodityKind, DriveThresholds, EntityId, GoalKey, HomeostaticNeedId,
-    HomeostaticNeeds, Permille, PlaceTag, Quantity, Tick, WorkstationTag, World,
+    HomeostaticNeeds, Permille, PlaceTag, Quantity, SleepFailureCause, Tick, WorkstationTag, World,
 };
-use worldwake_sim::{ActionInstance, ActionInstanceId, ActionTraceEvent, ActionTraceSink};
+use worldwake_sim::{
+    ActionInstance, ActionInstanceId, ActionTraceDetail, ActionTraceEvent, ActionTraceKind,
+    ActionTraceSink,
+};
 
 const MAX_INTERIOR_FRAMES: usize = 5;
 const MAX_COMPETITOR_FRAMES: usize = 3;
@@ -37,6 +40,23 @@ pub struct CriticalWindowFrame {
     pub exhaustion_state: Option<ExhaustionSummary>,
     pub blocker_summary: Option<BlockerSummary>,
     pub local_authoritative_summary: LocalSurvivalStateSummary,
+    #[serde(default)]
+    pub failed_rest_opportunities: Vec<FailedRestOpportunity>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FailedRestOpportunity {
+    pub tick: Tick,
+    pub place: EntityId,
+    pub kind: FailedRestKind,
+    pub was_rough: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FailedRestKind {
+    Interrupted { cause: SleepFailureCause },
+    PreconditionRejected,
+    PreemptedByHigherNeed { need: HomeostaticNeedId },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -185,6 +205,7 @@ impl SurvivalForensicExtractor {
             if need_value >= threshold {
                 let frame = build_frame(
                     tick,
+                    need,
                     need_value,
                     decision_trace,
                     action_trace_snapshot,
@@ -263,6 +284,7 @@ impl WindowBuilder {
 
 fn build_frame(
     tick: Tick,
+    need: HomeostaticNeedId,
     need_value: Permille,
     decision_trace: Option<&AgentDecisionTrace>,
     action_trace_snapshot: &ActionTraceSnapshot<'_>,
@@ -288,6 +310,118 @@ fn build_frame(
         exhaustion_state,
         blocker_summary,
         local_authoritative_summary: local_state,
+        failed_rest_opportunities: failed_rest_opportunities(
+            tick,
+            need,
+            decision_trace,
+            action_trace_snapshot,
+            local_state,
+        ),
+    }
+}
+
+fn failed_rest_opportunities(
+    tick: Tick,
+    active_need: HomeostaticNeedId,
+    decision_trace: Option<&AgentDecisionTrace>,
+    action_trace_snapshot: &ActionTraceSnapshot<'_>,
+    local_state: LocalSurvivalStateSummary,
+) -> Vec<FailedRestOpportunity> {
+    if active_need != HomeostaticNeedId::Fatigue {
+        return Vec::new();
+    }
+
+    let mut opportunities = action_trace_snapshot
+        .tick_events
+        .iter()
+        .filter_map(|event| failed_rest_opportunity_from_trace_event(tick, event, local_state))
+        .collect::<Vec<_>>();
+    if let Some(opportunity) = preempted_sleep_failed_rest(tick, decision_trace, local_state) {
+        opportunities.push(opportunity);
+    }
+    opportunities
+}
+
+fn failed_rest_opportunity_from_trace_event(
+    tick: Tick,
+    event: &ActionTraceEvent,
+    local_state: LocalSurvivalStateSummary,
+) -> Option<FailedRestOpportunity> {
+    match &event.detail {
+        Some(ActionTraceDetail::SleepInterrupted {
+            place,
+            cause,
+            was_rough_sleep,
+            ..
+        }) => Some(FailedRestOpportunity {
+            tick,
+            place: *place,
+            kind: FailedRestKind::Interrupted { cause: *cause },
+            was_rough: *was_rough_sleep,
+        }),
+        _ if event.action_name == "sleep"
+            && matches!(event.kind, ActionTraceKind::StartFailed { .. })
+            && sleep_start_failure_is_rest_site_precondition(event) =>
+        {
+            Some(FailedRestOpportunity {
+                tick,
+                place: local_state.place?,
+                kind: FailedRestKind::PreconditionRejected,
+                was_rough: false,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn sleep_start_failure_is_rest_site_precondition(event: &ActionTraceEvent) -> bool {
+    let ActionTraceKind::StartFailed { reason, .. } = &event.kind else {
+        return false;
+    };
+    reason.contains("rest site") && reason.contains("full")
+}
+
+fn preempted_sleep_failed_rest(
+    tick: Tick,
+    decision_trace: Option<&AgentDecisionTrace>,
+    local_state: LocalSurvivalStateSummary,
+) -> Option<FailedRestOpportunity> {
+    let DecisionOutcome::Planning(planning) = &decision_trace?.outcome else {
+        return None;
+    };
+    let switch = planning.selection.goal_switch.as_ref()?;
+    if switch.from.kind != worldwake_core::GoalKind::Sleep {
+        return None;
+    }
+    let selected_goal = planning.selection.selected_goal()?;
+    let need = goal_kind_need(selected_goal.kind)?;
+    if need == HomeostaticNeedId::Fatigue {
+        return None;
+    }
+
+    Some(FailedRestOpportunity {
+        tick,
+        place: local_state.place?,
+        kind: FailedRestKind::PreemptedByHigherNeed { need },
+        was_rough: false,
+    })
+}
+
+fn goal_kind_need(kind: worldwake_core::GoalKind) -> Option<HomeostaticNeedId> {
+    match kind {
+        worldwake_core::GoalKind::AcquireCommodity { commodity, .. }
+        | worldwake_core::GoalKind::ConsumeOwnedCommodity { commodity } => {
+            if commodity == CommodityKind::Water {
+                Some(HomeostaticNeedId::Thirst)
+            } else if commodity_is_edible(commodity) {
+                Some(HomeostaticNeedId::Hunger)
+            } else {
+                None
+            }
+        }
+        worldwake_core::GoalKind::Relieve => Some(HomeostaticNeedId::Bladder),
+        worldwake_core::GoalKind::Wash => Some(HomeostaticNeedId::Dirtiness),
+        _ => None,
     }
 }
 
@@ -339,6 +473,7 @@ fn frame_change_detected(previous: &CriticalWindowFrame, current: &CriticalWindo
         || previous.active_action != current.active_action
         || previous.exhaustion_state != current.exhaustion_state
         || previous.blocker_summary != current.blocker_summary
+        || previous.failed_rest_opportunities != current.failed_rest_opportunities
 }
 
 fn selected_goal_from_trace(trace: &AgentDecisionTrace) -> Option<GoalKey> {
@@ -490,9 +625,11 @@ mod tests {
     };
     use worldwake_core::{
         AcquisitionQuantity, ActionDefId, CauseRef, ControlSource, DriveThresholds, GoalKind,
-        OpportunityAnchor, PrototypePlace, Quantity, ResourceSource, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorldTxn, build_prototype_world, prototype_place_entity,
+        OpportunityAnchor, PrototypePlace, Quantity, ResourceSource, SleepFailureCause,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorldTxn, build_prototype_world,
+        prototype_place_entity,
     };
+    use worldwake_sim::{ActionTraceDetail, ActionTraceEvent, ActionTraceKind};
 
     #[test]
     fn detects_window_start_and_end_ticks() {
@@ -644,6 +781,233 @@ mod tests {
                 started_at: Tick(2),
             })
         );
+    }
+
+    #[test]
+    fn failed_rest_types_cover_interrupted_precondition_and_preemption_kinds() {
+        let interrupted = FailedRestOpportunity {
+            tick: Tick(7),
+            place: entity(50),
+            kind: FailedRestKind::Interrupted {
+                cause: SleepFailureCause::HostileProximity,
+            },
+            was_rough: true,
+        };
+        assert_eq!(interrupted.tick, Tick(7));
+        assert!(matches!(
+            interrupted.kind,
+            FailedRestKind::Interrupted {
+                cause: SleepFailureCause::HostileProximity
+            }
+        ));
+        assert_eq!(
+            FailedRestKind::PreconditionRejected,
+            FailedRestKind::PreconditionRejected
+        );
+        assert_eq!(
+            FailedRestKind::PreemptedByHigherNeed {
+                need: HomeostaticNeedId::Thirst,
+            },
+            FailedRestKind::PreemptedByHigherNeed {
+                need: HomeostaticNeedId::Thirst,
+            }
+        );
+    }
+
+    #[test]
+    fn critical_window_frame_deserializes_missing_failed_rest_as_empty() {
+        let mut frame_value = serde_json::to_value(build_frame(
+            Tick(3),
+            HomeostaticNeedId::Fatigue,
+            pm(930),
+            None,
+            &ActionTraceSnapshot::empty(),
+            sample_local_summary(),
+        ))
+        .unwrap();
+        frame_value
+            .as_object_mut()
+            .unwrap()
+            .remove("failed_rest_opportunities");
+
+        let frame: CriticalWindowFrame = serde_json::from_value(frame_value).unwrap();
+        assert!(frame.failed_rest_opportunities.is_empty());
+    }
+
+    #[test]
+    fn critical_fatigue_window_records_sleep_interruption_failed_rest() {
+        let agent = entity(1);
+        let place = entity(50);
+        let mut extractor = SurvivalForensicExtractor::new(agent);
+        let thresholds = DriveThresholds::default();
+        let event = ActionTraceEvent::new(
+            Tick(4),
+            agent,
+            ActionDefId(5),
+            "sleep".to_string(),
+            ActionTraceKind::Aborted {
+                instance_id: ActionInstanceId(9),
+                reason: "Interrupted".to_string(),
+            },
+        )
+        .with_detail(Some(ActionTraceDetail::SleepInterrupted {
+            place,
+            cause: SleepFailureCause::HostileProximity,
+            accumulated_recovery: pm(40),
+            was_rough_sleep: false,
+        }));
+        let snapshot = ActionTraceSnapshot {
+            active_action: None,
+            tick_events: vec![&event],
+        };
+
+        extractor.observe(
+            Tick(4),
+            &HomeostaticNeeds::new(pm(0), pm(0), pm(930), pm(0), pm(0)),
+            &thresholds,
+            None,
+            &snapshot,
+            &sample_local_summary(),
+        );
+
+        let reports = extractor.finalize();
+        assert_eq!(
+            reports[0].frames[0].failed_rest_opportunities,
+            vec![FailedRestOpportunity {
+                tick: Tick(4),
+                place,
+                kind: FailedRestKind::Interrupted {
+                    cause: SleepFailureCause::HostileProximity,
+                },
+                was_rough: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn critical_fatigue_window_records_rest_site_start_rejection_failed_rest() {
+        let agent = entity(1);
+        let mut extractor = SurvivalForensicExtractor::new(agent);
+        let thresholds = DriveThresholds::default();
+        let event = ActionTraceEvent::new(
+            Tick(8),
+            agent,
+            ActionDefId(5),
+            "sleep".to_string(),
+            ActionTraceKind::StartFailed {
+                reason: "PreconditionFailed(\"rest site is full\")".to_string(),
+                request: worldwake_sim::ResolvedRequestTrace {
+                    attempt: worldwake_sim::RequestAttemptTrace {
+                        input_sequence_no: 1,
+                        provenance: worldwake_sim::RequestProvenance::AiPlan,
+                    },
+                    binding: worldwake_sim::RequestBindingKind::BestEffortFallback,
+                },
+                legality: None,
+            },
+        );
+        let snapshot = ActionTraceSnapshot {
+            active_action: None,
+            tick_events: vec![&event],
+        };
+        let local = sample_local_summary();
+
+        extractor.observe(
+            Tick(8),
+            &HomeostaticNeeds::new(pm(0), pm(0), pm(930), pm(0), pm(0)),
+            &thresholds,
+            None,
+            &snapshot,
+            &local,
+        );
+
+        let reports = extractor.finalize();
+        assert_eq!(
+            reports[0].frames[0].failed_rest_opportunities,
+            vec![FailedRestOpportunity {
+                tick: Tick(8),
+                place: local.place.unwrap(),
+                kind: FailedRestKind::PreconditionRejected,
+                was_rough: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn critical_fatigue_window_records_sleep_preempted_by_higher_need() {
+        let agent = entity(1);
+        let mut extractor = SurvivalForensicExtractor::new(agent);
+        let thresholds = DriveThresholds::default();
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Water,
+            purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        });
+        let trace = planning_trace(agent, Tick(9), goal);
+        let local = sample_local_summary();
+
+        extractor.observe(
+            Tick(9),
+            &HomeostaticNeeds::new(pm(0), pm(930), pm(930), pm(0), pm(0)),
+            &thresholds,
+            Some(&trace),
+            &ActionTraceSnapshot::empty(),
+            &local,
+        );
+
+        let reports = extractor.finalize();
+        let fatigue_report = reports
+            .iter()
+            .find(|report| report.need == HomeostaticNeedId::Fatigue)
+            .expect("fatigue critical window should be recorded");
+        assert_eq!(
+            fatigue_report.frames[0].failed_rest_opportunities,
+            vec![FailedRestOpportunity {
+                tick: Tick(9),
+                place: local.place.unwrap(),
+                kind: FailedRestKind::PreemptedByHigherNeed {
+                    need: HomeostaticNeedId::Thirst,
+                },
+                was_rough: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn noncritical_sleep_interruption_does_not_emit_failed_rest_report() {
+        let agent = entity(1);
+        let event = ActionTraceEvent::new(
+            Tick(4),
+            agent,
+            ActionDefId(5),
+            "sleep".to_string(),
+            ActionTraceKind::Aborted {
+                instance_id: ActionInstanceId(9),
+                reason: "Interrupted".to_string(),
+            },
+        )
+        .with_detail(Some(ActionTraceDetail::SleepInterrupted {
+            place: entity(50),
+            cause: SleepFailureCause::Generic,
+            accumulated_recovery: Permille::ZERO,
+            was_rough_sleep: true,
+        }));
+        let snapshot = ActionTraceSnapshot {
+            active_action: None,
+            tick_events: vec![&event],
+        };
+        let mut extractor = SurvivalForensicExtractor::new(agent);
+
+        extractor.observe(
+            Tick(4),
+            &HomeostaticNeeds::new(pm(0), pm(0), pm(400), pm(0), pm(0)),
+            &DriveThresholds::default(),
+            None,
+            &snapshot,
+            &sample_local_summary(),
+        );
+
+        assert!(extractor.finalize().is_empty());
     }
 
     #[test]

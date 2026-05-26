@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — CLI player-POV gating for `RestCapacity`/`RestOccupancy` reads (S163-style); scenario file + test file
-**Deps**: `archive/tickets/S174SHESLESUR-001.md` (RestCapacity/RestOccupancy components), `archive/tickets/S174SHESLESUR-002.md` (PlaceDef.rest_capacity), `archive/tickets/S174SHESLESUR-003.md` (belief-view accessors — CLI uses the same view), `archive/tickets/S174SHESLESUR-004.md` (RestOccupancy lifecycle), `archive/tickets/S174SHESLESUR-005.md` (sleep schema for candidate emission), 006 (forensic records — CLI may surface these)
+**Deps**: `archive/tickets/S174SHESLESUR-001.md` (RestCapacity/RestOccupancy components), `archive/tickets/S174SHESLESUR-002.md` (PlaceDef.rest_capacity), `archive/tickets/S174SHESLESUR-003.md` (belief-view accessors — CLI uses the same view), `archive/tickets/S174SHESLESUR-004.md` (RestOccupancy lifecycle), `archive/tickets/S174SHESLESUR-005.md` (sleep schema for candidate emission), `archive/tickets/S174SHESLESUR-006.md` (forensic records — CLI may surface these)
 
 ## Problem
 
@@ -18,7 +18,7 @@ S174 D11 requires the CLI to not surface `RestOccupancy` for a place the control
 4. Existing inline tests for CLI player-POV: locate via `grep -rn "player_pov\|player_mode\|controlled_agent" crates/worldwake-cli/`. Update existing CLI tests for related accessors (e.g., wash-basin player POV per S172) to mirror the new rest-site gating.
 5. Information-path classification: this is an information-path refactor for the new components — `RestCapacity` and `RestOccupancy` are added with two transport paths from the start (authoritative + belief view). The canonical end-state path for player display is belief view; authoritative reads in player mode are an FND-14 violation.
 6. ControlSource note: Scenario D switches a controlled agent between Human and AI to verify symmetry (the same gating applies regardless of ControlSource).
-7. The CLI may also surface `FailedRestOpportunity` records from ticket 006's `CriticalWindowFrame`. For player POV: only surface failed-rest records for the controlled agent (not for other agents) and only after the events are reachable through ordinary perception. This is an extension of S163's discipline; if the CLI does not currently surface `CriticalWindowFrame` data at all, this concern is N/A for this ticket and the failed-rest CLI surface is deferred.
+7. The CLI may also surface `FailedRestOpportunity` records from archived ticket 006's `CriticalWindowFrame`. For player POV: only surface failed-rest records for the controlled agent (not for other agents) and only after the events are reachable through ordinary perception. This is an extension of S163's discipline; if the CLI does not currently surface `CriticalWindowFrame` data at all, this concern is N/A for this ticket and the failed-rest CLI surface is deferred.
 
 ## Architecture Check
 

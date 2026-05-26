@@ -1,19 +1,20 @@
 use crate::scheduler::SchedulerActionRuntime;
 use crate::{
     ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandlerRegistry,
-    ActionInstanceId, ActionTraceDetail, ActionTraceEvent, ActionTraceKind, ActionTraceSink,
-    ControlError, ControllerState, DeterministicRng, ExternalAbortReason, InputKind,
-    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink, RecipeRegistry,
-    RequestBindingKind, RequestResolutionOutcome, RequestResolutionRejectionReason,
-    RequestResolutionTraceEvent, RequestResolutionTraceSink, Scheduler, SystemDispatchTable,
-    SystemError, TickInputContext, TickInputError, TickInputProducer, TickOutcome,
-    derive_start_failure_legality_trace, get_affordances,
+    ActionInstanceId, ActionState, ActionTraceDetail, ActionTraceEvent, ActionTraceKind,
+    ActionTraceSink, ControlError, ControllerState, DeterministicRng, ExternalAbortReason,
+    InputKind, InstitutionalKnowledgeTraceSink, InterruptReason, PerceptionTraceSink,
+    PoliticalTraceSink, RecipeRegistry, RequestBindingKind, RequestResolutionOutcome,
+    RequestResolutionRejectionReason, RequestResolutionTraceEvent, RequestResolutionTraceSink,
+    Scheduler, SystemDispatchTable, SystemError, TickInputContext, TickInputError,
+    TickInputProducer, TickOutcome, derive_start_failure_legality_trace, get_affordances,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use worldwake_core::{
-    ActionDefId, CauseRef, EntityId, EventLog, EventPayload, EventTag, PendingEvent,
-    SelfCareUseKind, Tick, VisibilitySpec, WitnessData, World,
+    ActionDefId, CauseRef, DecisionEventPayload, EntityId, EventLog, EventPayload, EventTag,
+    EventView, PendingEvent, Permille, SelfCareUseKind, SleepFailureCause, Tick, VisibilitySpec,
+    WakeReason, WitnessData, World,
 };
 
 pub struct TickStepServices<'a> {
@@ -67,7 +68,10 @@ fn action_trace_detail_for_affordance(
 
 fn abort_trace_detail_for_instance(
     defs: &ActionDefRegistry,
+    event_log: &EventLog,
+    tick: Tick,
     instance: &crate::ActionInstance,
+    fallback_cause: SleepFailureCause,
 ) -> Option<ActionTraceDetail> {
     let def = defs.get(instance.def_id)?;
     match def.name.as_str() {
@@ -79,10 +83,7 @@ fn abort_trace_detail_for_instance(
             kind: SelfCareUseKind::Drink,
             basin: None,
         }),
-        "sleep" => Some(ActionTraceDetail::SelfCareInterrupted {
-            kind: SelfCareUseKind::Sleep,
-            basin: None,
-        }),
+        "sleep" => sleep_interrupted_detail(event_log, tick, instance, fallback_cause),
         "wash" => Some(ActionTraceDetail::SelfCareInterrupted {
             kind: SelfCareUseKind::Wash,
             basin: instance.targets.first().copied(),
@@ -96,6 +97,71 @@ fn abort_trace_detail_for_instance(
             basin: None,
         }),
         _ => ActionTraceDetail::from_payload(&instance.payload),
+    }
+}
+
+fn sleep_interrupted_detail(
+    event_log: &EventLog,
+    tick: Tick,
+    instance: &crate::ActionInstance,
+    fallback_cause: SleepFailureCause,
+) -> Option<ActionTraceDetail> {
+    let (was_rough_sleep, fallback_place) = match instance.local_state {
+        Some(ActionState::Sleep { rough, place }) => (rough, place),
+        _ => (false, *instance.targets.first()?),
+    };
+    let ended_payload = sleep_episode_ended_payload(event_log, tick, instance.actor);
+    let cause = ended_payload.map_or(fallback_cause, |payload| match payload.end_reason {
+        WakeReason::LocalDisturbance { cause } => cause,
+        _ => fallback_cause,
+    });
+
+    Some(ActionTraceDetail::SleepInterrupted {
+        place: ended_payload.map_or(fallback_place, |payload| payload.place),
+        cause,
+        accumulated_recovery: ended_payload
+            .map_or(Permille::ZERO, |payload| payload.accumulated_recovery),
+        was_rough_sleep,
+    })
+}
+
+fn sleep_episode_ended_payload(
+    event_log: &EventLog,
+    tick: Tick,
+    actor: EntityId,
+) -> Option<&worldwake_core::SleepEpisodeEndedPayload> {
+    event_log
+        .events_at_tick(tick)
+        .iter()
+        .rev()
+        .filter_map(|event_id| event_log.get(*event_id))
+        .find_map(|record| match record.decision_payload()? {
+            DecisionEventPayload::SleepEpisodeEnded(payload) if payload.sleeper == actor => {
+                Some(payload)
+            }
+            _ => None,
+        })
+}
+
+fn sleep_failure_cause_for_abort_reason(reason: &crate::AbortReason) -> SleepFailureCause {
+    match reason {
+        crate::AbortReason::Interrupted {
+            kind: InterruptReason::DangerNearby,
+            ..
+        } => SleepFailureCause::HostileProximity,
+        crate::AbortReason::CommitConditionFailed {
+            condition: crate::Precondition::ActorAlive,
+        }
+        | crate::AbortReason::ExternalAbort {
+            kind: ExternalAbortReason::ActorMarkedDead,
+            ..
+        } => SleepFailureCause::ActorIncapacitated,
+        crate::AbortReason::AuthoritativeRevalidationFailed { detail }
+            if detail.contains("rest site") && detail.contains("full") =>
+        {
+            SleepFailureCause::RestSiteContended
+        }
+        _ => SleepFailureCause::Generic,
     }
 }
 
@@ -513,7 +579,10 @@ fn apply_input(
                     )
                     .with_detail(abort_trace_detail_for_instance(
                         services.action_defs,
+                        runtime.event_log,
+                        tick,
                         &instance,
+                        SleepFailureCause::Generic,
                     )),
                 );
             }
@@ -739,7 +808,13 @@ fn progress_active_actions(
                             reason: format!("{reason:?}"),
                         },
                     )
-                    .with_detail(ActionTraceDetail::from_payload(&instance.payload)),
+                    .with_detail(abort_trace_detail_for_instance(
+                        services.action_defs,
+                        runtime.event_log,
+                        tick,
+                        &instance,
+                        sleep_failure_cause_for_abort_reason(&reason),
+                    )),
                 );
                 runtime.scheduler.retain_replan(replan);
                 actions_aborted = actions_aborted
@@ -858,7 +933,13 @@ fn abort_actions_for_dead_actors(
                         reason: "ActorMarkedDead".to_string(),
                     },
                 )
-                .with_detail(abort_trace_detail_for_instance(services.action_defs, &inst)),
+                .with_detail(abort_trace_detail_for_instance(
+                    services.action_defs,
+                    runtime.event_log,
+                    tick,
+                    &inst,
+                    SleepFailureCause::ActorIncapacitated,
+                )),
             );
         }
         aborted = aborted
@@ -983,13 +1064,14 @@ mod tests {
         SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest, TargetSpec,
         TellActionPayload, TickInputContext, TickInputError, TickInputProducer, get_affordances,
     };
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
-        ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, ControlSource, DeadAt, EntityId,
-        EntityKind, EventLog, EventTag, EventView, Seed, SelfCareUseKind, Tick, VisibilitySpec,
-        WitnessData, World, WorldTxn, build_prototype_world,
+        ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, ControlSource, DeadAt,
+        DecisionEventPayload, EntityId, EntityKind, EventLog, EventPayload, EventTag, EventView,
+        PendingEvent, Permille, Seed, SelfCareUseKind, SleepEpisodeEndedPayload, SleepFailureCause,
+        Tick, VisibilitySpec, WakeReason, WitnessData, World, WorldTxn, build_prototype_world,
     };
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -1315,19 +1397,19 @@ mod tests {
         }
     }
 
+    fn sleep_instance(def_id: ActionDefId, place: EntityId, rough: bool) -> ActionInstance {
+        ActionInstance {
+            local_state: Some(ActionState::Sleep { rough, place }),
+            ..active_instance(def_id, Vec::new())
+        }
+    }
+
     #[test]
     fn abort_trace_detail_for_self_care_actions_uses_action_family_and_target() {
         let mut registry = action_registry();
-        for (offset, name) in [
-            "eat",
-            "drink",
-            "sleep",
-            "wash",
-            "toilet",
-            "relieve_wilderness",
-        ]
-        .into_iter()
-        .enumerate()
+        for (offset, name) in ["eat", "drink", "wash", "toilet", "relieve_wilderness"]
+            .into_iter()
+            .enumerate()
         {
             registry.register(self_care_def(ActionDefId(3 + offset as u32), name));
         }
@@ -1352,14 +1434,6 @@ mod tests {
             ),
             (
                 ActionDefId(5),
-                Vec::new(),
-                ActionTraceDetail::SelfCareInterrupted {
-                    kind: SelfCareUseKind::Sleep,
-                    basin: None,
-                },
-            ),
-            (
-                ActionDefId(6),
                 vec![basin],
                 ActionTraceDetail::SelfCareInterrupted {
                     kind: SelfCareUseKind::Wash,
@@ -1367,7 +1441,7 @@ mod tests {
                 },
             ),
             (
-                ActionDefId(7),
+                ActionDefId(6),
                 vec![basin],
                 ActionTraceDetail::SelfCareInterrupted {
                     kind: SelfCareUseKind::LatrineRelief,
@@ -1375,7 +1449,7 @@ mod tests {
                 },
             ),
             (
-                ActionDefId(8),
+                ActionDefId(7),
                 Vec::new(),
                 ActionTraceDetail::SelfCareInterrupted {
                     kind: SelfCareUseKind::WildernessRelief,
@@ -1384,10 +1458,94 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                abort_trace_detail_for_instance(&registry, &active_instance(def_id, targets)),
+                abort_trace_detail_for_instance(
+                    &registry,
+                    &EventLog::new(),
+                    Tick(12),
+                    &active_instance(def_id, targets),
+                    SleepFailureCause::Generic,
+                ),
                 Some(expected)
             );
         }
+    }
+
+    #[test]
+    fn abort_trace_detail_for_sleep_uses_structured_sleep_interrupted_detail() {
+        let mut registry = action_registry();
+        registry.register(self_care_def(ActionDefId(3), "sleep"));
+        let place = entity(40);
+
+        assert_eq!(
+            abort_trace_detail_for_instance(
+                &registry,
+                &EventLog::new(),
+                Tick(12),
+                &sleep_instance(ActionDefId(3), place, true),
+                SleepFailureCause::HostileProximity,
+            ),
+            Some(ActionTraceDetail::SleepInterrupted {
+                place,
+                cause: SleepFailureCause::HostileProximity,
+                accumulated_recovery: Permille::ZERO,
+                was_rough_sleep: true,
+            })
+        );
+    }
+
+    #[test]
+    fn abort_trace_detail_for_sleep_reads_sleep_episode_end_payload() {
+        let mut registry = action_registry();
+        registry.register(self_care_def(ActionDefId(3), "sleep"));
+        let actor = entity(9);
+        let place = entity(40);
+        let mut event_log = EventLog::new();
+        event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(12),
+            cause: CauseRef::SystemTick(Tick(12)),
+            actor_id: Some(actor),
+            action_name: Some("sleep".to_string()),
+            target_ids: Vec::new(),
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::PublicRecord,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::SleepEpisodeEnded]),
+            contention_event_payload: None,
+            decision_payload: Some(DecisionEventPayload::SleepEpisodeEnded(
+                SleepEpisodeEndedPayload {
+                    sleeper: actor,
+                    place,
+                    start_tick: Tick(8),
+                    end_tick: Tick(12),
+                    end_reason: WakeReason::LocalDisturbance {
+                        cause: SleepFailureCause::RestSiteContended,
+                    },
+                    accumulated_recovery: Permille::new(125).unwrap(),
+                    final_fatigue: Permille::new(875).unwrap(),
+                },
+            )),
+            artifact_transition_payload: None,
+            personality_assigned_payload: None,
+        }));
+
+        assert_eq!(
+            abort_trace_detail_for_instance(
+                &registry,
+                &event_log,
+                Tick(12),
+                &sleep_instance(ActionDefId(3), entity(99), false),
+                SleepFailureCause::Generic,
+            ),
+            Some(ActionTraceDetail::SleepInterrupted {
+                place,
+                cause: SleepFailureCause::RestSiteContended,
+                accumulated_recovery: Permille::new(125).unwrap(),
+                was_rough_sleep: false,
+            })
+        );
     }
 
     fn reservation_action_registry() -> ActionDefRegistry {
