@@ -26,7 +26,7 @@ Draft
 - `archive/specs/S17-wound-lifecycle-golden-suites.md` — provides the `Wound` / `WoundList` / `WoundCause` substrate the new variant extends.
 - `archive/specs/S81-golden-gaps-simulation-remediation.md` — provides the `DeathCause::NeedDeprivation` death path the new variant terminates into. The S81 substrate currently fires for `NeedDeprivation { need: Hunger }` and `Thirst`; this spec adds `Fatigue`.
 - `archive/specs/S120-survival-critical-window-forensics.md` — provides `CriticalWindowReport` / `CriticalWindowFrame` the collapse path is recorded into.
-- `specs/S174-shelter-sleep-surfaces-safe-rest.md` (paired, this iteration) — provides `FailedRestOpportunity` records the collapse-trace reads. S175 reads but does not modify S174's forensic state.
+- `archive/specs/S174-shelter-sleep-surfaces-safe-rest.md` — provides `FailedRestOpportunity` records the collapse-trace reads. S175 reads but does not modify S174's forensic state.
 
 ## Design Goals
 
@@ -38,7 +38,7 @@ Draft
 
 ## Non-Goals
 
-- No new sleep mechanics. All sleep / rest-site / wake-reason work is in `S174-shelter-sleep-surfaces-safe-rest.md`.
+- No new sleep mechanics. All sleep / rest-site / wake-reason work is in `archive/specs/S174-shelter-sleep-surfaces-safe-rest.md`.
 - No new wound category beyond `DeprivationKind::Exhaustion`. `WoundCause::Deprivation(Exhaustion)` consumes the existing severity/load/death substrate from S17.
 - No "rescue" / "carry-to-safety" actions. If a future spec wants other agents to revive collapsed actors, that is its own carrier; this spec defines collapse as a need-deprivation death by default, identical to starvation/dehydration semantics.
 - No incapacitation-without-death intermediate state. The existing wound system already handles wound-load-driven incapacitation gracefully; `Exhaustion` wounds participate in that without a new component. The spec does not introduce an `Incapacitated` flag.

@@ -47,7 +47,7 @@ The two-path schema required a `FeasibilityStrategy::CandidateBacked` variant (t
 4. Updated candidate-generation test stubs with belief-view rest-site capacity and occupant-count accessors.
 5. Updated sleep-related focused tests to assert KnownRestSite and targetless RoughSleep candidates separately.
 6. Updated golden sleep fixtures to install `RestCapacity` and belief-backed empty contention state where a remote rest-site candidate is expected.
-7. Truth-synced `specs/S174-shelter-sleep-surfaces-safe-rest.md` so D4 describes targetless RoughSleep and the Sleep relevant/progress-barrier split.
+7. Truth-synced `archive/specs/S174-shelter-sleep-surfaces-safe-rest.md` before final spec archival so D4 describes targetless RoughSleep and the Sleep relevant/progress-barrier split.
 
 ## Landed Files
 
@@ -56,7 +56,7 @@ The two-path schema required a `FeasibilityStrategy::CandidateBacked` variant (t
 - `crates/worldwake-ai/src/candidate_generation.rs`
 - `crates/worldwake-ai/tests/scenarios/place_dirtiness.rs`
 - `crates/worldwake-ai/tests/scenarios/sleep_episode.rs`
-- `specs/S174-shelter-sleep-surfaces-safe-rest.md`
+- `archive/specs/S174-shelter-sleep-surfaces-safe-rest.md` (modified before final spec archival)
 
 ## Out of Scope
 

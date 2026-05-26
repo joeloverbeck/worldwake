@@ -32,18 +32,18 @@ pending specs (`S60`–`S66`). Dismissals and rationale:
 `docs/triage/2026-05-26-cluster-1-gameplay-mechanics-second-iteration-triage.md`.
 
 ```
-S174 (Shelter, Sleep Surfaces, and Safe-Rest)         ── independent; depends on archived S173 / S128 / S44 / S142 / S120
-S175 (Fatigue Collapse + Failed-Rest Traceability)    ── depends on S174 (consumes FailedRestOpportunity records)
+S174 (Shelter, Sleep Surfaces, and Safe-Rest)         ── completed and archived; depends on archived S173 / S128 / S44 / S142 / S120
+S175 (Fatigue Collapse + Failed-Rest Traceability)    ── depends on archived S174 (consumes FailedRestOpportunity records)
 ```
 
-S175 reads but does not write S174's forensic state. S174 can land without S175;
-S175 cannot land before S174 without losing the failed-rest causal chain that the
-collapse golden depends on.
+S175 reads but does not write S174's forensic state. S174 has landed without S175;
+S175 now consumes the archived S174 failed-rest causal chain that the collapse
+golden depends on.
 
-### Authored, Awaiting Activation
+### Completed
 
 - **S174 — Shelter, Sleep Surfaces, and Safe-Rest Consequence Carrier** —
-  `specs/S174-shelter-sleep-surfaces-safe-rest.md` — *Status: Draft.*
+  `archive/specs/S174-shelter-sleep-surfaces-safe-rest.md` — *Status: Completed.*
   Introduces `RestCapacity` and `RestOccupancy` components on `EntityKind::Place`,
   splits the Sleep goal schema into a two-path enumerator (`KnownRestSite`
   belief-backed + `RoughSleep` always-available fallback), restructures
@@ -54,6 +54,8 @@ collapse golden depends on.
   contention, multi-slot contention, structured-cause interruption, player-POV
   symmetry, and the repeated-failed-rest feed that S175 consumes.
   **FND-1/3/4/7/8/9/10/14/14A/14B/19/20/21/26/28/29/29A/31.**
+
+### Authored, Awaiting Activation
 
 - **S175 — Fatigue Collapse and Failed-Rest Traceability** —
   `specs/S175-fatigue-collapse-and-failed-rest-traceability.md` — *Status: Draft.*
@@ -70,7 +72,7 @@ collapse golden depends on.
 
 These proposals from the second-iteration report were verified factually
 accurate but **deliberately deferred** to keep this wave focused. They are
-revisited only after S174 + S175 land and prove the rest substrate.
+revisited after archived S174 plus S175 prove the full rest substrate.
 
 - **Concrete Survival Degradation Consequence Layer (water quality / food
   spoilage / latrine blocking / basin effectiveness)** — Report P0 theme C. The

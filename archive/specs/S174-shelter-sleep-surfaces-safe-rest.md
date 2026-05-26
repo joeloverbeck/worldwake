@@ -12,7 +12,7 @@ Phase 7: Consequence Carriers
 
 ## Status
 
-Draft
+✅ COMPLETED
 
 ## Crates
 
@@ -42,14 +42,14 @@ Draft
 
 ## Non-Goals
 
-- No environmental exposure model. Cold/heat/wetness exposure is registered as a P1 follow-up in `specs/IMPLEMENTATION-ORDER.md` and explicitly deferred until S174 lands.
+- No environmental exposure model. Cold/heat/wetness exposure is registered as a P1 follow-up in `specs/IMPLEMENTATION-ORDER.md` and explicitly deferred beyond S174.
 - No camp/fire creation actions. A "make camp" affordance is a future-spec trigger if scenarios reveal that scenario-authored placement of rest-capable places is insufficient.
 - No reuse of the existing single-occupant `SelfCareOccupancy` for rest sites. Rest occupancy requires multi-occupant capacity (a shelter with 3 bedrolls hosts 3 simultaneous sleepers). A separate `RestOccupancy` component avoids breaking S173's single-occupant contract for Wash/Latrine. `SelfCareUseKind::Sleep` (introduced by S173 for trace-detail completeness) remains in the enum but does not carry occupancy.
 - No predator / night-danger ecology. `specs/S61` (held) is the proper home; this spec only consumes co-located hostile presence already produced by ordinary combat/perception systems as a wake cause.
 - No food spoilage / water-quality / latrine-blocking degradation consequences. Registered as a deferred wave in `specs/IMPLEMENTATION-ORDER.md`.
 - No rest-site memory beyond what the existing `LearnedRoutePreferences` / `LearnedSourcePreferences` substrate already provides. Per-place rest-outcome learning is folded into the existing `S38-learned-route-source-preferences` carriers if any extension is later proven necessary; this spec does not introduce a new memory component.
 - No HTN method for sleep. Both branches (KnownRestSite + RoughSleep) are flat GOAP candidate emission. The two-path split lives in the goal schema and candidate enumerator, not in method decomposition.
-- No fatigue collapse / `DeathCause` consequence path. That work belongs to `S175-fatigue-collapse-and-failed-rest-traceability.md` (paired spec, this iteration); S174 supplies the failed-rest opportunity records S175 consumes, but adds no new wound or death surface.
+- No fatigue collapse / `DeathCause` consequence path. That work belongs to `specs/S175-fatigue-collapse-and-failed-rest-traceability.md` (paired spec, this iteration); S174 supplies the failed-rest opportunity records S175 consumes, but adds no new wound or death surface.
 - No backward-compatibility shim around `FeasibilityStrategy::AlwaysLikely` for the existing Sleep goal. The strategy is replaced; goldens that depend on the old planner behavior get updated in this spec, per FND-28.
 
 ## FOUNDATIONS Alignment
@@ -543,3 +543,33 @@ Assertions:
 1. Should targetless `RoughSleep` candidates remain legal while the actor is standing at places that DO carry `RestCapacity` (i.e., rough-sleeping on the shelter floor even when the bed slot is taken)? D4 currently allows this; it makes the fallback always available. Alternative: forbid rough sleep when current-place evidence points at a rest-capable place, forcing the agent to travel. The current design preserves the report's "always-legal rough sleep" stance; if scenario play surfaces a reason to forbid same-place rough sleep, restrict it then.
 2. Should `FailedRestOpportunity::PreemptedByHigherNeed` be recorded eagerly (every time the actor abandons a sleep intention) or only during active critical windows? Current design ties it to the active critical window (matching the existing `SurvivalForensicExtractor` window-scoped semantics). If S175 needs records outside critical windows, the extractor's scope expands; that decision is taken at S175 ticket time.
 3. Should the `Generic` `SleepFailureCause` variant be removed before merge once all current call sites map to specific causes? If yes, `WakeReason::LocalDisturbance` becomes a proper exhaustive structured cause. Current spec keeps `Generic` as a transitional bucket; the spec marks this as a hardening question for the implementation tickets.
+
+## Outcome
+
+Completed: 2026-05-26
+
+Implemented the S174 rest-site and safe-rest substrate across the S174 ticket family:
+
+- Added `RestCapacity` and `RestOccupancy` place components, scenario authoring, and runtime occupancy lifecycle for sleep.
+- Replaced coarse sleep interruption records with structured `SleepFailureCause`, `WakeReason::LocalDisturbance { cause }`, and `ActionTraceDetail::SleepInterrupted` evidence.
+- Split Sleep planning into belief-backed known-rest-site opportunities and targetless rough-sleep fallback, with profile-driven rough-sleep recovery caps.
+- Added rest-site belief-view accessors and player-POV CLI gating for rest capacity/occupancy.
+- Extended survival forensics with `FailedRestOpportunity` records, including precondition rejection, interruption, higher-need preemption, and rough fallback from known rest-site opportunities.
+- Landed S174 golden coverage for rest-site contention, multi-slot contention and queue promotion, hostile-proximity sleep interruption, CLI POV symmetry, and the failed-rest feed consumed by S175.
+
+Deviations from original plan:
+
+- Sleep keeps an empty generic reservation requirement set. `RestOccupancy` is the authoritative multi-occupant start gate because generic reservations are unconditional and exclusive, which conflicts with targetless rough sleep and capacity greater than one.
+- Rough sleep is represented by a targetless Sleep action (`OpportunityAnchor::None`) with current-place evidence, not by a parallel action payload flag.
+- Scenario E was corrected after `docs/FOUNDATIONS.md` reassessment. Repeated failed-rest records come from an initial contested start rejection plus repeated `RoughFallbackToKnownRestSite` records while known-rest-site candidates remain unavailable; forcing repeated known-impossible targeted starts would violate revisable intentions and bounded planning.
+
+Verification:
+
+- `cargo test -p worldwake-ai --test golden_ai -- scenarios::survival_safe_rest scenarios::survival_sleep_contention scenarios::survival_rest_interrupted_by_danger scenarios::survival_failed_rest_cascade`
+- `cargo test -p worldwake-ai`
+- `cargo test --workspace`
+- `cargo clippy --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo fmt --all -- --check`
+- `python3 scripts/golden_inventory.py --write --check-docs`
+- `git diff --check`

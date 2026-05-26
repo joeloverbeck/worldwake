@@ -53,7 +53,8 @@ for the actual delta:
   exist via archived S129 and S130. The missing consequence wiring (basin
   effectiveness, latrine blocking, food spoilage) needs S174's rest substrate
   as the meaningful consumer — a crowded shelter degrades faster, dirty basins
-  matter more when other rest options are scarce. Land S174 first.
+  matter more when other rest options are scarce. S174 was the first landing
+  prerequisite.
 - **The S60–S66 reaffirmation breadth** correctly identifies pending prior art
   but creates an impression of wide gaps. The actual delta from the current
   state is narrower: two new specs (S174 + S175) and a watchlist.
@@ -64,7 +65,7 @@ are both correct and motivate the accepted specs.
 
 ## Accepted
 
-- **`specs/S174-shelter-sleep-surfaces-safe-rest.md`** (P0 A, P0 D folded in,
+- **`archive/specs/S174-shelter-sleep-surfaces-safe-rest.md`** (P0 A, P0 D folded in,
   P1 F folded in, P1 G subsumed via scenarios) — introduces `RestCapacity` +
   `RestOccupancy` components on `EntityKind::Place`, splits Sleep goal schema
   into `KnownRestSite` belief-backed + `RoughSleep` AlwaysLikely fallback,
@@ -179,10 +180,10 @@ gameplay specs is preserved.
 ## Follow-ups identified, not actioned
 
 - **Degradation consequence layer** (water quality / food spoilage / latrine
-  blocking / basin effectiveness) — re-evaluate after S174 lands. The carriers
+  blocking / basin effectiveness) — re-evaluate after S174 archival. The carriers
   exist; what needs to be designed is the consequence wiring and its
   interaction with rest-site degradation.
-- **Environmental exposure carrier** — re-evaluate after S174 lands. The
+- **Environmental exposure carrier** — re-evaluate after S174 archival. The
   report's preferred minimal model (cold/heat/wetness, shelter/fire/clothing
   mitigation) is sound but cannot be designed until rest-site quality
   composition is stable.

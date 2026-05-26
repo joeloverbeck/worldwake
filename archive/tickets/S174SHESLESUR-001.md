@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — new ECS components on `EntityKind::Place`; existing cross-crate enum (`WakeReason`) variant payload widened; new variant on `ActionTraceDetail`; `SAVE_FORMAT_VERSION` bumped from 107 to 108
-**Deps**: `specs/S174-shelter-sleep-surfaces-safe-rest.md` (D1, D3, D6, D7), `archive/specs/S128-sleep-episode-place-quality.md`, `archive/specs/S173-self-care-interruption-occupancy.md`
+**Deps**: `archive/specs/S174-shelter-sleep-surfaces-safe-rest.md` (D1, D3, D6, D7), `archive/specs/S128-sleep-episode-place-quality.md`, `archive/specs/S173-self-care-interruption-occupancy.md`
 
 ## Problem
 
@@ -150,7 +150,7 @@ In `crates/worldwake-sim/src/save_load.rs`, bumped `SAVE_FORMAT_VERSION` from `1
 - `crates/worldwake-sim/src/action_trace.rs` (modify — add `ActionTraceDetail::SleepInterrupted` variant)
 - `crates/worldwake-systems/src/needs_actions.rs` (modify — update `WakeReason::LocalDisturbance` construction at line 679 to supply `SleepFailureCause::Generic`)
 - `crates/worldwake-sim/src/save_load.rs` (modify — bump `SAVE_FORMAT_VERSION` 107 → 108)
-- `specs/S174-shelter-sleep-surfaces-safe-rest.md` (modify — corrected the stored-state summary so `WakeCondition::LocalDisturbance` remains bare)
+- `archive/specs/S174-shelter-sleep-surfaces-safe-rest.md` (modified before archival — corrected the stored-state summary so `WakeCondition::LocalDisturbance` remains bare)
 - No change required: `crates/worldwake-core/src/sleep_episode.rs` (continues to own bare `WakeCondition::LocalDisturbance`)
 - No change required: `crates/worldwake-ai/tests/scenarios/sleep_episode.rs` (sleep goldens passed after the structured `WakeReason` change)
 

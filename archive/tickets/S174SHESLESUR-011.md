@@ -115,7 +115,7 @@ What changed:
 - Added `FailedRestKind::RoughFallbackToKnownRestSite` and populated it from decision-trace evidence when a fatigue-critical actor emits a known-rest-site Sleep opportunity but selects targetless rough sleep.
 - Added `scenarios/survival-failed-rest-cascade.ron` with a one-slot occupied shelter and a critically tired Aster whose rough-sleep fallback cannot leave fatigue critical exposure.
 - Added `crates/worldwake-ai/tests/scenarios/survival_failed_rest_cascade.rs` with Scenario 485 coverage and deterministic replay.
-- Regenerated generated golden coverage docs and synchronized `specs/S174-shelter-sleep-surfaces-safe-rest.md`.
+- Regenerated generated golden coverage docs and synchronized `archive/specs/S174-shelter-sleep-surfaces-safe-rest.md` before final spec archival.
 
 Deviations from original plan:
 - The original ticket required ≥ N repeated `PreconditionRejected` start failures and claimed no engine changes. Reassessment against live behavior and `docs/FOUNDATIONS.md` showed that forcing repeated known-full starts would violate FND-20/FND-21. The landed carrier records repeated rough fallback from a known rest-site opportunity instead.
