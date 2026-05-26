@@ -7,9 +7,10 @@ use crate::golden_harness::*;
 use worldwake_core::{
     AgentData, ClaimantOutcome, CommodityKind, ComponentKind, ComponentValue, ContentionGrant,
     ContentionIntents, ContentionPolicy, ContentionQueue, ContentionResolutionRule, ControlSource,
-    DecisionEventPayload, EntityId, EventId, EventTag, EventView, GoalKey, GoalKind,
-    HomeostaticNeeds, MetabolismProfile, Quantity, QueuedContentionIntent, Seed, SelfCareUseKind,
-    StateDelta, Tick, UtilityProfile, WashBasinState, WorkstationTag, prototype_place_entity,
+    DeathCause, DecisionEventPayload, DeprivationKind, EntityId, EventId, EventTag, EventView,
+    GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile, Quantity,
+    QueuedContentionIntent, Seed, SelfCareUseKind, StateDelta, Tick, UtilityProfile,
+    WashBasinState, WorkstationTag, prototype_place_entity,
 };
 use worldwake_sim::{
     ActionRequestMode, ActionTraceDetail, ActionTraceKind, InputKind, RequestProvenance,
@@ -125,6 +126,23 @@ fn active_action(h: &GoldenHarness, actor: EntityId, action_name: &str) -> Start
             })
         })
         .unwrap_or_else(|| panic!("{actor:?} should have active {action_name} action"))
+}
+
+fn maybe_active_action(
+    h: &GoldenHarness,
+    actor: EntityId,
+    action_name: &str,
+) -> Option<StartedAction> {
+    h.scheduler
+        .active_actions()
+        .iter()
+        .find_map(|(instance_id, instance)| {
+            let def = h.defs.get(instance.def_id)?;
+            (instance.actor == actor && def.name == action_name).then_some(StartedAction {
+                instance_id: *instance_id,
+                def_id: instance.def_id,
+            })
+        })
 }
 
 fn start_requested_action(
@@ -304,6 +322,134 @@ fn queue_grant_actor(h: &GoldenHarness, facility: EntityId) -> Option<EntityId> 
     h.world
         .get_component_contention_queue(facility)
         .and_then(|queue| queue.granted.as_ref().map(|grant| grant.actor))
+}
+
+fn collapse_metabolism() -> MetabolismProfile {
+    MetabolismProfile {
+        hunger_rate: pm(25),
+        thirst_rate: pm(0),
+        fatigue_rate: pm(0),
+        bladder_rate: pm(0),
+        dirtiness_rate: pm(0),
+        starvation_tolerance_ticks: nz(2),
+        dehydration_tolerance_ticks: nz(1000),
+        exhaustion_collapse_ticks: nz(1000),
+        bladder_accident_tolerance_ticks: nz(1000),
+        wash_ticks: nz(50),
+        ..MetabolismProfile::default()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct InterruptionCollapseObservation {
+    wash_interruptions: usize,
+    death_tick: Tick,
+    death_cause: DeathCause,
+    max_hunger_critical_ticks: u32,
+    starvation_wound_seen: bool,
+    post_death_started_actions: Vec<String>,
+}
+
+fn run_repeated_interruption_deprivation_collapse(seed: Seed) -> InterruptionCollapseObservation {
+    let mut h = GoldenHarness::new(seed);
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Repeatedly Interrupted Washer",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(500), pm(0), pm(0), pm(0), pm(950)),
+        collapse_metabolism(),
+        UtilityProfile {
+            hunger_weight: pm(100),
+            thirst_weight: pm(0),
+            fatigue_weight: pm(0),
+            bladder_weight: pm(0),
+            dirtiness_weight: pm(1000),
+            enterprise_weight: pm(0),
+            social_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    let basin = place_wash_basin(&mut h, VILLAGE_SQUARE);
+
+    let mut interrupted_instances = Vec::new();
+    let mut max_hunger_critical_ticks = 0;
+    let mut starvation_wound_seen = false;
+
+    loop {
+        h.step_once();
+
+        if let Some(exposure) = h.world.get_component_deprivation_exposure(agent) {
+            max_hunger_critical_ticks =
+                max_hunger_critical_ticks.max(exposure.hunger_critical_ticks);
+        }
+        if h.world
+            .get_component_wound_list(agent)
+            .is_some_and(|wounds| {
+                wounds
+                    .find_deprivation_wound(DeprivationKind::Starvation)
+                    .is_some()
+            })
+        {
+            starvation_wound_seen = true;
+        }
+
+        if let Some(dead_at) = h.world.get_component_dead_at(agent).copied() {
+            for _ in 0..3 {
+                h.step_once();
+            }
+            let post_death_started_actions = h
+                .action_trace_sink()
+                .expect("action tracing should be enabled")
+                .events_for(agent)
+                .into_iter()
+                .filter(|event| {
+                    event.tick.0 > dead_at.tick.0
+                        && matches!(event.kind, ActionTraceKind::Started { .. })
+                })
+                .map(|event| event.action_name.clone())
+                .collect();
+
+            return InterruptionCollapseObservation {
+                wash_interruptions: interrupted_instances.len(),
+                death_tick: dead_at.tick,
+                death_cause: dead_at.cause,
+                max_hunger_critical_ticks,
+                starvation_wound_seen,
+                post_death_started_actions,
+            };
+        }
+
+        if let Some(started) = maybe_active_action(&h, agent, "wash")
+            && !interrupted_instances.contains(&started.instance_id)
+        {
+            let aborted_before = h.event_log.events_by_tag(EventTag::ActionAborted).len();
+            cancel_action(&mut h, agent, started.instance_id);
+            h.step_once();
+            assert_eq!(
+                h.event_log.events_by_tag(EventTag::ActionAborted).len(),
+                aborted_before + 1,
+                "cancelled wash should emit an authoritative ActionAborted event"
+            );
+            assert!(
+                h.world.get_component_self_care_occupancy(basin).is_none(),
+                "cancelled wash should release SelfCareOccupancy before the next retry"
+            );
+            interrupted_instances.push(started.instance_id);
+        }
+
+        assert!(
+            h.scheduler.current_tick().0 < 160,
+            "agent should die from hunger deprivation after repeated interrupted wash attempts; \
+             interruptions={}, hunger={}, wound_load={}",
+            interrupted_instances.len(),
+            h.agent_hunger(agent).value(),
+            h.agent_wound_load(agent),
+        );
+    }
 }
 
 // Scenario 478: S173 Self-Care Abort Traces Cover Every Family
@@ -647,5 +793,58 @@ fn golden_interrupted_wash_releases_basin_and_promotes_waiter() {
             granted_at: h.scheduler.current_tick() - 1,
             expires_at: h.scheduler.current_tick() - 1 + 4,
         })
+    );
+}
+
+// Scenario 481: S173 Repeated Self-Care Interruption Can End In Deprivation Death
+//
+// Setup: An AI-controlled dirty agent repeatedly selects a local wash action.
+//   The harness applies repeated external local cancellations before commit,
+//   while hunger rises under the normal needs system and no food source is
+//   available.
+//
+// Proves: repeated self-care aborts leave typed ActionAborted/ActionTraceDetail
+//   evidence, release occupancy between retries, and do not rescue the agent
+//   from the existing hunger-deprivation wound/death substrate.
+//
+// Cross-system chain: Wash candidate selection -> wash start -> controlled local
+//   cancellation -> ActionAborted + SelfCareInterrupted + occupancy release ->
+//   repeated retry under rising hunger -> starvation wound -> DeadAt/Death.
+#[test]
+#[ignore = "CI-only: repeated-interruption deprivation collapse; run via golden-survival workflow"]
+fn golden_repeated_self_care_interruption_can_end_in_deprivation_death() {
+    let observation = run_repeated_interruption_deprivation_collapse(Seed([0x76; 32]));
+
+    assert!(
+        observation.wash_interruptions >= 3,
+        "scenario should prove repeated, not one-off, interruption; observation={observation:?}"
+    );
+    assert_eq!(
+        observation.death_cause,
+        DeathCause::NeedDeprivation {
+            need: HomeostaticNeedId::Hunger
+        },
+        "live deprivation death substrate is hunger/thirst wound based; observation={observation:?}"
+    );
+    assert!(
+        observation.starvation_wound_seen,
+        "starvation wound should appear before death; observation={observation:?}"
+    );
+    assert!(
+        observation.max_hunger_critical_ticks >= 1,
+        "hunger critical exposure should accumulate before starvation wounds reset it; observation={observation:?}"
+    );
+    assert!(
+        observation.post_death_started_actions.is_empty(),
+        "dead agent should not start new actions after deprivation death; observation={observation:?}"
+    );
+}
+
+#[test]
+#[ignore = "CI-only: repeated-interruption deprivation collapse; run via golden-survival workflow"]
+fn golden_repeated_self_care_interruption_collapse_replays_deterministically() {
+    assert_eq!(
+        run_repeated_interruption_deprivation_collapse(Seed([0x76; 32])),
+        run_repeated_interruption_deprivation_collapse(Seed([0x76; 32])),
     );
 }

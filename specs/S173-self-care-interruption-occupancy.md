@@ -36,7 +36,7 @@ Draft
 - Mechanically exclusive facilities (`WashBasin`-tagged `Facility`, `Latrine`-tagged `Place`) are reserved on action start and released on commit, abort, or actor incapacitation.
 - Eat, Drink, and Wilderness-Relief remain atomic (no partial state) — but their abort path is explicitly mapped to the typed `ActionTraceDetail::SelfCareInterrupted` payload so "interrupted before commit" is distinguishable from "never attempted" in the action-trace sink. The authoritative causal hook remains the existing `EventTag::ActionAborted` record, already fired by the engine for every aborted action; the spec adds structured payload, not a new causal surface.
 - Sleep retains its existing `SleepEpisode` contract unchanged; this spec layers the same typed trace detail above it so all six families share the same inspection shape.
-- Repeated interruption can lawfully drive an agent to deprivation collapse — proven end-to-end by a scenario, not just by the existing simulation-gaps hunger-starvation proof.
+- Repeated interruption can lawfully end in deprivation collapse — proven end-to-end by a scenario that composes repeated Wash interruption with the existing hunger-deprivation wound/death substrate.
 - No new abstract score, no hidden rescue, no scenario-specific target injection, no planner intent-as-lock.
 
 ## Non-Goals
@@ -56,13 +56,13 @@ Draft
 
 | Principle | Alignment |
 |-----------|-----------|
-| FND-1 (Emergence) | Two dirty agents → one occupies basin → other waits or replans → repeated interruption emerges through ordinary world processes, not scripted rescue |
+| FND-1 (Emergence) | Two dirty agents → one occupies basin → other waits or replans through ordinary world processes; Scenario E uses controlled local cancellations only to stress the already-landed interruption/occupancy carrier while death still emerges from the needs and wound systems |
 | FND-3 (Concrete state) | `SelfCareOccupancy` is authoritative world state with stable identity; not a score |
 | FND-4 (Persistent identity) | Occupancy carries occupant `EntityId`, started-tick, use kind, and the `GoalKey` that drove start; release/abandon are explicit transitions |
 | FND-8 (Action preconditions, occupancy) | Directly satisfies: every self-care action declares preconditions, duration, occupancy, interruption, contention |
 | FND-9 (Scheduling) | Occupy/release/abandon all occur at well-defined tick boundaries (action start, commit, abort, actor death) |
 | FND-10 (Aftermath) | Interrupted self-care leaves traceable state (`EventTag::ActionAborted` causal record + typed `ActionTraceDetail::SelfCareInterrupted` payload) and released occupancy, never silent reset |
-| FND-11 (Positive feedback) | Repeated interruption → rising deprivation → deprivation wounds is itself the dampener (wounds reduce capacity; eventually death stops the loop) |
+| FND-11 (Positive feedback) | Repeated interruption → rising hunger deprivation → starvation wounds is itself the dampener (wounds reduce capacity; eventually death stops the loop) |
 | FND-19 (Agent symmetry) | Human and AI agents share identical interruption, occupancy, and contention semantics |
 | FND-21 (Intentions revisable) | Losing actor does not silently reserve the basin; explicit occupancy or queue grant is required |
 | FND-26 (Systems via state) | Action handlers read/write `SelfCareOccupancy`; planner reads it via belief or co-located observation; no system commands another |
@@ -207,14 +207,14 @@ No new `EventTag` variant. The authoritative causal record for an interrupted se
 
 ### D8. Repeated-interruption deprivation-collapse trace
 
-The spec proves end-to-end that repeated self-care interruption can lawfully drive an agent to deprivation collapse, distinct from sustained hunger starvation (already proven in S81 simulation-gaps golden). The proof shape:
+The spec proves end-to-end that repeated self-care interruption can lawfully end in deprivation collapse. Live reassessment for `S173SELCARINT-009` narrowed the death axis: the current deprivation system creates wounds for hunger and thirst only; bladder critical exposure causes an accident, and dirtiness/fatigue exposure does not currently create wounds. The proof shape:
 
-1. Agent has rising dirtiness (or bladder, or fatigue).
-2. Agent attempts Wash (or Toilet, or Sleep) and is interrupted before commit by an ordinary world event (hostile presence, urgent self-care of higher priority, local disturbance) — never by a scenario script.
-3. Abort cleanup releases occupancy, emits `EventTag::ActionAborted` (engine-level, already authoritative) and populates `ActionTraceDetail::SelfCareInterrupted` (structured detail), and the agent replans.
-4. The replan attempts the same or alternate facility; interrupted again.
-5. After enough cycles, `DeprivationExposure::<need>_critical_ticks` for the unmet need crosses its deprivation-wound threshold; deprivation wounds accumulate; wound load eventually exceeds capacity; `DeathCause::NeedDeprivation` fires with `EventTag::Death`.
-6. The event log + decision trace expose every step: each interruption (via `EventTag::ActionAborted` filtered by action name `"wash"` / `"toilet"`), each release (via `SelfCareOccupancy` write/remove records), each replan, each failed retry, the accumulating exposure, and the eventual death.
+1. Agent has critical dirtiness and rising hunger.
+2. Agent autonomously attempts Wash and is interrupted before commit by repeated local cancellation in the golden harness.
+3. Abort cleanup releases occupancy, emits `EventTag::ActionAborted` (engine-level, already authoritative), and populates `ActionTraceDetail::SelfCareInterrupted` (structured detail).
+4. The agent retries Wash while hunger continues to rise under the normal needs system.
+5. After enough cycles, `DeprivationExposure::hunger_critical_ticks` crosses `MetabolismProfile::starvation_tolerance_ticks`; starvation wounds accumulate; wound load eventually exceeds capacity; `DeathCause::NeedDeprivation { need: Hunger }` fires with `EventTag::Death`.
+6. The event log + action trace + authoritative world state expose every step: each interruption, each release, the accumulating exposure, starvation wound creation, and the eventual death.
 
 This is implemented by Scenario E below; no new mechanism is required, only a scenario that composes existing carriers.
 
@@ -265,14 +265,14 @@ D4 modifies action preconditions (`reservation_requirements`); D6 modifies candi
    - Atomic abort with occupancy release (Toilet/Wash): `EventTag::ActionAborted` fires (existing); abort handler removes `SelfCareOccupancy`, and action trace maps the abort to `ActionTraceDetail::SelfCareInterrupted`.
    - Durable abort with partial-progress preserved (Sleep): existing `SleepEpisode` aftermath + `EventTag::SleepEpisodeEnded`; action trace maps the abort to `ActionTraceDetail::SelfCareInterrupted`.
    - Action start blocked by contention: queue join via S44; no occupancy written; no abort fires.
-   - Repeated interruption → deprivation collapse: deprivation wounds accumulate; eventual death (S81 substrate).
+   - Repeated interruption → deprivation collapse: hunger deprivation wounds accumulate; eventual death (S81 substrate).
 
 8. **Positive feedback loops**:
    - Interruption → replan → interrupted again is the candidate loop. The dampener is point 9.
    - Contention → wait → other agents arrive → longer queue is bounded by FCFS grant expiry and by agents replanning to alternate facilities or absorbing the deprivation.
 
 9. **Physical dampeners**:
-   - Deprivation wounds (S17/S81): accumulating unmet need (tracked per-need on `DeprivationExposure` — `dirtiness_critical_ticks`, `bladder_critical_ticks`, `fatigue_critical_ticks`, etc.) produces concrete wound state that reduces capacity and eventually kills the agent. The interruption→retry loop is bounded by the agent's mortality. The deprivation-wound threshold itself lives in the deprivation system; the exact field name is verified at ticket time.
+   - Deprivation wounds (S17/S81): accumulating hunger or thirst critical exposure produces concrete wound state that reduces capacity and eventually kills the agent. The interruption→retry loop is bounded by the agent's mortality. Live reassessment for `S173SELCARINT-009` confirmed that dirtiness/fatigue exposure does not currently produce deprivation wounds, and bladder exposure produces an accident rather than death.
    - `WashBasinState::clean_water_units` depletion: contested basins also run dry, ending contention by removing the affordance.
    - Travel cost: alternate basin is non-free; agents may absorb dirtiness rather than walk far.
    - Sleep recovery preserved across interruptions: each partial sleep does reduce fatigue, so repeated short sleeps cumulatively help.
@@ -384,8 +384,9 @@ The spec adds no new `MetabolismProfile` field. Existing fields used:
 
 - `MetabolismProfile::wash_ticks: NonZeroU32` (`crates/worldwake-core/src/needs.rs:166`) — per-agent Wash duration.
 - `MetabolismProfile::toilet_ticks: NonZeroU32` (`needs.rs:164`) — per-agent Toilet duration.
-- `MetabolismProfile::dirtiness_rate: Permille` (`needs.rs:152`) — per-agent dirtiness accumulation rate (drives urgency emergence).
-- `DeprivationExposure::<need>_critical_ticks: u32` (`needs.rs:118-122`) — per-need cumulative ticks at critical pressure; drives deprivation-wound emergence per S17/S81. The deprivation-wound threshold itself lives in the deprivation system; the exact site is verified at ticket time.
+- `MetabolismProfile::hunger_rate: Permille` (`needs.rs`) — per-agent hunger accumulation rate used by Scenario E's collapse proof.
+- `MetabolismProfile::starvation_tolerance_ticks: NonZeroU32` (`needs.rs`) — ticks at critical hunger before starvation wounds worsen.
+- `DeprivationExposure::hunger_critical_ticks: u32` (`needs.rs`) — cumulative ticks at critical hunger; drives starvation-wound emergence per S17/S81.
 - S44 `ContentionPolicy` per facility entity (`crates/worldwake-core/src/contention.rs:52-56`: `grant_hold_ticks`, `auto_promote`, `max_waiters`) — scenario-configurable, applied uniformly to self-care facilities as to other exclusive workstations.
 
 No hardcoded constants. No new `Permille` field. Scenario authors configure all interruption-relevant pressures (hostile presence frequency, deprivation thresholds, basin clean-water capacity) via existing profiles and scenario `.ron` parameters.
@@ -430,25 +431,24 @@ Landed by `archive/tickets/S173SELCARINT-008.md`: `crates/worldwake-ai/tests/sce
 
 ### Scenario E — Repeated interruption → lawful deprivation collapse
 
-Harsher scenario, expected to be CI-only (long-running). One agent has rising dirtiness (or fatigue, or bladder). Every Wash (or Sleep, or Toilet) attempt is interrupted before commit by ordinary world events (predator passes, urgent self-care of higher priority, hostile encounter).
+CI-only ignored golden. One AI-controlled agent has critical dirtiness and rising hunger. The agent repeatedly selects a local Wash action; the harness cancels those Wash actions before commit while hunger continues to rise under the normal needs system. Live reassessment selected hunger because the current deprivation system creates wounds only for hunger and thirst; dirtiness/fatigue critical exposure does not currently produce wounds, and bladder critical exposure produces an accident rather than death.
 
 Assertions:
-- `EventTag::ActionAborted` events filtered by actor and by action name (`"wash"`, `"toilet"`, `"sleep"`) accumulate across the run; count >= configured threshold.
-- `ActionTraceDetail::SelfCareInterrupted` enriches each abort with structured `kind`/`basin` payload.
-- `DeprivationExposure::<need>_critical_ticks` climbs across run; crosses deprivation-wound threshold.
-- Deprivation wounds accumulate (S17 severity ladder).
-- Eventually `DeathCause::NeedDeprivation` + `EventTag::Death` fires for the agent.
+- At least three Wash interruptions occur before death.
+- `EventTag::ActionAborted` and `ActionTraceDetail::SelfCareInterrupted` expose every interrupted Wash.
+- `SelfCareOccupancy` is released between retries.
+- `DeprivationExposure::hunger_critical_ticks` climbs across the run and starvation wounds appear.
+- Eventually `DeathCause::NeedDeprivation { need: Hunger }` + `EventTag::Death` fires for the agent.
 - No actions start after death.
-- Replay determinism holds (state-hash stable across replays).
-- Decision trace exposes the chain: target → start → interrupted → release → replan → repeat → exposure → wound → death.
+- Replay companion is deterministic.
 
 ## Risks and Open Questions
 
 1. **Sleep-surface scarcity remains place-level.** The spec explicitly defers sleep-surface identity. If a future scenario reveals two agents trying to sleep at the same scarce surface and the place-capacity model is insufficient, a follow-up spec adds `SleepSurface` and extends `SelfCareUseKind`.
 2. **`WashSessionProgress` deferred.** Duration-based partial Wash is interesting (Wash for 5 of 10 ticks, get partial dirtiness reduction) but invisible without a durable carrier. Deferred unless a scenario proves it matters.
 3. **`SelfCareUseKind` discriminator scope (D2 note).** Whether to extend `SelfCareUseKind` with `Eat`/`Drink`/`Sleep`/`WildernessRelief` for trace-detail completeness vs. introduce a sibling `SelfCareTraceKind` enum is an implementation-time call; the spec describes the trade-off in D2 and leaves the resolution to ticket-time.
-4. **Scenario E run length.** Repeated-interruption collapse may need ~2000-4000 ticks to fire reliably. Whether the scenario is part of the standard golden lane or a separate "ignored CI" lane is a decision for the implementation phase; both are acceptable.
-5. **Deprivation-wound threshold field location.** Section H Point 9 and Profile-Driven Parameters cite `DeprivationExposure::<need>_critical_ticks` as the accumulator; the threshold above which wounds fire lives in the deprivation system. The exact field/site is verified at ticket time; not a contract change.
+4. **Scenario E run length.** The landed ignored golden bounds the run to 160 ticks by authoring a short `starvation_tolerance_ticks` value. It remains in the ignored golden-survival lane because it is a composite end-to-end scenario.
+5. **Deprivation-wound threshold field location.** Live reassessment for `S173SELCARINT-009` resolved this: starvation wounds use `MetabolismProfile::starvation_tolerance_ticks`; dehydration wounds use `dehydration_tolerance_ticks`; dirtiness/fatigue do not currently create deprivation wounds.
 6. **`abort_noop` call sites elsewhere.** The spec replaces `abort_noop` for the five self-care actions in `needs_actions.rs:27, 33, 45, 51, 57`. The `start_gate.rs` `abort_noop` (line 399) is inside `#[cfg(test)]` (line 308 boundary) and is unaffected. The `abort_noop` symbol itself is preserved as the registered abort for any non-self-care action that legitimately has nothing to clean up.
 
 ## Out of Scope (Tracked Elsewhere)

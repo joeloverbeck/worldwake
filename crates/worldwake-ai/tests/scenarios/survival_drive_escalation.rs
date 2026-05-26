@@ -426,16 +426,18 @@ fn run_escalation_respects_belief_only_planning() -> BeliefBarrierObservation {
     }
 }
 
-fn remote_wash_basin_pov_reads() -> (
-    EntityId,
-    WashBasinState,
-    Option<WashBasinState>,
-    Option<u32>,
-    bool,
-    Option<EntityId>,
-    EntityId,
-    Option<EntityId>,
-) {
+struct RemoteWashBasinPovReads {
+    remote_wash: EntityId,
+    goal_view_state: WashBasinState,
+    facility_view_state: Option<WashBasinState>,
+    remote_queue_position: Option<u32>,
+    remote_grant_visible: bool,
+    remote_self_care_occupant: Option<EntityId>,
+    authoritative_occupant: EntityId,
+    colocated_self_care_occupant: Option<EntityId>,
+}
+
+fn remote_wash_basin_pov_reads() -> RemoteWashBasinPovReads {
     let (h, agent, remote_wash) = build_belief_only_wash_harness();
     let authoritative_state = *h
         .world
@@ -463,7 +465,7 @@ fn remote_wash_basin_pov_reads() -> (
         "remote basin {remote_wash} must have non-default authoritative state for the leak assertion"
     );
 
-    (
+    RemoteWashBasinPovReads {
         remote_wash,
         goal_view_state,
         facility_view_state,
@@ -472,7 +474,7 @@ fn remote_wash_basin_pov_reads() -> (
         remote_self_care_occupant,
         authoritative_occupant,
         colocated_self_care_occupant,
-    )
+    }
 }
 
 fn build_escalation_relief_harness() -> (GoldenHarness, EntityId) {
@@ -797,7 +799,7 @@ fn escalation_respects_belief_only_planning() {
 
 #[test]
 fn cli_does_not_leak_remote_wash_basin_state_for_controlled_agent() {
-    let (
+    let RemoteWashBasinPovReads {
         remote_wash,
         goal_view_state,
         facility_view_state,
@@ -806,7 +808,7 @@ fn cli_does_not_leak_remote_wash_basin_state_for_controlled_agent() {
         remote_self_care_occupant,
         authoritative_occupant,
         colocated_self_care_occupant,
-    ) = remote_wash_basin_pov_reads();
+    } = remote_wash_basin_pov_reads();
 
     assert_eq!(
         goal_view_state,

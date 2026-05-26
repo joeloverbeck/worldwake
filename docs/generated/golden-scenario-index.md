@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 231
+- Scenario blocks: 232
 - Contributing golden scenario source files: 55
-- Associated tests: 281
+- Associated tests: 283
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -2744,7 +2744,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 478: S173 Self-Care Abort Traces Cover Every Family
 
-- Source: `survival_self_care_interruption.rs:309`
+- Source: `survival_self_care_interruption.rs:455`
 
 **Setup**: Human-controlled agents start each self-care action family and cancel before commit.
 
@@ -2752,7 +2752,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 479: S173 Contested Wash Basin Promotes One Occupant
 
-- Source: `survival_self_care_interruption.rs:484`
+- Source: `survival_self_care_interruption.rs:630`
 
 **Setup**: Two dirty agents wait in the same wash-basin facility queue; the queue system grants the head claimant, and that claimant starts a real wash action.
 
@@ -2760,11 +2760,19 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 480: S173 Interrupted Wash Releases Basin And Promotes Waiter
 
-- Source: `survival_self_care_interruption.rs:573`
+- Source: `survival_self_care_interruption.rs:719`
 
 **Setup**: Agent A starts wash and writes occupancy; Agent B waits in the same basin queue. Cancelling A's wash releases occupancy, then the same tick's post-action system pass promotes B.
 
 **Proves**: Interrupted wash cleans up SelfCareOccupancy through the abort event and recovers through the ordinary queue-grant path, without planner-intent locks or silent reservations.
+
+### Scenario 481: S173 Repeated Self-Care Interruption Can End In Deprivation Death
+
+- Source: `survival_self_care_interruption.rs:799`
+
+**Setup**: An AI-controlled dirty agent repeatedly selects a local wash action. The harness applies repeated external local cancellations before commit, while hunger rises under the normal needs system and no food source is available.
+
+**Proves**: repeated self-care aborts leave typed ActionAborted/ActionTraceDetail evidence, release occupancy between retries, and do not rescue the agent from the existing hunger-deprivation wound/death substrate.
 
 ### Scenario 169: Survival Tell Lands Roadmap Row Five
 
