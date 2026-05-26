@@ -3,8 +3,8 @@
 **Status**: PENDING
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: None (golden scenario + test file only); requires ticket 004 to map hostile-proximity abort to `SleepFailureCause::HostileProximity`
-**Deps**: `archive/tickets/S174SHESLESUR-001.md`, `archive/tickets/S174SHESLESUR-002.md`, `archive/tickets/S174SHESLESUR-003.md`, 004, 005, 006
+**Engine Changes**: None (golden scenario + test file only); requires `archive/tickets/S174SHESLESUR-004.md` to map hostile-proximity abort to `SleepFailureCause::HostileProximity`
+**Deps**: `archive/tickets/S174SHESLESUR-001.md`, `archive/tickets/S174SHESLESUR-002.md`, `archive/tickets/S174SHESLESUR-003.md`, `archive/tickets/S174SHESLESUR-004.md`, 005, 006
 
 ## Problem
 
@@ -12,9 +12,9 @@ S174's Scenario C proves structured-cause interruption — when a hostile actor 
 
 ## Assumption Reassessment (2026-05-26)
 
-1. Verified current code state: hostile-proximity sleep interruption is triggered by the existing interrupt/abort substrate when a hostile actor enters the sleeper's place. Per S173's `SelfCareOccupancy` and S174's `RestOccupancy` semantics, the sleep handler's abort path is invoked via `abort_sleep_episode` (`needs_actions.rs:667-682`). Ticket 004 refined the cause mapping so the hostile-proximity branch supplies `SleepFailureCause::HostileProximity` rather than the transitional `Generic`.
+1. Verified current code state: hostile-proximity sleep interruption is triggered by the existing interrupt/abort substrate when a hostile actor enters the sleeper's place. Per S173's `SelfCareOccupancy` and S174's `RestOccupancy` semantics, the sleep handler's abort path is invoked via `abort_sleep_episode` (`needs_actions.rs:667-682`). `archive/tickets/S174SHESLESUR-004.md` refined the cause mapping so the hostile-proximity branch supplies `SleepFailureCause::HostileProximity` rather than the transitional `Generic`.
 2. Spec assumption verified against S174 Scenario C. The scenario uses one place (`shelter` with `RestCapacity(1)`) and an adjacent `outpost` that hosts a hostile agent. The hostile travels toward `shelter` mid-sleep. Assertions: sleep aborts mid-episode; `WakeReason::LocalDisturbance { cause: HostileProximity }` fires; `ActionTraceDetail::SleepInterrupted` populates; `RestOccupancy` releases; partial recovery preserved; agent's next tick emits a different goal.
-3. Shared abstraction boundary under audit: the interrupt/abort path's classification of hostile-proximity events. Verify ticket 004 wires the abort handler to read the abort reason and supply the correct `SleepFailureCause`.
+3. Shared abstraction boundary under audit: the interrupt/abort path's classification of hostile-proximity events. Verify `archive/tickets/S174SHESLESUR-004.md` wires the abort handler to read the abort reason and supply the correct `SleepFailureCause`.
 4. Live `GoalKind` under test: starts with `GoalKind::Sleep`; after interruption, the agent replans (likely to `GoalKind::Flee` or `GoalKind::Engage` depending on combat profile). The scenario doesn't strictly require the post-replan branch to be deterministic — only that the agent does NOT immediately re-attempt Sleep at the same hostile-occupied place.
 5. Cumulative arithmetic: the sleep accumulates ~10-20 ticks of recovery before the hostile arrives (depending on edge travel_time and seed). The partial-recovery assertion checks `accumulated_recovery > 0 && accumulated_recovery < target_recovery`.
 6. Scenario isolation: the intended branch under test is `SleepFailureCause::HostileProximity` wake cause routing + partial recovery preservation. Excluded: starvation/dehydration depletion (agent must be near-sated for non-fatigue needs); other hostiles (only one hostile actor).
@@ -22,7 +22,7 @@ S174's Scenario C proves structured-cause interruption — when a hostile actor 
 
 ## Architecture Check
 
-1. The HostileProximity cause maps to a specific abort-handler branch (ticket 004's refinement of `abort_sleep_episode`'s `SleepFailureCause` supply). Per FND-28, the cause taxonomy is a single structured surface — not an ad-hoc string description threaded through the abort path.
+1. The HostileProximity cause maps to a specific abort-handler branch (`archive/tickets/S174SHESLESUR-004.md`'s refinement of `abort_sleep_episode`'s `SleepFailureCause` supply). Per FND-28, the cause taxonomy is a single structured surface — not an ad-hoc string description threaded through the abort path.
 2. Partial recovery preservation is a S128 contract — `SleepEpisode.accumulated_recovery` survives the abort and persists into `HomeostaticNeeds.fatigue`. This scenario exercises that contract under the new structured-cause abort path.
 3. Asserting on the action trace AND event log (`EventTag::SleepEpisodeEnded` payload) AND `CriticalWindowFrame.failed_rest_opportunities` ensures the proof is layer-strong rather than narrative-only.
 

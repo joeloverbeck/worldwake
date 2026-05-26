@@ -487,13 +487,19 @@ fn start_sleep_episode(
 ) -> Result<Option<ActionState>, ActionError> {
     let needs = actor_needs(txn, instance.actor)?;
     let profile = actor_profile(txn, instance.actor)?;
-    let place = txn.effective_place(instance.actor).ok_or_else(|| {
-        ActionError::InternalError(format!("actor {} has no place", instance.actor))
-    })?;
+    let (place, rough) = sleep_place_and_mode(instance, txn)?;
     let quality = txn
         .get_component_sleep_quality_profile(place)
         .copied()
         .unwrap_or_default();
+    let recovery_modifier = if rough {
+        cap_rough_sleep_recovery_modifier(quality.recovery_modifier, profile)
+    } else {
+        quality.recovery_modifier
+    };
+    if !rough {
+        occupy_rest_site(instance.actor, place, txn)?;
+    }
     let intended_min_ticks = profile.min_sleep_ticks;
     let intended_max_ticks = intended_sleep_ticks(needs.fatigue, profile, intended_min_ticks);
     let target_recovery = Permille::ZERO;
@@ -511,7 +517,7 @@ fn start_sleep_episode(
         intended_max_ticks,
         target_recovery,
         accumulated_recovery: Permille::ZERO,
-        recovery_modifier: quality.recovery_modifier,
+        recovery_modifier,
         wake_conditions,
     };
     txn.set_component_sleep_episode(instance.actor, episode.clone())
@@ -528,7 +534,80 @@ fn start_sleep_episode(
                 recovery_modifier: episode.recovery_modifier,
             },
         ));
-    Ok(Some(ActionState::Empty))
+    Ok(Some(ActionState::Sleep { rough, place }))
+}
+
+fn sleep_place_and_mode(
+    instance: &ActionInstance,
+    txn: &WorldTxn<'_>,
+) -> Result<(EntityId, bool), ActionError> {
+    let current_place = txn.effective_place(instance.actor).ok_or_else(|| {
+        ActionError::InternalError(format!("actor {} has no place", instance.actor))
+    })?;
+    let Some(target_place) = instance.targets.first().copied() else {
+        return Ok((current_place, true));
+    };
+    if target_place != current_place {
+        return Err(ActionError::PreconditionFailed(format!(
+            "sleep target {target_place} is not actor {} current place {current_place}",
+            instance.actor
+        )));
+    }
+    let known_rest_site = txn.get_component_rest_capacity(target_place).is_some();
+    Ok((target_place, !known_rest_site))
+}
+
+fn cap_rough_sleep_recovery_modifier(
+    modifier: SleepRecoveryModifier,
+    profile: MetabolismProfile,
+) -> SleepRecoveryModifier {
+    SleepRecoveryModifier::new(
+        modifier
+            .value()
+            .min(profile.rough_sleep_recovery_floor.value()),
+    )
+}
+
+fn occupy_rest_site(
+    actor: EntityId,
+    place: EntityId,
+    txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    let capacity = txn.get_component_rest_capacity(place).ok_or_else(|| {
+        ActionError::PreconditionFailed(format!("sleep target {place} has no rest capacity"))
+    })?;
+    let mut occupancy = txn
+        .get_component_rest_occupancy(place)
+        .cloned()
+        .unwrap_or_default();
+    if occupancy.occupants.len() >= capacity.0.get() as usize {
+        return Err(ActionError::PreconditionFailed(format!(
+            "rest site {place} is full"
+        )));
+    }
+    occupancy.occupants.insert(actor);
+    txn.set_component_rest_occupancy(place, occupancy)
+        .map_err(|err| ActionError::InternalError(err.to_string()))
+}
+
+fn release_rest_site_occupancy(
+    actor: EntityId,
+    place: EntityId,
+    txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    let Some(mut occupancy) = txn.get_component_rest_occupancy(place).cloned() else {
+        return Ok(());
+    };
+    if !occupancy.occupants.remove(&actor) {
+        return Ok(());
+    }
+    if occupancy.occupants.is_empty() {
+        txn.clear_component_rest_occupancy(place)
+            .map_err(|err| ActionError::InternalError(err.to_string()))
+    } else {
+        txn.set_component_rest_occupancy(place, occupancy)
+            .map_err(|err| ActionError::InternalError(err.to_string()))
+    }
 }
 
 fn intended_sleep_ticks(
@@ -570,7 +649,13 @@ fn tick_sleep(
         })?;
     let needs = actor_needs(txn, instance.actor)?;
     let profile = actor_profile(txn, instance.actor)?;
-    let recovery = sleep_recovery_delta(profile.rest_efficiency, episode.recovery_modifier);
+    let recovery_modifier = match instance.local_state {
+        Some(ActionState::Sleep { rough: true, .. }) => {
+            cap_rough_sleep_recovery_modifier(episode.recovery_modifier, profile)
+        }
+        _ => episode.recovery_modifier,
+    };
+    let recovery = sleep_recovery_delta(profile.rest_efficiency, recovery_modifier);
     let next = HomeostaticNeeds::new(
         needs.hunger,
         needs.thirst,
@@ -668,7 +753,7 @@ fn abort_sleep_episode(
     _def: &ActionDef,
     instance: &ActionInstance,
     context: &worldwake_sim::ActionExecutionContext<'_>,
-    _reason: &AbortReason,
+    reason: &AbortReason,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
@@ -677,10 +762,32 @@ fn abort_sleep_episode(
         instance.actor,
         context.tick,
         Some(WakeReason::LocalDisturbance {
-            cause: SleepFailureCause::Generic,
+            cause: sleep_failure_cause_for_abort(reason),
         }),
         txn,
     )
+}
+
+fn sleep_failure_cause_for_abort(reason: &AbortReason) -> SleepFailureCause {
+    match reason {
+        AbortReason::Interrupted {
+            kind: worldwake_sim::InterruptReason::DangerNearby,
+            ..
+        } => SleepFailureCause::HostileProximity,
+        AbortReason::CommitConditionFailed {
+            condition: Precondition::ActorAlive,
+        }
+        | AbortReason::ExternalAbort {
+            kind: worldwake_sim::ExternalAbortReason::ActorMarkedDead,
+            ..
+        } => SleepFailureCause::ActorIncapacitated,
+        AbortReason::AuthoritativeRevalidationFailed { detail }
+            if detail.contains("rest site") && detail.contains("full") =>
+        {
+            SleepFailureCause::RestSiteContended
+        }
+        _ => SleepFailureCause::Generic,
+    }
 }
 
 fn end_sleep_episode(
@@ -698,6 +805,7 @@ fn end_sleep_episode(
         .unwrap_or(WakeReason::IntendedDuration);
     let final_fatigue = actor_needs(txn, actor)?.fatigue;
 
+    release_rest_site_occupancy(actor, episode.place, txn)?;
     txn.clear_component_sleep_episode(actor)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_tag(EventTag::SleepEpisodeEnded)
@@ -1181,24 +1289,25 @@ const fn pm(value: u16) -> Permille {
 #[cfg(test)]
 mod tests {
     use super::{abort_emit_self_care_interrupted, register_needs_actions};
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, AgentBeliefStore, CauseRef, CommodityKind, ControlSource,
+        ActionDefId, AgentBeliefStore, CauseRef, CommodityKind, ContentionStatus, ControlSource,
         DecisionEventPayload, DeprivationExposure, DisturbanceKind, DriveThresholds, EntityId,
         EntityKind, EventLog, EventTag, EventView, EvidenceKind, FrameAssumption, FrameState,
         GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, IntentionDomain, IntentionFrame,
         LatrineFullness, MetabolismProfile, PerceptionSource, Permille, PlaceDirtiness,
-        PrototypePlace, Quantity, ResourceSource, Seed, SelfCareOccupancy, SelfCareUseKind,
-        SleepEpisode, SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition, WakeReason,
-        WashBasinState, WasteSource, WitnessData, WorkstationMarker, WorkstationTag, World,
-        WorldTxn, build_believed_entity_state, build_prototype_world, prototype_place_entity,
+        PrototypePlace, Quantity, ResourceSource, RestCapacity, RestOccupancy, Seed,
+        SelfCareOccupancy, SelfCareUseKind, SleepEpisode, SleepFailureCause, SleepQualityProfile,
+        SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition, WakeReason, WashBasinState,
+        WasteSource, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        build_believed_entity_state, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionHandlerRegistry,
-        ActionInstance, ActionInstanceId, BindingStrictness, DeterministicRng, EffectStep,
-        PerAgentBeliefView, Precondition, TickOutcome, abort_action, get_affordances, start_action,
-        tick_action,
+        ActionInstance, ActionInstanceId, ActionPayload, ActionState, Affordance,
+        BindingStrictness, DeterministicRng, EffectStep, PerAgentBeliefView, Precondition,
+        TickOutcome, abort_action, get_affordances, start_action, tick_action,
     };
 
     fn pm(value: u16) -> Permille {
@@ -1272,6 +1381,32 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         register_needs_actions(&mut defs, &mut handlers);
         (defs, handlers)
+    }
+
+    fn sleep_affordance(
+        actor: EntityId,
+        targets: Vec<EntityId>,
+        defs: &ActionDefRegistry,
+    ) -> Affordance {
+        let sleep_id = defs
+            .iter()
+            .find_map(|def| (def.name == "sleep").then_some(def.id))
+            .unwrap();
+        Affordance {
+            def_id: sleep_id,
+            actor,
+            bound_targets: targets,
+            payload_override: Some(ActionPayload::None),
+            explanation: None,
+            contention_status: ContentionStatus::Unmanaged,
+        }
+    }
+
+    fn set_rest_capacity(world: &mut World, place: EntityId, capacity: u32) {
+        let mut txn = new_txn(world, 2);
+        txn.set_component_rest_capacity(place, RestCapacity(NonZeroU32::new(capacity).unwrap()))
+            .unwrap();
+        commit_txn(txn);
     }
 
     fn setup_wash_access(
@@ -1703,7 +1838,7 @@ mod tests {
             panic!("expected SleepEpisodeStarted payload");
         };
         assert_eq!(payload.sleeper, actor);
-        assert_eq!(payload.recovery_modifier, SleepRecoveryModifier::IDENTITY);
+        assert_eq!(payload.recovery_modifier, SleepRecoveryModifier::new(300));
         assert!(world.get_component_sleep_episode(actor).is_some());
 
         let first_tick = tick_action(
@@ -1725,14 +1860,14 @@ mod tests {
                 .get_component_homeostatic_needs(actor)
                 .unwrap()
                 .fatigue,
-            pm(400).saturating_sub(pm(40))
+            pm(400).saturating_sub(pm(12))
         );
         assert_eq!(
             world
                 .get_component_sleep_episode(actor)
                 .unwrap()
                 .accumulated_recovery,
-            pm(40)
+            pm(12)
         );
 
         for tick in 12..=20 {
@@ -1762,7 +1897,7 @@ mod tests {
                 .get_component_homeostatic_needs(actor)
                 .unwrap()
                 .fatigue,
-            pm(0)
+            pm(280)
         );
         assert!(world.get_component_sleep_episode(actor).is_none());
         assert_eq!(log.events_by_tag(EventTag::ActionStarted).len(), 1);
@@ -1778,8 +1913,288 @@ mod tests {
         };
         assert_eq!(payload.sleeper, actor);
         assert_eq!(payload.end_reason, WakeReason::IntendedDuration);
-        assert_eq!(payload.accumulated_recovery, pm(400));
-        assert_eq!(payload.final_fatigue, pm(0));
+        assert_eq!(payload.accumulated_recovery, pm(120));
+        assert_eq!(payload.final_fatigue, pm(280));
+    }
+
+    #[test]
+    fn known_rest_site_sleep_start_writes_rest_occupancy() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        set_rest_capacity(&mut world, place, 1);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng();
+
+        let instance_id = start_action(
+            &sleep_affordance(actor, vec![place], &defs),
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap();
+
+        assert_eq!(
+            active.get(&instance_id).unwrap().local_state,
+            Some(ActionState::Sleep {
+                rough: false,
+                place
+            })
+        );
+        assert!(
+            world
+                .get_component_rest_occupancy(place)
+                .unwrap()
+                .occupants
+                .contains(&actor)
+        );
+    }
+
+    #[test]
+    fn known_rest_site_sleep_commit_releases_rest_occupancy() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        set_rest_capacity(&mut world, place, 1);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng();
+
+        let instance_id = start_action(
+            &sleep_affordance(actor, vec![place], &defs),
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap();
+
+        for tick in 11..=20 {
+            if let TickOutcome::Committed { .. } = tick_action(
+                instance_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut world,
+                    event_log: &mut log,
+                    rng: &mut rng,
+                },
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(tick),
+                ),
+            )
+            .unwrap()
+            {
+                break;
+            }
+        }
+
+        assert!(world.get_component_sleep_episode(actor).is_none());
+        assert!(world.get_component_rest_occupancy(place).is_none());
+    }
+
+    #[test]
+    fn known_rest_site_sleep_abort_releases_rest_occupancy_and_records_cause() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        set_rest_capacity(&mut world, place, 1);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng();
+
+        let instance_id = start_action(
+            &sleep_affordance(actor, vec![place], &defs),
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap();
+
+        abort_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
+            worldwake_sim::ExternalAbortReason::ActorMarkedDead,
+        )
+        .unwrap();
+
+        assert!(world.get_component_sleep_episode(actor).is_none());
+        assert!(world.get_component_rest_occupancy(place).is_none());
+        let ended = log.events_by_tag(EventTag::SleepEpisodeEnded);
+        let DecisionEventPayload::SleepEpisodeEnded(payload) = log
+            .get(*ended.last().unwrap())
+            .and_then(|record| record.decision_payload())
+            .unwrap()
+        else {
+            panic!("expected SleepEpisodeEnded payload");
+        };
+        assert_eq!(
+            payload.end_reason,
+            WakeReason::LocalDisturbance {
+                cause: SleepFailureCause::ActorIncapacitated
+            }
+        );
+    }
+
+    #[test]
+    fn rough_sleep_writes_no_rest_occupancy_and_caps_recovery() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_component_rest_capacity(place, RestCapacity(NonZeroU32::new(1).unwrap()))
+            .unwrap();
+        txn.set_component_sleep_quality_profile(
+            place,
+            SleepQualityProfile {
+                recovery_modifier: SleepRecoveryModifier::new(1250),
+                ..SleepQualityProfile::default()
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng();
+
+        let instance_id = start_action(
+            &sleep_affordance(actor, Vec::new(), &defs),
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap();
+
+        assert_eq!(
+            active.get(&instance_id).unwrap().local_state,
+            Some(ActionState::Sleep { rough: true, place })
+        );
+        assert!(world.get_component_rest_occupancy(place).is_none());
+        assert_eq!(
+            world
+                .get_component_sleep_episode(actor)
+                .unwrap()
+                .recovery_modifier,
+            SleepRecoveryModifier::new(300)
+        );
+
+        assert_eq!(
+            tick_action(
+                instance_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut world,
+                    event_log: &mut log,
+                    rng: &mut rng,
+                },
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(11),
+                ),
+            )
+            .unwrap(),
+            TickOutcome::Continuing
+        );
+        assert_eq!(
+            world
+                .get_component_homeostatic_needs(actor)
+                .unwrap()
+                .fatigue,
+            pm(400).saturating_sub(pm(12))
+        );
+        assert!(world.get_component_rest_occupancy(place).is_none());
+    }
+
+    #[test]
+    fn known_rest_site_sleep_rejects_full_capacity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        let mut txn = new_txn(&mut world, 2);
+        let other = txn.create_agent("Beryl", ControlSource::Ai).unwrap();
+        txn.set_ground_location(other, place).unwrap();
+        txn.set_component_rest_capacity(place, RestCapacity(NonZeroU32::new(1).unwrap()))
+            .unwrap();
+        txn.set_component_rest_occupancy(
+            place,
+            RestOccupancy {
+                occupants: BTreeSet::from([other]),
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng();
+
+        let err = start_action(
+            &sleep_affordance(actor, vec![place], &defs),
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(err, ActionError::PreconditionFailed(message) if message.contains("rest site") && message.contains("full"))
+        );
+        assert_eq!(active.len(), 0);
+        assert_eq!(
+            world.get_component_rest_occupancy(place).unwrap().occupants,
+            BTreeSet::from([other])
+        );
     }
 
     #[test]

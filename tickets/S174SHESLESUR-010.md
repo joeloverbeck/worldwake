@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — CLI player-POV gating for `RestCapacity`/`RestOccupancy` reads (S163-style); scenario file + test file
-**Deps**: `archive/tickets/S174SHESLESUR-001.md` (RestCapacity/RestOccupancy components), `archive/tickets/S174SHESLESUR-002.md` (PlaceDef.rest_capacity), `archive/tickets/S174SHESLESUR-003.md` (belief-view accessors — CLI uses the same view), 004 (RestOccupancy lifecycle), 005 (sleep schema for candidate emission), 006 (forensic records — CLI may surface these)
+**Deps**: `archive/tickets/S174SHESLESUR-001.md` (RestCapacity/RestOccupancy components), `archive/tickets/S174SHESLESUR-002.md` (PlaceDef.rest_capacity), `archive/tickets/S174SHESLESUR-003.md` (belief-view accessors — CLI uses the same view), `archive/tickets/S174SHESLESUR-004.md` (RestOccupancy lifecycle), 005 (sleep schema for candidate emission), 006 (forensic records — CLI may surface these)
 
 ## Problem
 
@@ -78,7 +78,7 @@ Add the new `mod` declaration to the appropriate test module.
 
 ## Out of Scope
 
-- No engine-side changes (occupancy lifecycle owned by ticket 004; emission by ticket 005)
+- No engine-side changes (occupancy lifecycle landed in `archive/tickets/S174SHESLESUR-004.md`; emission owned by ticket 005)
 - No `FailedRestOpportunity` CLI surface — if the CLI doesn't currently display `CriticalWindowFrame` data, this is deferred; the rest-site CLI gating is the headline contract
 - No other CLI player-POV gaps — only the rest-site fields are introduced here
 

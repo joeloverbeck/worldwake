@@ -117,7 +117,7 @@ pub enum WakeReason {
 
 ### 4. Update the single `WakeReason::LocalDisturbance` construction site
 
-`crates/worldwake-systems/src/needs_actions.rs` now constructs `WakeReason::LocalDisturbance { cause: SleepFailureCause::Generic }` in `abort_sleep_episode`. Ticket 004 (sleep handler `RestOccupancy` lifecycle) and ticket 009 (HostileProximity scenario) refine this per the abort context.
+`crates/worldwake-systems/src/needs_actions.rs` now constructs `WakeReason::LocalDisturbance { cause: SleepFailureCause::Generic }` in `abort_sleep_episode`. The now-archived `archive/tickets/S174SHESLESUR-004.md` (sleep handler `RestOccupancy` lifecycle) refined this per the abort context; ticket 009 owns the HostileProximity scenario proof.
 
 ### 5. ActionTraceDetail::SleepInterrupted variant at `crates/worldwake-sim/src/action_trace.rs`
 
@@ -158,7 +158,7 @@ In `crates/worldwake-sim/src/save_load.rs`, bumped `SAVE_FORMAT_VERSION` from `1
 
 - No `WakeCondition::LocalDisturbance` restructuring (stays bare per Q1=(b))
 - No belief-view accessors for `RestCapacity`/`RestOccupancy` (now archived in `archive/tickets/S174SHESLESUR-003.md`)
-- No sleep action handler changes to write/release `RestOccupancy` (ticket 004)
+- No sleep action handler changes to write/release `RestOccupancy` (now archived at `archive/tickets/S174SHESLESUR-004.md`)
 - No goal schema changes (ticket 005)
 - No forensic record additions (ticket 006)
 - No population of `ActionTraceDetail::SleepInterrupted` at the abort path — variant is added here, populated in ticket 006
@@ -181,7 +181,7 @@ In `crates/worldwake-sim/src/save_load.rs`, bumped `SAVE_FORMAT_VERSION` from `1
 ### Verified Invariants
 
 1. `RestCapacity` is only registered on `EntityKind::Place`.
-2. `RestOccupancy` is only registered on `EntityKind::Place`; lifecycle mutation remains owned by ticket 004.
+2. `RestOccupancy` is only registered on `EntityKind::Place`; lifecycle mutation landed in `archive/tickets/S174SHESLESUR-004.md`.
 3. `WakeReason::LocalDisturbance` cannot be constructed without an explicit `cause` value.
 4. `WakeCondition::LocalDisturbance` remains a bare unit variant.
 5. `SAVE_FORMAT_VERSION` is exactly `108`; later S174 tickets must not bump it again unless reassessment proves a separate incompatible shape change.

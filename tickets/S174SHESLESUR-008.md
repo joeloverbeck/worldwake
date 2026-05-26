@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None (golden scenario + test file only)
-**Deps**: `archive/tickets/S174SHESLESUR-001.md`, `archive/tickets/S174SHESLESUR-002.md`, `archive/tickets/S174SHESLESUR-003.md`, 004, 005, 006
+**Deps**: `archive/tickets/S174SHESLESUR-001.md`, `archive/tickets/S174SHESLESUR-002.md`, `archive/tickets/S174SHESLESUR-003.md`, `archive/tickets/S174SHESLESUR-004.md`, 005, 006
 
 ## Problem
 
@@ -12,7 +12,7 @@ S174's Scenario B proves multi-slot rest-site contention and S44 queue promotion
 
 ## Assumption Reassessment (2026-05-26)
 
-1. Verified current code state: S44 contention substrate at `crates/worldwake-systems/src/facility_queue.rs` provides `ContentionQueue` + `ContentionPolicy` + grant/expiry semantics. Ticket 004 added `PromotableContentionKind::RestSite` and the matching `contention_target_matches_kind` arm. `EventTag::ContentionResolved` and `EventTag::QueueGrantPromoted` exist (per S142 substrate) and fire on grant/promotion lifecycle events.
+1. Verified current code state: S44 contention substrate at `crates/worldwake-systems/src/facility_queue.rs` provides `ContentionQueue` + `ContentionPolicy` + grant/expiry semantics. `archive/tickets/S174SHESLESUR-004.md` added `PromotableContentionKind::RestSite` and the matching `contention_target_matches_kind` arm. `EventTag::ContentionResolved` and `EventTag::QueueGrantPromoted` exist (per S142 substrate) and fire on grant/promotion lifecycle events.
 2. Spec assumption verified against S174 Scenario B. The scenario uses one place (`barracks` with `RestCapacity(2)` + roofed `SleepQualityProfile`) and three tired agents. Per spec, assertions include: two agents occupy, third either queues or rough-sleeps; queue grant promotion fires when one occupant releases; no stuck-idle window under elevated fatigue.
 3. Shared abstraction boundary under audit: S44 queue substrate for rest sites (mirroring the Wash/Latrine queue paths from S173). The scenario exercises whether `RestSite` classification is properly recognized by the queue promotion logic.
 4. Live `GoalKind` under test: `GoalKind::Sleep`. Operator surface: `SLEEP_OPS = &[PlannerOpKind::Sleep, PlannerOpKind::QueueForFacilityUse]` (ticket 005 added the queue op). The scenario specifically exercises `QueueForFacilityUse` — the third agent's path through queue join → grant promotion → sleep start.
@@ -22,7 +22,7 @@ S174's Scenario B proves multi-slot rest-site contention and S44 queue promotion
 
 ## Architecture Check
 
-1. The scenario reuses S44's contention queue rather than introducing a parallel rest-queue mechanism. Per FOUNDATIONS FND-26 and S174's D2, the queue substrate is shared with Wash/Latrine — the only distinguishing characteristic is the `PromotableContentionKind::RestSite` discriminator (introduced in ticket 004).
+1. The scenario reuses S44's contention queue rather than introducing a parallel rest-queue mechanism. Per FOUNDATIONS FND-26 and S174's D2, the queue substrate is shared with Wash/Latrine — the only distinguishing characteristic is the `PromotableContentionKind::RestSite` discriminator (introduced in `archive/tickets/S174SHESLESUR-004.md`).
 2. Capacity-2 (rather than capacity-3 with three agents all occupying) is the right scenario shape because capacity-3 would not exercise the queue path. The third agent's queue join is the headline behavior.
 3. Deterministic tiebreaker for the start race is part of the scenario's contract — exposing the tiebreaker is a FOUNDATIONS-aligned debug surface, not a hidden authority.
 

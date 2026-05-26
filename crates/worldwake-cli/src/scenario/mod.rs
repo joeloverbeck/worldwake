@@ -2107,9 +2107,8 @@ mod tests {
         let mut def = minimal_def();
         def.places[0].rest_capacity = Some(0);
 
-        let err = match spawn_scenario(&def) {
-            Ok(_) => panic!("zero rest_capacity should be rejected"),
-            Err(err) => err,
+        let Err(err) = spawn_scenario(&def) else {
+            panic!("zero rest_capacity should be rejected");
         };
 
         assert!(

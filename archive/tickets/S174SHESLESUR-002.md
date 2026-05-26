@@ -30,7 +30,7 @@ For S174's two-path Sleep schema to be exercisable from scenario authoring, `Pla
 1. `PlaceDef.rest_capacity = Some(n)` writes `RestCapacity(NonZeroU32::new(n)?)` on the place at spawn time -> integration test exercising `spawn_place` + ECS component query
 2. `PlaceDef` with no `rest_capacity` produces a Place with no `RestCapacity` component -> same integration test, negative branch
 3. `MetabolismProfile` with no scenario-authored `rough_sleep_recovery_floor` deserializes to default `Permille::new(300)` -> serde round-trip test
-4. Single-layer ticket boundary: scenario contract is a pure additive layer; no AI or planning behavior changes here. Additional layer mapping is not applicable; runtime consumption of the new fields lands in tickets 004 (handler reads `rough_sleep_recovery_floor`) and 005 (emitter reads `RestCapacity`).
+4. Single-layer ticket boundary: scenario contract is a pure additive layer; no AI or planning behavior changes here. Additional layer mapping is not applicable; runtime consumption of the new fields landed in `archive/tickets/S174SHESLESUR-004.md` (handler reads `rough_sleep_recovery_floor`) and remains planned for ticket 005 (emitter reads `RestCapacity`).
 
 ## Landed Changes
 
@@ -103,8 +103,8 @@ Run `python3 scripts/profile_docs.py --write` after the `MetabolismProfile` fiel
 ## Out of Scope
 
 - No `RestCapacity` runtime registration (ticket 001 owns the component)
-- No `RestOccupancy` writes (ticket 004 owns runtime mutation)
-- No sleep handler reading `rough_sleep_recovery_floor` (ticket 004 owns the read)
+- No `RestOccupancy` writes (runtime mutation landed in `archive/tickets/S174SHESLESUR-004.md`)
+- No sleep handler reading `rough_sleep_recovery_floor` (the read landed in `archive/tickets/S174SHESLESUR-004.md`)
 - No new RON scenario files (tickets 007-011 own per-scenario authoring)
 - No `MetabolismProfileDef` wrapper introduction — actual codebase uses `MetabolismProfile` directly on `AgentDef`, no wrapper needed
 - No `SAVE_FORMAT_VERSION` bump (rides ticket 001's bump via `#[serde(default)]`)

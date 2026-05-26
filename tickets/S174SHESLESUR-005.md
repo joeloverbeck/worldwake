@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new `FeasibilityStrategy::CandidateBacked` variant on existing AI-crate enum; rewritten `DECL_SLEEP` goal schema; existing `emit_sleep_goal` replaced with two-path `sleep_rest_opportunities`
-**Deps**: `archive/tickets/S174SHESLESUR-001.md` (RestCapacity/RestOccupancy types), `archive/tickets/S174SHESLESUR-002.md` (rough_sleep_recovery_floor — read by candidate marker), `archive/tickets/S174SHESLESUR-003.md` (belief-view accessors)
+**Deps**: `archive/tickets/S174SHESLESUR-001.md` (RestCapacity/RestOccupancy types), `archive/tickets/S174SHESLESUR-002.md` (rough_sleep_recovery_floor — read by candidate marker), `archive/tickets/S174SHESLESUR-003.md` (belief-view accessors), `archive/tickets/S174SHESLESUR-004.md` (ActionState::Sleep mode carrier + RestOccupancy lifecycle)
 
 ## Problem
 
@@ -26,7 +26,7 @@ The two-path schema requires a new `FeasibilityStrategy::CandidateBacked` varian
 
 1. The two-path emitter (KnownRestSite + RoughSleep) preserves flat GOAP — no HTN method is registered. Per S174's Planner-formalism analysis, the two-path split lives in the goal schema and candidate enumerator, not in method decomposition. HTN would over-formalize a two-candidate branch.
 2. `FeasibilityStrategy::CandidateBacked` is a generally reusable strategy ("feasibility = at least one lawful candidate exists"). No other current goal needs it, but introducing it cleanly handles any future goal whose feasibility is "anything to do" rather than belief-checked or place-checked. This matches FND-28 — a new strategy variant rather than a special-case branch inside `DECL_SLEEP`'s evaluator.
-3. The RoughSleep marker (carried via `ActionState::Sleep { rough: true, ... }` or equivalent, per ticket 004's design choice) flows from the emitter to the handler through authoritative action state, not through planner-side metadata. This matches FND-26 — systems interact through state, not direct calls.
+3. The RoughSleep marker (carried via `ActionState::Sleep { rough: true, ... }`, per `archive/tickets/S174SHESLESUR-004.md`) flows from the emitter to the handler through authoritative action state, not through planner-side metadata. This matches FND-26 — systems interact through state, not direct calls.
 
 ## Verification Layers
 
@@ -35,7 +35,7 @@ The two-path schema requires a new `FeasibilityStrategy::CandidateBacked` varian
 3. `sleep_rest_opportunities` KnownRestSite pass emits one candidate per believed-available rest-site place -> focused unit test on `candidate_generation.rs`
 4. `sleep_rest_opportunities` RoughSleep pass emits exactly one candidate targeting the actor's current effective place -> focused unit test
 5. When KnownRestSite emits zero candidates (no believed rest sites available), RoughSleep candidate is the only output -> focused unit test
-6. Sleep candidates carry the rough vs known marker so the handler (ticket 004) can read it -> action-trace assertion via the integration test in ticket 004 (cross-ticket verification)
+6. Sleep candidates carry the rough vs known marker so the handler (`archive/tickets/S174SHESLESUR-004.md`) can read it -> action-trace assertion via the archived ticket 004 integration test (cross-ticket verification)
 7. Existing sleep-related candidate-generation tests still pass after replacement (with assertion updates for the new two-path shape) -> existing test regression
 
 ## What to Change
@@ -125,8 +125,8 @@ Verify each test's intent at ticket-implementation time and update assertions ac
 
 - No `RestCapacity` / `RestOccupancy` component definitions (ticket 001)
 - No belief-view accessor implementations (archived `archive/tickets/S174SHESLESUR-003.md`)
-- No `RestOccupancy` writes at sleep action start (ticket 004)
-- No `rough_sleep_recovery_floor` application (ticket 004 reads the floor at sleep-tick)
+- No `RestOccupancy` writes at sleep action start (`archive/tickets/S174SHESLESUR-004.md`)
+- No `rough_sleep_recovery_floor` application (`archive/tickets/S174SHESLESUR-004.md` reads the floor at sleep-tick)
 - No `FailedRestOpportunity` records (ticket 006)
 - No `ActionTraceDetail::SleepInterrupted` population (ticket 006)
 - No removal of `FeasibilityStrategy::AlwaysLikely` even if it becomes unused after this ticket — proposed as a follow-up cleanup if grep confirms zero other consumers

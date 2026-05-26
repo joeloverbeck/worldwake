@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new `FailedRestOpportunity` and `FailedRestKind` types in `worldwake-ai/src/survival_forensics.rs`; new `failed_rest_opportunities` field on `CriticalWindowFrame`; population of `ActionTraceDetail::SleepInterrupted` at the sleep-abort trace boundary
-**Deps**: `archive/tickets/S174SHESLESUR-001.md` (SleepFailureCause enum, ActionTraceDetail::SleepInterrupted variant), `archive/tickets/S174SHESLESUR-003.md` (belief-view accessors for failure attribution at candidate-rejection sites)
+**Deps**: `archive/tickets/S174SHESLESUR-001.md` (SleepFailureCause enum, ActionTraceDetail::SleepInterrupted variant), `archive/tickets/S174SHESLESUR-003.md` (belief-view accessors for failure attribution at candidate-rejection sites), `archive/tickets/S174SHESLESUR-004.md` (abort-cause mapping + ActionState::Sleep mode carrier)
 
 ## Problem
 
@@ -88,9 +88,9 @@ In `crates/worldwake-sim/src/tick_step.rs:68-100` (`abort_trace_detail_for_insta
 
 - When the aborted action is `sleep`, construct `ActionTraceDetail::SleepInterrupted { place, cause, accumulated_recovery, was_rough_sleep }` where:
   - `place` is read from the aborted `SleepEpisode.place` (existing accessor).
-  - `cause` is the `SleepFailureCause` supplied by the abort path (defaults to `Generic` if the abort handler did not supply a specific cause; ticket 004 refines the cause supply at `abort_sleep_episode`).
+  - `cause` is the `SleepFailureCause` supplied by the abort path (defaults to `Generic` if the abort handler did not supply a specific cause; `archive/tickets/S174SHESLESUR-004.md` refines the cause supply at `abort_sleep_episode`).
   - `accumulated_recovery` is read from the aborted `SleepEpisode.accumulated_recovery`.
-  - `was_rough_sleep` is derived from whether the actor's effective place had `RestCapacity` AND whether the action's `ActionState::Sleep { rough }` (or equivalent per ticket 004) was `true`.
+  - `was_rough_sleep` is derived from whether the actor's effective place had `RestCapacity` AND whether the action's `ActionState::Sleep { rough }` (landed in `archive/tickets/S174SHESLESUR-004.md`) was `true`.
 
 For the other five self-care families (`eat`, `drink`, `toilet`, `wash`, `relieve_wilderness`), continue emitting `SelfCareInterrupted` per S173. The match in `abort_trace_detail_for_instance` is conditional-return; just redirect the `sleep` branch.
 

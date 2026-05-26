@@ -32,6 +32,7 @@ enum PromotableContentionKind {
     Care,
     SelfCareWash,
     SelfCareLatrine,
+    RestSite,
 }
 
 pub fn contention_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
@@ -472,6 +473,7 @@ fn promotable_contention_kind(def: &worldwake_sim::ActionDef) -> Option<Promotab
         (ActionDomain::Care, "heal") => Some(PromotableContentionKind::Care),
         (ActionDomain::Needs, "wash") => Some(PromotableContentionKind::SelfCareWash),
         (ActionDomain::Needs, "toilet") => Some(PromotableContentionKind::SelfCareLatrine),
+        (ActionDomain::Needs, "sleep") => Some(PromotableContentionKind::RestSite),
         _ => None,
     }
 }
@@ -512,6 +514,10 @@ fn contention_target_matches_kind(
         PromotableContentionKind::SelfCareLatrine => {
             world.entity_kind(entity) == Some(EntityKind::Place)
                 && world.place_has_tag(entity, PlaceTag::Latrine)
+        }
+        PromotableContentionKind::RestSite => {
+            world.entity_kind(entity) == Some(EntityKind::Place)
+                && world.get_component_rest_capacity(entity).is_some()
         }
     }
 }
@@ -628,9 +634,9 @@ mod tests {
         ContentionResolutionRule, ControlSource, DeadAt, DeprivationKind, EntityId, EntityKind,
         EventLog, EventTag, EventView, GoalKey, GoalKind, KnownRecipes, PlaceTag, ProductionJob,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, QueuedContentionIntent,
-        ResourceSource, Seed, SourceKey, Tick, UniqueItemKind, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
-        build_prototype_world,
+        ResourceSource, RestCapacity, Seed, SourceKey, Tick, UniqueItemKind, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
+        WoundId, WoundList, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
@@ -927,6 +933,19 @@ mod tests {
     }
 
     #[test]
+    fn promotable_contention_kind_classifies_sleep_action_as_rest_site() {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        register_needs_actions(&mut defs, &mut handlers);
+        let sleep = defs.get(find_action_id(&defs, "sleep")).unwrap();
+
+        assert!(matches!(
+            promotable_contention_kind(sleep),
+            Some(PromotableContentionKind::RestSite)
+        ));
+    }
+
+    #[test]
     fn promotable_contention_kind_unchanged_for_existing_actions() {
         let recipes = build_recipe_registry();
         let (defs, _handlers, harvest_id, craft_id) = setup_registries(&recipes);
@@ -992,6 +1011,36 @@ mod tests {
             &world,
             non_latrine_place,
             PromotableContentionKind::SelfCareLatrine
+        ));
+    }
+
+    #[test]
+    fn rest_site_contention_kind_matches_only_places_with_rest_capacity() {
+        let (mut world, place, wash_basin) = setup_world(WorkstationTag::WashBasin, 0);
+        let non_rest_place = world
+            .topology()
+            .place_ids()
+            .find(|candidate| *candidate != place)
+            .unwrap();
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_component_rest_capacity(place, RestCapacity(NonZeroU32::new(2).unwrap()))
+            .unwrap();
+        commit_txn(txn);
+
+        assert!(contention_target_matches_kind(
+            &world,
+            place,
+            PromotableContentionKind::RestSite
+        ));
+        assert!(!contention_target_matches_kind(
+            &world,
+            non_rest_place,
+            PromotableContentionKind::RestSite
+        ));
+        assert!(!contention_target_matches_kind(
+            &world,
+            wash_basin,
+            PromotableContentionKind::RestSite
         ));
     }
 
