@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new methods on `FacilityBeliefView` trait with backing implementation on `RuntimeBeliefView` and forwarding through the blanket `GoalBeliefView` impl
-**Deps**: 001 (consumes `RestCapacity` and `RestOccupancy` component types)
+**Deps**: `archive/tickets/S174SHESLESUR-001.md` (consumes `RestCapacity` and `RestOccupancy` component types)
 
 ## Problem
 

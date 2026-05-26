@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new `FeasibilityStrategy::CandidateBacked` variant on existing AI-crate enum; rewritten `DECL_SLEEP` goal schema; existing `emit_sleep_goal` replaced with two-path `sleep_rest_opportunities`
-**Deps**: 001 (RestCapacity/RestOccupancy types), 002 (rough_sleep_recovery_floor — read by candidate marker), 003 (belief-view accessors)
+**Deps**: `archive/tickets/S174SHESLESUR-001.md` (RestCapacity/RestOccupancy types), 002 (rough_sleep_recovery_floor — read by candidate marker), 003 (belief-view accessors)
 
 ## Problem
 

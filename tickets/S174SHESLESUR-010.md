@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — CLI player-POV gating for `RestCapacity`/`RestOccupancy` reads (S163-style); scenario file + test file
-**Deps**: 001 (RestCapacity/RestOccupancy components), 002 (PlaceDef.rest_capacity), 003 (belief-view accessors — CLI uses the same view), 004 (RestOccupancy lifecycle), 005 (sleep schema for candidate emission), 006 (forensic records — CLI may surface these)
+**Deps**: `archive/tickets/S174SHESLESUR-001.md` (RestCapacity/RestOccupancy components), 002 (PlaceDef.rest_capacity), 003 (belief-view accessors — CLI uses the same view), 004 (RestOccupancy lifecycle), 005 (sleep schema for candidate emission), 006 (forensic records — CLI may surface these)
 
 ## Problem
 

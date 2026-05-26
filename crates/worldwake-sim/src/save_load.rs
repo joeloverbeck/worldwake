@@ -3,8 +3,8 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-/// S173SELCARINT-001 stores self-care facility occupancy.
-pub const SAVE_FORMAT_VERSION: u32 = 107;
+/// S174SHESLESUR-001 stores rest-site components and structured sleep wake causes.
+pub const SAVE_FORMAT_VERSION: u32 = 108;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -220,11 +220,11 @@ mod tests {
         PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
         PursuitInvalidationReasonTag, Quantity, RankedGoalComparisonDimensionTag, RecordRef,
         RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
-        ReplanTriggeredPayload, ReservationId, RewardEncumbrance, RiskWeightProfile,
-        RoutePreferenceProfile, RoutePreferenceSummary, RouteSegment, Seed, SelfCareOccupancy,
-        SelfCareUseKind, ShelterTag, SleepEpisode, SleepEpisodeEndedPayload,
-        SleepEpisodeStartedPayload, SleepQualityProfile, SleepRecoveryModifier, StateHash,
-        SuspensionReason, TestimonyTrustProfile, TestimonyTrustSummary, Tick, TickRange,
+        ReplanTriggeredPayload, ReservationId, RestCapacity, RestOccupancy, RewardEncumbrance,
+        RiskWeightProfile, RoutePreferenceProfile, RoutePreferenceSummary, RouteSegment, Seed,
+        SelfCareOccupancy, SelfCareUseKind, ShelterTag, SleepEpisode, SleepEpisodeEndedPayload,
+        SleepEpisodeStartedPayload, SleepFailureCause, SleepQualityProfile, SleepRecoveryModifier,
+        StateHash, SuspensionReason, TestimonyTrustProfile, TestimonyTrustSummary, Tick, TickRange,
         TopicScope, UniqueItemKind, UtilityProfile, VisibilitySpec, WakeCondition, WakeReason,
         WashBasinState, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData,
         WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
@@ -465,6 +465,17 @@ mod tests {
                     shelter: ShelterTag::Shelter,
                     ground_comfort: GroundComfortTag::Soft,
                     recovery_modifier: SleepRecoveryModifier::new(1250),
+                },
+            )
+            .unwrap();
+        sleep_txn
+            .set_component_rest_capacity(belief_place, RestCapacity(NonZeroU32::new(2).unwrap()))
+            .unwrap();
+        sleep_txn
+            .set_component_rest_occupancy(
+                belief_place,
+                RestOccupancy {
+                    occupants: std::collections::BTreeSet::from([actor]),
                 },
             )
             .unwrap();
@@ -1226,9 +1237,8 @@ mod tests {
                     place,
                     start_tick: Tick(20),
                     end_tick: Tick(33),
-                    end_reason: WakeReason::ProjectedNeedBreach {
-                        need: HomeostaticNeedId::Thirst,
-                        projected_breach_tick: Tick(34),
+                    end_reason: WakeReason::LocalDisturbance {
+                        cause: SleepFailureCause::Generic,
                     },
                     accumulated_recovery: worldwake_core::Permille::new(250).unwrap(),
                     final_fatigue: worldwake_core::Permille::new(500).unwrap(),
@@ -1390,8 +1400,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_107_after_self_care_occupancy() {
-        assert_eq!(SAVE_FORMAT_VERSION, 107);
+    fn save_format_version_is_108_after_rest_site_foundation() {
+        assert_eq!(SAVE_FORMAT_VERSION, 108);
     }
 
     #[test]
@@ -1402,7 +1412,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 107);
+        assert_eq!(SAVE_FORMAT_VERSION, 108);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1413,6 +1423,8 @@ mod tests {
         );
         assert_eq!(runtime, None);
         assert_eq!(restored, state);
+        assert_eq!(restored.world().count_with_rest_capacity(), 1);
+        assert_eq!(restored.world().count_with_rest_occupancy(), 1);
         assert_eq!(restored.world().count_with_self_care_occupancy(), 2);
         let restored_schema_context = restored
             .world()

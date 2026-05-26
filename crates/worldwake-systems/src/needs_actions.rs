@@ -6,7 +6,7 @@ use worldwake_core::{
     FrameAssumption, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, ItemLot,
     MetabolismProfile, OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, SelfCareOccupancy,
     SelfCareUseKind, SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
-    SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition, WakeReason,
+    SleepFailureCause, SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition, WakeReason,
     WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WorkstationTag, WorldTxn,
 };
 use worldwake_sim::{
@@ -676,7 +676,9 @@ fn abort_sleep_episode(
     end_sleep_episode(
         instance.actor,
         context.tick,
-        Some(WakeReason::LocalDisturbance),
+        Some(WakeReason::LocalDisturbance {
+            cause: SleepFailureCause::Generic,
+        }),
         txn,
     )
 }

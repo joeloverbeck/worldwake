@@ -103,7 +103,23 @@ pub enum WakeReason {
         projected_breach_tick: Tick,
     },
     ScheduledCommitment,
-    LocalDisturbance,
+    LocalDisturbance {
+        cause: SleepFailureCause,
+    },
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum SleepFailureCause {
+    /// Hostile actor entered the same place mid-sleep.
+    HostileProximity,
+    /// Another actor took the rest slot before the sleeper could claim it.
+    RestSiteContended,
+    /// Place dirtiness or another place-state change invalidated the surface.
+    SurfaceInvalidated,
+    /// Actor was wounded or incapacitated during sleep through ordinary causes.
+    ActorIncapacitated,
+    /// Transitional fallback for disturbance sources that do not classify cause.
+    Generic,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -539,9 +555,9 @@ mod tests {
         RankedGoalComparisonDimensionTag, RecordRef, RejectedAlternativeSummary,
         RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload,
         RoutePreferenceSummary, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
-        SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKeyPayload,
-        SurveyRecordedPayload, TestimonyTrustSummary, VerificationProviderKind, WakeReason,
-        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
+        SleepFailureCause, SourceAttributionOutcomeTag, SourceExpectationFailurePayload,
+        SourceKeyPayload, SurveyRecordedPayload, TestimonyTrustSummary, VerificationProviderKind,
+        WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
     };
     use crate::{
         ActionDefId, BeliefClaimKey, BlockingFact, CommodityKind, Discrepancy, EntityBeliefAspect,
@@ -810,6 +826,7 @@ mod tests {
         assert_copy_value_bounds::<GoalSwitchReason>();
         assert_value_bounds::<SleepEpisodeStartedPayload>();
         assert_value_bounds::<SleepEpisodeEndedPayload>();
+        assert_hash_copy_value_bounds::<SleepFailureCause>();
         assert_value_bounds::<WasteCreatedPayload>();
         assert_copy_value_bounds::<WasteSource>();
         assert_value_bounds::<WashFacilityUsedPayload>();
@@ -1279,5 +1296,27 @@ mod tests {
             let roundtrip: ReplanReason = bincode::deserialize(&bytes).unwrap();
             assert_eq!(roundtrip, reason);
         }
+    }
+
+    #[test]
+    fn structured_local_disturbance_wake_reason_carries_sleep_failure_cause() {
+        let reason = WakeReason::LocalDisturbance {
+            cause: SleepFailureCause::Generic,
+        };
+
+        assert!(matches!(
+            reason,
+            WakeReason::LocalDisturbance {
+                cause: SleepFailureCause::Generic
+            }
+        ));
+        let all_causes = [
+            SleepFailureCause::HostileProximity,
+            SleepFailureCause::RestSiteContended,
+            SleepFailureCause::SurfaceInvalidated,
+            SleepFailureCause::ActorIncapacitated,
+            SleepFailureCause::Generic,
+        ];
+        assert_eq!(all_causes.len(), 5);
     }
 }

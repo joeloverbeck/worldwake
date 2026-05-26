@@ -101,6 +101,7 @@ pub mod production;
 pub mod pursuit;
 pub mod relations;
 pub mod repair_memory;
+pub mod rest_site;
 pub mod reward_encumbrance;
 pub mod rights;
 pub mod risk_weight_profile;
@@ -201,9 +202,10 @@ pub use decision_event_payload::{
     PlanInvalidationReason, PursuitInvalidationReasonTag, RankedGoalComparisonDimensionTag,
     RecordRef, RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
     ReplanTriggeredPayload, RoutePreferenceSummary, SleepEpisodeEndedPayload,
-    SleepEpisodeStartedPayload, SourceAttributionOutcomeTag, SourceExpectationFailurePayload,
-    SourceKeyPayload, SurveyRecordedPayload, TestimonyTrustSummary, VerificationProviderKind,
-    WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
+    SleepEpisodeStartedPayload, SleepFailureCause, SourceAttributionOutcomeTag,
+    SourceExpectationFailurePayload, SourceKeyPayload, SurveyRecordedPayload,
+    TestimonyTrustSummary, VerificationProviderKind, WakeReason, WashFacilityUsedPayload,
+    WasteCreatedPayload, WasteSource,
 };
 pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,
@@ -308,6 +310,7 @@ pub use production::{
 pub use pursuit::PursuitProfile;
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
 pub use repair_memory::{BreachSignature, RepairEntry, RepairMemory};
+pub use rest_site::{RestCapacity, RestOccupancy};
 pub use reward_encumbrance::{RewardEncumbrance, RewardReservation};
 pub use rights::{EffectiveRight, RightKind};
 pub use risk_weight_profile::RiskWeightProfile;

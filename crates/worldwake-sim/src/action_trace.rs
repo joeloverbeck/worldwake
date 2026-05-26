@@ -10,9 +10,9 @@ use crate::{
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
-    ActionDefId, CommodityKind, EntityId, ExpectationId, InstitutionalClaim,
+    ActionDefId, CommodityKind, EntityId, ExpectationId, InstitutionalClaim, Permille,
     PunishmentFineStartFailureTrace, PunishmentFineTraceFacts, PunishmentKind, RecordKind,
-    SelfCareUseKind, TellTopic, Tick, ViolationId, World,
+    SelfCareUseKind, SleepFailureCause, TellTopic, Tick, ViolationId, World,
 };
 
 /// A single action lifecycle event recorded during `step_tick()`.
@@ -66,6 +66,12 @@ pub enum ActionTraceDetail {
     SelfCareInterrupted {
         kind: SelfCareUseKind,
         basin: Option<EntityId>,
+    },
+    SleepInterrupted {
+        place: EntityId,
+        cause: SleepFailureCause,
+        accumulated_recovery: Permille,
+        was_rough_sleep: bool,
     },
 }
 
@@ -475,6 +481,16 @@ impl ActionTraceDetail {
             Self::SelfCareInterrupted { kind, basin } => {
                 format!("self_care_interrupted kind {kind:?} basin {basin:?}")
             }
+            Self::SleepInterrupted {
+                place,
+                cause,
+                accumulated_recovery,
+                was_rough_sleep,
+            } => {
+                format!(
+                    "sleep_interrupted place {place} cause {cause:?} recovery {accumulated_recovery:?} rough {was_rough_sleep}"
+                )
+            }
         }
     }
 }
@@ -747,6 +763,25 @@ mod tests {
 
         assert_eq!(detail, cloned);
         assert!(format!("{detail:?}").contains("SelfCareInterrupted"));
+    }
+
+    #[test]
+    fn sleep_interrupted_variant_constructs_and_derives() {
+        let place = EntityId {
+            slot: 43,
+            generation: 0,
+        };
+        let detail = ActionTraceDetail::SleepInterrupted {
+            place,
+            cause: SleepFailureCause::Generic,
+            accumulated_recovery: Permille::new(125).unwrap(),
+            was_rough_sleep: false,
+        };
+        let cloned = detail.clone();
+
+        assert_eq!(detail, cloned);
+        assert!(format!("{detail:?}").contains("SleepInterrupted"));
+        assert!(detail.summary().contains("sleep_interrupted"));
     }
 
     #[test]

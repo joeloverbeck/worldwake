@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new field on universal `MetabolismProfile` agent profile; new optional field on scenario-loader `PlaceDef`; profile doc regeneration
-**Deps**: 001 (`MetabolismProfile` field rides ticket 001's SAVE_FORMAT_VERSION bump via `#[serde(default)]`; scenario contract for `RestCapacity` requires the component registration from 001)
+**Deps**: `archive/tickets/S174SHESLESUR-001.md` (`MetabolismProfile` field rides ticket 001's SAVE_FORMAT_VERSION bump via `#[serde(default)]`; scenario contract for `RestCapacity` requires the component registration from 001)
 
 ## Problem
 

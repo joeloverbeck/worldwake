@@ -319,7 +319,7 @@ D2 modifies action preconditions (rest-site capacity gate). D4 modifies candidat
    - `RestCapacity` component on `EntityKind::Place` (scenario-authored topology).
    - `RestOccupancy` component on `EntityKind::Place` (runtime-managed multi-occupant claim).
    - `SleepFailureCause` enum (5 variants).
-   - `WakeReason::LocalDisturbance { cause }` and `WakeCondition::LocalDisturbance { cause }` restructured variants.
+   - `WakeReason::LocalDisturbance { cause }` restructured variant; `WakeCondition::LocalDisturbance` remains a bare trigger predicate.
    - `ActionTraceDetail::SleepInterrupted { place, cause, accumulated_recovery, was_rough_sleep }` variant.
    - `FailedRestOpportunity` + `FailedRestKind` types in `survival_forensics.rs`.
    - `CriticalWindowFrame.failed_rest_opportunities: Vec<FailedRestOpportunity>` field.

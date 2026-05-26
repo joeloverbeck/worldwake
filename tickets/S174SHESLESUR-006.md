@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new `FailedRestOpportunity` and `FailedRestKind` types in `worldwake-ai/src/survival_forensics.rs`; new `failed_rest_opportunities` field on `CriticalWindowFrame`; population of `ActionTraceDetail::SleepInterrupted` at the sleep-abort trace boundary
-**Deps**: 001 (SleepFailureCause enum, ActionTraceDetail::SleepInterrupted variant), 003 (belief-view accessors for failure attribution at candidate-rejection sites)
+**Deps**: `archive/tickets/S174SHESLESUR-001.md` (SleepFailureCause enum, ActionTraceDetail::SleepInterrupted variant), 003 (belief-view accessors for failure attribution at candidate-rejection sites)
 
 ## Problem
 

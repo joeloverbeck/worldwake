@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — sleep action handler writes/releases `RestOccupancy`; `abort_sleep_episode` threads `SleepFailureCause` through end-sleep path; new variant on crate-private `PromotableContentionKind`; exhaustive-match arm in `contention_target_matches_kind`; rough-sleep recovery floor applied at handler tick path
-**Deps**: 001 (RestOccupancy component, SleepFailureCause enum), 002 (MetabolismProfile.rough_sleep_recovery_floor)
+**Deps**: `archive/tickets/S174SHESLESUR-001.md` (RestOccupancy component, SleepFailureCause enum), 002 (MetabolismProfile.rough_sleep_recovery_floor)
 
 ## Problem
 
