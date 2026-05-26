@@ -12,8 +12,8 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use worldwake_core::{
-    ActionDefId, CauseRef, EntityId, EventLog, EventPayload, EventTag, PendingEvent, Tick,
-    VisibilitySpec, WitnessData, World,
+    ActionDefId, CauseRef, EntityId, EventLog, EventPayload, EventTag, PendingEvent,
+    SelfCareUseKind, Tick, VisibilitySpec, WitnessData, World,
 };
 
 pub struct TickStepServices<'a> {
@@ -63,6 +63,24 @@ fn action_trace_detail_for_affordance(
 ) -> Option<ActionTraceDetail> {
     defs.get(affordance.def_id)
         .and_then(|def| ActionTraceDetail::from_payload(affordance.effective_payload(def)))
+}
+
+fn abort_trace_detail_for_instance(
+    defs: &ActionDefRegistry,
+    instance: &crate::ActionInstance,
+) -> Option<ActionTraceDetail> {
+    let def = defs.get(instance.def_id)?;
+    match def.name.as_str() {
+        "wash" => Some(ActionTraceDetail::SelfCareInterrupted {
+            kind: SelfCareUseKind::Wash,
+            basin: instance.targets.first().copied(),
+        }),
+        "toilet" => Some(ActionTraceDetail::SelfCareInterrupted {
+            kind: SelfCareUseKind::LatrineRelief,
+            basin: instance.targets.first().copied(),
+        }),
+        _ => ActionTraceDetail::from_payload(&instance.payload),
+    }
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -477,7 +495,10 @@ fn apply_input(
                             reason: format!("CancelledByInput {{ sequence_no: {sequence_no} }}"),
                         },
                     )
-                    .with_detail(ActionTraceDetail::from_payload(&instance.payload)),
+                    .with_detail(abort_trace_detail_for_instance(
+                        services.action_defs,
+                        &instance,
+                    )),
                 );
             }
             Ok(InputOutcome {
@@ -821,7 +842,7 @@ fn abort_actions_for_dead_actors(
                         reason: "ActorMarkedDead".to_string(),
                     },
                 )
-                .with_detail(ActionTraceDetail::from_payload(&inst.payload)),
+                .with_detail(abort_trace_detail_for_instance(services.action_defs, &inst)),
             );
         }
         aborted = aborted
@@ -932,8 +953,8 @@ fn emit_end_of_tick_marker(event_log: &mut EventLog, tick: Tick) {
 #[cfg(test)]
 mod tests {
     use super::{
-        RequestedAction, TickStepError, TickStepResult, TickStepServices, resolve_affordance,
-        step_tick,
+        RequestedAction, TickStepError, TickStepResult, TickStepServices,
+        abort_trace_detail_for_instance, resolve_affordance, step_tick,
     };
     use crate::{
         ActionDef, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandler,
@@ -951,8 +972,8 @@ mod tests {
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
         ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, ControlSource, DeadAt, EntityId,
-        EntityKind, EventLog, EventTag, EventView, Seed, Tick, VisibilitySpec, WitnessData, World,
-        WorldTxn, build_prototype_world,
+        EntityKind, EventLog, EventTag, EventView, Seed, SelfCareUseKind, Tick, VisibilitySpec,
+        WitnessData, World, WorldTxn, build_prototype_world,
     };
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -1233,6 +1254,57 @@ mod tests {
             effect_schema: crate::EffectSchema::empty(),
         });
         registry
+    }
+
+    #[test]
+    fn abort_trace_detail_for_self_care_actions_uses_instance_target() {
+        let mut registry = action_registry();
+        registry.register(ActionDef {
+            id: ActionDefId(3),
+            name: "wash".to_string(),
+            domain: ActionDomain::Needs,
+            actor_constraints: vec![crate::Constraint::ActorAlive],
+            targets: vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Facility,
+            }],
+            preconditions: vec![Precondition::ActorAlive],
+            reservation_requirements: vec![ReservationReq { target_index: 0 }],
+            duration: DurationExpr::Fixed(NonZeroU32::new(2).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![Precondition::ActorAlive],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+            binding_strictness: crate::BindingStrictness::EquivalentWorkstationTagAtSamePlace,
+            guard_template: None,
+            expectation_template: vec![],
+            effect_schema: crate::EffectSchema::empty(),
+        });
+        let basin = entity(42);
+        let instance = ActionInstance {
+            instance_id: ActionInstanceId(7),
+            def_id: ActionDefId(3),
+            payload: ActionPayload::None,
+            actor: entity(9),
+            targets: vec![basin],
+            start_tick: Tick(10),
+            remaining_duration: crate::ActionDuration::new(2),
+            status: ActionStatus::Active,
+            reservation_ids: Vec::new(),
+            local_state: None,
+            body_cost_override: None,
+        };
+
+        assert_eq!(
+            abort_trace_detail_for_instance(&registry, &instance),
+            Some(ActionTraceDetail::SelfCareInterrupted {
+                kind: SelfCareUseKind::Wash,
+                basin: Some(basin),
+            })
+        );
     }
 
     fn reservation_action_registry() -> ActionDefRegistry {
