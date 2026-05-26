@@ -4493,7 +4493,12 @@ fn sleep_rest_opportunities(
     thresholds: DriveThresholds,
 ) {
     if needs.fatigue >= thresholds.fatigue.low() {
+        let current_place = ctx.place;
+        let local_hostile_present = !ctx.view.visible_hostiles_for(ctx.agent).is_empty();
         for place in available_rest_site_candidate_places(ctx) {
+            if local_hostile_present && Some(place) == current_place {
+                continue;
+            }
             emit_sleep_candidate(
                 candidates,
                 diagnostics,
@@ -4504,7 +4509,9 @@ fn sleep_rest_opportunities(
             );
         }
 
-        if let Some(current_place) = ctx.place {
+        if let Some(current_place) = current_place
+            && !local_hostile_present
+        {
             emit_sleep_candidate(
                 candidates,
                 diagnostics,

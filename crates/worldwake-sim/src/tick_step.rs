@@ -263,6 +263,8 @@ pub fn step_tick(
     let pre_progress_dead_aborts = abort_actions_for_dead_actors(&mut runtime, tick, &services)?;
     let (inputs_processed, actions_started, actions_aborted) =
         process_inputs(&mut runtime, controller, tick, &services)?;
+    let hostile_sleep_interrupts =
+        interrupt_sleep_for_local_hostiles(&mut runtime, tick, &services)?;
     let (actions_completed, progressed_action_aborts) =
         progress_active_actions(&mut runtime, tick, &mut services)?;
     let systems_ran = pre_action_systems_ran
@@ -279,6 +281,8 @@ pub fn step_tick(
         actions_completed,
         actions_aborted: pre_progress_dead_aborts
             .checked_add(actions_aborted)
+            .expect("tick-step action-abort counter overflowed")
+            .checked_add(hostile_sleep_interrupts)
             .expect("tick-step action-abort counter overflowed")
             .checked_add(progressed_action_aborts)
             .expect("tick-step action-abort counter overflowed")
@@ -711,6 +715,93 @@ fn validate_cancel_actor(
     }
 
     Ok(())
+}
+
+fn interrupt_sleep_for_local_hostiles(
+    runtime: &mut TickStepRuntime<'_>,
+    tick: Tick,
+    services: &TickStepServices<'_>,
+) -> Result<u32, TickStepError> {
+    let active_sleep_ids = runtime
+        .scheduler
+        .active_actions()
+        .iter()
+        .filter_map(|(instance_id, instance)| {
+            let def = services.action_defs.get(instance.def_id)?;
+            (def.name == "sleep" && local_hostile_present(runtime.world, instance.actor))
+                .then_some(*instance_id)
+        })
+        .collect::<Vec<_>>();
+    let mut interrupted = 0u32;
+
+    for instance_id in active_sleep_ids {
+        let Some(instance) = runtime
+            .scheduler
+            .active_actions()
+            .get(&instance_id)
+            .cloned()
+        else {
+            continue;
+        };
+        let replan = runtime
+            .scheduler
+            .interrupt_active_action(
+                instance_id,
+                SchedulerActionRuntime {
+                    action_defs: services.action_defs,
+                    action_handlers: services.action_handlers,
+                    world: runtime.world,
+                    event_log: runtime.event_log,
+                    rng: runtime.rng,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::SystemTick(tick),
+                    tick,
+                    recipe_registry: services.recipe_registry,
+                    action_defs: services.action_defs,
+                },
+                InterruptReason::DangerNearby,
+            )
+            .map_err(TickStepError::Action)?;
+
+        let action_name = lookup_action_name(services.action_defs, instance.def_id);
+        runtime.record_action_trace(
+            ActionTraceEvent::new(
+                tick,
+                instance.actor,
+                instance.def_id,
+                action_name,
+                ActionTraceKind::Aborted {
+                    instance_id,
+                    reason: format!("{:?}", replan.reason),
+                },
+            )
+            .with_detail(abort_trace_detail_for_instance(
+                services.action_defs,
+                runtime.event_log,
+                tick,
+                &instance,
+                SleepFailureCause::HostileProximity,
+            )),
+        );
+        runtime.scheduler.retain_replan(replan);
+        interrupted = interrupted
+            .checked_add(1)
+            .expect("tick-step hostile sleep interrupt counter overflowed");
+    }
+
+    Ok(interrupted)
+}
+
+fn local_hostile_present(world: &World, actor: EntityId) -> bool {
+    let Some(actor_place) = world.effective_place(actor) else {
+        return false;
+    };
+
+    world
+        .hostile_targets_of(actor)
+        .into_iter()
+        .any(|target| world.is_alive(target) && world.effective_place(target) == Some(actor_place))
 }
 
 fn progress_active_actions(
