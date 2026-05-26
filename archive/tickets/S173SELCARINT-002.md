@@ -1,6 +1,6 @@
 # S173SELCARINT-002: `ActionTraceDetail::SelfCareInterrupted` variant
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new variant on `ActionTraceDetail` (trace-sink type; not serialized)
@@ -8,13 +8,13 @@
 
 ## Problem
 
-Today an interrupted self-care action fires `EventTag::ActionAborted` (engine-level, already authoritative) with an unstructured `ActionTraceKind::Aborted { instance_id, reason: String }` payload (`crates/worldwake-sim/src/action_trace.rs:65-86`). "Why didn't this agent wash?" cannot be answered from typed evidence — only from the freeform string. This ticket adds the typed `ActionTraceDetail::SelfCareInterrupted { kind, basin }` variant so abort handlers in downstream tickets (004 for wash/toilet, 005 for eat/drink/wilderness/sleep) can populate structured "which use kind, which facility/place" payload alongside the existing authoritative `EventTag::ActionAborted` record.
+Before this ticket, an interrupted self-care action fired `EventTag::ActionAborted` (engine-level, already authoritative) with an unstructured `ActionTraceKind::Aborted { instance_id, reason: String }` payload (`crates/worldwake-sim/src/action_trace.rs:65-86`). "Why didn't this agent wash?" could not be answered from typed evidence — only from the freeform string. The completed change adds the typed `ActionTraceDetail::SelfCareInterrupted { kind, basin }` variant so abort handlers in downstream tickets (004 for wash/toilet, 005 for eat/drink/wilderness/sleep) can populate structured "which use kind, which facility/place" payload alongside the existing authoritative `EventTag::ActionAborted` record.
 
 ## Assumption Reassessment (2026-05-25)
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. `ActionTraceDetail` is defined at `crates/worldwake-sim/src/action_trace.rs:32-63` with 8 existing variants (`Tell`, `Investigate`, `AskWitness`, `AskAboutPerson`, `SearchPlace`, `ReportMissing`, `ReportFound`, `EscortToSafety`). Verified via Step 2 sub-check (g): zero exhaustive `match { ActionTraceDetail::X => … }` consumer sites workspace-wide — all consumers use `if let Some(ActionTraceDetail::X { … })` specific-variant patterns. Adding a new variant is additive and non-breaking; no consumer match arms require updating.
+1. `ActionTraceDetail` was defined at `crates/worldwake-sim/src/action_trace.rs:32-63` with 8 existing variants (`Tell`, `Investigate`, `AskWitness`, `AskAboutPerson`, `SearchPlace`, `ReportMissing`, `ReportFound`, `EscortToSafety`). The original reassessment correctly found no cross-crate exhaustive observer/decision-trace consumers, but focused compile exposed one local exhaustive helper: `ActionTraceDetail::summary()` in the same file. The implementation updated that local summary arm as same-module trace-surface fallout.
 2. `ActionTraceDetail::from_payload` (`action_trace.rs:740+`) returns `None` for `ActionPayload::None`. Self-care actions all register with `ActionPayload::None` (`crates/worldwake-systems/src/needs_actions.rs` registration block at L23-58). The new variant is therefore populated by the abort handlers directly (setting `ActionTraceEvent.detail` at emission time), not auto-derived through `from_payload`. No change to `from_payload` is required in this ticket.
 3. Shared abstraction boundary: the typed action-trace sink (`ActionTraceSink`), consumed by goldens, the observer binary, and decision traces. `EventTag::ActionAborted` (already firing) remains the authoritative causal anchor (FND-29A); this variant is the enriching trace-detail payload (FND-29 debuggability), not a new authoritative surface.
 4. Save format / serialization: `ActionTraceDetail` is **not** serialized to save state — it lives in the trace-sink layer (per-tick borrowed `&mut ActionTraceSink`, not part of `SimulationState`). No `SAVE_FORMAT_VERSION` bump applies to this ticket; the bump landed in 001. Verified by inspecting `crates/worldwake-sim/src/save_load.rs` — no reference to `ActionTraceDetail` in the save path.
@@ -27,12 +27,12 @@ Today an interrupted self-care action fires `EventTag::ActionAborted` (engine-le
 2. Variant placement on `ActionTraceDetail` (rather than a sibling enum or a `Discrepancy` variant) follows the "Discrepancy as Failure-Attribution Surface" option (2) trace-only pattern — surfaces the failure-mode cause for debug/observer inspection without extending the typed failure taxonomy (`Discrepancy`) for a case that doesn't alter handler control flow.
 3. No backwards-compatibility aliasing — the variant is additive; no existing variant is renamed or removed.
 
-## Verification Layers
+## Verification Mapping
 
 1. Variant existence and shape → focused unit test: construct an `ActionTraceDetail::SelfCareInterrupted { kind: SelfCareUseKind::Wash, basin: Some(EntityId { slot: 1, generation: 0 }) }`, assert derive surface (`Clone`, `Debug`, `PartialEq`) works.
 2. Single-layer ticket (variant definition only): downstream behavior (abort-handler population, observer consumption) is proven by tickets 004, 005, and 007's goldens. This ticket's contract is solely that the variant exists with the correct shape.
 
-## What to Change
+## Landed Changes
 
 ### 1. Add `SelfCareInterrupted` variant to `ActionTraceDetail`
 
@@ -68,7 +68,7 @@ Path note: import `SelfCareUseKind` from `worldwake_core` (already a dependency 
 
 `ActionTraceDetail::from_payload(&ActionPayload::None)` continues to return `None`. Abort handlers in downstream tickets (004, 005) set `ActionTraceEvent.detail` explicitly to `Some(ActionTraceDetail::SelfCareInterrupted { … })` at emission time rather than routing through `from_payload`. This preserves the existing `from_payload` contract (payload-derived auto-discrimination for non-`None` payloads).
 
-## Files to Touch
+## Files Touched
 
 - `crates/worldwake-sim/src/action_trace.rs` (modify — add variant to `ActionTraceDetail` enum; possibly extend the existing inline `#[cfg(test)]` block at L557+ with one round-trip / equality test for the new variant)
 
@@ -81,9 +81,9 @@ Path note: import `SelfCareUseKind` from `worldwake_core` (already a dependency 
 
 ## Acceptance Criteria
 
-### Tests That Must Pass
+### Required Proof
 
-1. New unit test: `self_care_interrupted_variant_constructs_and_derives` — basic construction in inline `#[cfg(test)]` block in `action_trace.rs`.
+1. Added unit test: `self_care_interrupted_variant_constructs_and_derives` — basic construction in inline `#[cfg(test)]` block in `action_trace.rs`.
 2. Existing suite: `cargo test -p worldwake-sim action_trace`.
 3. Workspace builds and existing scenarios pass: `cargo test --workspace`.
 
@@ -92,14 +92,24 @@ Path note: import `SelfCareUseKind` from `worldwake_core` (already a dependency 
 1. The variant's payload types (`SelfCareUseKind`, `Option<EntityId>`) satisfy `ActionTraceDetail`'s derives (`Clone`, `Debug`, `Eq`, `PartialEq`).
 2. No existing `if let Some(ActionTraceDetail::X { … })` consumer match site is broken — verified by full workspace test pass.
 
-## Test Plan
+## Verification Result
 
-### New/Modified Tests
+### New/Modified Test Coverage
 
-1. `crates/worldwake-sim/src/action_trace.rs` inline tests (existing `#[cfg(test)]` at L557+) — one new test case constructing and comparing `ActionTraceDetail::SelfCareInterrupted` variants.
+1. Passed `crates/worldwake-sim/src/action_trace.rs` inline test `self_care_interrupted_variant_constructs_and_derives` — constructs, clones, compares, and debug-formats the new detail variant.
 
-### Commands
+### Commands Run
 
-1. `cargo test -p worldwake-sim action_trace`
-2. `cargo test --workspace`
-3. `./scripts/verify.sh` before commit.
+1. Passed `cargo test -p worldwake-sim action_trace` — 27 action-trace/tick-step trace tests passed, including `self_care_interrupted_variant_constructs_and_derives`.
+2. Passed `cargo test --workspace` — full workspace test suite passed.
+3. Passed `./scripts/verify.sh` — ran `cargo fmt --all -- --check`, `cargo test --workspace`, active-goal/artifact/debug-view checks, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo run -p worldwake-cli --bin scenario-coverage -- --check`.
+
+## Outcome
+
+Completed: 2026-05-26
+
+The ticket added `ActionTraceDetail::SelfCareInterrupted { kind: SelfCareUseKind, basin: Option<EntityId> }` to `crates/worldwake-sim/src/action_trace.rs`, imported `SelfCareUseKind`, and added the focused construction/derive unit test. The implementation also updated the local `ActionTraceDetail::summary()` helper after focused compile showed it was an exhaustive same-module consumer.
+
+Deviations from plan: the ticket's original reassessment said no exhaustive consumer match arms required updating. That was too broad; the local summary helper did require an arm. No cross-crate observer rendering was added, `ActionTraceDetail::from_payload(ActionPayload::None)` remains unchanged, and no new `EventTag` variant or save-format change was introduced.
+
+Verification: passed `cargo test -p worldwake-sim action_trace`, `cargo test --workspace`, and `./scripts/verify.sh`.

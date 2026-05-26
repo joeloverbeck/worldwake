@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — new `abort_emit_self_care_interrupted` handler replacing `abort_noop` for eat/drink/relieve_wilderness; `abort_sleep_episode` extended to populate trace detail
-**Deps**: S173SELCARINT-002 (uses `ActionTraceDetail::SelfCareInterrupted`), `specs/S173-self-care-interruption-occupancy.md` (D2 eat/drink/wilderness/sleep rows)
+**Deps**: `archive/tickets/S173SELCARINT-002.md` (uses `ActionTraceDetail::SelfCareInterrupted`), `specs/S173-self-care-interruption-occupancy.md` (D2 eat/drink/wilderness/sleep rows)
 
 ## Problem
 
