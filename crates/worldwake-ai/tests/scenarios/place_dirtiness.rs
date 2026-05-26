@@ -377,7 +377,7 @@ fn latrine_overflow_creates_waste_at_place_and_increments_place_dirtiness() {
         hygiene_utility(),
     );
     set_control_source(&mut h, agent, ControlSource::Human);
-    request_action(&mut h, agent, "toilet", vec![]);
+    request_action(&mut h, agent, "toilet", vec![PUBLIC_LATRINE]);
     run_until_commits(&mut h, agent, "toilet", 1, 8);
 
     let payload = waste_created_payloads(&h)

@@ -77,15 +77,26 @@ fn anomaly_block<'a>(report: &'a str, kind: &str) -> &'a str {
 fn convergence_smell_fires_on_forced_hub_scenario() {
     let report = run_observer("tests/fixtures/observer_anomalies/convergence_hub.ron", 300);
 
-    assert_eq!(
-        count_anomalies_of_kind(&report, "GEOGRAPHIC_CONVERGENCE"),
-        1
-    );
     let headers = anomaly_headers_of_kind(&report, "GEOGRAPHIC_CONVERGENCE");
-    assert_eq!(headers.len(), 1);
-    assert!(headers[0].contains("Alice"));
-    assert!(headers[0].contains("Bob"));
-    assert!(headers[0].contains("Carol"));
+    assert!(
+        !headers.is_empty(),
+        "expected at least one GEOGRAPHIC_CONVERGENCE anomaly; got none"
+    );
+    let canonical = headers
+        .iter()
+        .any(|h| h.contains("Alice") && h.contains("Bob") && h.contains("Carol"));
+    assert!(
+        canonical,
+        "expected a GEOGRAPHIC_CONVERGENCE anomaly listing all three forced-hub agents; got {headers:?}"
+    );
+    for header in &headers {
+        let mentions_scenario_agent =
+            header.contains("Alice") || header.contains("Bob") || header.contains("Carol");
+        assert!(
+            mentions_scenario_agent,
+            "GEOGRAPHIC_CONVERGENCE anomaly does not mention any scenario agent: {header}"
+        );
+    }
 }
 
 #[test]

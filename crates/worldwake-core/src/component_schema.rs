@@ -2190,6 +2190,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                self_care_occupancies,
+                SelfCareOccupancy,
+                insert_self_care_occupancy,
+                get_self_care_occupancy,
+                get_self_care_occupancy_mut,
+                remove_self_care_occupancy,
+                has_self_care_occupancy,
+                iter_self_care_occupancies,
+                insert_component_self_care_occupancy,
+                get_component_self_care_occupancy,
+                get_component_self_care_occupancy_mut,
+                remove_component_self_care_occupancy,
+                has_component_self_care_occupancy,
+                entities_with_self_care_occupancy,
+                query_self_care_occupancy,
+                count_with_self_care_occupancy,
+                "SelfCareOccupancy",
+                |kind| kind == EntityKind::Facility || kind == EntityKind::Place,
+                SelfCareOccupancy,
+                crate::SelfCareOccupancy,
+                set_component_self_care_occupancy,
+                clear_component_self_care_occupancy,
+                txn_simple_set
+            }
+            {
                 intention_disposition_profiles,
                 IntentionDispositionProfile,
                 insert_intention_disposition_profile,
@@ -2607,8 +2632,9 @@ pub(crate) use with_component_schema_entries;
 mod tests {
     use crate::{
         CommodityKind, EntityKind, GroundComfortTag, Permille, PlaceVisibilityProfile, Quantity,
-        RewardEncumbrance, SceneEvidence, ShelterTag, SleepEpisode, SleepQualityProfile,
-        SleepRecoveryModifier, Tick, Topology, WakeCondition, World, WorldError,
+        RewardEncumbrance, SceneEvidence, SelfCareOccupancy, SelfCareUseKind, ShelterTag,
+        SleepEpisode, SleepQualityProfile, SleepRecoveryModifier, Tick, Topology, WakeCondition,
+        World, WorldError,
     };
     use std::num::NonZeroU32;
 
@@ -2711,6 +2737,61 @@ mod tests {
 
         let error = world
             .insert_component_sleep_episode(place, episode)
+            .unwrap_err();
+        assert!(matches!(error, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn self_care_occupancy_is_registered_for_facilities_and_places_only() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let facility = world.create_entity(EntityKind::Facility, Tick(1));
+        let place = world.create_entity(EntityKind::Place, Tick(1));
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let wash_occupancy = SelfCareOccupancy {
+            occupant: agent,
+            use_kind: SelfCareUseKind::Wash,
+            started_tick: Tick(5),
+            goal_key: crate::GoalKey::from(crate::GoalKind::Wash),
+        };
+        let latrine_occupancy = SelfCareOccupancy {
+            occupant: agent,
+            use_kind: SelfCareUseKind::LatrineRelief,
+            started_tick: Tick(6),
+            goal_key: crate::GoalKey::from(crate::GoalKind::Relieve),
+        };
+
+        world
+            .insert_component_self_care_occupancy(facility, wash_occupancy.clone())
+            .unwrap();
+        world
+            .insert_component_self_care_occupancy(place, latrine_occupancy.clone())
+            .unwrap();
+
+        assert_eq!(
+            world.get_component_self_care_occupancy(facility),
+            Some(&wash_occupancy)
+        );
+        assert_eq!(
+            world.get_component_self_care_occupancy(place),
+            Some(&latrine_occupancy)
+        );
+        assert!(world.has_component_self_care_occupancy(facility));
+        assert!(world.has_component_self_care_occupancy(place));
+        assert_eq!(
+            world
+                .entities_with_self_care_occupancy()
+                .collect::<Vec<_>>(),
+            vec![facility, place]
+        );
+        assert_eq!(world.count_with_self_care_occupancy(), 2);
+        world
+            .remove_component_self_care_occupancy(facility)
+            .unwrap();
+        assert!(!world.has_component_self_care_occupancy(facility));
+        assert_eq!(world.count_with_self_care_occupancy(), 1);
+
+        let error = world
+            .insert_component_self_care_occupancy(agent, wash_occupancy)
             .unwrap_err();
         assert!(matches!(error, WorldError::InvalidOperation(_)));
     }

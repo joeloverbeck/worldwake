@@ -33,7 +33,7 @@ single per-spec assertion since `S158`/`S162`/`S163` already cover the architect
   branches; generalizes the belief-only Wash regression beyond drive-escalation;
   adds one CLI POV assertion against remote-basin-state leak. No new authoritative
   state. **FND-3/7/8/14/14A/14B/16/19/26/29A/31.**
-- **`specs/S173-self-care-interruption-occupancy.md`** (P0.2, P0.3, P0.4, P0.5
+- **`archive/specs/S173-self-care-interruption-occupancy.md`** (P0.2, P0.3, P0.4, P0.5
   remaining branches, P1.1 subsumed, P1.2 in-spec config) — defines per-action-family
   interruption contracts; introduces `SelfCareOccupancy` on `WashBasin` and latrine
   `Place`; replaces `abort_noop` with explicit abort handlers for the five

@@ -2256,6 +2256,22 @@ impl FacilityBeliefView for PerAgentBeliefView<'_> {
             .and_then(|state| state.wash_basin_state)
     }
 
+    fn self_care_occupant(&self, entity: EntityId) -> Option<EntityId> {
+        if entity == self.agent
+            || self.world.effective_place(self.agent) == Some(entity)
+            || self.has_authoritative_local_visibility(entity)
+        {
+            return self
+                .world
+                .get_component_self_care_occupancy(entity)
+                .map(|occupancy| occupancy.occupant);
+        }
+
+        self.believed_entity(entity)
+            .and_then(|state| state.believed_contention)
+            .and_then(|contention| contention.grant_holder)
+    }
+
     fn last_harvest_trace(&self, entity: EntityId) -> Option<LastHarvestTrace> {
         // FND-14A: only co-located agents can perceive a source's harvest
         // trace directly. Off-place propagation is the responsibility of
@@ -2337,17 +2353,18 @@ mod tests {
         ControlSource, DisposalProfile, EdgeExperience, EffectiveRight, EntityBeliefAspect,
         EntityBeliefClaim, EntityId, EntityKind, EntityState, EventLog, ExpectationBasis,
         ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
-        FactionData, FactionPurpose, GoalDispatchKey, GoalPlanningBudget, HarvestTraceEntry,
-        HomeostaticNeedId, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, LastHarvestTrace, LastSeenMemory, LastSeenProvenance,
-        LastSeenRecord, LawAbidingProfile, LoadUnits, ObligationExecutionTracker,
-        ObligationSatiationProfile, OfficeData, PerceptionProfile, PerceptionSource, Permille,
-        Place, PlaceTag, PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData,
-        RecordKind, ResourceExtractionQueues, ResourceSource, RightKind, RiskWeightProfile,
-        RouteExperience, StockStoragePolicy, SuccessionLaw, TellMemoryKey, TellTopic, Tick,
-        TickRange, ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UtilityProfile,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
-        WoundCause, WoundId, build_believed_entity_state, build_prototype_world,
+        FactionData, FactionPurpose, GoalDispatchKey, GoalKey, GoalKind, GoalPlanningBudget,
+        HarvestTraceEntry, HomeostaticNeedId, InstitutionalBeliefKey, InstitutionalBeliefRead,
+        InstitutionalClaim, InstitutionalKnowledgeSource, LastHarvestTrace, LastSeenMemory,
+        LastSeenProvenance, LastSeenRecord, LawAbidingProfile, LoadUnits,
+        ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PerceptionProfile,
+        PerceptionSource, Permille, Place, PlaceTag, PreferenceProfile, Quantity,
+        RecipientKnowledgeStatus, RecordData, RecordKind, ResourceExtractionQueues, ResourceSource,
+        RightKind, RiskWeightProfile, RouteExperience, SelfCareOccupancy, SelfCareUseKind,
+        StockStoragePolicy, SuccessionLaw, TellMemoryKey, TellTopic, Tick, TickRange,
+        ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
+        WoundId, build_believed_entity_state, build_prototype_world,
         test_utils::{
             sample_blocker_memory, sample_commodity_valuation_profile, sample_discrepancy_memory,
             sample_learned_opportunity_memory, sample_preference_profile, sample_repair_memory,
@@ -2357,6 +2374,15 @@ mod tests {
 
     fn assert_goal_belief_view<T: GoalBeliefView>() {}
     fn assert_runtime_belief_view<T: RuntimeBeliefView>() {}
+
+    fn wash_occupancy(occupant: EntityId) -> SelfCareOccupancy {
+        SelfCareOccupancy {
+            occupant,
+            use_kind: SelfCareUseKind::Wash,
+            started_tick: Tick(1),
+            goal_key: GoalKey::from(GoalKind::Wash),
+        }
+    }
 
     #[test]
     fn agent_schema_context_profile_returns_seeded_profile() {
@@ -2387,6 +2413,76 @@ mod tests {
         assert_eq!(
             ProfileBeliefView::agent_schema_context_profile(&view, agent),
             Some(profile)
+        );
+    }
+
+    #[test]
+    fn self_care_occupant_reads_colocated_world_state() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (actor, occupant, basin) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let occupant = txn.create_agent("Bryn", ControlSource::Ai).unwrap();
+            let basin = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(occupant, place).unwrap();
+            txn.set_ground_location(basin, place).unwrap();
+            txn.set_component_self_care_occupancy(basin, wash_occupancy(occupant))
+                .unwrap();
+            commit_txn(txn);
+            (actor, occupant, basin)
+        };
+        let view = PerAgentBeliefView::from_world(actor, &world);
+
+        assert_eq!(
+            FacilityBeliefView::self_care_occupant(&view, basin),
+            Some(occupant)
+        );
+    }
+
+    #[test]
+    fn self_care_occupant_uses_belief_not_remote_world_state() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let home = places[0];
+        let remote = places[1];
+        let (actor, occupant, basin) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let occupant = txn.create_agent("Bryn", ControlSource::Ai).unwrap();
+            let basin = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(actor, home).unwrap();
+            txn.set_ground_location(occupant, remote).unwrap();
+            txn.set_ground_location(basin, remote).unwrap();
+            txn.set_component_self_care_occupancy(basin, wash_occupancy(occupant))
+                .unwrap();
+            commit_txn(txn);
+            (actor, occupant, basin)
+        };
+
+        let mut no_occupancy_belief = AgentBeliefStore::default();
+        let mut basin_state = BelievedEntityState::single_observation_defaults(
+            Tick(1),
+            PerceptionSource::DirectObservation,
+        );
+        basin_state.believed_kind = Some(EntityKind::Facility);
+        basin_state.last_known_place = Some(remote);
+        no_occupancy_belief.update_entity(basin, basin_state.clone());
+        let view = PerAgentBeliefView::new(actor, &world, &no_occupancy_belief);
+        assert_eq!(FacilityBeliefView::self_care_occupant(&view, basin), None);
+
+        basin_state.believed_contention = Some(worldwake_core::BelievedContentionState {
+            grant_holder: Some(occupant),
+            queue_length: 0,
+            observed_tick: Tick(1),
+        });
+        let mut occupancy_belief = AgentBeliefStore::default();
+        occupancy_belief.update_entity(basin, basin_state);
+        let view = PerAgentBeliefView::new(actor, &world, &occupancy_belief);
+        assert_eq!(
+            FacilityBeliefView::self_care_occupant(&view, basin),
+            Some(occupant)
         );
     }
 

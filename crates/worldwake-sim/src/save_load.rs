@@ -3,8 +3,8 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-/// S171LEACONTDEC-004 stores source-reliability provenance events.
-pub const SAVE_FORMAT_VERSION: u32 = 106;
+/// S173SELCARINT-001 stores self-care facility occupancy.
+pub const SAVE_FORMAT_VERSION: u32 = 107;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -221,13 +221,13 @@ mod tests {
         PursuitInvalidationReasonTag, Quantity, RankedGoalComparisonDimensionTag, RecordRef,
         RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
         ReplanTriggeredPayload, ReservationId, RewardEncumbrance, RiskWeightProfile,
-        RoutePreferenceProfile, RoutePreferenceSummary, RouteSegment, Seed, ShelterTag,
-        SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepQualityProfile,
-        SleepRecoveryModifier, StateHash, SuspensionReason, TestimonyTrustProfile,
-        TestimonyTrustSummary, Tick, TickRange, TopicScope, UniqueItemKind, UtilityProfile,
-        VisibilitySpec, WakeCondition, WakeReason, WashBasinState, WashFacilityUsedPayload,
-        WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker, WorkstationTag, World,
-        WorldTxn, build_prototype_world,
+        RoutePreferenceProfile, RoutePreferenceSummary, RouteSegment, Seed, SelfCareOccupancy,
+        SelfCareUseKind, ShelterTag, SleepEpisode, SleepEpisodeEndedPayload,
+        SleepEpisodeStartedPayload, SleepQualityProfile, SleepRecoveryModifier, StateHash,
+        SuspensionReason, TestimonyTrustProfile, TestimonyTrustSummary, Tick, TickRange,
+        TopicScope, UniqueItemKind, UtilityProfile, VisibilitySpec, WakeCondition, WakeReason,
+        WashBasinState, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -488,6 +488,17 @@ mod tests {
                 },
             )
             .unwrap();
+        sleep_txn
+            .set_component_self_care_occupancy(
+                belief_place,
+                SelfCareOccupancy {
+                    occupant: actor,
+                    use_kind: SelfCareUseKind::LatrineRelief,
+                    started_tick: Tick(2),
+                    goal_key: GoalKey::from(GoalKind::Relieve),
+                },
+            )
+            .unwrap();
         let basin = sleep_txn.create_entity(worldwake_core::EntityKind::Facility);
         sleep_txn
             .set_component_workstation_marker(basin, WorkstationMarker(WorkstationTag::WashBasin))
@@ -502,6 +513,17 @@ mod tests {
                     units_per_full_wash: 3,
                     dirtiness_level: worldwake_core::Permille::new(250).unwrap(),
                     dirtiness_per_use: worldwake_core::Permille::new(60).unwrap(),
+                },
+            )
+            .unwrap();
+        sleep_txn
+            .set_component_self_care_occupancy(
+                basin,
+                SelfCareOccupancy {
+                    occupant: actor,
+                    use_kind: SelfCareUseKind::Wash,
+                    started_tick: Tick(3),
+                    goal_key: GoalKey::from(GoalKind::Wash),
                 },
             )
             .unwrap();
@@ -1368,8 +1390,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_106_after_source_reliability_provenance() {
-        assert_eq!(SAVE_FORMAT_VERSION, 106);
+    fn save_format_version_is_107_after_self_care_occupancy() {
+        assert_eq!(SAVE_FORMAT_VERSION, 107);
     }
 
     #[test]
@@ -1380,7 +1402,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 106);
+        assert_eq!(SAVE_FORMAT_VERSION, 107);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1391,6 +1413,7 @@ mod tests {
         );
         assert_eq!(runtime, None);
         assert_eq!(restored, state);
+        assert_eq!(restored.world().count_with_self_care_occupancy(), 2);
         let restored_schema_context = restored
             .world()
             .get_component_agent_schema_context_profile(actor)

@@ -3,18 +3,19 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, CommodityKind, DecisionEventPayload, Discrepancy, EntityId, EventTag,
-    FrameAssumption, HomeostaticNeedId, HomeostaticNeeds, ItemLot, MetabolismProfile,
-    OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, SleepEpisode, SleepEpisodeEndedPayload,
-    SleepEpisodeStartedPayload, SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition,
-    WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WorkstationTag,
-    WorldTxn,
+    FrameAssumption, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, ItemLot,
+    MetabolismProfile, OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, SelfCareOccupancy,
+    SelfCareUseKind, SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
+    SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition, WakeReason,
+    WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WorkstationTag, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
     ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState,
     CommitOutcome, Constraint, ConsumableEffect, DeterministicRng, DurationExpr, EffectEntityRef,
     EffectEvaluationContext, EffectMode, EffectPrecondition, EffectSchema, EffectSink, EffectStep,
-    Interruptibility, MetabolismDurationKind, Precondition, TargetSpec, apply_effects_with_context,
+    Interruptibility, MetabolismDurationKind, Precondition, ReservationReq, TargetSpec,
+    apply_effects_with_context,
 };
 
 use crate::evidence_support::emit_evidence;
@@ -24,13 +25,13 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         start_noop,
         tick_continue,
         commit_eat,
-        abort_noop,
+        abort_emit_self_care_interrupted,
     ));
     let drink_handler = handlers.register(ActionHandler::new(
         start_noop,
         tick_continue,
         commit_drink,
-        abort_noop,
+        abort_emit_self_care_interrupted,
     ));
     let sleep_handler = handlers.register(ActionHandler::new(
         start_sleep_episode,
@@ -39,22 +40,22 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         abort_sleep_episode,
     ));
     let toilet_handler = handlers.register(ActionHandler::new(
-        start_noop,
+        start_self_care_occupancy,
         tick_continue,
         commit_toilet,
-        abort_noop,
+        abort_release_self_care_occupancy,
     ));
     let wash_handler = handlers.register(ActionHandler::new(
-        start_noop,
+        start_self_care_occupancy,
         tick_continue,
         commit_wash,
-        abort_noop,
+        abort_release_self_care_occupancy,
     ));
     let relieve_wilderness_handler = handlers.register(ActionHandler::new(
         start_noop,
         tick_continue,
         commit_relieve_wilderness,
-        abort_noop,
+        abort_emit_self_care_interrupted,
     ));
 
     register_def(
@@ -63,6 +64,7 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         eat_handler,
         eat_preconditions(),
         DurationExpr::TargetConsumable { target_index: 0 },
+        Vec::new(),
     );
     register_def(
         defs,
@@ -70,6 +72,7 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         drink_handler,
         drink_preconditions(),
         DurationExpr::TargetConsumable { target_index: 0 },
+        Vec::new(),
     );
     register_def(
         defs,
@@ -80,6 +83,7 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
             min: NonZeroU32::new(1).unwrap(),
             max: NonZeroU32::new(64).unwrap(),
         },
+        Vec::new(),
     );
     register_def(
         defs,
@@ -89,6 +93,7 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         DurationExpr::ActorMetabolism {
             kind: MetabolismDurationKind::Toilet,
         },
+        vec![ReservationReq { target_index: 0 }],
     );
     register_def(
         defs,
@@ -98,6 +103,7 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         DurationExpr::ActorMetabolism {
             kind: MetabolismDurationKind::Wash,
         },
+        vec![ReservationReq { target_index: 0 }],
     );
 
     // relieve_wilderness: registered directly because it needs SamePlace visibility
@@ -144,6 +150,7 @@ fn register_def(
     handler: ActionHandlerId,
     preconditions: Vec<Precondition>,
     duration: DurationExpr,
+    reservation_requirements: Vec<ReservationReq>,
 ) -> ActionDefId {
     let id = ActionDefId(defs.len() as u32);
     defs.register(ActionDef {
@@ -164,10 +171,11 @@ fn register_def(
             "wash" => vec![TargetSpec::EntityAtActorPlace {
                 kind: worldwake_core::EntityKind::Facility,
             }],
+            "toilet" => vec![TargetSpec::ActorPlace],
             _ => Vec::new(),
         },
         preconditions: preconditions.clone(),
-        reservation_requirements: Vec::new(),
+        reservation_requirements,
         duration,
         body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
         attention_cost: Permille::ZERO,
@@ -185,10 +193,8 @@ fn register_def(
         handler,
         binding_strictness: match name {
             "eat" | "drink" => worldwake_sim::BindingStrictness::FungibleEquivalentCommodity,
-            "sleep" => worldwake_sim::BindingStrictness::AnyLegalTarget,
-            "toilet" | "wash" => {
-                worldwake_sim::BindingStrictness::EquivalentWorkstationTagAtSamePlace
-            }
+            "sleep" | "toilet" => worldwake_sim::BindingStrictness::AnyLegalTarget,
+            "wash" => worldwake_sim::BindingStrictness::EquivalentWorkstationTagAtSamePlace,
             other => panic!("unexpected needs action {other}"),
         },
         guard_template: None,
@@ -339,6 +345,32 @@ fn start_noop(
     Ok(None)
 }
 
+fn start_self_care_occupancy(
+    def: &ActionDef,
+    instance: &mut ActionInstance,
+    context: &worldwake_sim::ActionExecutionContext<'_>,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    let (target, use_kind, goal_kind) = self_care_target(def, instance, txn)?;
+    if txn.get_component_self_care_occupancy(target).is_some() {
+        return Err(ActionError::PreconditionFailed(format!(
+            "self-care target {target} is already occupied"
+        )));
+    }
+    txn.set_component_self_care_occupancy(
+        target,
+        SelfCareOccupancy {
+            occupant: instance.actor,
+            use_kind,
+            started_tick: context.tick,
+            goal_key: GoalKey::from(goal_kind),
+        },
+    )
+    .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    Ok(None)
+}
+
 #[allow(clippy::unnecessary_wraps)]
 fn tick_continue(
     _def: &ActionDef,
@@ -350,7 +382,7 @@ fn tick_continue(
     Ok(ActionProgress::Continue)
 }
 
-#[allow(clippy::unnecessary_wraps)]
+#[allow(dead_code, clippy::unnecessary_wraps)]
 fn abort_noop(
     _def: &ActionDef,
     _instance: &ActionInstance,
@@ -361,6 +393,89 @@ fn abort_noop(
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     Ok(())
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn abort_emit_self_care_interrupted(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    Ok(())
+}
+
+fn abort_release_self_care_occupancy(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    let target = self_care_target_entity(def, instance, txn)?;
+    clear_self_care_occupancy(txn, target)
+}
+
+fn self_care_target(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &WorldTxn<'_>,
+) -> Result<(EntityId, SelfCareUseKind, GoalKind), ActionError> {
+    match def.name.as_str() {
+        "wash" => Ok((
+            first_target(instance)?,
+            SelfCareUseKind::Wash,
+            GoalKind::Wash,
+        )),
+        "toilet" => Ok((
+            self_care_target_entity(def, instance, txn)?,
+            SelfCareUseKind::LatrineRelief,
+            GoalKind::Relieve,
+        )),
+        other => Err(ActionError::InternalError(format!(
+            "self-care occupancy handler registered for unsupported action {other}"
+        ))),
+    }
+}
+
+fn self_care_target_entity(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &WorldTxn<'_>,
+) -> Result<EntityId, ActionError> {
+    match def.name.as_str() {
+        "wash" => first_target(instance),
+        "toilet" => instance
+            .targets
+            .first()
+            .copied()
+            .or_else(|| txn.effective_place(instance.actor))
+            .ok_or_else(|| {
+                ActionError::InternalError(format!("actor {} has no latrine place", instance.actor))
+            }),
+        other => Err(ActionError::InternalError(format!(
+            "self-care occupancy target requested for unsupported action {other}"
+        ))),
+    }
+}
+
+fn first_target(instance: &ActionInstance) -> Result<EntityId, ActionError> {
+    instance.targets.first().copied().ok_or_else(|| {
+        ActionError::InternalError(format!(
+            "action instance {} has no target",
+            instance.instance_id
+        ))
+    })
+}
+
+fn clear_self_care_occupancy(txn: &mut WorldTxn<'_>, target: EntityId) -> Result<(), ActionError> {
+    txn.clear_component_self_care_occupancy(target)
+        .map_err(|err| ActionError::InternalError(err.to_string()))
 }
 
 fn start_sleep_episode(
@@ -837,7 +952,10 @@ fn commit_toilet(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    apply_needs_effect_schema(def, instance, context.tick, txn)
+    let outcome = apply_needs_effect_schema(def, instance, context.tick, txn)?;
+    let target = self_care_target_entity(def, instance, txn)?;
+    clear_self_care_occupancy(txn, target)?;
+    Ok(outcome)
 }
 
 fn apply_toilet(actor: EntityId, txn: &mut WorldTxn<'_>) -> Result<(), ActionError> {
@@ -971,7 +1089,10 @@ fn commit_wash(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    apply_needs_effect_schema(def, instance, context.tick, txn)
+    let outcome = apply_needs_effect_schema(def, instance, context.tick, txn)?;
+    let target = self_care_target_entity(def, instance, txn)?;
+    clear_self_care_occupancy(txn, target)?;
+    Ok(outcome)
 }
 
 fn apply_wash(actor: EntityId, basin: EntityId, txn: &mut WorldTxn<'_>) -> Result<(), ActionError> {
@@ -1057,7 +1178,7 @@ const fn pm(value: u16) -> Permille {
 
 #[cfg(test)]
 mod tests {
-    use super::register_needs_actions;
+    use super::{abort_emit_self_care_interrupted, register_needs_actions};
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -1066,15 +1187,16 @@ mod tests {
         EntityKind, EventLog, EventTag, EventView, EvidenceKind, FrameAssumption, FrameState,
         GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, IntentionDomain, IntentionFrame,
         LatrineFullness, MetabolismProfile, PerceptionSource, Permille, PlaceDirtiness,
-        PrototypePlace, Quantity, ResourceSource, Seed, SleepEpisode, SleepRecoveryModifier, Tick,
-        VisibilitySpec, WakeCondition, WakeReason, WashBasinState, WasteSource, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, build_believed_entity_state,
-        build_prototype_world, prototype_place_entity,
+        PrototypePlace, Quantity, ResourceSource, Seed, SelfCareOccupancy, SelfCareUseKind,
+        SleepEpisode, SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition, WakeReason,
+        WashBasinState, WasteSource, WitnessData, WorkstationMarker, WorkstationTag, World,
+        WorldTxn, build_believed_entity_state, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
-        ActionDefRegistry, ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
-        ActionInstanceId, BindingStrictness, DeterministicRng, EffectStep, PerAgentBeliefView,
-        Precondition, TickOutcome, abort_action, get_affordances, start_action, tick_action,
+        ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionHandlerRegistry,
+        ActionInstance, ActionInstanceId, BindingStrictness, DeterministicRng, EffectStep,
+        PerAgentBeliefView, Precondition, TickOutcome, abort_action, get_affordances, start_action,
+        tick_action,
     };
 
     fn pm(value: u16) -> Permille {
@@ -1334,6 +1456,24 @@ mod tests {
             wash.binding_strictness,
             BindingStrictness::EquivalentWorkstationTagAtSamePlace
         );
+        assert_eq!(
+            defs.get(ActionDefId(3)).unwrap().targets,
+            vec![worldwake_sim::TargetSpec::ActorPlace],
+            "toilet should bind the latrine place so it can reserve occupancy"
+        );
+        assert_eq!(
+            defs.get(ActionDefId(3))
+                .unwrap()
+                .reservation_requirements
+                .len(),
+            1,
+            "toilet should reserve the latrine place"
+        );
+        assert_eq!(
+            wash.reservation_requirements.len(),
+            1,
+            "wash should reserve the wash basin"
+        );
         assert!(
             matches!(
                 wash.effect_schema.steps.as_slice(),
@@ -1367,6 +1507,27 @@ mod tests {
             relieve.binding_strictness,
             BindingStrictness::AnyLegalTarget
         );
+        assert!(std::ptr::fn_addr_eq(
+            handlers
+                .get(defs.get(ActionDefId(0)).unwrap().handler)
+                .unwrap()
+                .on_abort,
+            abort_emit_self_care_interrupted as worldwake_sim::ActionAbortFn,
+        ));
+        assert!(std::ptr::fn_addr_eq(
+            handlers
+                .get(defs.get(ActionDefId(1)).unwrap().handler)
+                .unwrap()
+                .on_abort,
+            abort_emit_self_care_interrupted as worldwake_sim::ActionAbortFn,
+        ));
+        assert!(std::ptr::fn_addr_eq(
+            handlers
+                .get(defs.get(ActionDefId(5)).unwrap().handler)
+                .unwrap()
+                .on_abort,
+            abort_emit_self_care_interrupted as worldwake_sim::ActionAbortFn,
+        ));
     }
 
     #[test]
@@ -1782,6 +1943,10 @@ mod tests {
             pm(80)
         );
         assert!(
+            world.get_component_self_care_occupancy(place).is_none(),
+            "toilet commit should release latrine occupancy"
+        );
+        assert!(
             log.events_by_tag(EventTag::WasteCreated).is_empty(),
             "under-threshold toilet use should not emit WasteCreated"
         );
@@ -1980,6 +2145,148 @@ mod tests {
     }
 
     #[test]
+    fn toilet_start_writes_self_care_occupancy_on_latrine_place() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::PublicLatrine);
+        let actor = setup_actor_at_place(&mut world, place);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+        let toilet_index = toilet_affordance_index(&world, actor, &defs, &handlers);
+        let affordance = affordances_for(&world, actor, &defs, &handlers)[toilet_index].clone();
+
+        let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng();
+        start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap();
+
+        assert_eq!(
+            world.get_component_self_care_occupancy(place),
+            Some(&SelfCareOccupancy {
+                occupant: actor,
+                use_kind: SelfCareUseKind::LatrineRelief,
+                started_tick: Tick(10),
+                goal_key: GoalKey::from(GoalKind::Relieve),
+            })
+        );
+    }
+
+    #[test]
+    fn toilet_start_fails_when_latrine_place_already_occupied() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::PublicLatrine);
+        let actor = setup_actor_at_place(&mut world, place);
+        let other_actor = setup_actor_at_place(&mut world, place);
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_component_self_care_occupancy(
+                place,
+                SelfCareOccupancy {
+                    occupant: other_actor,
+                    use_kind: SelfCareUseKind::LatrineRelief,
+                    started_tick: Tick(3),
+                    goal_key: GoalKey::from(GoalKind::Relieve),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+        let toilet_index = toilet_affordance_index(&world, actor, &defs, &handlers);
+        let affordance = affordances_for(&world, actor, &defs, &handlers)[toilet_index].clone();
+
+        let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng();
+        let err = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .expect_err("occupied latrine should fail action start");
+
+        assert!(matches!(err, ActionError::PreconditionFailed(_)));
+        assert!(active.is_empty());
+        assert_eq!(
+            world
+                .get_component_self_care_occupancy(place)
+                .unwrap()
+                .occupant,
+            other_actor
+        );
+        assert!(log.events_by_tag(EventTag::ActionStarted).is_empty());
+    }
+
+    #[test]
+    fn toilet_abort_releases_occupancy() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::PublicLatrine);
+        let actor = setup_actor_at_place(&mut world, place);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+        let toilet_index = toilet_affordance_index(&world, actor, &defs, &handlers);
+        let affordance = affordances_for(&world, actor, &defs, &handlers)[toilet_index].clone();
+
+        let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng();
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap();
+        assert!(world.get_component_self_care_occupancy(place).is_some());
+
+        abort_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
+            worldwake_sim::ExternalAbortReason::Other,
+        )
+        .unwrap();
+
+        assert!(world.get_component_self_care_occupancy(place).is_none());
+        assert_eq!(log.events_by_tag(EventTag::ActionAborted).len(), 1);
+    }
+
+    #[test]
     fn wash_full_success_consumes_basin_water_and_clears_dirtiness() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let (actor, place) = setup_actor(&mut world);
@@ -2020,6 +2327,10 @@ mod tests {
                 .unwrap()
                 .dirtiness,
             pm(0)
+        );
+        assert!(
+            world.get_component_self_care_occupancy(basin).is_none(),
+            "wash commit should release basin occupancy"
         );
         let wash_events = log.events_by_tag(EventTag::WashFacilityUsed);
         assert_eq!(wash_events.len(), 1);
@@ -2229,6 +2540,154 @@ mod tests {
             affordances.iter().any(|a| a.def_id == wash_def_id()),
             "wash should be offered for a local basin with clean water"
         );
+    }
+
+    #[test]
+    fn wash_start_writes_self_care_occupancy_on_basin() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        let (basin, _source) = setup_wash_access(&mut world, place, 2);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+        let affordance = affordances_for(&world, actor, &defs, &handlers)
+            .into_iter()
+            .find(|affordance| affordance.def_id == wash_def_id())
+            .expect("wash affordance should exist");
+
+        let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng();
+        start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap();
+
+        assert_eq!(
+            world.get_component_self_care_occupancy(basin),
+            Some(&SelfCareOccupancy {
+                occupant: actor,
+                use_kind: SelfCareUseKind::Wash,
+                started_tick: Tick(10),
+                goal_key: GoalKey::from(GoalKind::Wash),
+            })
+        );
+    }
+
+    #[test]
+    fn wash_start_fails_when_basin_already_occupied() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        let (other_actor, _) = setup_actor(&mut world);
+        let (basin, _source) = setup_wash_access(&mut world, place, 2);
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_component_self_care_occupancy(
+                basin,
+                SelfCareOccupancy {
+                    occupant: other_actor,
+                    use_kind: SelfCareUseKind::Wash,
+                    started_tick: Tick(3),
+                    goal_key: GoalKey::from(GoalKind::Wash),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+        let affordance = affordances_for(&world, actor, &defs, &handlers)
+            .into_iter()
+            .find(|affordance| affordance.def_id == wash_def_id())
+            .expect("wash affordance should exist before ticket 006 filters occupied basins");
+
+        let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng();
+        let err = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .expect_err("occupied wash basin should fail action start");
+
+        assert!(matches!(err, ActionError::PreconditionFailed(_)));
+        assert!(active.is_empty());
+        assert_eq!(
+            world
+                .get_component_self_care_occupancy(basin)
+                .unwrap()
+                .occupant,
+            other_actor
+        );
+        assert!(log.events_by_tag(EventTag::ActionStarted).is_empty());
+    }
+
+    #[test]
+    fn wash_abort_releases_occupancy() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        let (basin, _source) = setup_wash_access(&mut world, place, 2);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+        let affordance = affordances_for(&world, actor, &defs, &handlers)
+            .into_iter()
+            .find(|affordance| affordance.def_id == wash_def_id())
+            .expect("wash affordance should exist");
+
+        let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng();
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap();
+        assert!(world.get_component_self_care_occupancy(basin).is_some());
+
+        abort_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
+            worldwake_sim::ExternalAbortReason::Other,
+        )
+        .unwrap();
+
+        assert!(world.get_component_self_care_occupancy(basin).is_none());
+        assert_eq!(log.events_by_tag(EventTag::ActionAborted).len(), 1);
     }
 
     #[test]

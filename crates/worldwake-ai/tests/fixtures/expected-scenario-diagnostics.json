@@ -25,7 +25,7 @@
             "commodity": "Apple"
           }
         },
-        "count": 152
+        "count": 166
       },
       {
         "key": {
@@ -33,7 +33,7 @@
             "commodity": "Water"
           }
         },
-        "count": 107
+        "count": 101
       },
       {
         "key": {
@@ -47,7 +47,7 @@
             }
           }
         },
-        "count": 1169
+        "count": 1082
       },
       {
         "key": {
@@ -61,19 +61,19 @@
             }
           }
         },
-        "count": 1285
+        "count": 1016
       },
       {
         "key": "Sleep",
-        "count": 660
+        "count": 205
       },
       {
         "key": "Relieve",
-        "count": 627
+        "count": 279
       },
       {
         "key": "Wash",
-        "count": 234
+        "count": 98
       },
       {
         "key": {
@@ -92,7 +92,26 @@
             }
           }
         },
-        "count": 100
+        "count": 168
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 4,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 2,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 72
       },
       {
         "key": {
@@ -111,7 +130,7 @@
             }
           }
         },
-        "count": 303
+        "count": 417
       },
       {
         "key": {
@@ -130,7 +149,7 @@
             }
           }
         },
-        "count": 102
+        "count": 167
       },
       {
         "key": {
@@ -149,7 +168,45 @@
             }
           }
         },
-        "count": 101
+        "count": 165
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 4,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 9,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 78
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 4,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 10,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 73
       },
       {
         "key": {
@@ -168,7 +225,7 @@
             }
           }
         },
-        "count": 259
+        "count": 244
       },
       {
         "key": {
@@ -225,7 +282,7 @@
             }
           }
         },
-        "count": 201
+        "count": 200
       },
       {
         "key": {
@@ -263,7 +320,7 @@
             }
           }
         },
-        "count": 198
+        "count": 192
       },
       {
         "key": {
@@ -282,7 +339,7 @@
             }
           }
         },
-        "count": 190
+        "count": 184
       },
       {
         "key": {
@@ -301,7 +358,7 @@
             }
           }
         },
-        "count": 268
+        "count": 253
       },
       {
         "key": {
@@ -320,7 +377,7 @@
             }
           }
         },
-        "count": 191
+        "count": 176
       },
       {
         "key": {
@@ -339,7 +396,7 @@
             }
           }
         },
-        "count": 178
+        "count": 172
       },
       {
         "key": {
@@ -358,7 +415,7 @@
             }
           }
         },
-        "count": 268
+        "count": 252
       },
       {
         "key": {
@@ -377,7 +434,7 @@
             }
           }
         },
-        "count": 222
+        "count": 195
       },
       {
         "key": {
@@ -396,7 +453,7 @@
             }
           }
         },
-        "count": 171
+        "count": 155
       },
       {
         "key": {
@@ -415,7 +472,7 @@
             }
           }
         },
-        "count": 286
+        "count": 180
       },
       {
         "key": {
@@ -434,7 +491,7 @@
             }
           }
         },
-        "count": 251
+        "count": 236
       },
       {
         "key": {
@@ -453,7 +510,7 @@
             }
           }
         },
-        "count": 175
+        "count": 170
       },
       {
         "key": {
@@ -472,7 +529,7 @@
             }
           }
         },
-        "count": 223
+        "count": 208
       },
       {
         "key": {
@@ -491,7 +548,7 @@
             }
           }
         },
-        "count": 266
+        "count": 213
       },
       {
         "key": {
@@ -510,7 +567,7 @@
             }
           }
         },
-        "count": 284
+        "count": 290
       },
       {
         "key": {
@@ -529,7 +586,7 @@
             }
           }
         },
-        "count": 233
+        "count": 325
       },
       {
         "key": {
@@ -548,7 +605,7 @@
             }
           }
         },
-        "count": 233
+        "count": 196
       },
       {
         "key": {
@@ -567,7 +624,7 @@
             }
           }
         },
-        "count": 248
+        "count": 232
       },
       {
         "key": {
@@ -586,7 +643,7 @@
             }
           }
         },
-        "count": 250
+        "count": 235
       },
       {
         "key": {
@@ -605,7 +662,7 @@
             }
           }
         },
-        "count": 259
+        "count": 243
       },
       {
         "key": {
@@ -624,7 +681,7 @@
             }
           }
         },
-        "count": 187
+        "count": 174
       },
       {
         "key": {
@@ -643,7 +700,7 @@
             }
           }
         },
-        "count": 261
+        "count": 229
       },
       {
         "key": {
@@ -662,7 +719,7 @@
             }
           }
         },
-        "count": 256
+        "count": 224
       },
       {
         "key": {
@@ -681,7 +738,7 @@
             }
           }
         },
-        "count": 68
+        "count": 251
       },
       {
         "key": {
@@ -700,7 +757,7 @@
             }
           }
         },
-        "count": 243
+        "count": 213
       },
       {
         "key": {
@@ -719,7 +776,7 @@
             }
           }
         },
-        "count": 207
+        "count": 200
       },
       {
         "key": {
@@ -738,7 +795,7 @@
             }
           }
         },
-        "count": 171
+        "count": 229
       },
       {
         "key": {
@@ -757,7 +814,7 @@
             }
           }
         },
-        "count": 217
+        "count": 189
       },
       {
         "key": {
@@ -776,7 +833,7 @@
             }
           }
         },
-        "count": 218
+        "count": 189
       },
       {
         "key": {
@@ -795,7 +852,7 @@
             }
           }
         },
-        "count": 218
+        "count": 202
       },
       {
         "key": {
@@ -814,7 +871,7 @@
             }
           }
         },
-        "count": 264
+        "count": 249
       },
       {
         "key": {
@@ -833,7 +890,7 @@
             }
           }
         },
-        "count": 117
+        "count": 207
       },
       {
         "key": {
@@ -852,7 +909,7 @@
             }
           }
         },
-        "count": 263
+        "count": 228
       },
       {
         "key": {
@@ -871,7 +928,7 @@
             }
           }
         },
-        "count": 171
+        "count": 155
       },
       {
         "key": {
@@ -890,7 +947,7 @@
             }
           }
         },
-        "count": 173
+        "count": 155
       },
       {
         "key": {
@@ -909,7 +966,7 @@
             }
           }
         },
-        "count": 231
+        "count": 200
       },
       {
         "key": {
@@ -928,7 +985,7 @@
             }
           }
         },
-        "count": 322
+        "count": 151
       },
       {
         "key": {
@@ -947,7 +1004,7 @@
             }
           }
         },
-        "count": 321
+        "count": 150
       },
       {
         "key": {
@@ -966,7 +1023,7 @@
             }
           }
         },
-        "count": 321
+        "count": 138
       },
       {
         "key": {
@@ -985,7 +1042,7 @@
             }
           }
         },
-        "count": 312
+        "count": 144
       },
       {
         "key": {
@@ -1004,7 +1061,7 @@
             }
           }
         },
-        "count": 217
+        "count": 189
       },
       {
         "key": {
@@ -1023,7 +1080,7 @@
             }
           }
         },
-        "count": 35
+        "count": 129
       },
       {
         "key": {
@@ -1042,7 +1099,7 @@
             }
           }
         },
-        "count": 312
+        "count": 144
       },
       {
         "key": {
@@ -1061,7 +1118,7 @@
             }
           }
         },
-        "count": 219
+        "count": 187
       },
       {
         "key": {
@@ -1080,7 +1137,7 @@
             }
           }
         },
-        "count": 267
+        "count": 209
       },
       {
         "key": {
@@ -1099,7 +1156,7 @@
             }
           }
         },
-        "count": 269
+        "count": 211
       },
       {
         "key": {
@@ -1118,7 +1175,7 @@
             }
           }
         },
-        "count": 296
+        "count": 115
       },
       {
         "key": {
@@ -1137,7 +1194,7 @@
             }
           }
         },
-        "count": 277
+        "count": 249
       },
       {
         "key": {
@@ -1156,7 +1213,7 @@
             }
           }
         },
-        "count": 279
+        "count": 161
       },
       {
         "key": {
@@ -1175,7 +1232,7 @@
             }
           }
         },
-        "count": 302
+        "count": 273
       },
       {
         "key": {
@@ -1194,7 +1251,7 @@
             }
           }
         },
-        "count": 255
+        "count": 247
       },
       {
         "key": {
@@ -1213,7 +1270,7 @@
             }
           }
         },
-        "count": 283
+        "count": 180
       },
       {
         "key": {
@@ -1232,7 +1289,7 @@
             }
           }
         },
-        "count": 279
+        "count": 259
       },
       {
         "key": {
@@ -1251,7 +1308,7 @@
             }
           }
         },
-        "count": 266
+        "count": 226
       },
       {
         "key": {
@@ -1270,7 +1327,7 @@
             }
           }
         },
-        "count": 252
+        "count": 135
       },
       {
         "key": {
@@ -1289,7 +1346,7 @@
             }
           }
         },
-        "count": 186
+        "count": 321
       },
       {
         "key": {
@@ -1308,7 +1365,7 @@
             }
           }
         },
-        "count": 270
+        "count": 232
       },
       {
         "key": {
@@ -1327,7 +1384,7 @@
             }
           }
         },
-        "count": 236
+        "count": 294
       },
       {
         "key": {
@@ -1346,7 +1403,7 @@
             }
           }
         },
-        "count": 230
+        "count": 285
       },
       {
         "key": {
@@ -1365,7 +1422,7 @@
             }
           }
         },
-        "count": 230
+        "count": 69
       },
       {
         "key": {
@@ -1377,14 +1434,14 @@
             "topic": {
               "EntityBelief": {
                 "subject": {
-                  "slot": 102,
+                  "slot": 101,
                   "generation": 0
                 }
               }
             }
           }
         },
-        "count": 224
+        "count": 220
       },
       {
         "key": {
@@ -1403,7 +1460,26 @@
             }
           }
         },
-        "count": 281
+        "count": 269
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 4,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 104,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 261
       },
       {
         "key": {
@@ -1422,7 +1498,7 @@
             }
           }
         },
-        "count": 219
+        "count": 260
       },
       {
         "key": {
@@ -1441,7 +1517,7 @@
             }
           }
         },
-        "count": 282
+        "count": 253
       },
       {
         "key": {
@@ -1453,14 +1529,14 @@
             "topic": {
               "EntityBelief": {
                 "subject": {
-                  "slot": 109,
+                  "slot": 108,
                   "generation": 0
                 }
               }
             }
           }
         },
-        "count": 187
+        "count": 292
       },
       {
         "key": {
@@ -1479,7 +1555,7 @@
             }
           }
         },
-        "count": 280
+        "count": 315
       },
       {
         "key": {
@@ -1498,7 +1574,7 @@
             }
           }
         },
-        "count": 171
+        "count": 246
       },
       {
         "key": {
@@ -1517,7 +1593,26 @@
             }
           }
         },
-        "count": 169
+        "count": 229
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 4,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 116,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 242
       },
       {
         "key": {
@@ -1536,26 +1631,7 @@
             }
           }
         },
-        "count": 243
-      },
-      {
-        "key": {
-          "AskWitness": {
-            "witness": {
-              "slot": 4,
-              "generation": 0
-            },
-            "topic": {
-              "EntityBelief": {
-                "subject": {
-                  "slot": 118,
-                  "generation": 0
-                }
-              }
-            }
-          }
-        },
-        "count": 127
+        "count": 218
       },
       {
         "key": {
@@ -1574,7 +1650,26 @@
             }
           }
         },
-        "count": 227
+        "count": 283
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 4,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 121,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 242
       },
       {
         "key": {
@@ -1593,26 +1688,7 @@
             }
           }
         },
-        "count": 168
-      },
-      {
-        "key": {
-          "AskWitness": {
-            "witness": {
-              "slot": 4,
-              "generation": 0
-            },
-            "topic": {
-              "EntityBelief": {
-                "subject": {
-                  "slot": 123,
-                  "generation": 0
-                }
-              }
-            }
-          }
-        },
-        "count": 76
+        "count": 285
       },
       {
         "key": {
@@ -1631,7 +1707,7 @@
             }
           }
         },
-        "count": 167
+        "count": 72
       },
       {
         "key": {
@@ -1650,7 +1726,7 @@
             }
           }
         },
-        "count": 182
+        "count": 72
       },
       {
         "key": {
@@ -1669,7 +1745,26 @@
             }
           }
         },
-        "count": 59
+        "count": 72
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 4,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 127,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 148
       },
       {
         "key": {
@@ -1688,7 +1783,7 @@
             }
           }
         },
-        "count": 101
+        "count": 146
       },
       {
         "key": {
@@ -1707,7 +1802,7 @@
             }
           }
         },
-        "count": 139
+        "count": 73
       },
       {
         "key": {
@@ -1719,14 +1814,14 @@
             "topic": {
               "EntityBelief": {
                 "subject": {
-                  "slot": 131,
+                  "slot": 130,
                   "generation": 0
                 }
               }
             }
           }
         },
-        "count": 44
+        "count": 72
       },
       {
         "key": {
@@ -1738,14 +1833,14 @@
             "topic": {
               "EntityBelief": {
                 "subject": {
-                  "slot": 133,
+                  "slot": 132,
                   "generation": 0
                 }
               }
             }
           }
         },
-        "count": 125
+        "count": 72
       },
       {
         "key": {
@@ -1764,7 +1859,7 @@
             }
           }
         },
-        "count": 38
+        "count": 229
       },
       {
         "key": {
@@ -1783,7 +1878,7 @@
             }
           }
         },
-        "count": 53
+        "count": 229
       },
       {
         "key": {
@@ -1795,14 +1890,14 @@
             "topic": {
               "EntityBelief": {
                 "subject": {
-                  "slot": 138,
+                  "slot": 136,
                   "generation": 0
                 }
               }
             }
           }
         },
-        "count": 33
+        "count": 143
       },
       {
         "key": {
@@ -1821,7 +1916,26 @@
             }
           }
         },
-        "count": 22
+        "count": 159
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 4,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 140,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 72
       },
       {
         "key": {
@@ -1840,7 +1954,45 @@
             }
           }
         },
-        "count": 20
+        "count": 229
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 4,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 143,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 106
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 4,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 144,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 106
       },
       {
         "key": {
@@ -1859,45 +2011,7 @@
             }
           }
         },
-        "count": 19
-      },
-      {
-        "key": {
-          "AskWitness": {
-            "witness": {
-              "slot": 4,
-              "generation": 0
-            },
-            "topic": {
-              "EntityBelief": {
-                "subject": {
-                  "slot": 146,
-                  "generation": 0
-                }
-              }
-            }
-          }
-        },
-        "count": 53
-      },
-      {
-        "key": {
-          "AskWitness": {
-            "witness": {
-              "slot": 4,
-              "generation": 0
-            },
-            "topic": {
-              "EntityBelief": {
-                "subject": {
-                  "slot": 147,
-                  "generation": 0
-                }
-              }
-            }
-          }
-        },
-        "count": 19
+        "count": 242
       },
       {
         "key": {
@@ -1916,7 +2030,7 @@
             }
           }
         },
-        "count": 7
+        "count": 79
       },
       {
         "key": {
@@ -1935,7 +2049,121 @@
             }
           }
         },
-        "count": 1
+        "count": 115
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 4,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 150,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 114
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 4,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 151,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 132
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 4,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 152,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 114
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 4,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 155,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 62
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 4,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 156,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 62
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 4,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 157,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 106
       },
       {
         "key": {
@@ -1954,7 +2182,26 @@
             }
           }
         },
-        "count": 6
+        "count": 14
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 4,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 160,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 86
       },
       {
         "key": {
@@ -1973,7 +2220,26 @@
             }
           }
         },
-        "count": 159
+        "count": 231
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 5,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 2,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 61
       },
       {
         "key": {
@@ -1992,7 +2258,7 @@
             }
           }
         },
-        "count": 181
+        "count": 293
       },
       {
         "key": {
@@ -2011,7 +2277,7 @@
             }
           }
         },
-        "count": 159
+        "count": 231
       },
       {
         "key": {
@@ -2030,7 +2296,45 @@
             }
           }
         },
-        "count": 159
+        "count": 229
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 5,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 9,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 61
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 5,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 10,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 61
       },
       {
         "key": {
@@ -2106,7 +2410,7 @@
             }
           }
         },
-        "count": 137
+        "count": 138
       },
       {
         "key": {
@@ -2163,7 +2467,7 @@
             }
           }
         },
-        "count": 170
+        "count": 164
       },
       {
         "key": {
@@ -2201,7 +2505,7 @@
             }
           }
         },
-        "count": 170
+        "count": 165
       },
       {
         "key": {
@@ -2220,7 +2524,7 @@
             }
           }
         },
-        "count": 164
+        "count": 162
       },
       {
         "key": {
@@ -2239,7 +2543,7 @@
             }
           }
         },
-        "count": 244
+        "count": 214
       },
       {
         "key": {
@@ -2258,7 +2562,7 @@
             }
           }
         },
-        "count": 200
+        "count": 173
       },
       {
         "key": {
@@ -2277,7 +2581,7 @@
             }
           }
         },
-        "count": 142
+        "count": 129
       },
       {
         "key": {
@@ -2296,7 +2600,7 @@
             }
           }
         },
-        "count": 170
+        "count": 156
       },
       {
         "key": {
@@ -2353,7 +2657,7 @@
             }
           }
         },
-        "count": 225
+        "count": 197
       },
       {
         "key": {
@@ -2372,7 +2676,7 @@
             }
           }
         },
-        "count": 151
+        "count": 198
       },
       {
         "key": {
@@ -2391,7 +2695,7 @@
             }
           }
         },
-        "count": 151
+        "count": 293
       },
       {
         "key": {
@@ -2410,7 +2714,7 @@
             }
           }
         },
-        "count": 97
+        "count": 323
       },
       {
         "key": {
@@ -2429,7 +2733,7 @@
             }
           }
         },
-        "count": 97
+        "count": 200
       },
       {
         "key": {
@@ -2448,7 +2752,7 @@
             }
           }
         },
-        "count": 238
+        "count": 209
       },
       {
         "key": {
@@ -2467,7 +2771,7 @@
             }
           }
         },
-        "count": 236
+        "count": 208
       },
       {
         "key": {
@@ -2486,7 +2790,7 @@
             }
           }
         },
-        "count": 240
+        "count": 212
       },
       {
         "key": {
@@ -2524,7 +2828,7 @@
             }
           }
         },
-        "count": 240
+        "count": 221
       },
       {
         "key": {
@@ -2543,7 +2847,7 @@
             }
           }
         },
-        "count": 221
+        "count": 208
       },
       {
         "key": {
@@ -2562,7 +2866,7 @@
             }
           }
         },
-        "count": 94
+        "count": 253
       },
       {
         "key": {
@@ -2581,7 +2885,7 @@
             }
           }
         },
-        "count": 207
+        "count": 195
       },
       {
         "key": {
@@ -2600,7 +2904,7 @@
             }
           }
         },
-        "count": 206
+        "count": 179
       },
       {
         "key": {
@@ -2619,7 +2923,7 @@
             }
           }
         },
-        "count": 126
+        "count": 247
       },
       {
         "key": {
@@ -2638,7 +2942,7 @@
             }
           }
         },
-        "count": 174
+        "count": 149
       },
       {
         "key": {
@@ -2657,7 +2961,7 @@
             }
           }
         },
-        "count": 176
+        "count": 149
       },
       {
         "key": {
@@ -2676,7 +2980,7 @@
             }
           }
         },
-        "count": 216
+        "count": 188
       },
       {
         "key": {
@@ -2695,7 +2999,7 @@
             }
           }
         },
-        "count": 245
+        "count": 216
       },
       {
         "key": {
@@ -2714,7 +3018,7 @@
             }
           }
         },
-        "count": 118
+        "count": 211
       },
       {
         "key": {
@@ -2733,7 +3037,7 @@
             }
           }
         },
-        "count": 238
+        "count": 219
       },
       {
         "key": {
@@ -2752,7 +3056,7 @@
             }
           }
         },
-        "count": 142
+        "count": 122
       },
       {
         "key": {
@@ -2771,7 +3075,7 @@
             }
           }
         },
-        "count": 142
+        "count": 120
       },
       {
         "key": {
@@ -2790,7 +3094,7 @@
             }
           }
         },
-        "count": 203
+        "count": 180
       },
       {
         "key": {
@@ -2809,7 +3113,7 @@
             }
           }
         },
-        "count": 139
+        "count": 115
       },
       {
         "key": {
@@ -2828,7 +3132,7 @@
             }
           }
         },
-        "count": 139
+        "count": 115
       },
       {
         "key": {
@@ -2847,7 +3151,7 @@
             }
           }
         },
-        "count": 155
+        "count": 126
       },
       {
         "key": {
@@ -2866,7 +3170,7 @@
             }
           }
         },
-        "count": 158
+        "count": 132
       },
       {
         "key": {
@@ -2885,7 +3189,7 @@
             }
           }
         },
-        "count": 174
+        "count": 149
       },
       {
         "key": {
@@ -2904,7 +3208,7 @@
             }
           }
         },
-        "count": 74
+        "count": 125
       },
       {
         "key": {
@@ -2923,7 +3227,7 @@
             }
           }
         },
-        "count": 170
+        "count": 163
       },
       {
         "key": {
@@ -2942,7 +3246,7 @@
             }
           }
         },
-        "count": 176
+        "count": 149
       },
       {
         "key": {
@@ -2961,7 +3265,7 @@
             }
           }
         },
-        "count": 150
+        "count": 197
       },
       {
         "key": {
@@ -2980,7 +3284,7 @@
             }
           }
         },
-        "count": 151
+        "count": 197
       },
       {
         "key": {
@@ -2999,7 +3303,7 @@
             }
           }
         },
-        "count": 54
+        "count": 46
       },
       {
         "key": {
@@ -3018,7 +3322,7 @@
             }
           }
         },
-        "count": 151
+        "count": 238
       },
       {
         "key": {
@@ -3037,7 +3341,7 @@
             }
           }
         },
-        "count": 163
+        "count": 158
       },
       {
         "key": {
@@ -3056,7 +3360,7 @@
             }
           }
         },
-        "count": 170
+        "count": 275
       },
       {
         "key": {
@@ -3075,7 +3379,7 @@
             }
           }
         },
-        "count": 163
+        "count": 158
       },
       {
         "key": {
@@ -3094,7 +3398,7 @@
             }
           }
         },
-        "count": 175
+        "count": 165
       },
       {
         "key": {
@@ -3113,7 +3417,7 @@
             }
           }
         },
-        "count": 163
+        "count": 158
       },
       {
         "key": {
@@ -3132,7 +3436,7 @@
             }
           }
         },
-        "count": 152
+        "count": 211
       },
       {
         "key": {
@@ -3151,7 +3455,7 @@
             }
           }
         },
-        "count": 119
+        "count": 120
       },
       {
         "key": {
@@ -3170,7 +3474,7 @@
             }
           }
         },
-        "count": 85
+        "count": 313
       },
       {
         "key": {
@@ -3189,7 +3493,7 @@
             }
           }
         },
-        "count": 151
+        "count": 220
       },
       {
         "key": {
@@ -3208,7 +3512,7 @@
             }
           }
         },
-        "count": 96
+        "count": 317
       },
       {
         "key": {
@@ -3227,7 +3531,7 @@
             }
           }
         },
-        "count": 96
+        "count": 317
       },
       {
         "key": {
@@ -3246,7 +3550,7 @@
             }
           }
         },
-        "count": 96
+        "count": 70
       },
       {
         "key": {
@@ -3258,14 +3562,14 @@
             "topic": {
               "EntityBelief": {
                 "subject": {
-                  "slot": 102,
+                  "slot": 101,
                   "generation": 0
                 }
               }
             }
           }
         },
-        "count": 113
+        "count": 203
       },
       {
         "key": {
@@ -3284,7 +3588,26 @@
             }
           }
         },
-        "count": 150
+        "count": 277
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 5,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 104,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 277
       },
       {
         "key": {
@@ -3303,7 +3626,7 @@
             }
           }
         },
-        "count": 118
+        "count": 264
       },
       {
         "key": {
@@ -3322,7 +3645,7 @@
             }
           }
         },
-        "count": 141
+        "count": 260
       },
       {
         "key": {
@@ -3334,14 +3657,14 @@
             "topic": {
               "EntityBelief": {
                 "subject": {
-                  "slot": 109,
+                  "slot": 108,
                   "generation": 0
                 }
               }
             }
           }
         },
-        "count": 122
+        "count": 304
       },
       {
         "key": {
@@ -3360,7 +3683,7 @@
             }
           }
         },
-        "count": 141
+        "count": 314
       },
       {
         "key": {
@@ -3379,7 +3702,7 @@
             }
           }
         },
-        "count": 126
+        "count": 264
       },
       {
         "key": {
@@ -3398,7 +3721,26 @@
             }
           }
         },
-        "count": 126
+        "count": 250
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 5,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 116,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 253
       },
       {
         "key": {
@@ -3417,26 +3759,7 @@
             }
           }
         },
-        "count": 99
-      },
-      {
-        "key": {
-          "AskWitness": {
-            "witness": {
-              "slot": 5,
-              "generation": 0
-            },
-            "topic": {
-              "EntityBelief": {
-                "subject": {
-                  "slot": 118,
-                  "generation": 0
-                }
-              }
-            }
-          }
-        },
-        "count": 119
+        "count": 230
       },
       {
         "key": {
@@ -3455,7 +3778,26 @@
             }
           }
         },
-        "count": 97
+        "count": 317
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 5,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 121,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 253
       },
       {
         "key": {
@@ -3474,26 +3816,7 @@
             }
           }
         },
-        "count": 129
-      },
-      {
-        "key": {
-          "AskWitness": {
-            "witness": {
-              "slot": 5,
-              "generation": 0
-            },
-            "topic": {
-              "EntityBelief": {
-                "subject": {
-                  "slot": 123,
-                  "generation": 0
-                }
-              }
-            }
-          }
-        },
-        "count": 96
+        "count": 152
       },
       {
         "key": {
@@ -3512,7 +3835,7 @@
             }
           }
         },
-        "count": 129
+        "count": 61
       },
       {
         "key": {
@@ -3531,7 +3854,7 @@
             }
           }
         },
-        "count": 124
+        "count": 67
       },
       {
         "key": {
@@ -3550,7 +3873,26 @@
             }
           }
         },
-        "count": 105
+        "count": 61
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 5,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 127,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 157
       },
       {
         "key": {
@@ -3569,7 +3911,7 @@
             }
           }
         },
-        "count": 108
+        "count": 155
       },
       {
         "key": {
@@ -3588,7 +3930,7 @@
             }
           }
         },
-        "count": 126
+        "count": 61
       },
       {
         "key": {
@@ -3600,14 +3942,14 @@
             "topic": {
               "EntityBelief": {
                 "subject": {
-                  "slot": 131,
+                  "slot": 130,
                   "generation": 0
                 }
               }
             }
           }
         },
-        "count": 72
+        "count": 61
       },
       {
         "key": {
@@ -3619,14 +3961,14 @@
             "topic": {
               "EntityBelief": {
                 "subject": {
-                  "slot": 133,
+                  "slot": 132,
                   "generation": 0
                 }
               }
             }
           }
         },
-        "count": 119
+        "count": 67
       },
       {
         "key": {
@@ -3645,7 +3987,7 @@
             }
           }
         },
-        "count": 70
+        "count": 240
       },
       {
         "key": {
@@ -3664,7 +4006,7 @@
             }
           }
         },
-        "count": 89
+        "count": 240
       },
       {
         "key": {
@@ -3676,14 +4018,14 @@
             "topic": {
               "EntityBelief": {
                 "subject": {
-                  "slot": 138,
+                  "slot": 136,
                   "generation": 0
                 }
               }
             }
           }
         },
-        "count": 70
+        "count": 152
       },
       {
         "key": {
@@ -3702,7 +4044,26 @@
             }
           }
         },
-        "count": 53
+        "count": 171
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 5,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 140,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 61
       },
       {
         "key": {
@@ -3721,7 +4082,45 @@
             }
           }
         },
-        "count": 47
+        "count": 240
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 5,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 143,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 106
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 5,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 144,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 106
       },
       {
         "key": {
@@ -3740,45 +4139,7 @@
             }
           }
         },
-        "count": 42
-      },
-      {
-        "key": {
-          "AskWitness": {
-            "witness": {
-              "slot": 5,
-              "generation": 0
-            },
-            "topic": {
-              "EntityBelief": {
-                "subject": {
-                  "slot": 146,
-                  "generation": 0
-                }
-              }
-            }
-          }
-        },
-        "count": 89
-      },
-      {
-        "key": {
-          "AskWitness": {
-            "witness": {
-              "slot": 5,
-              "generation": 0
-            },
-            "topic": {
-              "EntityBelief": {
-                "subject": {
-                  "slot": 147,
-                  "generation": 0
-                }
-              }
-            }
-          }
-        },
-        "count": 42
+        "count": 254
       },
       {
         "key": {
@@ -3797,7 +4158,102 @@
             }
           }
         },
-        "count": 10
+        "count": 80
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 5,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 149,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 144
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 5,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 150,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 144
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 5,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 151,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 135
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 5,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 152,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 68
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 5,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 157,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 106
       },
       {
         "key": {
@@ -3816,7 +4272,26 @@
             }
           }
         },
-        "count": 15
+        "count": 12
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 5,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 160,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 86
       },
       {
         "key": {
@@ -3835,7 +4310,26 @@
             }
           }
         },
-        "count": 97
+        "count": 176
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 2,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 134
       },
       {
         "key": {
@@ -3854,7 +4348,7 @@
             }
           }
         },
-        "count": 32
+        "count": 116
       },
       {
         "key": {
@@ -3873,7 +4367,7 @@
             }
           }
         },
-        "count": 98
+        "count": 176
       },
       {
         "key": {
@@ -3892,7 +4386,45 @@
             }
           }
         },
-        "count": 96
+        "count": 173
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 9,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 140
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 10,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 135
       },
       {
         "key": {
@@ -3911,7 +4443,7 @@
             }
           }
         },
-        "count": 211
+        "count": 196
       },
       {
         "key": {
@@ -3968,7 +4500,7 @@
             }
           }
         },
-        "count": 80
+        "count": 79
       },
       {
         "key": {
@@ -4006,7 +4538,7 @@
             }
           }
         },
-        "count": 156
+        "count": 150
       },
       {
         "key": {
@@ -4025,7 +4557,7 @@
             }
           }
         },
-        "count": 163
+        "count": 151
       },
       {
         "key": {
@@ -4044,7 +4576,7 @@
             }
           }
         },
-        "count": 228
+        "count": 213
       },
       {
         "key": {
@@ -4063,7 +4595,7 @@
             }
           }
         },
-        "count": 146
+        "count": 126
       },
       {
         "key": {
@@ -4082,7 +4614,7 @@
             }
           }
         },
-        "count": 171
+        "count": 168
       },
       {
         "key": {
@@ -4101,7 +4633,7 @@
             }
           }
         },
-        "count": 242
+        "count": 225
       },
       {
         "key": {
@@ -4120,7 +4652,7 @@
             }
           }
         },
-        "count": 224
+        "count": 190
       },
       {
         "key": {
@@ -4139,7 +4671,7 @@
             }
           }
         },
-        "count": 154
+        "count": 124
       },
       {
         "key": {
@@ -4158,7 +4690,7 @@
             }
           }
         },
-        "count": 276
+        "count": 168
       },
       {
         "key": {
@@ -4177,7 +4709,7 @@
             }
           }
         },
-        "count": 194
+        "count": 179
       },
       {
         "key": {
@@ -4196,7 +4728,7 @@
             }
           }
         },
-        "count": 134
+        "count": 129
       },
       {
         "key": {
@@ -4215,7 +4747,7 @@
             }
           }
         },
-        "count": 203
+        "count": 188
       },
       {
         "key": {
@@ -4234,7 +4766,7 @@
             }
           }
         },
-        "count": 268
+        "count": 206
       },
       {
         "key": {
@@ -4253,7 +4785,7 @@
             }
           }
         },
-        "count": 277
+        "count": 267
       },
       {
         "key": {
@@ -4272,7 +4804,7 @@
             }
           }
         },
-        "count": 228
+        "count": 308
       },
       {
         "key": {
@@ -4291,7 +4823,7 @@
             }
           }
         },
-        "count": 226
+        "count": 182
       },
       {
         "key": {
@@ -4310,7 +4842,7 @@
             }
           }
         },
-        "count": 223
+        "count": 207
       },
       {
         "key": {
@@ -4329,7 +4861,7 @@
             }
           }
         },
-        "count": 222
+        "count": 207
       },
       {
         "key": {
@@ -4348,7 +4880,7 @@
             }
           }
         },
-        "count": 235
+        "count": 219
       },
       {
         "key": {
@@ -4367,7 +4899,7 @@
             }
           }
         },
-        "count": 141
+        "count": 128
       },
       {
         "key": {
@@ -4386,7 +4918,7 @@
             }
           }
         },
-        "count": 272
+        "count": 241
       },
       {
         "key": {
@@ -4405,7 +4937,7 @@
             }
           }
         },
-        "count": 261
+        "count": 231
       },
       {
         "key": {
@@ -4424,7 +4956,7 @@
             }
           }
         },
-        "count": 81
+        "count": 249
       },
       {
         "key": {
@@ -4443,7 +4975,7 @@
             }
           }
         },
-        "count": 248
+        "count": 216
       },
       {
         "key": {
@@ -4462,7 +4994,7 @@
             }
           }
         },
-        "count": 181
+        "count": 174
       },
       {
         "key": {
@@ -4481,7 +5013,7 @@
             }
           }
         },
-        "count": 187
+        "count": 251
       },
       {
         "key": {
@@ -4500,7 +5032,7 @@
             }
           }
         },
-        "count": 200
+        "count": 173
       },
       {
         "key": {
@@ -4519,7 +5051,7 @@
             }
           }
         },
-        "count": 203
+        "count": 173
       },
       {
         "key": {
@@ -4538,7 +5070,7 @@
             }
           }
         },
-        "count": 200
+        "count": 184
       },
       {
         "key": {
@@ -4557,7 +5089,7 @@
             }
           }
         },
-        "count": 243
+        "count": 227
       },
       {
         "key": {
@@ -4576,7 +5108,7 @@
             }
           }
         },
-        "count": 128
+        "count": 194
       },
       {
         "key": {
@@ -4595,7 +5127,7 @@
             }
           }
         },
-        "count": 272
+        "count": 238
       },
       {
         "key": {
@@ -4614,7 +5146,7 @@
             }
           }
         },
-        "count": 154
+        "count": 112
       },
       {
         "key": {
@@ -4633,7 +5165,7 @@
             }
           }
         },
-        "count": 156
+        "count": 110
       },
       {
         "key": {
@@ -4652,7 +5184,7 @@
             }
           }
         },
-        "count": 233
+        "count": 197
       },
       {
         "key": {
@@ -4671,7 +5203,7 @@
             }
           }
         },
-        "count": 307
+        "count": 102
       },
       {
         "key": {
@@ -4690,7 +5222,7 @@
             }
           }
         },
-        "count": 306
+        "count": 101
       },
       {
         "key": {
@@ -4709,7 +5241,7 @@
             }
           }
         },
-        "count": 311
+        "count": 119
       },
       {
         "key": {
@@ -4728,7 +5260,7 @@
             }
           }
         },
-        "count": 311
+        "count": 119
       },
       {
         "key": {
@@ -4747,7 +5279,7 @@
             }
           }
         },
-        "count": 200
+        "count": 173
       },
       {
         "key": {
@@ -4766,7 +5298,7 @@
             }
           }
         },
-        "count": 49
+        "count": 116
       },
       {
         "key": {
@@ -4785,7 +5317,7 @@
             }
           }
         },
-        "count": 294
+        "count": 148
       },
       {
         "key": {
@@ -4804,7 +5336,7 @@
             }
           }
         },
-        "count": 205
+        "count": 171
       },
       {
         "key": {
@@ -4823,7 +5355,7 @@
             }
           }
         },
-        "count": 266
+        "count": 203
       },
       {
         "key": {
@@ -4842,7 +5374,7 @@
             }
           }
         },
-        "count": 266
+        "count": 205
       },
       {
         "key": {
@@ -4861,7 +5393,7 @@
             }
           }
         },
-        "count": 206
+        "count": 48
       },
       {
         "key": {
@@ -4880,7 +5412,7 @@
             }
           }
         },
-        "count": 263
+        "count": 244
       },
       {
         "key": {
@@ -4899,7 +5431,7 @@
             }
           }
         },
-        "count": 294
+        "count": 127
       },
       {
         "key": {
@@ -4918,7 +5450,7 @@
             }
           }
         },
-        "count": 291
+        "count": 260
       },
       {
         "key": {
@@ -4937,7 +5469,7 @@
             }
           }
         },
-        "count": 277
+        "count": 206
       },
       {
         "key": {
@@ -4956,7 +5488,7 @@
             }
           }
         },
-        "count": 273
+        "count": 181
       },
       {
         "key": {
@@ -4975,7 +5507,7 @@
             }
           }
         },
-        "count": 294
+        "count": 220
       },
       {
         "key": {
@@ -4994,7 +5526,7 @@
             }
           }
         },
-        "count": 266
+        "count": 217
       },
       {
         "key": {
@@ -5013,7 +5545,7 @@
             }
           }
         },
-        "count": 248
+        "count": 181
       },
       {
         "key": {
@@ -5032,7 +5564,7 @@
             }
           }
         },
-        "count": 272
+        "count": 306
       },
       {
         "key": {
@@ -5051,7 +5583,7 @@
             }
           }
         },
-        "count": 267
+        "count": 224
       },
       {
         "key": {
@@ -5070,7 +5602,7 @@
             }
           }
         },
-        "count": 225
+        "count": 298
       },
       {
         "key": {
@@ -5089,7 +5621,7 @@
             }
           }
         },
-        "count": 221
+        "count": 297
       },
       {
         "key": {
@@ -5108,7 +5640,7 @@
             }
           }
         },
-        "count": 221
+        "count": 50
       },
       {
         "key": {
@@ -5120,14 +5652,14 @@
             "topic": {
               "EntityBelief": {
                 "subject": {
-                  "slot": 102,
+                  "slot": 101,
                   "generation": 0
                 }
               }
             }
           }
         },
-        "count": 218
+        "count": 212
       },
       {
         "key": {
@@ -5146,7 +5678,26 @@
             }
           }
         },
-        "count": 268
+        "count": 272
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 104,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 264
       },
       {
         "key": {
@@ -5165,7 +5716,7 @@
             }
           }
         },
-        "count": 217
+        "count": 251
       },
       {
         "key": {
@@ -5184,7 +5735,7 @@
             }
           }
         },
-        "count": 266
+        "count": 253
       },
       {
         "key": {
@@ -5196,14 +5747,14 @@
             "topic": {
               "EntityBelief": {
                 "subject": {
-                  "slot": 109,
+                  "slot": 108,
                   "generation": 0
                 }
               }
             }
           }
         },
-        "count": 204
+        "count": 276
       },
       {
         "key": {
@@ -5222,7 +5773,7 @@
             }
           }
         },
-        "count": 267
+        "count": 303
       },
       {
         "key": {
@@ -5241,7 +5792,7 @@
             }
           }
         },
-        "count": 189
+        "count": 251
       },
       {
         "key": {
@@ -5260,7 +5811,26 @@
             }
           }
         },
-        "count": 187
+        "count": 252
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 116,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 240
       },
       {
         "key": {
@@ -5279,26 +5849,7 @@
             }
           }
         },
-        "count": 219
-      },
-      {
-        "key": {
-          "AskWitness": {
-            "witness": {
-              "slot": 6,
-              "generation": 0
-            },
-            "topic": {
-              "EntityBelief": {
-                "subject": {
-                  "slot": 118,
-                  "generation": 0
-                }
-              }
-            }
-          }
-        },
-        "count": 134
+        "count": 220
       },
       {
         "key": {
@@ -5317,7 +5868,26 @@
             }
           }
         },
-        "count": 221
+        "count": 295
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 121,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 240
       },
       {
         "key": {
@@ -5336,26 +5906,7 @@
             }
           }
         },
-        "count": 185
-      },
-      {
-        "key": {
-          "AskWitness": {
-            "witness": {
-              "slot": 6,
-              "generation": 0
-            },
-            "topic": {
-              "EntityBelief": {
-                "subject": {
-                  "slot": 123,
-                  "generation": 0
-                }
-              }
-            }
-          }
-        },
-        "count": 85
+        "count": 143
       },
       {
         "key": {
@@ -5374,7 +5925,7 @@
             }
           }
         },
-        "count": 185
+        "count": 134
       },
       {
         "key": {
@@ -5393,7 +5944,7 @@
             }
           }
         },
-        "count": 197
+        "count": 141
       },
       {
         "key": {
@@ -5412,7 +5963,26 @@
             }
           }
         },
-        "count": 141
+        "count": 134
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 127,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 139
       },
       {
         "key": {
@@ -5431,7 +6001,7 @@
             }
           }
         },
-        "count": 112
+        "count": 135
       },
       {
         "key": {
@@ -5450,7 +6020,7 @@
             }
           }
         },
-        "count": 162
+        "count": 135
       },
       {
         "key": {
@@ -5462,14 +6032,14 @@
             "topic": {
               "EntityBelief": {
                 "subject": {
-                  "slot": 131,
+                  "slot": 130,
                   "generation": 0
                 }
               }
             }
           }
         },
-        "count": 64
+        "count": 134
       },
       {
         "key": {
@@ -5481,14 +6051,14 @@
             "topic": {
               "EntityBelief": {
                 "subject": {
-                  "slot": 133,
+                  "slot": 132,
                   "generation": 0
                 }
               }
             }
           }
         },
-        "count": 133
+        "count": 141
       },
       {
         "key": {
@@ -5507,7 +6077,7 @@
             }
           }
         },
-        "count": 48
+        "count": 246
       },
       {
         "key": {
@@ -5526,7 +6096,7 @@
             }
           }
         },
-        "count": 88
+        "count": 246
       },
       {
         "key": {
@@ -5538,14 +6108,14 @@
             "topic": {
               "EntityBelief": {
                 "subject": {
-                  "slot": 138,
+                  "slot": 136,
                   "generation": 0
                 }
               }
             }
           }
         },
-        "count": 41
+        "count": 129
       },
       {
         "key": {
@@ -5564,7 +6134,26 @@
             }
           }
         },
-        "count": 29
+        "count": 152
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 140,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 134
       },
       {
         "key": {
@@ -5583,7 +6172,45 @@
             }
           }
         },
-        "count": 27
+        "count": 246
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 143,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 89
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 144,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 89
       },
       {
         "key": {
@@ -5602,45 +6229,7 @@
             }
           }
         },
-        "count": 23
-      },
-      {
-        "key": {
-          "AskWitness": {
-            "witness": {
-              "slot": 6,
-              "generation": 0
-            },
-            "topic": {
-              "EntityBelief": {
-                "subject": {
-                  "slot": 146,
-                  "generation": 0
-                }
-              }
-            }
-          }
-        },
-        "count": 88
-      },
-      {
-        "key": {
-          "AskWitness": {
-            "witness": {
-              "slot": 6,
-              "generation": 0
-            },
-            "topic": {
-              "EntityBelief": {
-                "subject": {
-                  "slot": 147,
-                  "generation": 0
-                }
-              }
-            }
-          }
-        },
-        "count": 23
+        "count": 224
       },
       {
         "key": {
@@ -5659,7 +6248,7 @@
             }
           }
         },
-        "count": 9
+        "count": 60
       },
       {
         "key": {
@@ -5678,7 +6267,159 @@
             }
           }
         },
-        "count": 1
+        "count": 140
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 150,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 139
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 151,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 117
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 152,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 63
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 155,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 63
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 156,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 63
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 157,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 89
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 159,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 8
+      },
+      {
+        "key": {
+          "AskWitness": {
+            "witness": {
+              "slot": 6,
+              "generation": 0
+            },
+            "topic": {
+              "EntityBelief": {
+                "subject": {
+                  "slot": 160,
+                  "generation": 0
+                }
+              }
+            }
+          }
+        },
+        "count": 67
       },
       {
         "key": {
@@ -5697,7 +6438,7 @@
             }
           }
         },
-        "count": 17
+        "count": 10
       },
       {
         "key": {
@@ -5716,7 +6457,7 @@
             }
           }
         },
-        "count": 13
+        "count": 6
       },
       {
         "key": {
@@ -5803,35 +6544,31 @@
             }
           }
         },
-        "count": 2
+        "count": 4
       }
     ],
     "candidates_emitted_by_slot": [
       {
         "key": "NeedSurvival",
-        "count": 1607
+        "count": 1700
       },
       {
         "key": "EconomicOpportunity",
-        "count": 29
+        "count": 28
       }
     ],
     "candidates_suppressed_by_category": [
       {
         "key": "RejectedSuppressedByBlocker",
-        "count": 378
+        "count": 145
       },
       {
         "key": "RejectedSuppressedByDiscrepancy",
-        "count": 233
-      },
-      {
-        "key": "RejectedSuppressedByStressPolicy",
-        "count": 8141
+        "count": 244
       },
       {
         "key": "ZeroMotive",
-        "count": 45088
+        "count": 60741
       },
       {
         "key": "SoftDamped",
@@ -5839,19 +6576,19 @@
       },
       {
         "key": "FullyBlockedDesire",
-        "count": 378
+        "count": 240
       },
       {
         "key": "SituationallySuppressed",
-        "count": 7418
+        "count": 260
       },
       {
         "key": "OmittedSocial",
-        "count": 217624
+        "count": 270990
       },
       {
         "key": "OmittedViolationDetection",
-        "count": 2550
+        "count": 2578
       }
     ],
     "top_k_not_planned": [
@@ -5861,7 +6598,7 @@
             "commodity": "Apple"
           }
         },
-        "count": 43
+        "count": 48
       },
       {
         "key": {
@@ -5869,7 +6606,7 @@
             "commodity": "Water"
           }
         },
-        "count": 72
+        "count": 65
       },
       {
         "key": {
@@ -5883,7 +6620,7 @@
             }
           }
         },
-        "count": 682
+        "count": 842
       },
       {
         "key": {
@@ -5897,19 +6634,19 @@
             }
           }
         },
-        "count": 931
+        "count": 831
       },
       {
         "key": "Sleep",
-        "count": 576
+        "count": 107
       },
       {
         "key": "Relieve",
-        "count": 431
+        "count": 75
       },
       {
         "key": "Wash",
-        "count": 205
+        "count": 36
       },
       {
         "key": {
@@ -5928,7 +6665,7 @@
             }
           }
         },
-        "count": 13
+        "count": 7
       },
       {
         "key": {
@@ -5947,7 +6684,7 @@
             }
           }
         },
-        "count": 13
+        "count": 6
       },
       {
         "key": {
@@ -5969,10 +6706,10 @@
         "count": 4
       }
     ],
-    "active_intention_continuation_rate": 6
+    "active_intention_continuation_rate": 7
   },
   "planning": {
-    "plan_attempts": 1311,
+    "plan_attempts": 957,
     "plan_attempts_by_kind": [
       {
         "key": {
@@ -5980,7 +6717,7 @@
             "commodity": "Apple"
           }
         },
-        "count": 107
+        "count": 118
       },
       {
         "key": {
@@ -5988,7 +6725,7 @@
             "commodity": "Water"
           }
         },
-        "count": 35
+        "count": 36
       },
       {
         "key": {
@@ -6002,7 +6739,7 @@
             }
           }
         },
-        "count": 493
+        "count": 240
       },
       {
         "key": {
@@ -6016,19 +6753,19 @@
             }
           }
         },
-        "count": 354
+        "count": 185
       },
       {
         "key": "Sleep",
-        "count": 84
+        "count": 98
       },
       {
         "key": "Relieve",
-        "count": 196
+        "count": 204
       },
       {
         "key": "Wash",
-        "count": 29
+        "count": 62
       },
       {
         "key": {
@@ -6047,7 +6784,7 @@
             }
           }
         },
-        "count": 4
+        "count": 3
       },
       {
         "key": {
@@ -6134,16 +6871,16 @@
             }
           }
         },
-        "count": 2
+        "count": 4
       }
     ],
     "budget_exhaustion_count": 0,
     "budget_exhaustion_rate": 0,
-    "frontier_exhaustion_count": 65,
-    "frontier_exhaustion_rate": 49,
+    "frontier_exhaustion_count": 56,
+    "frontier_exhaustion_rate": 58,
     "beam_truncation_ratio": 0,
     "plan_depth": {
-      "n": 1246,
+      "n": 901,
       "min": 1,
       "p50": 1,
       "p95": 2,
@@ -6154,29 +6891,29 @@
     "terminal_kind_distribution": [
       {
         "key": "GoalSatisfied",
-        "count": 941
+        "count": 728
       },
       {
         "key": "InformationBarrier",
-        "count": 25
+        "count": 29
       },
       {
         "key": "CoordinationBarrier",
-        "count": 7
+        "count": 6
       },
       {
         "key": "ResourceBarrier",
-        "count": 273
+        "count": 138
       }
     ],
-    "heuristic_helpful_action_hit_rate": 40,
+    "heuristic_helpful_action_hit_rate": 14,
     "method_usage": [
       {
         "method_id": null,
         "counts": {
-          "attempts": 1311,
+          "attempts": 957,
           "selected_count": 0,
-          "fallback_count": 1311,
+          "fallback_count": 957,
           "failure_count": 0
         }
       }
@@ -6185,21 +6922,8 @@
   "revalidation_repair": {
     "invalidation_reasons": [
       {
-        "key": "BeliefContradicted",
-        "count": 2
-      },
-      {
         "key": "NoLegalBinding",
-        "count": 9
-      },
-      {
-        "key": {
-          "NeedHorizonExceeded": {
-            "need": "Hunger",
-            "projected_breach_tick": 0
-          }
-        },
-        "count": 3
+        "count": 19
       },
       {
         "key": {
@@ -6225,7 +6949,7 @@
   },
   "belief": {
     "stale_belief_actions": 0,
-    "contradicted_belief_actions": 2,
+    "contradicted_belief_actions": 0,
     "source_reliability_changes_by_topic": {},
     "route_preference_changes": 0,
     "false_rumor_propagation_count": 0,
@@ -6239,26 +6963,26 @@
       "mean": 0
     },
     "blocker_counts_by_scope": {
-      "Exact": 155
+      "Exact": 103
     }
   },
   "coordination": {
     "queue_wait_ticks": {
-      "n": 22,
-      "min": 5,
-      "p50": 93,
-      "p95": 362,
-      "p99": 417,
-      "max": 430,
-      "mean": 145
+      "n": 32,
+      "min": 4,
+      "p50": 67,
+      "p95": 226,
+      "p99": 229,
+      "max": 249,
+      "mean": 80
     },
-    "reservation_conflict_count": 21,
+    "reservation_conflict_count": 29,
     "abandoned_grant_count": 0,
     "dead_claimant_cleanup_count": 0
   },
   "performance": {
     "opportunity_compiled_count": {
-      "n": 2550,
+      "n": 2578,
       "min": 0,
       "p50": 16,
       "p95": 16,
@@ -6268,7 +6992,7 @@
     },
     "opportunity_compiled_by_status": {
       "Certain": {
-        "n": 2537,
+        "n": 2565,
         "min": 1,
         "p50": 16,
         "p95": 16,
@@ -6277,26 +7001,26 @@
         "mean": 15
       },
       "Probable": {
-        "n": 668,
+        "n": 545,
         "min": 1,
         "p50": 1,
         "p95": 2,
-        "p99": 2,
+        "p99": 3,
         "max": 3,
         "mean": 1
       },
       "Stale": {
-        "n": 189,
+        "n": 71,
         "min": 1,
-        "p50": 2,
-        "p95": 4,
-        "p99": 4,
-        "max": 4,
+        "p50": 1,
+        "p95": 2,
+        "p99": 2,
+        "max": 2,
         "mean": 1
       }
     },
     "opportunity_salience_floored": {
-      "n": 2550,
+      "n": 2578,
       "min": 0,
       "p50": 0,
       "p95": 0,
@@ -6305,39 +7029,39 @@
       "mean": 0
     },
     "opportunity_learned_memory_damped": {
-      "n": 2550,
+      "n": 2578,
       "min": 0,
-      "p50": 1,
-      "p95": 6,
+      "p50": 0,
+      "p95": 4,
       "p99": 9,
-      "max": 11,
+      "max": 12,
       "mean": 1
     },
     "opportunity_cap_truncated": {
-      "n": 2550,
+      "n": 2578,
       "min": 0,
-      "p50": 10,
-      "p95": 26,
-      "p99": 30,
-      "max": 33,
-      "mean": 11
+      "p50": 11,
+      "p95": 34,
+      "p99": 37,
+      "max": 37,
+      "mean": 15
     },
     "search_expansions": {
-      "n": 5496,
+      "n": 5266,
       "min": 1,
-      "p50": 6,
-      "p95": 36,
+      "p50": 5,
+      "p95": 34,
       "p99": 44,
-      "max": 53,
+      "max": 56,
       "mean": 10
     },
-    "cache_hit_count": 5534,
+    "cache_hit_count": 3661,
     "cache_miss_count": 0,
     "cache_invalidation_count": 0,
-    "planning_state_cache_entities_at_hits": 494,
-    "planning_state_cache_entities_at_misses": 4356,
-    "planning_state_cache_effective_place_hits": 494917,
-    "planning_state_cache_effective_place_misses": 193192,
-    "planning_state_cache_invalidations": 15882
+    "planning_state_cache_entities_at_hits": 1208,
+    "planning_state_cache_entities_at_misses": 4814,
+    "planning_state_cache_effective_place_hits": 453777,
+    "planning_state_cache_effective_place_misses": 188263,
+    "planning_state_cache_invalidations": 15462
   }
 }

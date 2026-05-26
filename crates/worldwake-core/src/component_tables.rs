@@ -50,6 +50,7 @@ use crate::{
     reward_encumbrance::RewardEncumbrance,
     risk_weight_profile::RiskWeightProfile,
     route_preference_profile::RoutePreferenceProfile,
+    self_care_occupancy::SelfCareOccupancy,
     sleep_episode::{SleepEpisode, SleepQualityProfile},
     social_artifact::{ArtifactHeader, ArtifactPostingProfile, BountyTerms, NoticeContent},
     survey_memory::SurveyMemory,

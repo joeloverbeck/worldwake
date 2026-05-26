@@ -161,13 +161,9 @@ Auxiliary simulation-gap evidence proves death traceability from unmet hunger: d
 Current evidence does not prove that self-care is fully mature under:
 
 - severe degradation of food, water, sleep, latrine, or wash access;
-- repeated interruption of long self-care actions;
-- agents competing for the same rest/wash/relief facilities;
+- agents competing for the same rest/relief facilities;
 - injury or pursuit disrupting self-care;
-- shelter/safety constraints around sleep;
-- all wash planning branches avoiding budget exhaustion.
-
-The known `Wash` budget-exhaustion exclusion in scattered/contested survival should be treated as a first-class deepening target.
+- shelter/safety constraints around sleep.
 
 ### Future Deep-Research Questions
 
@@ -176,7 +172,6 @@ A future spec pass should investigate:
 - whether each self-care action has adequate physical preconditions, duration, cost, occupancy, interruption, and aftermath;
 - whether need relief always comes from concrete world actions and not direct stat satisfaction;
 - whether deprivation, exhaustion, collapse, death, waste, dirtiness, and recovery have traceable world-state consequences;
-- whether agents can recover from interrupted self-care without scripted rescue;
 - whether survival priorities remain embodied under travel, trade, combat, escort, and justice pressure.
 
 Do not prescribe exact formulas here. The spec pass should discover the right model from FOUNDATIONS-aligned constraints and current code behavior.
@@ -187,8 +182,7 @@ Future validation should include:
 
 - baseline 1440-tick sustainment;
 - harsher scarcity and degradation;
-- interrupted self-care action recovery;
-- multi-agent contention for water, wash, relief, and sleep affordances;
+- multi-agent contention for water, relief, and sleep affordances;
 - collision with travel, trade, theft, injury, escort, and obligations;
 - consequences visible through world state and event logs, not scripted assertions.
 
@@ -651,22 +645,16 @@ Do not create a rigid maturity ladder, but future scenarios should usually consi
 
 These are not final designs. They are the first places future specs should look.
 
-1. **Wash/travel planning under discovery and budget pressure**  
-   Current scattered/contested survival excludes Wash from budget-exhaustion checks. Close or formally reframe that gap.
-
-2. **Self-care interruption and recovery**  
-   Current scenarios prove sustainment, but deeper mechanics need proof that agents recover from interrupted eat/drink/sleep/relieve/wash actions without rescue scripting.
-
-3. **Material provenance across production, trade, theft, disposal, and decay**  
+1. **Material provenance across production, trade, theft, disposal, and decay**  
    The current proof is promising. Future passes should harden identity, transfer, source/sink, and lineage across more collisions.
 
-4. **Knowledge provenance across tell, ask, consult, search, report, accusation, and pursuit**  
+2. **Knowledge provenance across tell, ask, consult, search, report, accusation, and pursuit**  
    This is the main anti-omniscience risk. Every plan-changing belief should have a carrier and freshness/provenance where relevant.
 
-5. **Institutional artifact lifecycle**  
+3. **Institutional artifact lifecycle**  
    Notices, bounties, office records, accusations, verdicts, and reward encumbrances need deeper lifecycle scenarios.
 
-6. **Injury-to-care chain**  
+4. **Injury-to-care chain**  
    Combat and escort imply care/treatment support. Deepen only as needed to complete the existing wound/escort/care causal chain.
 
 ## Non-Goals

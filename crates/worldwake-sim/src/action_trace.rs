@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, CommodityKind, EntityId, ExpectationId, InstitutionalClaim,
     PunishmentFineStartFailureTrace, PunishmentFineTraceFacts, PunishmentKind, RecordKind,
-    TellTopic, Tick, ViolationId, World,
+    SelfCareUseKind, TellTopic, Tick, ViolationId, World,
 };
 
 /// A single action lifecycle event recorded during `step_tick()`.
@@ -59,6 +59,13 @@ pub enum ActionTraceDetail {
     EscortToSafety {
         subject: EntityId,
         destination: EntityId,
+    },
+    /// Self-care action was interrupted before commit. The authoritative
+    /// causal record remains `EventTag::ActionAborted`; this detail carries the
+    /// typed action family and optional occupied facility/place for traces.
+    SelfCareInterrupted {
+        kind: SelfCareUseKind,
+        basin: Option<EntityId>,
     },
 }
 
@@ -465,6 +472,9 @@ impl ActionTraceDetail {
             } => {
                 format!("escort_to_safety subject {subject} destination {destination}")
             }
+            Self::SelfCareInterrupted { kind, basin } => {
+                format!("self_care_interrupted kind {kind:?} basin {basin:?}")
+            }
         }
     }
 }
@@ -721,6 +731,22 @@ mod tests {
         );
         assert!(failed.summary().contains("failed to start"));
         assert!(failed.summary().contains("request#9"));
+    }
+
+    #[test]
+    fn self_care_interrupted_variant_constructs_and_derives() {
+        let basin = EntityId {
+            slot: 42,
+            generation: 0,
+        };
+        let detail = ActionTraceDetail::SelfCareInterrupted {
+            kind: SelfCareUseKind::Wash,
+            basin: Some(basin),
+        };
+        let cloned = detail.clone();
+
+        assert_eq!(detail, cloned);
+        assert!(format!("{detail:?}").contains("SelfCareInterrupted"));
     }
 
     #[test]

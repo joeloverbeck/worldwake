@@ -1,6 +1,6 @@
 # Implementation Order
 
-**Status**: HELD — no active implementation directive
+**Status**: ✅ COMPLETED
 
 The post-consolidation AI-architecture wave (S165–S168) completed and was archived to
 `archive/specs/IMPLEMENTATION-ORDER-2026-05-25.md`. That order intentionally excluded
@@ -25,11 +25,10 @@ convention); P1.3 / P1.4 narrowed; P2.* deferred. Dismissals and rationale:
 
 ```
 S172 (Wash discovery + budget closure)         ── completed and archived; planner + scenario contract only
-S173 (Self-care interruption + occupancy)      ── depends on archived S172 (budget accounting must be sound
-                                                    before adding contention)
+S173 (Self-care interruption + occupancy)      ── completed and archived; depended on archived S172
 ```
 
-S173 depends on archived S172. S172 is complete.
+S173 depended on archived S172. Both Cluster 1 adjunct specs are complete.
 
 ### Completed
 
@@ -42,16 +41,14 @@ S173 depends on archived S172. S172 is complete.
   scattered/contested topologies; added a single CLI player-POV assertion against
   remote-basin-state leak. No new authoritative state. **FND-3/7/8/14/14A/14B/16/19/26/29A/31.**
 
-### Pending
-
 - **S173 — Self-Care Interruption Contracts and Facility Occupancy** —
-  `specs/S173-self-care-interruption-occupancy.md` — *Status: Draft.*
-  Defines the interruption contract per self-care action family (eat, drink, sleep,
-  toilet, wilderness-relief, wash); introduces `SelfCareOccupancy` on `WashBasin`
-  and latrine `Place`; replaces `abort_noop` with `abort_release_self_care_occupancy`
+  `archive/specs/S173-self-care-interruption-occupancy.md` — *Status: COMPLETED.*
+  Defined the interruption contract per self-care action family (eat, drink, sleep,
+  toilet, wilderness-relief, wash); introduced `SelfCareOccupancy` on `WashBasin`
+  and latrine `Place`; replaced `abort_noop` with `abort_release_self_care_occupancy`
   (Wash, Toilet) and `abort_emit_self_care_interrupted` (Eat, Drink, Wilderness);
-  extends `promotable_contention_kind` to classify Wash and Toilet as exclusive use;
-  layers `SelfCareInterrupted` event uniformly above all five families; proves
+  extended `promotable_contention_kind` to classify Wash and Toilet as exclusive use;
+  layered `SelfCareInterrupted` trace detail uniformly above all six families; proved
   repeated-interruption deprivation collapse end-to-end via Scenario E.
   **FND-1/3/4/8/9/10/11/19/21/26/28/29/29A/31.**
 
@@ -76,7 +73,10 @@ against `S60`–`S66` is a separate decision for the activating directive.
 
 ## Outcome
 
-- Not yet activated.
-- This file is an authored-but-held order; archive it under
-  `archive/specs/IMPLEMENTATION-ORDER-<date>.md` only when the wave completes or is
-  superseded.
+- **Completion date**: 2026-05-26.
+- **Cluster 1 adjunct wave finished.** Both adjunct specs completed and archived:
+  - S172 — Wash Discovery and Budget Closure → `archive/specs/S172-wash-discovery-budget-closure.md`.
+  - S173 — Self-Care Interruption Contracts and Facility Occupancy → `archive/specs/S173-self-care-interruption-occupancy.md`.
+- **Gameplay backlog (S60–S66) disposition unchanged.** Those specs remain authored-but-held in `specs/` per the original "authored, held until core AI architecture is stabilized" framing. They are not part of any active implementation order; lifting that hold is a separate directive that will produce its own ordering file when warranted.
+- **Deviation from original plan**: none. The file's own activation clause anticipated archival "when the wave completes or is superseded" — the Cluster 1 wave is complete, so archival now matches the documented exit condition.
+- **Verification**: `specs/IMPLEMENTATION-ORDER.md` listed S172 and S173 as the only active wave items; both are archived with COMPLETED status. No remaining active directives reference this file. `CLAUDE.md` already cites `archive/specs/IMPLEMENTATION-ORDER-final-2026-05-21.md` as the final implementation-order authority, so no documentation update is required.
