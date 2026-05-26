@@ -1,0 +1,52 @@
+// S174 Scenario D: CLI player-POV rest-site display.
+//
+// Purpose: a controlled agent has a local rest site and an unreachable remote
+// rest site whose live occupancy must not leak through the player-facing rest
+// display unless carried by the agent's belief view.
+(
+    seed: 174010,
+    compaction_interval: 0,
+    places: [
+        (
+            name: "Home Camp",
+            tags: [Camp],
+            rest_capacity: 1,
+            sleep_quality: (shelter: Roofed, ground_comfort: Soft, recovery_modifier: 1000),
+        ),
+        (
+            name: "Remote Shelter",
+            tags: [Camp],
+            rest_capacity: 2,
+            sleep_quality: (shelter: Roofed, ground_comfort: Soft, recovery_modifier: 1000),
+        ),
+    ],
+    edges: [
+        (from: "Home Camp", to: "Remote Shelter", travel_ticks: 8, bidirectional: true),
+    ],
+    agents: [
+        (
+            name: "Aster",
+            location: "Home Camp",
+            control: Human,
+            needs: (
+                hunger: 0,
+                thirst: 0,
+                fatigue: 300,
+                bladder: 0,
+                dirtiness: 0,
+            ),
+        ),
+        (
+            name: "Bram",
+            location: "Remote Shelter",
+            control: Ai,
+            needs: (
+                hunger: 0,
+                thirst: 0,
+                fatigue: 300,
+                bladder: 0,
+                dirtiness: 0,
+            ),
+        ),
+    ],
+)
