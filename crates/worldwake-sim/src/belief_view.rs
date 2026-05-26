@@ -496,6 +496,10 @@ pub trait GoalBeliefView: BelievedAuthorityView + LocalPhysicalObservationView {
         let _ = entity;
         None
     }
+    fn self_care_occupant(&self, entity: EntityId) -> Option<EntityId> {
+        let _ = entity;
+        None
+    }
     fn last_harvest_trace(&self, entity: EntityId) -> Option<LastHarvestTrace> {
         let _ = entity;
         None
@@ -1586,6 +1590,10 @@ pub trait FacilityBeliefView {
         let _ = entity;
         None
     }
+    fn self_care_occupant(&self, entity: EntityId) -> Option<EntityId> {
+        let _ = entity;
+        None
+    }
     fn last_harvest_trace(&self, entity: EntityId) -> Option<LastHarvestTrace> {
         let _ = entity;
         None
@@ -1999,6 +2007,13 @@ where
         entity: worldwake_core::EntityId,
     ) -> Option<worldwake_core::WashBasinState> {
         FacilityBeliefView::wash_basin_state(self, entity)
+    }
+
+    fn self_care_occupant(
+        &self,
+        entity: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::EntityId> {
+        FacilityBeliefView::self_care_occupant(self, entity)
     }
 
     fn last_harvest_trace(

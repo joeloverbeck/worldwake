@@ -4561,7 +4561,10 @@ fn emit_relieve_goal(
             trace
         };
 
-        for place in reachable_latrine_places(ctx) {
+        for place in reachable_latrine_places(ctx)
+            .into_iter()
+            .filter(|place| !self_care_target_occupied_by_other(ctx, *place))
+        {
             emit_candidate_with_trace(
                 candidates,
                 diagnostics,
@@ -4755,6 +4758,7 @@ fn wash_access_opportunities(
             .matching_workstations_at(candidate_place, WorkstationTag::WashBasin)
             .into_iter()
             .filter(|workstation| !ctx.view.has_production_job(*workstation))
+            .filter(|workstation| !self_care_target_occupied_by_other(ctx, *workstation))
             .filter(|workstation| {
                 // FND-14A: physical state (`clean_water_units`) is co-located
                 // perception only. The agent must have observed the basin's
@@ -4781,6 +4785,12 @@ fn wash_access_opportunities(
     }
 
     opportunities
+}
+
+fn self_care_target_occupied_by_other(ctx: &GenerationContext<'_>, target: EntityId) -> bool {
+    ctx.view
+        .self_care_occupant(target)
+        .is_some_and(|occupant| occupant != ctx.agent)
 }
 
 fn emit_reduce_danger_goal(
@@ -7664,6 +7674,7 @@ mod tests {
         workstations: BTreeMap<(EntityId, WorkstationTag), Vec<EntityId>>,
         sources_at: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
         wash_basin_states: BTreeMap<EntityId, WashBasinState>,
+        self_care_occupants: BTreeMap<EntityId, EntityId>,
         place_tags: BTreeMap<EntityId, BTreeSet<worldwake_core::PlaceTag>>,
         trade_disposition_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
@@ -7761,6 +7772,7 @@ mod tests {
                 workstations: BTreeMap::new(),
                 sources_at: BTreeMap::new(),
                 wash_basin_states: BTreeMap::new(),
+                self_care_occupants: BTreeMap::new(),
                 place_tags: BTreeMap::new(),
                 trade_disposition_profiles: BTreeMap::new(),
                 demand_memory: BTreeMap::new(),
@@ -8702,6 +8714,10 @@ mod tests {
 
         fn wash_basin_state(&self, entity: EntityId) -> Option<WashBasinState> {
             self.wash_basin_states.get(&entity).copied()
+        }
+
+        fn self_care_occupant(&self, entity: EntityId) -> Option<EntityId> {
+            self.self_care_occupants.get(&entity).copied()
         }
 
         fn has_production_job(&self, entity: EntityId) -> bool {
@@ -13126,6 +13142,43 @@ mod tests {
     }
 
     #[test]
+    fn emit_relieve_goal_skips_latrine_with_known_occupancy_by_other_actor() {
+        let agent = entity(1);
+        let other = entity(2);
+        let camp = entity(10);
+        let latrine = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, other]);
+        view.effective_places.insert(agent, camp);
+        view.adjacent_places.insert(camp, vec![latrine]);
+        view.adjacent_places.insert(latrine, vec![camp]);
+        view.place_tags
+            .insert(latrine, BTreeSet::from([worldwake_core::PlaceTag::Latrine]));
+        view.self_care_occupants.insert(latrine, other);
+        view.homeostatic_needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(450), pm(0)),
+        );
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        let relieve_anchors = candidates
+            .iter()
+            .filter(|candidate| candidate.key.kind == GoalKind::Relieve)
+            .map(|candidate| candidate.anchor)
+            .collect::<Vec<_>>();
+        assert_eq!(relieve_anchors, vec![OpportunityAnchor::None]);
+    }
+
+    #[test]
     fn sleep_candidate_emission_at_current_place_only() {
         let agent = entity(1);
         let camp = entity(10);
@@ -13245,6 +13298,99 @@ mod tests {
                 OpportunityAnchor::Entity(basin_b),
             ])
         );
+    }
+
+    #[test]
+    fn emit_wash_goal_skips_basin_with_known_self_care_occupancy_by_other_actor() {
+        let agent = entity(1);
+        let other = entity(2);
+        let place = entity(10);
+        let basin = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, other]);
+        view.effective_places.insert(agent, place);
+        view.homeostatic_needs.insert(agent, dirtiness(450));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.workstations
+            .insert((place, WorkstationTag::WashBasin), vec![basin]);
+        view.wash_basin_states
+            .insert(basin, WashBasinState::default());
+        view.self_care_occupants.insert(basin, other);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(&candidates, GoalKind::Wash));
+    }
+
+    #[test]
+    fn emit_wash_goal_emits_when_actor_is_the_occupant() {
+        let agent = entity(1);
+        let place = entity(10);
+        let basin = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        view.homeostatic_needs.insert(agent, dirtiness(450));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.workstations
+            .insert((place, WorkstationTag::WashBasin), vec![basin]);
+        view.wash_basin_states
+            .insert(basin, WashBasinState::default());
+        view.self_care_occupants.insert(basin, agent);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        let wash = candidates
+            .iter()
+            .find(|candidate| candidate.key.kind == GoalKind::Wash)
+            .expect("self-held occupancy must not self-block candidate emission");
+        assert_eq!(wash.anchor, OpportunityAnchor::Entity(basin));
+    }
+
+    #[test]
+    fn emit_wash_goal_skips_remote_basin_with_belief_of_occupancy() {
+        let agent = entity(1);
+        let other = entity(2);
+        let origin = entity(10);
+        let bathhouse = entity(11);
+        let basin = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, other]);
+        view.effective_places.insert(agent, origin);
+        view.adjacent_places.insert(origin, vec![bathhouse]);
+        view.adjacent_places.insert(bathhouse, vec![origin]);
+        view.homeostatic_needs.insert(agent, dirtiness(450));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.workstations
+            .insert((bathhouse, WorkstationTag::WashBasin), vec![basin]);
+        view.wash_basin_states
+            .insert(basin, WashBasinState::default());
+        view.self_care_occupants.insert(basin, other);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(&candidates, GoalKind::Wash));
     }
 
     #[test]
