@@ -25,13 +25,13 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         start_noop,
         tick_continue,
         commit_eat,
-        abort_noop,
+        abort_emit_self_care_interrupted,
     ));
     let drink_handler = handlers.register(ActionHandler::new(
         start_noop,
         tick_continue,
         commit_drink,
-        abort_noop,
+        abort_emit_self_care_interrupted,
     ));
     let sleep_handler = handlers.register(ActionHandler::new(
         start_sleep_episode,
@@ -55,7 +55,7 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         start_noop,
         tick_continue,
         commit_relieve_wilderness,
-        abort_noop,
+        abort_emit_self_care_interrupted,
     ));
 
     register_def(
@@ -193,8 +193,7 @@ fn register_def(
         handler,
         binding_strictness: match name {
             "eat" | "drink" => worldwake_sim::BindingStrictness::FungibleEquivalentCommodity,
-            "sleep" => worldwake_sim::BindingStrictness::AnyLegalTarget,
-            "toilet" => worldwake_sim::BindingStrictness::AnyLegalTarget,
+            "sleep" | "toilet" => worldwake_sim::BindingStrictness::AnyLegalTarget,
             "wash" => worldwake_sim::BindingStrictness::EquivalentWorkstationTagAtSamePlace,
             other => panic!("unexpected needs action {other}"),
         },
@@ -383,8 +382,21 @@ fn tick_continue(
     Ok(ActionProgress::Continue)
 }
 
-#[allow(clippy::unnecessary_wraps)]
+#[allow(dead_code, clippy::unnecessary_wraps)]
 fn abort_noop(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    Ok(())
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn abort_emit_self_care_interrupted(
     _def: &ActionDef,
     _instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
@@ -1166,7 +1178,7 @@ const fn pm(value: u16) -> Permille {
 
 #[cfg(test)]
 mod tests {
-    use super::register_needs_actions;
+    use super::{abort_emit_self_care_interrupted, register_needs_actions};
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -1495,6 +1507,27 @@ mod tests {
             relieve.binding_strictness,
             BindingStrictness::AnyLegalTarget
         );
+        assert!(std::ptr::fn_addr_eq(
+            handlers
+                .get(defs.get(ActionDefId(0)).unwrap().handler)
+                .unwrap()
+                .on_abort,
+            abort_emit_self_care_interrupted as worldwake_sim::ActionAbortFn,
+        ));
+        assert!(std::ptr::fn_addr_eq(
+            handlers
+                .get(defs.get(ActionDefId(1)).unwrap().handler)
+                .unwrap()
+                .on_abort,
+            abort_emit_self_care_interrupted as worldwake_sim::ActionAbortFn,
+        ));
+        assert!(std::ptr::fn_addr_eq(
+            handlers
+                .get(defs.get(ActionDefId(5)).unwrap().handler)
+                .unwrap()
+                .on_abort,
+            abort_emit_self_care_interrupted as worldwake_sim::ActionAbortFn,
+        ));
     }
 
     #[test]

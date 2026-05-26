@@ -2,7 +2,7 @@
 
 ## Summary
 
-Today only `sleep` has a durable interruption contract: `SleepEpisode` carries accumulated recovery, `abort_sleep_episode` ends the episode with `WakeReason::LocalDisturbance`, and the episode preserves partial progress across replans. `eat`, `drink`, `toilet`, `relieve_wilderness`, and `wash` all register `abort_noop` (`crates/worldwake-systems/src/needs_actions.rs:23-58`) and have no occupancy state — interrupting any of them leaves no state, no structured trace beyond the engine-level `EventTag::ActionAborted` record, and (for Wash and Toilet) no facility release because there is no facility reservation to release. At draft intake, the contention substrate `S44`/`S142` existed, and `WashBasinState` (`S129`) was per-facility, but `promotable_contention_kind` (`crates/worldwake-systems/src/facility_queue.rs:463-473`) classified only `(Corpse, "loot"|"bury")`, `(Care, "heal")`, and the auto-promotion path through `exclusive_facility_workstation_tag` for `ActionPayload::Harvest`/`Craft`; `archive/tickets/S173SELCARINT-003.md` has since added the crate-private Wash/Toilet classification variants. This spec defines an explicit interruption contract per self-care action family, extends the crate-private `PromotableContentionKind` enum (`facility_queue.rs:29`) to classify Wash and Toilet, adds the minimum `SelfCareOccupancy` carrier required to release on abort, threads a typed `ActionTraceDetail::SelfCareInterrupted` variant for structured debug surfacing alongside the existing authoritative `EventTag::ActionAborted` record, and proves the loop end-to-end: contested basin → one occupant → other waits or replans → interrupted occupant releases on abort → repeated interruption can lawfully escalate to deprivation collapse.
+At draft intake, only `sleep` had a durable interruption contract: `SleepEpisode` carried accumulated recovery, `abort_sleep_episode` ended the episode with `WakeReason::LocalDisturbance`, and the episode preserved partial progress across replans. `eat`, `drink`, `toilet`, `relieve_wilderness`, and `wash` all registered `abort_noop` (`crates/worldwake-systems/src/needs_actions.rs`) and had no occupancy state — interrupting any of them left no state, no structured trace beyond the engine-level `EventTag::ActionAborted` record, and (for Wash and Toilet) no facility release because there was no facility reservation to release. Tickets through `archive/tickets/S173SELCARINT-004.md` have since landed `SelfCareOccupancy`, Wash/Toilet occupancy release, and Wash/Toilet trace detail; `archive/tickets/S173SELCARINT-005.md` added the remaining atomic-action and Sleep trace discriminator mapping. The remaining spec family proves the loop end-to-end: contested basin → one occupant → other waits or replans → interrupted occupant releases on abort → repeated interruption can lawfully escalate to deprivation collapse.
 
 ## Phase
 
@@ -15,7 +15,7 @@ Draft
 ## Crates
 
 - `worldwake-core` (`SelfCareOccupancy` component, `SelfCareUseKind` enum)
-- `worldwake-sim` (interrupt-abort handler registration, new `ActionTraceDetail::SelfCareInterrupted` variant, decision-trace surface)
+- `worldwake-sim` (abort trace-detail mapping, new `ActionTraceDetail::SelfCareInterrupted` variant, decision-trace surface)
 - `worldwake-systems` (per-family abort handlers replacing `abort_noop`, occupancy mutation in `wash` and `toilet`, `PromotableContentionKind` extension)
 - `worldwake-ai` (candidate emission filter on occupancy; revalidation respects occupancy; failure attribution for contended/disconfirmed basins)
 - `worldwake-cli` (scenario contract authoring for interruption and collapse scenarios)
@@ -34,8 +34,8 @@ Draft
 
 - Every self-care action declares its interruption contract: start state, tick effects, commit effects, abort cleanup, recovery-visible facts, trace surface.
 - Mechanically exclusive facilities (`WashBasin`-tagged `Facility`, `Latrine`-tagged `Place`) are reserved on action start and released on commit, abort, or actor incapacitation.
-- Eat, Drink, and Wilderness-Relief remain atomic (no partial state) — but their abort handlers explicitly populate the typed `ActionTraceDetail::SelfCareInterrupted` payload so "interrupted before commit" is distinguishable from "never attempted" in the action-trace sink. The authoritative causal hook remains the existing `EventTag::ActionAborted` record, already fired by the engine for every aborted action; the spec adds structured payload, not a new causal surface.
-- Sleep retains its existing `SleepEpisode` contract unchanged; this spec layers the same typed trace detail above it so all five families share the same inspection shape.
+- Eat, Drink, and Wilderness-Relief remain atomic (no partial state) — but their abort path is explicitly mapped to the typed `ActionTraceDetail::SelfCareInterrupted` payload so "interrupted before commit" is distinguishable from "never attempted" in the action-trace sink. The authoritative causal hook remains the existing `EventTag::ActionAborted` record, already fired by the engine for every aborted action; the spec adds structured payload, not a new causal surface.
+- Sleep retains its existing `SleepEpisode` contract unchanged; this spec layers the same typed trace detail above it so all six families share the same inspection shape.
 - Repeated interruption can lawfully drive an agent to deprivation collapse — proven end-to-end by a scenario, not just by the existing simulation-gaps hunger-starvation proof.
 - No new abstract score, no hidden rescue, no scenario-specific target injection, no planner intent-as-lock.
 
@@ -122,14 +122,14 @@ The contract table below is the authoritative source for action-handler implemen
 | `relieve_wilderness` | `GoalKind::Relieve` | None | None | Clear bladder, create Waste/evidence, increase actor dirtiness, increase place dirtiness | None | Same place still valid? Replan freely. | `ActionTraceDetail::SelfCareInterrupted { kind: WildernessRelief, basin: None }` — extends `SelfCareUseKind` (see note) |
 | `wash` | `GoalKind::Wash` | `SelfCareOccupancy { use_kind: Wash, … }` on the `WashBasin`-tagged `Facility` | None | Reduce dirtiness, consume `clean_water_units`, dirty basin (existing); partial relief when `clean_water_units < min` (existing); **remove occupancy** | **Remove occupancy** | Basin available + clean water? Retry. Basin occupied by another? Wait or replan. Basin dry → replan to alternate or acquisition. | `ActionTraceDetail::SelfCareInterrupted { kind: Wash, basin: Some(<basin entity>) }` |
 
-**SelfCareUseKind discriminator scope**: The table references `SelfCareUseKind` variants for trace detail on `eat`, `drink`, and `relieve_wilderness` even though those actions write no occupancy. The trace detail surfaces interruption attribution; it does not imply occupancy. The minimum enum required by D1 is `{ Wash, LatrineRelief }` (the only variants that carry occupancy). For trace-detail completeness, the implementation may either (i) extend `SelfCareUseKind` with non-occupancy variants `Eat`, `Drink`, `WildernessRelief` — at the cost of a slightly broader enum than its occupancy role implies, but with the benefit of a single discriminator across the trace surface — or (ii) define a sibling `SelfCareTraceKind` enum carrying the five families for trace purposes only. The implementation chooses (i) at ticket time unless the broader enum produces semantic confusion at registration; the spec marks this as a trace-detail design call, not a contract change.
+**SelfCareUseKind discriminator scope**: The table references `SelfCareUseKind` variants for trace detail on `eat`, `drink`, `sleep`, and `relieve_wilderness` even though those actions write no occupancy. The trace detail surfaces interruption attribution; it does not imply occupancy. The minimum enum required by D1 is `{ Wash, LatrineRelief }` (the only variants that carry occupancy). For trace-detail completeness, the implementation may either (i) extend `SelfCareUseKind` with non-occupancy variants `Eat`, `Drink`, `Sleep`, `WildernessRelief` — at the cost of a slightly broader enum than its occupancy role implies, but with the benefit of a single discriminator across the trace surface — or (ii) define a sibling `SelfCareTraceKind` enum carrying the six families for trace purposes only. The implementation chooses (i) at ticket time unless the broader enum produces semantic confusion at registration; the spec marks this as a trace-detail design call, not a contract change.
 
 `abort_noop` is removed from the call sites for `eat`, `drink`, `toilet`, `wash`, and `relieve_wilderness` in `needs_actions.rs` (lines 27, 33, 45, 51, 57); replaced with two new handlers:
 
-- `abort_release_self_care_occupancy` for `toilet` and `wash` — removes `SelfCareOccupancy` from the facility/place, then populates `ActionTraceEvent.detail` with the typed `SelfCareInterrupted` variant.
-- `abort_emit_self_care_interrupted` for `eat`, `drink`, and `relieve_wilderness` — no state effect, populates `ActionTraceEvent.detail` only.
+- `abort_release_self_care_occupancy` for `toilet` and `wash` — removes `SelfCareOccupancy` from the facility/place.
+- `abort_emit_self_care_interrupted` for `eat`, `drink`, and `relieve_wilderness` — no state effect; the named handler keeps the registration surface explicit.
 
-Both handlers fire alongside the existing engine-level `EventTag::ActionAborted` emission in `tick_action.rs:96, 188, 220, 265` / `interrupt_abort.rs:147` — they enrich, not replace, the authoritative causal record.
+The action-trace detail is populated at the `tick_step.rs::abort_trace_detail_for_instance` emission boundary, because `ActionExecutionContext` does not carry an `ActionTraceSink`. That trace-side helper maps `eat`, `drink`, `sleep`, `toilet`, `wash`, and `relieve_wilderness` to `ActionTraceDetail::SelfCareInterrupted` alongside the existing engine-level `EventTag::ActionAborted` emission in `tick_action.rs` / `interrupt_abort.rs` — it enriches, not replaces, the authoritative causal record.
 
 ### D3. `PromotableContentionKind` extension
 
@@ -199,9 +199,9 @@ SelfCareInterrupted {
 },
 ```
 
-This variant carries the structured "which use kind, which facility/place" payload that the existing `ActionTraceKind::Aborted { instance_id, reason: String }` (line 65-86) does not type. It is populated by the new abort handlers from D2 (`abort_release_self_care_occupancy` and `abort_emit_self_care_interrupted`) by setting `ActionTraceEvent.detail` (line 20-28 of `action_trace.rs`) when the event is emitted.
+This variant carries the structured "which use kind, which facility/place" payload that the existing `ActionTraceKind::Aborted { instance_id, reason: String }` (line 65-86) does not type. It is populated by `tick_step.rs::abort_trace_detail_for_instance` when `step_tick()` emits an abort `ActionTraceEvent`.
 
-Note: `ActionTraceDetail::from_payload` (line 740+) currently returns `None` for `ActionPayload::None`, which is what all five self-care actions register. The abort handlers therefore populate `detail` directly rather than via `from_payload`. No change to `from_payload` is required.
+Note: `ActionTraceDetail::from_payload` (line 740+) currently returns `None` for `ActionPayload::None`, which is what all six self-care actions register. The abort trace helper therefore populates `detail` directly rather than via `from_payload`. No change to `from_payload` is required.
 
 No new `EventTag` variant. The authoritative causal record for an interrupted self-care action remains `EventTag::ActionAborted`, which already fires from `tick_action.rs:96, 188, 220, 265` and `interrupt_abort.rs:147` for every aborted action. This deliverable adds structured payload, not a new causal surface (FND-28, FND-29A).
 
@@ -240,7 +240,7 @@ D4 modifies action preconditions (`reservation_requirements`); D6 modifies candi
 
 2. **New entities/relations/records**:
    - `SelfCareOccupancy` component on `EntityKind::Facility` (Wash) and `EntityKind::Place` (latrine).
-   - `SelfCareUseKind` enum (minimally `Wash`, `LatrineRelief`; trace-detail completeness may add `Eat`, `Drink`, `WildernessRelief` — see D2 note).
+   - `SelfCareUseKind` enum (minimally `Wash`, `LatrineRelief`; trace-detail completeness may add `Eat`, `Drink`, `Sleep`, `WildernessRelief` — see D2 note).
    - `ActionTraceDetail::SelfCareInterrupted { kind, basin }` variant (structured trace payload).
    - `PromotableContentionKind::SelfCareWash` and `::SelfCareLatrine` (extension of the crate-private `PromotableContentionKind` enum in `worldwake-systems`; not promoted to core).
    - No new `EventTag` variant. The authoritative causal record is the already-firing `EventTag::ActionAborted`.
@@ -249,7 +249,7 @@ D4 modifies action preconditions (`reservation_requirements`); D6 modifies candi
    - `wash` action start writes `SelfCareOccupancy`; commit and abort remove it.
    - `toilet` action start writes `SelfCareOccupancy`; commit and abort remove it.
    - Actor death or place departure mid-action triggers abandon cleanup (S44 substrate already handles this via grant expiry; spec reuses).
-   - Action abort handlers populate `ActionTraceEvent.detail` with the new typed variant.
+   - `tick_step.rs::abort_trace_detail_for_instance` populates `ActionTraceEvent.detail` with the new typed variant at the trace emission boundary.
 
 4. **Information production and travel**:
    - Co-located agents observe basin occupancy via FND-14A same-tick local observation.
@@ -261,9 +261,9 @@ D4 modifies action preconditions (`reservation_requirements`); D6 modifies candi
 6. **Scarce capacities and contention**: `SelfCareOccupancy` is the carrier of exclusive use. One occupant per `WashBasin`-tagged `Facility` or `Latrine`-tagged `Place` at a time. Contention via `S44` `ContentionQueue` with grant/expiry, classified by the new `PromotableContentionKind::SelfCareWash` / `SelfCareLatrine` variants. Wilderness-relief is not scarce.
 
 7. **Partial failures and aftermath**: Five lawful abort/failure shapes:
-   - Atomic abort with no state change (Eat/Drink/Wilderness-Relief): `EventTag::ActionAborted` fires (existing); abort handler populates `ActionTraceDetail::SelfCareInterrupted` for typed inspection.
-   - Atomic abort with occupancy release (Toilet/Wash): `EventTag::ActionAborted` fires (existing); abort handler removes `SelfCareOccupancy` and populates `ActionTraceDetail::SelfCareInterrupted`.
-   - Durable abort with partial-progress preserved (Sleep): existing `SleepEpisode` aftermath + `EventTag::SleepEpisodeEnded`.
+   - Atomic abort with no state change (Eat/Drink/Wilderness-Relief): `EventTag::ActionAborted` fires (existing); action trace maps the abort to `ActionTraceDetail::SelfCareInterrupted` for typed inspection.
+   - Atomic abort with occupancy release (Toilet/Wash): `EventTag::ActionAborted` fires (existing); abort handler removes `SelfCareOccupancy`, and action trace maps the abort to `ActionTraceDetail::SelfCareInterrupted`.
+   - Durable abort with partial-progress preserved (Sleep): existing `SleepEpisode` aftermath + `EventTag::SleepEpisodeEnded`; action trace maps the abort to `ActionTraceDetail::SelfCareInterrupted`.
    - Action start blocked by contention: queue join via S44; no occupancy written; no abort fires.
    - Repeated interruption → deprivation collapse: deprivation wounds accumulate; eventual death (S81 substrate).
 
@@ -343,7 +343,7 @@ No method-required goal is introduced. No new HTN schema contract.
 | Replay determinism | `SelfCareOccupancy` write/remove order differs across replays | Standard ECS replay invariants; assertion in long-run scenario replay-equivalence test |
 | No remote-truth leak | Agent A reads remote basin's `SelfCareOccupancy` directly | Belief-source classification table (D5); assertion in Scenario D player-POV test |
 | Collapse traceability | Death from repeated interruption without traceable cause | `DeathCause::NeedDeprivation` + per-action `EventTag::ActionAborted` records filtered by actor and action name + `ActionTraceDetail::SelfCareInterrupted` payloads in trace; Scenario E |
-| No backward-compat | `abort_noop` still registered for `eat`/`drink`/`toilet`/`wash`/`relieve_wilderness` after this lands | Compile-time check: the `abort_noop` call sites at `needs_actions.rs:27, 33, 45, 51, 57` are replaced by the new abort handlers |
+| No backward-compat | `abort_noop` still registered for `eat`/`drink`/`toilet`/`wash`/`relieve_wilderness` after this lands | Compile-time check: the self-care `abort_noop` call sites in `needs_actions.rs` are replaced by the new abort handlers |
 | No parallel causal surface | New `EventTag::SelfCareInterrupted` variant added in addition to existing `ActionAborted` | Spec forbids: D7 explicitly reuses `EventTag::ActionAborted` for the causal record; only the typed trace detail is new |
 
 ## SystemFn Integration
@@ -376,7 +376,7 @@ The component is runtime-managed (no scenario authoring), mirroring `SleepEpisod
 | S129 (WashBasinState, LatrineFullness, PlaceTag::Latrine) | Basin water/dirtiness state continues to gate `wash_preconditions`; occupancy is a parallel gate | State-mediated |
 | S81 (Deprivation death) | Repeated interruption + rising deprivation → existing death pathway | State-mediated; no new mechanism |
 | `archive/specs/S163-cli-player-pov-boundary.md` | UI surfaces `SelfCareOccupancy` only for co-located or belief-known facilities/places | State-mediated via belief view |
-| Action engine (existing) | New abort handler variants registered; existing `EventTag::ActionAborted` emission unchanged | State-mediated |
+| Action engine (existing) | New abort handler variants registered; existing `EventTag::ActionAborted` emission unchanged; `tick_step` maps abort traces to typed self-care detail | State-mediated |
 
 ## Profile-Driven Parameters
 
@@ -446,7 +446,7 @@ Assertions:
 
 1. **Sleep-surface scarcity remains place-level.** The spec explicitly defers sleep-surface identity. If a future scenario reveals two agents trying to sleep at the same scarce surface and the place-capacity model is insufficient, a follow-up spec adds `SleepSurface` and extends `SelfCareUseKind`.
 2. **`WashSessionProgress` deferred.** Duration-based partial Wash is interesting (Wash for 5 of 10 ticks, get partial dirtiness reduction) but invisible without a durable carrier. Deferred unless a scenario proves it matters.
-3. **`SelfCareUseKind` discriminator scope (D2 note).** Whether to extend `SelfCareUseKind` with `Eat`/`Drink`/`WildernessRelief` for trace-detail completeness vs. introduce a sibling `SelfCareTraceKind` enum is an implementation-time call; the spec describes the trade-off in D2 and leaves the resolution to ticket-time.
+3. **`SelfCareUseKind` discriminator scope (D2 note).** Whether to extend `SelfCareUseKind` with `Eat`/`Drink`/`Sleep`/`WildernessRelief` for trace-detail completeness vs. introduce a sibling `SelfCareTraceKind` enum is an implementation-time call; the spec describes the trade-off in D2 and leaves the resolution to ticket-time.
 4. **Scenario E run length.** Repeated-interruption collapse may need ~2000-4000 ticks to fire reliably. Whether the scenario is part of the standard golden lane or a separate "ignored CI" lane is a decision for the implementation phase; both are acceptable.
 5. **Deprivation-wound threshold field location.** Section H Point 9 and Profile-Driven Parameters cite `DeprivationExposure::<need>_critical_ticks` as the accumulator; the threshold above which wounds fire lives in the deprivation system. The exact field/site is verified at ticket time; not a contract change.
 6. **`abort_noop` call sites elsewhere.** The spec replaces `abort_noop` for the five self-care actions in `needs_actions.rs:27, 33, 45, 51, 57`. The `start_gate.rs` `abort_noop` (line 399) is inside `#[cfg(test)]` (line 308 boundary) and is unaffected. The `abort_noop` symbol itself is preserved as the registered abort for any non-self-care action that legitimately has nothing to clean up.

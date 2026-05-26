@@ -20,6 +20,7 @@ pub enum SelfCareUseKind {
     Eat,
     Drink,
     WildernessRelief,
+    Sleep,
 }
 
 #[cfg(test)]

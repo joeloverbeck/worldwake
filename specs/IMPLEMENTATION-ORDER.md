@@ -51,7 +51,7 @@ S173 depends on archived S172. S172 is complete.
   and latrine `Place`; replaces `abort_noop` with `abort_release_self_care_occupancy`
   (Wash, Toilet) and `abort_emit_self_care_interrupted` (Eat, Drink, Wilderness);
   extends `promotable_contention_kind` to classify Wash and Toilet as exclusive use;
-  layers `SelfCareInterrupted` event uniformly above all five families; proves
+  layers `SelfCareInterrupted` trace detail uniformly above all six families; proves
   repeated-interruption deprivation collapse end-to-end via Scenario E.
   **FND-1/3/4/8/9/10/11/19/21/26/28/29/29A/31.**
 

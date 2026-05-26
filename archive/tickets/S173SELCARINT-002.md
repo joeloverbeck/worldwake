@@ -8,7 +8,7 @@
 
 ## Problem
 
-Before this ticket, an interrupted self-care action fired `EventTag::ActionAborted` (engine-level, already authoritative) with an unstructured `ActionTraceKind::Aborted { instance_id, reason: String }` payload (`crates/worldwake-sim/src/action_trace.rs:65-86`). "Why didn't this agent wash?" could not be answered from typed evidence — only from the freeform string. The completed change adds the typed `ActionTraceDetail::SelfCareInterrupted { kind, basin }` variant so abort handlers in downstream tickets (004 for wash/toilet, 005 for eat/drink/wilderness/sleep) can populate structured "which use kind, which facility/place" payload alongside the existing authoritative `EventTag::ActionAborted` record.
+Before this ticket, an interrupted self-care action fired `EventTag::ActionAborted` (engine-level, already authoritative) with an unstructured `ActionTraceKind::Aborted { instance_id, reason: String }` payload (`crates/worldwake-sim/src/action_trace.rs:65-86`). "Why didn't this agent wash?" could not be answered from typed evidence — only from the freeform string. The completed change adds the typed `ActionTraceDetail::SelfCareInterrupted { kind, basin }` variant so downstream tickets can populate structured "which use kind, which facility/place" payload alongside the existing authoritative `EventTag::ActionAborted` record. The live population boundary is `tick_step.rs::abort_trace_detail_for_instance` after `archive/tickets/S173SELCARINT-004.md` and `archive/tickets/S173SELCARINT-005.md`, not handler-local trace mutation.
 
 ## Assumption Reassessment (2026-05-25)
 
@@ -66,7 +66,7 @@ Path note: import `SelfCareUseKind` from `worldwake_core` (already a dependency 
 
 ### 2. No change to `from_payload`
 
-`ActionTraceDetail::from_payload(&ActionPayload::None)` continues to return `None`. Abort handlers in downstream tickets (004, 005) set `ActionTraceEvent.detail` explicitly to `Some(ActionTraceDetail::SelfCareInterrupted { … })` at emission time rather than routing through `from_payload`. This preserves the existing `from_payload` contract (payload-derived auto-discrimination for non-`None` payloads).
+`ActionTraceDetail::from_payload(&ActionPayload::None)` continues to return `None`. Downstream tickets (004, 005) set `ActionTraceEvent.detail` through `tick_step.rs::abort_trace_detail_for_instance` at emission time rather than routing through `from_payload`. This preserves the existing `from_payload` contract (payload-derived auto-discrimination for non-`None` payloads).
 
 ## Files Touched
 

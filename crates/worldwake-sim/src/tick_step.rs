@@ -71,6 +71,18 @@ fn abort_trace_detail_for_instance(
 ) -> Option<ActionTraceDetail> {
     let def = defs.get(instance.def_id)?;
     match def.name.as_str() {
+        "eat" => Some(ActionTraceDetail::SelfCareInterrupted {
+            kind: SelfCareUseKind::Eat,
+            basin: None,
+        }),
+        "drink" => Some(ActionTraceDetail::SelfCareInterrupted {
+            kind: SelfCareUseKind::Drink,
+            basin: None,
+        }),
+        "sleep" => Some(ActionTraceDetail::SelfCareInterrupted {
+            kind: SelfCareUseKind::Sleep,
+            basin: None,
+        }),
         "wash" => Some(ActionTraceDetail::SelfCareInterrupted {
             kind: SelfCareUseKind::Wash,
             basin: instance.targets.first().copied(),
@@ -78,6 +90,10 @@ fn abort_trace_detail_for_instance(
         "toilet" => Some(ActionTraceDetail::SelfCareInterrupted {
             kind: SelfCareUseKind::LatrineRelief,
             basin: instance.targets.first().copied(),
+        }),
+        "relieve_wilderness" => Some(ActionTraceDetail::SelfCareInterrupted {
+            kind: SelfCareUseKind::WildernessRelief,
+            basin: None,
         }),
         _ => ActionTraceDetail::from_payload(&instance.payload),
     }
@@ -1256,19 +1272,17 @@ mod tests {
         registry
     }
 
-    #[test]
-    fn abort_trace_detail_for_self_care_actions_uses_instance_target() {
-        let mut registry = action_registry();
-        registry.register(ActionDef {
-            id: ActionDefId(3),
-            name: "wash".to_string(),
+    fn self_care_def(id: ActionDefId, name: &str) -> ActionDef {
+        ActionDef {
+            id,
+            name: name.to_string(),
             domain: ActionDomain::Needs,
             actor_constraints: vec![crate::Constraint::ActorAlive],
             targets: vec![TargetSpec::EntityAtActorPlace {
                 kind: EntityKind::Facility,
             }],
             preconditions: vec![Precondition::ActorAlive],
-            reservation_requirements: vec![ReservationReq { target_index: 0 }],
+            reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(2).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
             attention_cost: worldwake_core::Permille::ZERO,
@@ -1278,33 +1292,102 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
-            binding_strictness: crate::BindingStrictness::EquivalentWorkstationTagAtSamePlace,
+            binding_strictness: crate::BindingStrictness::AnyLegalTarget,
             guard_template: None,
             expectation_template: vec![],
             effect_schema: crate::EffectSchema::empty(),
-        });
-        let basin = entity(42);
-        let instance = ActionInstance {
+        }
+    }
+
+    fn active_instance(def_id: ActionDefId, targets: Vec<EntityId>) -> ActionInstance {
+        ActionInstance {
             instance_id: ActionInstanceId(7),
-            def_id: ActionDefId(3),
+            def_id,
             payload: ActionPayload::None,
             actor: entity(9),
-            targets: vec![basin],
+            targets,
             start_tick: Tick(10),
             remaining_duration: crate::ActionDuration::new(2),
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
             body_cost_override: None,
-        };
+        }
+    }
 
-        assert_eq!(
-            abort_trace_detail_for_instance(&registry, &instance),
-            Some(ActionTraceDetail::SelfCareInterrupted {
-                kind: SelfCareUseKind::Wash,
-                basin: Some(basin),
-            })
-        );
+    #[test]
+    fn abort_trace_detail_for_self_care_actions_uses_action_family_and_target() {
+        let mut registry = action_registry();
+        for (offset, name) in [
+            "eat",
+            "drink",
+            "sleep",
+            "wash",
+            "toilet",
+            "relieve_wilderness",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            registry.register(self_care_def(ActionDefId(3 + offset as u32), name));
+        }
+
+        let basin = entity(42);
+        for (def_id, targets, expected) in [
+            (
+                ActionDefId(3),
+                Vec::new(),
+                ActionTraceDetail::SelfCareInterrupted {
+                    kind: SelfCareUseKind::Eat,
+                    basin: None,
+                },
+            ),
+            (
+                ActionDefId(4),
+                Vec::new(),
+                ActionTraceDetail::SelfCareInterrupted {
+                    kind: SelfCareUseKind::Drink,
+                    basin: None,
+                },
+            ),
+            (
+                ActionDefId(5),
+                Vec::new(),
+                ActionTraceDetail::SelfCareInterrupted {
+                    kind: SelfCareUseKind::Sleep,
+                    basin: None,
+                },
+            ),
+            (
+                ActionDefId(6),
+                vec![basin],
+                ActionTraceDetail::SelfCareInterrupted {
+                    kind: SelfCareUseKind::Wash,
+                    basin: Some(basin),
+                },
+            ),
+            (
+                ActionDefId(7),
+                vec![basin],
+                ActionTraceDetail::SelfCareInterrupted {
+                    kind: SelfCareUseKind::LatrineRelief,
+                    basin: Some(basin),
+                },
+            ),
+            (
+                ActionDefId(8),
+                Vec::new(),
+                ActionTraceDetail::SelfCareInterrupted {
+                    kind: SelfCareUseKind::WildernessRelief,
+                    basin: None,
+                },
+            ),
+        ] {
+            assert_eq!(
+                abort_trace_detail_for_instance(&registry, &active_instance(def_id, targets)),
+                Some(expected)
+            );
+        }
     }
 
     fn reservation_action_registry() -> ActionDefRegistry {

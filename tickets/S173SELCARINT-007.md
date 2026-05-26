@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None (golden scenarios only)
-**Deps**: `archive/tickets/S173SELCARINT-004.md` (wash/toilet contract), S173SELCARINT-005 (atomic-action abort traces), S173SELCARINT-006 (emitter filter), `specs/S173-self-care-interruption-occupancy.md` (Scenarios A, B, C)
+**Deps**: `archive/tickets/S173SELCARINT-004.md` (wash/toilet contract), `archive/tickets/S173SELCARINT-005.md` (atomic-action abort traces), S173SELCARINT-006 (emitter filter), `specs/S173-self-care-interruption-occupancy.md` (Scenarios A, B, C)
 
 ## Problem
 
@@ -21,7 +21,7 @@ The behavioral contract from tickets 001-006 needs end-to-end verification throu
 2. Existing golden infrastructure for self-care: `crates/worldwake-ai/tests/scenarios/survival_*.rs` is the survival-family golden lane. The new scenarios slot into this lane following the existing file structure (one `.rs` file per scenario, with a `.ron` companion if scenario data is externalized). Verify the canonical golden naming convention at implementation time via `docs/golden-e2e-testing.md` and `docs/generated/golden-scenario-index.md`.
 3. Authoritative event-log assertions for Scenario A: each abort fires `EventTag::ActionAborted` exactly once per action; `ActionTraceDetail::SelfCareInterrupted` payload is captured in the action-trace sink with the correct `kind` discriminator. Sleep additionally fires `EventTag::SleepEpisodeEnded` (preserved by ticket 005). For the occupancy-bearing wash and toilet aborts, `SelfCareOccupancy` is removed by abort time.
 4. Scenario B contention: two agents start at the same `WashBasin`-tagged `Facility` with one `clean_water_units` budget. Action-trace ordering key `(tick, sequence_in_tick)` per `docs/precision-rules.md` Rule 14 — only one agent's wash action commits in the same tick; the other either joins the contention queue (`S44` substrate; `EventTag::ContentionResolved` fires) or replans. Both branches are lawful per the spec's Scenario B assertions.
-5. Scenario C interruption: Agent A starts wash; before commit, an interrupting event fires (hostile predator entering co-location, or a higher-priority self-care emerging). The abort handler from ticket 004 (`abort_release_self_care_occupancy`) fires `EventTag::ActionAborted` + populates trace detail + removes `SelfCareOccupancy`. Then either Agent B (if queued) receives a grant via `EventTag::QueueGrantPromoted`, or Agent A re-emits a wash candidate next tick targeting the same (now free) basin.
+5. Scenario C interruption: Agent A starts wash; before commit, an interrupting event fires (hostile predator entering co-location, or a higher-priority self-care emerging). The abort handler from ticket 004 (`abort_release_self_care_occupancy`) removes `SelfCareOccupancy`; the action engine fires `EventTag::ActionAborted`; the `tick_step` trace mapper from ticket 005 populates trace detail. Then either Agent B (if queued) receives a grant via `EventTag::QueueGrantPromoted`, or Agent A re-emits a wash candidate next tick targeting the same (now free) basin.
 6. Shared abstraction boundary across the three scenarios: the action-trace sink + the event log + authoritative world state (component presence/absence). Each scenario maps a distinct invariant to a distinct proof surface per `docs/precision-rules.md` Rule 5.
 7. Scenario isolation per Rule 8: Scenario B must isolate the contention-resolution branch from a lawfully-competing branch where one of the agents simply has a lower-priority goal and never reaches wash. The setup forces both agents to dirty-need-priority on the same tick. Document the isolation choice in the scenario file.
 8. Cumulative arithmetic per Rule 7: Scenario A's per-family abort fires once per action; no accumulation. Scenario B's contention resolution is a single-tick race; no accumulation. Scenario C's interruption fires once and the recovery path may or may not complete within the scenario's tick budget — verify the scenario's tick budget accommodates one full retry cycle.
@@ -55,7 +55,7 @@ The behavioral contract from tickets 001-006 needs end-to-end verification throu
 
 Create `crates/worldwake-ai/tests/scenarios/survival_self_care_interruption_traces.rs` (or per the canonical naming convention in `docs/generated/golden-scenario-index.md` — verify at implementation time):
 
-- One agent set up with all five self-care need pressures active.
+- One agent set up with all six self-care interruption families exercised through the trace surface.
 - Scenario controller forces the agent to start each action family in sequence, then interrupts each before commit.
 - Assertions cover per-family `ActionTraceDetail::SelfCareInterrupted` payloads and per-family `EventTag::ActionAborted` event-log entries.
 
@@ -99,7 +99,7 @@ Regenerate `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-scen
 
 ### Tests That Must Pass
 
-1. New golden: `survival_self_care_interruption_traces` — all 5 action families abort with correct typed payload.
+1. New golden: `survival_self_care_interruption_traces` — all six self-care action families abort with correct typed payload.
 2. New golden: `survival_self_care_contested_basin` — exactly one wash commits per tick; the other agent's path is lawful (queued OR replanned).
 3. New golden: `survival_self_care_interrupted_release` — abort releases occupancy; recovery happens through normal channels (grant promotion OR re-emission).
 4. Existing survival-lane goldens pass: `cargo test -p worldwake-ai --test golden_ai survival`.
@@ -107,7 +107,7 @@ Regenerate `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-scen
 
 ### Invariants
 
-1. The typed trace surface (`ActionTraceDetail::SelfCareInterrupted`) is populated for every self-care abort, distinguishing the five families by `kind`.
+1. The typed trace surface (`ActionTraceDetail::SelfCareInterrupted`) is populated for every self-care abort, distinguishing the six families by `kind`.
 2. The authoritative event log (`EventTag::ActionAborted`) is the single causal surface for the abort fact; no parallel `EventTag::SelfCareInterrupted` variant exists in the workspace.
 3. Contention resolution through `SelfCareOccupancy` + `PromotableContentionKind` substrate is observable through `EventTag::ContentionResolved` / `EventTag::QueueGrantPromoted`.
 4. No silent rescue: an interrupted wash that replans goes through normal candidate emission (no "resume from saved state" or "secret reservation" path).
