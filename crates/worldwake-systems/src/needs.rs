@@ -246,11 +246,19 @@ fn apply_pending_update(txn: &mut WorldTxn<'_>, update: PendingUpdate) -> Result
 }
 
 fn determine_need_death_cause(needs: HomeostaticNeeds) -> DeathCause {
-    let need = if needs.hunger >= needs.thirst {
-        HomeostaticNeedId::Hunger
-    } else {
-        HomeostaticNeedId::Thirst
-    };
+    // Attribution is by need *pressure*, not by dominant deprivation *wound* (S175 D4).
+    // Only hunger, thirst, and fatigue have a killing-wound path; bladder and dirtiness
+    // are excluded. `max_by_key` returns the LAST maximal element on ties, so the needs
+    // are listed in reverse tie-break priority (lowest first) to preserve the original
+    // hunger > thirst tie-break and extend it with fatigue lowest.
+    let need = [
+        HomeostaticNeedId::Fatigue,
+        HomeostaticNeedId::Thirst,
+        HomeostaticNeedId::Hunger,
+    ]
+    .into_iter()
+    .max_by_key(|need| needs.value(*need))
+    .expect("non-empty need set");
     DeathCause::NeedDeprivation { need }
 }
 
@@ -416,6 +424,18 @@ fn apply_deprivation_consequences(
             tick,
         );
         exposure.thirst_critical_ticks = 0;
+        wounds_changed = true;
+    }
+
+    if exposure.fatigue_critical_ticks >= profile.exhaustion_collapse_ticks.get() {
+        worsen_or_create_deprivation_wound(
+            &mut wound_list,
+            world.get_component_wound_list(entity),
+            DeprivationKind::Exhaustion,
+            needs.fatigue,
+            tick,
+        );
+        exposure.fatigue_critical_ticks = 0;
         wounds_changed = true;
     }
 
@@ -1534,6 +1554,58 @@ mod tests {
                 need: HomeostaticNeedId::Hunger,
             }
         );
+        // Fatigue is the dominant pressure -> attributed to Fatigue (S175 D4).
+        assert_eq!(
+            determine_need_death_cause(HomeostaticNeeds::new(
+                pm(100),
+                pm(200),
+                pm(800),
+                pm(0),
+                pm(0)
+            )),
+            DeathCause::NeedDeprivation {
+                need: HomeostaticNeedId::Fatigue,
+            }
+        );
+        // Three-way tie -> Hunger (highest tie-break priority preserved).
+        assert_eq!(
+            determine_need_death_cause(HomeostaticNeeds::new(
+                pm(500),
+                pm(500),
+                pm(500),
+                pm(0),
+                pm(0)
+            )),
+            DeathCause::NeedDeprivation {
+                need: HomeostaticNeedId::Hunger,
+            }
+        );
+        // Thirst/fatigue tie above hunger -> Thirst (thirst outranks fatigue).
+        assert_eq!(
+            determine_need_death_cause(HomeostaticNeeds::new(
+                pm(100),
+                pm(600),
+                pm(600),
+                pm(0),
+                pm(0)
+            )),
+            DeathCause::NeedDeprivation {
+                need: HomeostaticNeedId::Thirst,
+            }
+        );
+        // Bladder/dirtiness never win attribution even when they dominate.
+        assert_eq!(
+            determine_need_death_cause(HomeostaticNeeds::new(
+                pm(100),
+                pm(50),
+                pm(75),
+                pm(1000),
+                pm(1000)
+            )),
+            DeathCause::NeedDeprivation {
+                need: HomeostaticNeedId::Hunger,
+            }
+        );
     }
 
     #[test]
@@ -1770,6 +1842,220 @@ mod tests {
                 .severity
                 .saturating_add(thresholds.hunger.critical())
         );
+    }
+
+    #[test]
+    fn needs_system_adds_exhaustion_wound_and_resets_fatigue_exposure_at_threshold() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = spawn_agent(&mut world, 1, "Aster");
+        let thresholds = DriveThresholds::default();
+        seed_agent(
+            &mut world,
+            agent,
+            HomeostaticNeeds::new(pm(0), pm(0), thresholds.fatigue.critical(), pm(0), pm(0)),
+            DeprivationExposure {
+                // One tick below the 60-tick collapse threshold; this tick crosses it.
+                fatigue_critical_ticks: 59,
+                ..DeprivationExposure::default()
+            },
+            MetabolismProfile {
+                exhaustion_collapse_ticks: nz(60),
+                ..metabolism(0, 0, 0, 0, 0)
+            },
+            thresholds,
+        );
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([20; 32]));
+
+        needs_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+        ))
+        .unwrap();
+
+        let wounds = world.get_component_wound_list(agent).unwrap();
+        assert_eq!(wounds.wounds.len(), 1);
+        assert_eq!(
+            wounds.wounds[0].cause,
+            WoundCause::Deprivation(DeprivationKind::Exhaustion)
+        );
+        assert_eq!(wounds.wounds[0].severity, thresholds.fatigue.critical());
+        assert_eq!(
+            world
+                .get_component_deprivation_exposure(agent)
+                .unwrap()
+                .fatigue_critical_ticks,
+            0
+        );
+    }
+
+    #[test]
+    fn needs_system_exhaustion_threshold_is_read_from_profile_each_tick() {
+        // A 120-tick collapse profile must NOT create a wound when the counter only
+        // reaches 60 — proving the threshold is read live from the profile rather
+        // than reusing the 60-tick value from the prior test (D7 Scenario C, point 3).
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = spawn_agent(&mut world, 1, "Aster");
+        let thresholds = DriveThresholds::default();
+        seed_agent(
+            &mut world,
+            agent,
+            HomeostaticNeeds::new(pm(0), pm(0), thresholds.fatigue.critical(), pm(0), pm(0)),
+            DeprivationExposure {
+                fatigue_critical_ticks: 59,
+                ..DeprivationExposure::default()
+            },
+            MetabolismProfile {
+                exhaustion_collapse_ticks: nz(120),
+                ..metabolism(0, 0, 0, 0, 0)
+            },
+            thresholds,
+        );
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([21; 32]));
+
+        needs_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+        ))
+        .unwrap();
+
+        // Counter advanced to 60 but the 120-tick threshold is not met: no wound.
+        assert_eq!(world.get_component_wound_list(agent), None);
+        assert_eq!(
+            world
+                .get_component_deprivation_exposure(agent)
+                .unwrap()
+                .fatigue_critical_ticks,
+            60
+        );
+
+        // Advance the counter to 119; the next tick crosses the 120-tick threshold.
+        {
+            let mut txn = new_txn(&mut world, 9);
+            txn.set_component_deprivation_exposure(
+                agent,
+                DeprivationExposure {
+                    fatigue_critical_ticks: 119,
+                    ..DeprivationExposure::default()
+                },
+            )
+            .unwrap();
+            let _ = txn.commit(&mut event_log);
+        }
+
+        needs_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+        ))
+        .unwrap();
+
+        let wounds = world.get_component_wound_list(agent).unwrap();
+        assert_eq!(wounds.wounds.len(), 1);
+        assert_eq!(
+            wounds.wounds[0].cause,
+            WoundCause::Deprivation(DeprivationKind::Exhaustion)
+        );
+        assert_eq!(
+            world
+                .get_component_deprivation_exposure(agent)
+                .unwrap()
+                .fatigue_critical_ticks,
+            0
+        );
+    }
+
+    #[test]
+    fn needs_system_kills_agent_from_exhaustion_wound_load_attributed_to_fatigue() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = spawn_agent(&mut world, 1, "Aster");
+        let place = first_place(&world);
+        place_agent(&mut world, agent, place);
+        let thresholds = DriveThresholds::default();
+        seed_agent(
+            &mut world,
+            agent,
+            // Fatigue is the dominant pressure, so attribution must be Fatigue.
+            HomeostaticNeeds::new(
+                pm(100),
+                pm(200),
+                thresholds.fatigue.critical(),
+                pm(0),
+                pm(0),
+            ),
+            DeprivationExposure {
+                fatigue_critical_ticks: 59,
+                ..DeprivationExposure::default()
+            },
+            MetabolismProfile {
+                exhaustion_collapse_ticks: nz(60),
+                ..metabolism(0, 0, 0, 0, 0)
+            },
+            thresholds,
+        );
+        // Low wound capacity; one more exhaustion-severity bump tips the load fatal.
+        seed_combat_profile(&mut world, agent, 500);
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_component_wound_list(
+                agent,
+                WoundList {
+                    wounds: vec![Wound {
+                        id: WoundId(1),
+                        body_part: BodyPart::Torso,
+                        cause: WoundCause::Deprivation(DeprivationKind::Exhaustion),
+                        severity: pm(300),
+                        inflicted_at: Tick(1),
+                        bleed_rate_per_tick: pm(0),
+                    }],
+                },
+            )
+            .unwrap();
+            let _ = txn.commit(&mut EventLog::new());
+        }
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([22; 32]));
+
+        needs_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+        ))
+        .unwrap();
+
+        // The existing exhaustion wound worsens by the critical fatigue value, pushing
+        // wound load past the 500 capacity -> fatal, attributed to Fatigue.
+        let wounds = world.get_component_wound_list(agent).unwrap();
+        assert_eq!(wounds.wounds.len(), 1);
+        assert_eq!(
+            wounds.wounds[0].cause,
+            WoundCause::Deprivation(DeprivationKind::Exhaustion)
+        );
+        assert!(wounds.wound_load() >= 500);
+        assert_eq!(
+            world.get_component_dead_at(agent).map(|dead| dead.cause),
+            Some(DeathCause::NeedDeprivation {
+                need: HomeostaticNeedId::Fatigue,
+            })
+        );
+        assert_eq!(event_log.events_by_tag(EventTag::Death).len(), 1);
     }
 
     #[test]

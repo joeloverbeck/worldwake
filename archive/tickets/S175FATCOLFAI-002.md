@@ -1,6 +1,6 @@
 # S175FATCOLFAI-002: Fatigue consequence path — exhaustion wound creation + death attribution
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-systems` needs system (`apply_deprivation_consequences`, `determine_need_death_cause`)
@@ -90,3 +90,21 @@ Add focused needs-system tests proving: (a) with `exhaustion_collapse_ticks = nz
 2. `cargo test -p worldwake-ai -- simulation_gaps survival_self_care_interruption` (no-regression guard for the Hunger goldens)
 3. `cargo clippy -p worldwake-systems --all-targets -- -D warnings`
 4. `scripts/verify.sh`
+
+## Outcome
+
+**Completion date**: 2026-05-28
+
+**What changed** (all in `crates/worldwake-systems/src/needs.rs`):
+- Added the fatigue branch to `apply_deprivation_consequences`: when `exposure.fatigue_critical_ticks >= profile.exhaustion_collapse_ticks.get()`, it calls `worsen_or_create_deprivation_wound(..., DeprivationKind::Exhaustion, needs.fatigue, tick)`, resets `fatigue_critical_ticks = 0`, and sets `wounds_changed = true` — mirroring the starvation/dehydration branches exactly.
+- Extended `determine_need_death_cause` from a two-need (`hunger >= thirst`) comparison to a stable max over the three wound-bearing needs (hunger, thirst, fatigue) by `needs.value(need)`.
+- Extended the attribution unit test to cover fatigue-dominant, three-way tie, thirst/fatigue tie, and bladder/dirtiness-never-win cases.
+- Added three focused needs-system tests: exhaustion wound at threshold 60 + counter reset; threshold-read-per-tick liveness (120-tick profile produces no wound at counter 60, wound at 120); and exhaustion-wound-load death attributed to `Fatigue`.
+
+**Deviation from ticket pseudocode (corrected spec error)**: Spec D4 / ticket step 2 specified
+`[Hunger, Thirst, Fatigue].into_iter().max_by_key(...)` with the comment "stable max keeps the first listed on ties". This is **factually wrong about Rust stdlib semantics**: `Iterator::max_by_key` returns the **last** maximal element on ties, so that listing would attribute a three-way tie to `Fatigue`, violating the ticket's own acceptance criterion (#3: "three-way tie → Hunger"). The implementation instead lists the needs in **reverse** tie-break priority — `[Fatigue, Thirst, Hunger]` — so that "last maximal wins" yields the intended hunger > thirst > fatigue priority. The behavioral contract (hunger > thirst > fatigue on ties) is exactly as the spec intended; only the mechanism is corrected. An inline comment documents this.
+
+**Verification**:
+- `cargo test -p worldwake-systems needs` — 76 passed (includes the 3 new fatigue tests + extended attribution test).
+- `cargo test -p worldwake-ai --test golden_ai -- --ignored survival_self_care_interruption simulation_gaps` — 7 passed; both `Hunger`-death goldens unchanged (the two assertions at `simulation_gaps.rs:777` and `survival_self_care_interruption.rs:865` are in CI-only `#[ignore]` goldens; run explicitly to confirm no regression).
+- `cargo clippy -p worldwake-systems --all-targets -- -D warnings` — clean.
