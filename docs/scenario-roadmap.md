@@ -34,6 +34,7 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Basic needs (Eat) | `needs` + non-zero hunger utility + `metabolism_profile` + `drive_thresholds` + food recipe path | [`needs.rs`](../crates/worldwake-systems/src/needs.rs), [`needs_actions.rs`](../crates/worldwake-systems/src/needs_actions.rs) | Landed in [§5.1](#51-landed-1-survival-baseline) |
 | Basic needs (Drink) | `needs` + non-zero thirst utility + `metabolism_profile` + `drive_thresholds` + water recipe path | [`needs.rs`](../crates/worldwake-systems/src/needs.rs), [`needs_actions.rs`](../crates/worldwake-systems/src/needs_actions.rs) | Landed in [§5.1](#51-landed-1-survival-baseline) |
 | Basic needs (Sleep) | `needs` + non-zero fatigue utility + `metabolism_profile` + `drive_thresholds` | [`needs.rs`](../crates/worldwake-systems/src/needs.rs), [`needs_actions.rs`](../crates/worldwake-systems/src/needs_actions.rs) | Landed in [§5.1](#51-landed-1-survival-baseline); S174 rest-site contention / safe-rest behavior has auxiliary coverage in [§5.19](#519-landed-auxiliary-safe-rest-and-rest-site-contention) |
+| Rest-site contention / safe rest | Any place authored with `rest_capacity` | [`facility_queue.rs`](../crates/worldwake-systems/src/facility_queue.rs), [`needs_actions.rs`](../crates/worldwake-systems/src/needs_actions.rs) rest-site lifecycle | Landed auxiliary in [§5.19](#519-landed-auxiliary-safe-rest-and-rest-site-contention) |
 | Basic needs (Relieve) | `needs` + non-zero bladder utility + `metabolism_profile` + `drive_thresholds` | [`needs.rs`](../crates/worldwake-systems/src/needs.rs), [`needs_actions.rs`](../crates/worldwake-systems/src/needs_actions.rs) | Landed in [§5.1](#51-landed-1-survival-baseline) |
 | Basic needs (Wash) | `needs` + non-zero dirtiness utility + `metabolism_profile` + `drive_thresholds` + wash-capable water path | [`needs.rs`](../crates/worldwake-systems/src/needs.rs), [`needs_actions.rs`](../crates/worldwake-systems/src/needs_actions.rs) | Landed in [§5.1](#51-landed-1-survival-baseline) |
 | Travel physiology | Any non-zero travel multiplier or wilderness relief dirtiness penalty in `metabolism_profile` | [`needs.rs`](../crates/worldwake-systems/src/needs.rs), [`travel_actions.rs`](../crates/worldwake-systems/src/travel_actions.rs) | Landed in [§5.2](#52-landed-2-survival-scattered) |
@@ -77,7 +78,6 @@ Coverage warnings from the generated companion are currently truthful and intent
 - `expectation_store` is an authored scenario setup field, not a standalone gameplay feature row.
 - `last_seen_memory` is an authored scenario field but not yet classified as its own gameplay feature row.
 - `social_observations` is an authored scenario setup field, not a standalone gameplay feature row.
-- `rest_capacity` is an authored place field (S174 rest-site identity) intentionally not yet mapped to a gameplay-feature row. Rest-site capacity/occupancy contention currently has auxiliary behavior coverage only (see [§5.19](#519-landed-auxiliary-safe-rest-and-rest-site-contention)); the existing Basic needs (Sleep) feature is what structurally activates, and `rest_capacity` is not promoted to a tracked feature until a survival-coexistence row claims it.
 
 Those warnings should remain visible until the project either promotes them into the gameplay-feature catalog or decides they are permanently editorial/supporting fields rather than roadmap features.
 
@@ -105,7 +105,7 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-escort.ron` | Escort/care coordinated travel under hostile pressure |
 | Landed in `final-integration.ron` | Full gameplay catalog structural coexistence under survival-health, with hostile wound pressure |
 | Landed in `cognitive-archetypes-divergence.ron` | Cognitive archetypes auxiliary behavior proof |
-| Landed auxiliary (focused goldens): `survival-safe-rest`, `survival-sleep-contention`, `survival-rest-interrupted-by-danger`, `survival-failed-rest-cascade`, `survival-rest-cli` | S174 rest-site capacity/occupancy contention, rough-sleep fallback, structured wake causes, failed-rest forensic feed, and player-POV rest-occupancy gating (auxiliary behavior coverage; no survival-coexistence row yet) |
+| Landed auxiliary (focused goldens): `survival-safe-rest`, `survival-sleep-contention`, `survival-rest-interrupted-by-danger`, `survival-failed-rest-cascade`, `survival-rest-cli` | Rest-site contention / safe rest: S174 rest-site capacity/occupancy contention, rough-sleep fallback, structured wake causes, failed-rest forensic feed, and player-POV rest-occupancy gating (auxiliary behavior coverage; no survival-coexistence row yet) |
 | Structurally partial outside the landed branch | Broader Report / witness |
 
 The key constraint is that structural activation alone is not a feature landing. `cli-evaluation.ron`, `survival-tell.ron`, and `survival-ask-consult.ron` can expose future substrate without automatically promoting every structurally active row to `Landed`.
@@ -729,7 +729,7 @@ These rows are auxiliary behavior coverage, not survival-coexistence landings. T
 Why they are not roadmap survival-row landings:
 
 - None carry a `survival_health_contract`; each runs on a short focused tick budget (80–220 ticks), not a 1440-tick coexistence run.
-- They introduce no new tracked gameplay feature. `rest_capacity` is an authored place field intentionally left unmapped in [`scenario_coverage.rs`](../crates/worldwake-cli/src/bin/scenario_coverage.rs) (see the §2 coverage warnings); the existing Basic needs (Sleep) feature is what structurally activates.
+- `Rest-site contention / safe rest` is now structurally tracked from authored `rest_capacity`, but this is an auxiliary landing analogous to [§5.18](#518-landed-auxiliary-cognitive-archetypes-divergence), not a survival-row promotion.
 - They run in the default `cargo test -p worldwake-ai` / `cargo test -p worldwake-cli` lanes (not `#[ignore]`, no dedicated CI workflow), so they are regular focused goldens rather than long-running ignored scenarios.
 
 The long-running, collision-proven survival landing for rest-site scarcity — multi-agent rest contention sustained across a 1440-tick run and colliding with travel, combat, justice, and obligations — remains unproven and is tracked as a Cluster 1 deepening gap in [`docs/gameplay-mechanic-deepening-roadmap.md`](gameplay-mechanic-deepening-roadmap.md).

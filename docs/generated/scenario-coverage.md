@@ -20,7 +20,6 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 - survival-combat: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-contested: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-escort: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
-- survival-failed-rest-cascade: place field `rest_capacity` is not mapped by any FeatureDef
 - survival-items-decay: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-justice: agent field `expectation_store` is not mapped by any FeatureDef
 - survival-justice: agent field `last_seen_memory` is not mapped by any FeatureDef
@@ -36,13 +35,9 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 - survival-patrol: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-preferences: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-production: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
-- survival-rest-cli: place field `rest_capacity` is not mapped by any FeatureDef
-- survival-rest-interrupted-by-danger: place field `rest_capacity` is not mapped by any FeatureDef
 - survival-rest-interrupted-by-danger: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
-- survival-safe-rest: place field `rest_capacity` is not mapped by any FeatureDef
 - survival-scattered: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-sleep-contention: place field `contention_policy` is not mapped by any FeatureDef
-- survival-sleep-contention: place field `rest_capacity` is not mapped by any FeatureDef
 - survival-tell: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-theft: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
 - survival-trade: agent field `portfolio_weights_profile` is not mapped by any FeatureDef
@@ -54,6 +49,7 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 | Basic needs (Eat) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | — | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ |
 | Basic needs (Drink) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | — | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ |
 | Basic needs (Sleep) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ |
+| Rest-site contention / safe rest | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | ✅ | — | ✅ | — | — | — |
 | Basic needs (Relieve) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ |
 | Basic needs (Wash) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | — | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ |
 | Travel physiology | ⚠ | ✅ | ✅ | ✅ | ⚠ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | — | ⚠ | — | ✅ | — | ✅ | ⚠ | ⚠ |
@@ -140,6 +136,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Drive escalation
 - Diversification / curiosity
 - Item decay
@@ -185,6 +182,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Drive escalation
 - Need-driven exploration
 - Place concealment
@@ -265,6 +263,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Facility-queue contention
 
 **Absent features**
+- Rest-site contention / safe rest
 - Cognitive archetypes
 
 **World features**
@@ -306,6 +305,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Drive escalation
 - Place concealment
 - Obligation satiation
@@ -363,6 +363,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Drive escalation
 - Place concealment
 - Obligation satiation
@@ -425,6 +426,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Drive escalation
 - Place concealment
 - Obligation satiation
@@ -483,6 +485,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Drive escalation
 - Place concealment
 - Obligation satiation
@@ -541,6 +544,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Escort
 
 **Absent features**
+- Rest-site contention / safe rest
 - Activation-decay perception
 - Place concealment
 - Tell / peer info transfer
@@ -604,6 +608,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Drive escalation
 - Place concealment
 - Obligation satiation
@@ -644,6 +649,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 
 **Active features**
 - Basic needs (Sleep)
+- Rest-site contention / safe rest
 
 **Present-but-inactive features**
 - Basic needs (Eat)
@@ -730,6 +736,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Drive escalation
 - Place concealment
 - Obligation satiation
@@ -791,6 +798,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Drive escalation
 - Place concealment
 - Obligation satiation
@@ -842,6 +850,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Drive escalation
 - Place concealment
 - Tell / peer info transfer
@@ -906,6 +915,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Drive escalation
 - Place concealment
 - Tell / peer info transfer
@@ -966,6 +976,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Drive escalation
 - Place concealment
 - Obligation satiation
@@ -1025,6 +1036,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Drive escalation
 - Place concealment
 - Obligation satiation
@@ -1083,6 +1095,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Drive escalation
 - Place concealment
 - Obligation satiation
@@ -1123,7 +1136,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Survival contract: absent
 
 **Active features**
-- none
+- Rest-site contention / safe rest
 
 **Present-but-inactive features**
 - none
@@ -1186,6 +1199,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 
 **Active features**
 - Basic needs (Sleep)
+- Rest-site contention / safe rest
 - Basic needs (Relieve)
 - Combat
 
@@ -1245,7 +1259,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Survival contract: absent
 
 **Active features**
-- none
+- Rest-site contention / safe rest
 
 **Present-but-inactive features**
 - Basic needs (Eat)
@@ -1326,6 +1340,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Drive escalation
 - Place concealment
 - Obligation satiation
@@ -1366,7 +1381,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Survival contract: absent
 
 **Active features**
-- none
+- Rest-site contention / safe rest
 
 **Present-but-inactive features**
 - Basic needs (Eat)
@@ -1447,6 +1462,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Activation-decay perception
 - Place concealment
 - Obligation satiation
@@ -1515,6 +1531,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Drive escalation
 - Obligation satiation
 - Diversification / curiosity
@@ -1573,6 +1590,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Report / witness
 
 **Absent features**
+- Rest-site contention / safe rest
 - Drive escalation
 - Place concealment
 - Obligation satiation
