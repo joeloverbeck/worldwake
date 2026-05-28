@@ -1,6 +1,6 @@
 # Implementation Order
 
-**Status**: 📌 Held adjunct wave — authored, awaiting explicit user directive to lift the gameplay hold
+**Status**: COMPLETED
 
 The prior gameplay adjunct wave (S172 + S173, derived from the first-iteration
 ChatGPT-Pro Cluster 1 report at SHA `a83cd87617a48e767c2bd53abd66117367cf4b6f`)
@@ -126,3 +126,14 @@ specs are needed for these themes; the pending specs already own them.
   existing `S17`/`S81` wound-and-death substrate.
 - Neither spec depends on `S60`–`S66`; the held gameplay specs may activate in
   any order relative to this wave.
+
+## Outcome
+
+Completed: 2026-05-28
+
+- What actually changed: This implementation-order snapshot was retired as a
+  finished planning record and archived with the current-date suffix.
+- Deviations from original plan: None; no implementation or ticket scope was
+  changed.
+- Verification results: Documentation-only archival; confirmed the archive
+  destination name was available before moving the file.
