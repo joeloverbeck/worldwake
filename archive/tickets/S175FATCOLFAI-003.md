@@ -1,6 +1,6 @@
 # S175FATCOLFAI-003: `exhaustion_collapse_observed` forensic flag on `CriticalWindowReport`
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` survival forensics read-model
@@ -84,3 +84,27 @@ Update `observer.rs:5849` to derive the signal from the agent's `WoundList` (new
 2. `cargo test -p worldwake-cli --bin observer`
 3. `cargo clippy -p worldwake-ai -p worldwake-cli --all-targets -- -D warnings`
 4. `scripts/verify.sh`
+
+## Outcome
+
+**Completion date**: 2026-05-28
+
+**What changed**:
+- `crates/worldwake-ai/src/survival_forensics.rs`:
+  - Added `#[serde(default)] pub exhaustion_collapse_observed: bool` to `CriticalWindowReport`.
+  - Added a `exhaustion_collapse_observed: bool` field to the private `WindowBuilder` (init `false` in `new`, emitted in `flush`).
+  - Extended `SurvivalForensicExtractor::observe` with a `exhaustion_collapse_signal: bool` param; after the per-need loop it latches the flag onto the **active fatigue window** (matching the established precedent that fatigue-specific forensics — `failed_rest_opportunities` — attach only to the fatigue window). The latch persists through `flush`.
+  - Added a public free helper `exhaustion_collapse_signal(world, agent, tick) -> bool` that derives the per-tick signal from authoritative state: an `Exhaustion` deprivation wound with `inflicted_at == tick`, OR a `DeadAt` with `cause == NeedDeprivation { need: Fatigue }` and `tick == tick`. Both production and golden-harness callers reuse this helper (DRY).
+- `crates/worldwake-cli/src/bin/observer.rs`: production caller derives the signal via the helper and passes it to `observe`; test sample constructor (`sample_critical_window_report`) sets the new field.
+- `crates/worldwake-ai/tests/golden_harness/survival_forensics_assertions.rs`: `observe_critical_windows` derives the signal from `harness.world` and threads it through.
+- Three integration-test callers (`forensic_determinism.rs`, `forensic_sleep_progress_barrier.rs`, `forensic_wash_vs_water_competition.rs`) pass `false` — those synthetic scenarios have no exhaustion collapse.
+
+**Design decision (signal scope)**: Per the ticket's latitude (Assumption Reassessment item 3 — "exact signal shape pinned during implementation"), the flag latches onto the **Fatigue** window specifically rather than all active windows. Rationale: exhaustion is definitionally a fatigue consequence, and the codebase already scopes fatigue-specific forensics (`failed_rest_opportunities`, line 331) to the fatigue window only. On the wound-creation/death tick fatigue is always critical (the counter only reaches threshold while fatigue ≥ critical), so the fatigue window is guaranteed active when the signal fires.
+
+**New tests** (`survival_forensics.rs` `#[cfg(test)]`): flag-true latch (collapse), flag-false (recovery), serde-default deserialization, and a helper test exercising the wound/non-exhaustion-wound/fatigue-death derivation directly against a real `World`.
+
+**Verification**:
+- `cargo test -p worldwake-ai --lib survival_forensics` — 18 passed (4 new).
+- `cargo test -p worldwake-ai` — 1776 + 263 (69 ignored) + integration suites all green.
+- `cargo test -p worldwake-cli --bin observer` — 106 passed.
+- `cargo clippy -p worldwake-ai -p worldwake-cli --all-targets -- -D warnings` — clean (added `#[allow(clippy::too_many_arguments)]` to `observe`, now 8 args, matching the codebase pattern; collapsed the latch `if` into a let-chain).

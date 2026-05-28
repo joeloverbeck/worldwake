@@ -5871,6 +5871,12 @@ fn main() {
                     active_action,
                     active_action_name,
                 );
+                let exhaustion_collapse_signal =
+                    worldwake_ai::survival_forensics::exhaustion_collapse_signal(
+                        world,
+                        *agent_id,
+                        current_tick,
+                    );
                 extractor.observe(
                     current_tick,
                     needs,
@@ -5878,6 +5884,7 @@ fn main() {
                     decision_trace,
                     &action_snapshot,
                     &local_state,
+                    exhaustion_collapse_signal,
                 );
             }
         }
@@ -7034,6 +7041,7 @@ mod tests {
                 local_authoritative_summary: sample_local_survival_state_summary(),
                 failed_rest_opportunities: Vec::new(),
             }],
+            exhaustion_collapse_observed: false,
         }
     }
 

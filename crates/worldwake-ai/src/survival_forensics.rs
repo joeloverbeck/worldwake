@@ -5,8 +5,9 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
-    BlockerScope, CommodityKind, DriveThresholds, EntityId, GoalKey, HomeostaticNeedId,
-    HomeostaticNeeds, Permille, PlaceTag, Quantity, SleepFailureCause, Tick, WorkstationTag, World,
+    BlockerScope, CommodityKind, DeathCause, DeprivationKind, DriveThresholds, EntityId, GoalKey,
+    HomeostaticNeedId, HomeostaticNeeds, Permille, PlaceTag, Quantity, SleepFailureCause, Tick,
+    WorkstationTag, World, WoundCause,
 };
 use worldwake_sim::{
     ActionInstance, ActionInstanceId, ActionTraceDetail, ActionTraceEvent, ActionTraceKind,
@@ -27,6 +28,11 @@ pub struct CriticalWindowReport {
     pub threshold: Permille,
     pub peak_value: Permille,
     pub frames: Vec<CriticalWindowFrame>,
+    /// Derived signal: this critical window's span contained an exhaustion collapse
+    /// (an `Exhaustion` deprivation wound created/worsened, or a fatigue-attributed
+    /// death). Recomputable from `WoundList` + `DeadAt`; never authoritative (FND-27).
+    #[serde(default)]
+    pub exhaustion_collapse_observed: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -141,6 +147,37 @@ impl LocalSurvivalStateSummary {
     }
 }
 
+/// Per-tick exhaustion-collapse signal derived from authoritative state.
+///
+/// Returns `true` when, *this tick*, the agent either gained or worsened an
+/// `Exhaustion` deprivation wound (S175 D2) or died with a fatigue-attributed
+/// death cause (S175 D4). This is the input the caller threads into
+/// [`SurvivalForensicExtractor::observe`] so the active fatigue critical window
+/// latches `exhaustion_collapse_observed`. It is a pure read over `WoundList`
+/// and `DeadAt`; the flag it feeds is never authoritative (FND-27).
+#[must_use]
+pub fn exhaustion_collapse_signal(world: &World, agent: EntityId, tick: Tick) -> bool {
+    let wound_inflicted = world.get_component_wound_list(agent).is_some_and(|wounds| {
+        wounds.wounds.iter().any(|wound| {
+            wound.inflicted_at == tick
+                && matches!(
+                    wound.cause,
+                    WoundCause::Deprivation(DeprivationKind::Exhaustion)
+                )
+        })
+    });
+    let fatigue_death = world.get_component_dead_at(agent).is_some_and(|dead| {
+        dead.tick == tick
+            && matches!(
+                dead.cause,
+                DeathCause::NeedDeprivation {
+                    need: HomeostaticNeedId::Fatigue
+                }
+            )
+    });
+    wound_inflicted || fatigue_death
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ActionTraceSnapshot<'a> {
     pub active_action: Option<ActiveActionSummary>,
@@ -191,6 +228,7 @@ impl SurvivalForensicExtractor {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn observe(
         &mut self,
         tick: Tick,
@@ -199,6 +237,7 @@ impl SurvivalForensicExtractor {
         decision_trace: Option<&AgentDecisionTrace>,
         action_trace_snapshot: &ActionTraceSnapshot<'_>,
         local_state: &LocalSurvivalStateSummary,
+        exhaustion_collapse_signal: bool,
     ) {
         for need in HomeostaticNeedId::ALL {
             let need_value = needs.value(need);
@@ -222,6 +261,15 @@ impl SurvivalForensicExtractor {
             if let Some(builder) = self.active_windows.remove(&need) {
                 self.completed_reports.push(builder.flush(self.agent, need));
             }
+        }
+
+        // Exhaustion collapse is a fatigue consequence; latch it onto the active
+        // fatigue window, mirroring how `failed_rest_opportunities` attach only to
+        // the fatigue window. The latch persists through `flush`.
+        if exhaustion_collapse_signal
+            && let Some(builder) = self.active_windows.get_mut(&HomeostaticNeedId::Fatigue)
+        {
+            builder.exhaustion_collapse_observed = true;
         }
     }
 
@@ -249,6 +297,7 @@ struct WindowBuilder {
     threshold: Permille,
     peak_value: Permille,
     frames: Vec<CriticalWindowFrame>,
+    exhaustion_collapse_observed: bool,
 }
 
 impl WindowBuilder {
@@ -258,6 +307,7 @@ impl WindowBuilder {
             threshold,
             peak_value: Permille::ZERO,
             frames: Vec::new(),
+            exhaustion_collapse_observed: false,
         }
     }
 
@@ -279,6 +329,7 @@ impl WindowBuilder {
             threshold: self.threshold,
             peak_value: self.peak_value,
             frames: bounded_frames(self.frames),
+            exhaustion_collapse_observed: self.exhaustion_collapse_observed,
         }
     }
 }
@@ -689,6 +740,7 @@ mod tests {
                 None,
                 &ActionTraceSnapshot::empty(),
                 &local,
+                false,
             );
         }
 
@@ -715,6 +767,7 @@ mod tests {
                 None,
                 &ActionTraceSnapshot::empty(),
                 &local,
+                false,
             );
         }
 
@@ -754,6 +807,7 @@ mod tests {
                 Some(&planning_trace(agent, Tick(tick), goal)),
                 &ActionTraceSnapshot::empty(),
                 &local,
+                false,
             );
         }
 
@@ -792,6 +846,7 @@ mod tests {
             Some(&trace),
             &action_snapshot,
             &sample_local_summary(),
+            false,
         );
 
         let reports = extractor.finalize();
@@ -881,6 +936,222 @@ mod tests {
     }
 
     #[test]
+    fn critical_window_report_deserializes_missing_exhaustion_collapse_as_false() {
+        let mut report_value =
+            serde_json::to_value(report(entity(1), HomeostaticNeedId::Fatigue, 3, 7)).unwrap();
+        report_value
+            .as_object_mut()
+            .unwrap()
+            .remove("exhaustion_collapse_observed");
+
+        let report: CriticalWindowReport = serde_json::from_value(report_value).unwrap();
+        assert!(!report.exhaustion_collapse_observed);
+    }
+
+    #[test]
+    fn exhaustion_collapse_signal_latches_onto_active_fatigue_window() {
+        let agent = entity(1);
+        let mut extractor = SurvivalForensicExtractor::new(agent);
+        let thresholds = DriveThresholds::default();
+        let critical_fatigue = HomeostaticNeeds::new(pm(0), pm(0), pm(930), pm(0), pm(0));
+
+        // Tick 1: fatigue critical, no collapse yet.
+        extractor.observe(
+            Tick(1),
+            &critical_fatigue,
+            &thresholds,
+            None,
+            &ActionTraceSnapshot::empty(),
+            &sample_local_summary(),
+            false,
+        );
+        // Tick 2: collapse signal fires (exhaustion wound created / fatigue death).
+        extractor.observe(
+            Tick(2),
+            &critical_fatigue,
+            &thresholds,
+            None,
+            &ActionTraceSnapshot::empty(),
+            &sample_local_summary(),
+            true,
+        );
+
+        let reports = extractor.finalize();
+        let fatigue_report = reports
+            .iter()
+            .find(|report| report.need == HomeostaticNeedId::Fatigue)
+            .expect("fatigue critical window should be recorded");
+        assert!(
+            fatigue_report.exhaustion_collapse_observed,
+            "fatigue window must latch the collapse signal"
+        );
+    }
+
+    #[test]
+    fn exhaustion_collapse_flag_stays_false_when_window_recovers() {
+        let agent = entity(1);
+        let mut extractor = SurvivalForensicExtractor::new(agent);
+        let thresholds = DriveThresholds::default();
+        let critical_fatigue = HomeostaticNeeds::new(pm(0), pm(0), pm(930), pm(0), pm(0));
+        let recovered_fatigue = HomeostaticNeeds::new(pm(0), pm(0), pm(100), pm(0), pm(0));
+
+        // Two critical ticks with no collapse signal, then recovery below critical
+        // flushes the window.
+        extractor.observe(
+            Tick(1),
+            &critical_fatigue,
+            &thresholds,
+            None,
+            &ActionTraceSnapshot::empty(),
+            &sample_local_summary(),
+            false,
+        );
+        extractor.observe(
+            Tick(2),
+            &critical_fatigue,
+            &thresholds,
+            None,
+            &ActionTraceSnapshot::empty(),
+            &sample_local_summary(),
+            false,
+        );
+        extractor.observe(
+            Tick(3),
+            &recovered_fatigue,
+            &thresholds,
+            None,
+            &ActionTraceSnapshot::empty(),
+            &sample_local_summary(),
+            false,
+        );
+
+        let reports = extractor.finalize();
+        let fatigue_report = reports
+            .iter()
+            .find(|report| report.need == HomeostaticNeedId::Fatigue)
+            .expect("fatigue critical window should be recorded");
+        assert!(
+            !fatigue_report.exhaustion_collapse_observed,
+            "a window that recovers without collapse must report false"
+        );
+    }
+
+    #[test]
+    fn exhaustion_collapse_signal_helper_reads_wound_and_death_state() {
+        use worldwake_core::{
+            BodyPart, CauseRef, ControlSource, DeadAt, Tick as CoreTick, VisibilitySpec,
+            WitnessData, WorldTxn, Wound, WoundCause, WoundId, WoundList, build_prototype_world,
+        };
+
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = {
+            let mut txn = WorldTxn::new(
+                &mut world,
+                CoreTick(1),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::Hidden,
+                WitnessData::default(),
+            );
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let mut log = worldwake_core::EventLog::new();
+            let _ = txn.commit(&mut log);
+            agent
+        };
+
+        // No wound, no death -> no signal.
+        assert!(!exhaustion_collapse_signal(&world, agent, CoreTick(5)));
+
+        // Exhaustion wound inflicted on tick 5 -> signal on tick 5 only.
+        {
+            let mut txn = WorldTxn::new(
+                &mut world,
+                CoreTick(5),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::Hidden,
+                WitnessData::default(),
+            );
+            txn.set_component_wound_list(
+                agent,
+                WoundList {
+                    wounds: vec![Wound {
+                        id: WoundId(1),
+                        body_part: BodyPart::Torso,
+                        cause: WoundCause::Deprivation(DeprivationKind::Exhaustion),
+                        severity: pm(500),
+                        inflicted_at: CoreTick(5),
+                        bleed_rate_per_tick: pm(0),
+                    }],
+                },
+            )
+            .unwrap();
+            let mut log = worldwake_core::EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        assert!(exhaustion_collapse_signal(&world, agent, CoreTick(5)));
+        assert!(!exhaustion_collapse_signal(&world, agent, CoreTick(6)));
+
+        // A non-exhaustion (starvation) wound never triggers the signal.
+        {
+            let mut txn = WorldTxn::new(
+                &mut world,
+                CoreTick(7),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::Hidden,
+                WitnessData::default(),
+            );
+            txn.set_component_wound_list(
+                agent,
+                WoundList {
+                    wounds: vec![Wound {
+                        id: WoundId(2),
+                        body_part: BodyPart::Torso,
+                        cause: WoundCause::Deprivation(DeprivationKind::Starvation),
+                        severity: pm(500),
+                        inflicted_at: CoreTick(7),
+                        bleed_rate_per_tick: pm(0),
+                    }],
+                },
+            )
+            .unwrap();
+            let mut log = worldwake_core::EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        assert!(!exhaustion_collapse_signal(&world, agent, CoreTick(7)));
+
+        // Fatigue-attributed death on tick 9 -> signal on tick 9.
+        {
+            let mut txn = WorldTxn::new(
+                &mut world,
+                CoreTick(9),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::Hidden,
+                WitnessData::default(),
+            );
+            txn.set_component_dead_at(
+                agent,
+                DeadAt {
+                    tick: CoreTick(9),
+                    cause: DeathCause::NeedDeprivation {
+                        need: HomeostaticNeedId::Fatigue,
+                    },
+                },
+            )
+            .unwrap();
+            let mut log = worldwake_core::EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        assert!(exhaustion_collapse_signal(&world, agent, CoreTick(9)));
+    }
+
+    #[test]
     fn critical_fatigue_window_records_sleep_interruption_failed_rest() {
         let agent = entity(1);
         let place = entity(50);
@@ -914,6 +1185,7 @@ mod tests {
             None,
             &snapshot,
             &sample_local_summary(),
+            false,
         );
 
         let reports = extractor.finalize();
@@ -965,6 +1237,7 @@ mod tests {
             None,
             &snapshot,
             &local,
+            false,
         );
 
         let reports = extractor.finalize();
@@ -1012,6 +1285,7 @@ mod tests {
             Some(&trace),
             &ActionTraceSnapshot::empty(),
             &sample_local_summary(),
+            false,
         );
 
         let reports = extractor.finalize();
@@ -1046,6 +1320,7 @@ mod tests {
             Some(&trace),
             &ActionTraceSnapshot::empty(),
             &local,
+            false,
         );
 
         let reports = extractor.finalize();
@@ -1098,6 +1373,7 @@ mod tests {
             None,
             &snapshot,
             &sample_local_summary(),
+            false,
         );
 
         assert!(extractor.finalize().is_empty());
@@ -1348,6 +1624,7 @@ mod tests {
             threshold: pm(900),
             peak_value: pm(950),
             frames: Vec::new(),
+            exhaustion_collapse_observed: false,
         }
     }
 
