@@ -12,7 +12,7 @@ Phase 7: Consequence Carriers
 
 ## Status
 
-Draft
+✅ COMPLETED
 
 ## Crates
 
@@ -324,3 +324,24 @@ No system commands another. All interaction is via authoritative state, event lo
 
 1. Should the `exhaustion_collapse_observed` flag also fire for incapacitation-without-death (e.g., an agent rendered unable to act by wound load but not yet dead)? The current design ties the flag to either wound creation OR death. If S174 / S175 ticket-time review reveals incapacitation as a distinct meaningful state worth flagging separately, a sibling flag is added then.
 2. Death-cause attribution is by need *pressure*, computed in `determine_need_death_cause` (`needs.rs:248-255`) — it compares `HomeostaticNeeds` values, not wound contributions. D4 extends it to the three wound-bearing needs (hunger/thirst/fatigue) and keeps the existing tie-break order (hunger > thirst > fatigue) via a stable `max_by_key`. A future iteration that wants attribution by dominant deprivation *wound* (so that "exhaustion contributed but the agent died of starvation" is distinguishable in mixed-deprivation deaths) is a separate refinement spec and requires mixed-deprivation goldens to validate; it is out-of-scope here.
+
+## Outcome
+
+**Completion date**: 2026-05-28
+
+Implemented across tickets S175FATCOLFAI-001 through -004 (all archived under `archive/tickets/`).
+
+**What was delivered**:
+- **D1** — `DeprivationKind::Exhaustion` variant added as a trailing sibling to `Starvation`/`Dehydration` (`crates/worldwake-core/src/wounds.rs`), preserving serialized discriminant indices for save-load backward read. (001)
+- **D2** — Fatigue branch wired into `apply_deprivation_consequences`: sustained `fatigue_critical_ticks ≥ exhaustion_collapse_ticks` creates/worsens an `Exhaustion` wound and resets the counter. (002)
+- **D3** — Recovery reset confirmed needing no code change; the pre-existing `critical_ticks` helper already zeroes the counter below critical. (002, validated by Scenario B)
+- **D4** — `determine_need_death_cause` extended from a two-need to a three-need pressure comparison so exhaustion-wound-load deaths attribute to `Fatigue`. (002)
+- **D5** — `CriticalWindowReport.exhaustion_collapse_observed` derived flag added (`#[serde(default)]`), latched onto the active fatigue window via a new `exhaustion_collapse_signal` argument to `SurvivalForensicExtractor::observe` and a reusable `exhaustion_collapse_signal(world, agent, tick)` helper. (003)
+- **D6** — Confirmed `exhaustion_collapse_ticks` is scenario-authorable as a bare `metabolism_profile` integer; no new contract surface. (004)
+- **D7** — Scenarios A (`survival-exhaustion-collapse.ron`) and B (`survival-exhaustion-recovery.ron`) plus golden tests; the focused liveness tests (Scenario C) live inline in `worldwake-systems/src/needs.rs`. (002, 004)
+
+**Notable correction**: Spec D4's pseudocode comment ("`max_by_key` … keeps the first listed on ties") was factually wrong about Rust stdlib semantics — `Iterator::max_by_key` returns the *last* maximal element on ties. The implementation lists the needs in reverse tie-break priority (`[Fatigue, Thirst, Hunger]`) so "last maximal wins" yields the intended hunger > thirst > fatigue order. The behavioral contract is exactly as the spec intended.
+
+**Notable deviations** (full detail in archived `S175FATCOLFAI-004.md`): Scenario A uses a permanently co-located passive hostile (deterministic `HostileProximity` every tick) rather than a periodically-traveling one; Scenario B nudges the flee-to-safety travel via an external best-effort request (the recovery sleep stays emergent) because the agent's emergent fleeing was found to be triggered by exhaustion-wound pain, which would defeat a recovery-before-collapse proof.
+
+**Verification**: `./scripts/verify.sh` green (fmt, full workspace tests, both clippy gates, generated-doc checks). The four S175 golden tests (collapse + recovery, each with a determinism replay) pass under `--ignored`; the S174 `scenario_e_failed_rest` carrier does not regress.

@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 236
-- Contributing golden scenario source files: 59
-- Associated tests: 291
+- Scenario blocks: 238
+- Contributing golden scenario source files: 61
+- Associated tests: 295
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -2512,6 +2512,26 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 ### Scenario 348: Survival Escort Lands Coordinated Care Travel
 
 - Source: `survival_escort.rs:265`
+
+### Scenario 486: S175 Exhaustion Collapse Cascade
+
+- Source: `survival_exhaustion_collapse.rs:180`
+
+**Setup**: A critically tired agent rough-sleeps in the open with a permanently co-located hostile, so every Sleep attempt is interrupted via HostileProximity and rough sleep recovers nothing.
+
+**Proves**: sustained fatigue critical exposure creates an Exhaustion deprivation wound, resets the exposure counter, worsens the wound across a second interval, and ends in wound-load death attributed to Fatigue; the failed-rest forensic chain and the exhaustion_collapse_observed flag are intact.
+
+**Cross-system chain**: hostile co-location -> HostileProximity sleep interruption -> DeprivationExposure fatigue ticks -> Exhaustion wound (WoundCause::Deprivation) -> wound load >= capacity -> DeadAt(NeedDeprivation { Fatigue }) -> exhaustion_collapse_observed.
+
+### Scenario 487: S175 Exhaustion Recovery Dampener
+
+- Source: `survival_exhaustion_recovery.rs:234`
+
+**Setup**: A tired, danger-averse agent starts co-located with a hostile at the Wilds (sleep interrupted via HostileProximity) and flees along a short edge to the safe Haven to rough-sleep.
+
+**Proves**: recovery before terminal wound load prevents collapse — fatigue drops below critical, the fatigue critical exposure counter resets, no Exhaustion wound forms, and exhaustion_collapse_observed stays false. The collapse path is escapable (FND-11 dampener).
+
+**Cross-system chain**: hostile co-location -> HostileProximity interruption -> flee travel to safe place -> successful rough sleep -> fatigue below critical -> DeprivationExposure reset -> no Exhaustion wound.
 
 ### Scenario 485: S174 Failed Rest Cascade Feed
 

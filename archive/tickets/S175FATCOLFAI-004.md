@@ -1,6 +1,6 @@
 # S175FATCOLFAI-004: Exhaustion collapse + recovery golden scenarios
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None (scenario authoring + golden tests + generated-doc regen)
@@ -100,3 +100,25 @@ Run `python3 scripts/golden_inventory.py --write --check-docs` and commit the up
 2. `cargo test -p worldwake-ai` (run the new goldens; CI-only ignored goldens run via the golden-survival workflow per existing convention)
 3. `python3 scripts/golden_inventory.py --write --check-docs`
 4. `scripts/verify.sh`
+
+## Outcome
+
+**Completion date**: 2026-05-28
+
+**What changed**:
+- New scenario `scenarios/survival-exhaustion-collapse.ron` (Scenario A): one rough-sleep-only place ("Wilds", no `rest_capacity`) with a permanently co-located, never-commanded Human hostile ("Watcher"). Every Sleep attempt is interrupted via `HostileProximity` (the sim's `interrupt_sleep_for_local_hostiles` aborts any active sleep whose actor has a live co-located hostile target). `rough_sleep_recovery_floor: 0` pins fatigue at the authored 700, so `fatigue_critical_ticks` accumulates to the `exhaustion_collapse_ticks: 60` threshold, an Exhaustion wound forms (load 700 < `wound_capacity: 950`), the counter resets, the second interval worsens the wound to the Permille ceiling (1000 ≥ 950), and the agent dies attributed to `Fatigue`.
+- New scenario `scenarios/survival-exhaustion-recovery.ron` (Scenario B): hostile-occupied "Wilds" + safe "Haven" a short bidirectional edge away. `exhaustion_collapse_ticks: 120`, `rough_sleep_recovery_floor: 300`. The agent fails rest at Wilds (`HostileProximity`), reaches Haven, rough-sleeps below critical, resets the counter, and forms no Exhaustion wound.
+- New golden tests `crates/worldwake-ai/tests/scenarios/survival_exhaustion_collapse.rs` and `survival_exhaustion_recovery.rs` (registered in `scenarios/mod.rs`), each with a behavioral assertion test and a determinism replay test. Both are `#[ignore]` (CI-only, long-horizon; run via the golden-survival workflow), matching the existing repeated-interruption deprivation-death convention.
+- Regenerated generated docs: `docs/generated/golden-e2e-inventory.md`, `golden-scenario-index.md`, `golden-coverage-matrix.md`, `scenario-coverage.md`, and `golden-scenario-details/survival-exhaustion-{collapse,recovery}.md`.
+
+**Deviations from ticket plan**:
+1. **Scenario A uses a permanently co-located passive hostile** (not a marauder that "periodically interrupts" via travel). A never-commanded Human agent that is a hostile target of the sleeper interrupts every sleep attempt deterministically via the same `HostileProximity` path, and never attacks — so death is unambiguously exhaustion collapse, not combat. This is simpler and more deterministic than scripting repeated travel-in/travel-out, and produces the identical `SleepFailureCause::HostileProximity` records the spec requires.
+2. **Scenario B nudges the flee travel via an external best-effort travel request** after the first hostile-interrupted sleep. Investigation showed the agent's *emergent* fleeing was actually triggered by exhaustion-wound pain — i.e. it only fled *after* a wound had already formed — so pure emergence could not demonstrate recovery *before* collapse within a tractable horizon. The recovery sleep at Haven remains the agent's own emergent decision; only the departure is nudged. This honors the spec's "agent reaches Y and sleeps successfully" while keeping the dampener proof deterministic. (Scenario A's collapse remains fully emergent per FND-1 — no scripted death.)
+3. **`exhaustion_wound_worsened` is asserted via severity growth** of the single Exhaustion wound rather than a distinct second wound entity, because `worsen_or_create_deprivation_wound` reuses one wound per `DeprivationKind` (spec D7 A assertion 4 is explicitly an OR: "second wound *or* severity escalation").
+
+**Verification**:
+- `cargo test -p worldwake-ai --test golden_ai -- --ignored scenario_a_exhaustion scenario_b_exhaustion` — 4 passed (collapse + recovery, each with determinism replay).
+- `cargo test -p worldwake-ai --test golden_ai` — 263 passed, 73 ignored; the S174 `scenario_e_failed_rest` carrier (which still asserts `actor_dead == false`) does not regress (its 80-tick budget never reaches the 120-tick collapse threshold).
+- `python3 scripts/golden_inventory.py --write --check-docs` — docs in sync.
+- `cargo run -p worldwake-cli --bin scenario-coverage -- --check` — in sync.
+- `./scripts/verify.sh` — exit 0 (fmt, full workspace tests, both clippy gates, generated-doc checks all green).
