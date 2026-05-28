@@ -60,6 +60,7 @@ enum FeatureId {
     Eat,
     Drink,
     Sleep,
+    RestSiteContention,
     Relieve,
     Wash,
     TravelPhysiology,
@@ -144,6 +145,13 @@ const FEATURES: &[FeatureDef] = &[
             "drive_thresholds",
         ],
         covered_place_fields: &["sleep_quality", "place_dirtiness"],
+        covered_scenario_fields: &[],
+    },
+    FeatureDef {
+        id: FeatureId::RestSiteContention,
+        name: "Rest-site contention / safe rest",
+        covered_agent_fields: &[],
+        covered_place_fields: &["rest_capacity"],
         covered_scenario_fields: &[],
     },
     FeatureDef {
@@ -757,6 +765,7 @@ fn classify_feature(feature: FeatureId, def: &ScenarioDef) -> FeatureStatus {
         FeatureId::Sleep => {
             basic_need_status_without_recipes(def, |profile| profile.fatigue_weight)
         }
+        FeatureId::RestSiteContention => rest_site_contention_status(def),
         FeatureId::Relieve => {
             basic_need_status_without_recipes(def, |profile| profile.bladder_weight)
         }
@@ -866,6 +875,14 @@ fn cognitive_archetypes_status(def: &ScenarioDef) -> FeatureStatus {
     if def.archetype_assignment_policy.is_some()
         || def.agents.iter().any(|agent| agent.archetype.is_some())
     {
+        FeatureStatus::Active
+    } else {
+        FeatureStatus::Absent
+    }
+}
+
+fn rest_site_contention_status(def: &ScenarioDef) -> FeatureStatus {
+    if def.places.iter().any(|place| place.rest_capacity.is_some()) {
         FeatureStatus::Active
     } else {
         FeatureStatus::Absent

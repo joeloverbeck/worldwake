@@ -30,6 +30,7 @@ pub enum BodyPart {
 pub enum DeprivationKind {
     Starvation,
     Dehydration,
+    Exhaustion,
 }
 
 /// Weapon provenance recorded on combat wounds.
@@ -221,6 +222,59 @@ mod tests {
         let roundtrip: Wound = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, wound);
+    }
+
+    #[test]
+    fn exhaustion_deprivation_cause_roundtrips_through_bincode() {
+        let cause = WoundCause::Deprivation(DeprivationKind::Exhaustion);
+
+        let bytes = bincode::serialize(&cause).unwrap();
+        let roundtrip: WoundCause = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, cause);
+    }
+
+    #[test]
+    fn deprivation_kind_variants_have_stable_serialized_indices() {
+        // Exhaustion must be the trailing variant so existing saves keep their
+        // discriminant indices (Starvation = 0, Dehydration = 1, Exhaustion = 2).
+        assert_eq!(
+            bincode::serialize(&DeprivationKind::Starvation).unwrap(),
+            [0, 0, 0, 0]
+        );
+        assert_eq!(
+            bincode::serialize(&DeprivationKind::Dehydration).unwrap(),
+            [1, 0, 0, 0]
+        );
+        assert_eq!(
+            bincode::serialize(&DeprivationKind::Exhaustion).unwrap(),
+            [2, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn find_deprivation_wound_distinguishes_exhaustion() {
+        let wound_list = WoundList {
+            wounds: vec![Wound {
+                id: WoundId(7),
+                body_part: BodyPart::Torso,
+                cause: WoundCause::Deprivation(DeprivationKind::Exhaustion),
+                severity: Permille::new(500).unwrap(),
+                inflicted_at: Tick(20),
+                bleed_rate_per_tick: Permille::new(0).unwrap(),
+            }],
+        };
+
+        assert_eq!(
+            wound_list
+                .find_deprivation_wound(DeprivationKind::Exhaustion)
+                .map(|wound| wound.id),
+            Some(WoundId(7))
+        );
+        assert_eq!(
+            wound_list.find_deprivation_wound(DeprivationKind::Starvation),
+            None
+        );
     }
 
     #[test]

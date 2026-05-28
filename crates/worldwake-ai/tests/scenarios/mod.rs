@@ -45,6 +45,8 @@ pub mod survival_combat;
 pub mod survival_contested;
 pub mod survival_drive_escalation;
 pub mod survival_escort;
+pub mod survival_exhaustion_collapse;
+pub mod survival_exhaustion_recovery;
 pub mod survival_failed_rest_cascade;
 pub mod survival_items_decay;
 pub mod survival_justice;

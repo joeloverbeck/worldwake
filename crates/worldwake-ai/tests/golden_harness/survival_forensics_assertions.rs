@@ -39,6 +39,8 @@ pub fn observe_critical_windows(
                 ActionTraceSnapshot::from_sink(agent, tick, sink, active_action, active_action_name)
             });
     let local_state = worldwake_ai::LocalSurvivalStateSummary::capture(&harness.world, agent);
+    let exhaustion_collapse_signal =
+        worldwake_ai::survival_forensics::exhaustion_collapse_signal(&harness.world, agent, tick);
     extractor.observe(
         tick,
         needs,
@@ -46,6 +48,7 @@ pub fn observe_critical_windows(
         decision_trace,
         &action_snapshot,
         &local_state,
+        exhaustion_collapse_signal,
     );
 }
 

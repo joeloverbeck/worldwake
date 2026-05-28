@@ -44,6 +44,7 @@ fn run_sequence() -> Vec<worldwake_ai::CriticalWindowReport> {
             Some(&trace),
             &ActionTraceSnapshot::empty(),
             &local_state,
+            false,
         );
     }
 

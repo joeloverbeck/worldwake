@@ -38,6 +38,7 @@ fn forensic_sleep_progress_barrier() {
             Some(&trace),
             &ActionTraceSnapshot::empty(),
             &local_state,
+            false,
         );
     }
 

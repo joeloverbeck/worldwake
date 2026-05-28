@@ -57,6 +57,7 @@ fn forensic_wash_vs_water_competition() {
             Some(&trace),
             &ActionTraceSnapshot::empty(),
             &local_state,
+            false,
         );
     }
 

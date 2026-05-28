@@ -12,12 +12,12 @@ Phase 7: Consequence Carriers
 
 ## Status
 
-Draft
+✅ COMPLETED
 
 ## Crates
 
 - `worldwake-core` (`DeprivationKind::Exhaustion` variant; no new components)
-- `worldwake-systems` (extend `apply_deprivation_consequences` with fatigue branch; extend `WoundCause::Deprivation` consumers)
+- `worldwake-systems` (extend `apply_deprivation_consequences` with fatigue branch; extend `determine_need_death_cause` to attribute fatigue collapse to `HomeostaticNeedId::Fatigue`; extend `WoundCause::Deprivation` consumers)
 - `worldwake-ai` (extend `FailedRestOpportunity` consumer in `SurvivalForensicExtractor` to mark fatigue critical windows that terminated in collapse)
 - `worldwake-cli` (scenario for collapse golden)
 
@@ -60,7 +60,7 @@ Draft
 | FND-19 (Agent symmetry) | Identical exhaustion-collapse semantics for human and AI agents |
 | FND-26 (Systems via state) | Needs system reads `DeprivationExposure.fatigue_critical_ticks` + `MetabolismProfile.exhaustion_collapse_ticks`, writes `WoundList`; wound system reads `WoundList`, writes `Death`; no system commands another |
 | FND-28 (No backcompat) | `exhaustion_collapse_ticks` becomes live; no parallel "old fatigue path"; tests that previously assumed no fatigue consequence are updated |
-| FND-29 (Debuggability) | "Why did this agent collapse?" answerable from `DeprivationExposure` history, `WoundList` snapshot, and `CriticalWindowReport.failed_rest_opportunities` chain |
+| FND-29 (Debuggability) | "Why did this agent collapse?" answerable from `DeprivationExposure` history, `WoundList` snapshot, and the per-frame `CriticalWindowFrame.failed_rest_opportunities` chain (aggregated across the report's `frames`) |
 | FND-29A (Causal history) | Append-only `EventTag::Death` + wound creation events + critical-window-report aggregation |
 | FND-31 (Validation) | Scenarios prove (a) repeated-failed-rest → exhaustion wounds → death chain, (b) recovery is possible if rest becomes available before terminal wound load, (c) `exhaustion_collapse_ticks` is a working profile parameter |
 
@@ -80,7 +80,7 @@ pub enum DeprivationKind {
 The variant participates in:
 - `WoundCause::Deprivation(DeprivationKind::Exhaustion)` (the existing `WoundCause` variant).
 - `WoundList::find_deprivation_wound(DeprivationKind::Exhaustion)` (the existing accessor).
-- `worsen_or_create_deprivation_wound` (existing helper in `worldwake-systems/src/needs.rs`) — no signature change; the helper takes a `DeprivationKind` and a needs reading.
+- `worsen_or_create_deprivation_wound` (existing helper in `worldwake-systems/src/needs.rs`) — no signature change; the helper takes a `DeprivationKind` and a `Permille` severity-increase value (the current need value, e.g. `needs.fatigue`).
 
 No new wound severity ladder, no new wound-load contribution function, no new death cause. The variant slots into the existing pattern as a third equal sibling.
 
@@ -102,7 +102,7 @@ if exposure.fatigue_critical_ticks >= profile.exhaustion_collapse_ticks.get() {
 }
 ```
 
-The reset-on-wound-creation pattern (`exposure.fatigue_critical_ticks = 0`) mirrors the starvation/dehydration code paths (`needs.rs:407, 420`). Each interval of sustained fatigue critical exposure creates or worsens one Exhaustion wound, then the counter restarts; this preserves the existing "wound severity grows with repeated tolerance crossings" semantics.
+The reset-on-wound-creation pattern (`exposure.fatigue_critical_ticks = 0`) mirrors the starvation/dehydration code paths (`needs.rs:406, 418`). Each interval of sustained fatigue critical exposure creates or worsens one Exhaustion wound, then the counter restarts; this preserves the existing "wound severity grows with repeated tolerance crossings" semantics.
 
 ### D3. Recovery clears the fatigue critical-exposure counter
 
@@ -112,25 +112,59 @@ The reset semantics imply: an agent that rests *just enough* to drop fatigue bel
 
 ### D4. Death from exhaustion-wound load
 
-No new code path is required. The existing wound-load → death system (per S17/S81) computes total wound load across `WoundList`, including all `WoundCause::Deprivation(_)` wounds regardless of `DeprivationKind` variant. When total load exceeds the agent's capacity, the existing death code at `crates/worldwake-core/src/combat.rs:188` fires `DeathCause::NeedDeprivation { need: <need_id> }`. The `need_id` is computed from the dominant deprivation wound: this spec adds the case where `DeprivationKind::Exhaustion` is the dominant contributor, in which case `need: HomeostaticNeedId::Fatigue` is the recorded cause.
+The death *trigger* needs no change. The existing wound-load → death path (per S17/S81) computes total wound load across `WoundList`, including all `WoundCause::Deprivation(_)` wounds regardless of `DeprivationKind` variant. When `is_wound_load_fatal(wounds, &profile)` holds (`wound_load >= wound_capacity`, `crates/worldwake-systems/src/needs.rs:157`), the needs system writes `DeadAt` with a `DeathCause::NeedDeprivation { need }` (`crates/worldwake-systems/src/needs.rs:234`). Exhaustion wounds contribute to `wound_load` like any deprivation wound; no change is required to make exhaustion wounds fatal.
 
-The dominant-deprivation lookup is the small mapping change required: `crates/worldwake-core/src/combat.rs:175-188` (death cause attribution) must map `DeprivationKind::Exhaustion` to `HomeostaticNeedId::Fatigue` in the existing match. This is a single new match arm.
+The change required is the *cause attribution*. The death cause is computed by `determine_need_death_cause(needs: HomeostaticNeeds)` (`crates/worldwake-systems/src/needs.rs:248-255`), **not** in `worldwake-core::combat`. The current function compares need *pressures*:
+
+```rust
+fn determine_need_death_cause(needs: HomeostaticNeeds) -> DeathCause {
+    let need = if needs.hunger >= needs.thirst {
+        HomeostaticNeedId::Hunger
+    } else {
+        HomeostaticNeedId::Thirst
+    };
+    DeathCause::NeedDeprivation { need }
+}
+```
+
+It never returns `Fatigue`, so an exhaustion-wound death (with hunger/thirst pressure at or below fatigue) would be misattributed to `Hunger` — defeating the FND-29 traceability this spec exists to provide. Extend the comparison to the three wound-bearing needs (hunger, thirst, fatigue — bladder and dirtiness have no killing-wound path), picking the highest pressure and preserving the existing tie-break order (hunger > thirst > fatigue):
+
+```rust
+fn determine_need_death_cause(needs: HomeostaticNeeds) -> DeathCause {
+    let need = [
+        HomeostaticNeedId::Hunger,
+        HomeostaticNeedId::Thirst,
+        HomeostaticNeedId::Fatigue,
+    ]
+    .into_iter()
+    .max_by_key(|need| needs.value(*need)) // stable max keeps the first listed on ties
+    .expect("non-empty need set");
+    DeathCause::NeedDeprivation { need }
+}
+```
+
+The existing unit test `determine_need_death_cause_prefers_higher_pressure_and_breaks_ties_toward_hunger` (`needs.rs:1512`) is **extended** (not adapted to a bug) to cover the fatigue case and the hunger/thirst/fatigue tie-break. The existing hunger/thirst golden assertions (`simulation_gaps.rs`, `survival_self_care_interruption.rs`) are unaffected because adding fatigue as a third comparand does not change the result when fatigue is not the dominant pressure.
+
+Attribution is intentionally by need *pressure*, not by dominant deprivation *wound*. Both are concrete authoritative state, and the `WoundList` snapshot at death remains the authoritative causal record a reader inspects to see exactly which deprivation wounds drove the fatal load (FND-29). For S175's scenarios fatigue is the dominant pressure, so the two approaches agree. Wound-dominant attribution would change the general semantics of all deprivation deaths and has no mixed-deprivation golden to validate it here; it is deferred as out-of-scope (YAGNI).
 
 ### D5. `CriticalWindowReport` exposes `exhaustion_collapse_observed` flag
 
-`CriticalWindowReport` (`crates/worldwake-ai/src/survival_forensics.rs:19`) gains a new field:
+`CriticalWindowReport` (`crates/worldwake-ai/src/survival_forensics.rs:21`) gains a new field:
 
 ```rust
+#[serde(default)]
 pub exhaustion_collapse_observed: bool,
 ```
 
+`CriticalWindowReport` derives `Serialize`/`Deserialize` but **not** `Default`, and is constructed only via `WindowBuilder::flush()` (`survival_forensics.rs:269`). Two integration points follow: (a) `WindowBuilder::flush()` must set `exhaustion_collapse_observed`; (b) the field carries `#[serde(default)]` so older serialized reports (replay/save-load) deserialize as `false`.
+
 Set to `true` when the critical window ends with an Exhaustion wound creation event for the focal agent, OR when the focal agent dies with `DeathCause::NeedDeprivation { need: Fatigue }` during the window. The flag is the downstream-facing signal that a forensic reader can use to identify exhaustion-collapse critical windows without iterating wound events directly.
 
-This is a derived view; the authoritative state is the wound list + death event. The flag exists for golden-test ergonomics and CLI surfacing — both consumers of S174's `FailedRestOpportunity` records can pair them with this flag to prove the end-to-end chain.
+This is a derived view; the authoritative state is the wound list + death event. The flag exists for golden-test ergonomics and CLI surfacing — both consumers of S174's `FailedRestOpportunity` records (which live per-frame on each `CriticalWindowFrame.failed_rest_opportunities`, aggregated across the report's `frames`) can pair them with this flag to prove the end-to-end chain.
 
 ### D6. Scenario contract: `exhaustion_collapse_ticks` is scenario-overridable
 
-`MetabolismProfile.exhaustion_collapse_ticks` is already a profile field; it is already scenario-overridable via `MetabolismProfileDef`. No new contract surface is required. The scenario golden in D7 uses a low override (e.g., `nz(60)`) to make collapse reachable inside a tractable simulation horizon.
+`MetabolismProfile.exhaustion_collapse_ticks` is already a profile field; scenarios author it directly inside the `metabolism_profile: ( … )` block (there is no `MetabolismProfileDef` wrapper — RON deserializes the bare `MetabolismProfile` struct, and a bare integer deserializes into the field's `NonZeroU32`). The field is already authored in existing scenarios (e.g. `scenarios/survival-failed-rest-cascade.ron` sets `exhaustion_collapse_ticks: 120`). No new contract surface is required. The scenario golden in D7 uses a low override (e.g., `exhaustion_collapse_ticks: 60`) to make collapse reachable inside a tractable simulation horizon.
 
 ### D7. Scenarios
 
@@ -138,7 +172,7 @@ This is a derived view; the authoritative state is the wound list + death event.
 
 Topology: one place with no `RestCapacity` (rough-sleep only) and a hostile agent that periodically interrupts sleep, ensuring every Sleep attempt aborts via `SleepFailureCause::HostileProximity`.
 
-Agent: one tired agent with `exhaustion_collapse_ticks` lowered (e.g., `nz(60)`).
+Agent: one tired agent with `exhaustion_collapse_ticks` lowered (e.g., `exhaustion_collapse_ticks: 60` in the RON `metabolism_profile`).
 
 Assertions:
 1. Agent accumulates `DeprivationExposure.fatigue_critical_ticks` over repeated interrupted rough-sleep attempts.
@@ -148,7 +182,7 @@ Assertions:
 5. Wound load eventually exceeds agent capacity; `EventTag::Death` fires with `DeathCause::NeedDeprivation { need: HomeostaticNeedId::Fatigue }`.
 6. No post-death actions start (existing invariant from S81).
 7. `CriticalWindowReport.exhaustion_collapse_observed == true` for the window containing the collapse.
-8. `CriticalWindowReport.failed_rest_opportunities` (from S174 D8) lists every interrupted-sleep event leading to collapse, with `SleepFailureCause::HostileProximity` for each.
+8. The report's `frames` carry the failed-rest record: each `CriticalWindowFrame.failed_rest_opportunities` (from S174) lists the interrupted-sleep events for that tick, and aggregated across the window's frames they account for every interrupted-sleep event leading to collapse, with `SleepFailureCause::HostileProximity` for each.
 9. Deterministic replay: identical wound creation tick, identical death tick, identical recorded failed-rest opportunities.
 
 #### Scenario B — Recovery Before Collapse (`survival-exhaustion-recovery.ron`)
@@ -163,7 +197,7 @@ Assertions:
 3. `fatigue_critical_ticks` resets to 0.
 4. No `Exhaustion` wound is created.
 5. `CriticalWindowReport.exhaustion_collapse_observed == false`.
-6. `CriticalWindowReport.failed_rest_opportunities` lists the failed attempts at X, but the window ends in successful rest.
+6. The window's frames (`CriticalWindowFrame.failed_rest_opportunities`, aggregated) list the failed attempts at X, but the window ends in successful rest.
 7. Deterministic replay.
 
 This scenario proves the dampener — repeated partial recovery genuinely prevents collapse, so the collapse path is not a one-way death spiral.
@@ -199,7 +233,7 @@ This spec changes a needs-system consequence path. Per CLAUDE.md's 7-point Autho
 
 3. **Actions that mutate them**:
    - `apply_deprivation_consequences` (needs.rs tick) writes Exhaustion wounds when threshold crossed (D2).
-   - Existing wound-load → death code in combat.rs writes Death event when wound load exceeds capacity (D4); only the death-cause-attribution match is extended.
+   - The existing needs-system death path writes the `DeadAt` event when wound load exceeds capacity (`needs.rs:234`, D4); only the cause-attribution helper `determine_need_death_cause` is extended to include fatigue.
    - Existing fatigue-recovery reset semantics clear the exposure counter (D3).
 
 4. **Information production and travel**: Wound creation and death events are local to the agent. They appear in the authoritative event log and are observable by co-located agents via ordinary perception. The forensic record `exhaustion_collapse_observed` is a derived view over the event log.
@@ -239,7 +273,7 @@ This spec changes a needs-system consequence path. Per CLAUDE.md's 7-point Autho
 16. **Causal records**:
     - Existing wound-creation event records when an Exhaustion wound was created.
     - Existing `EventTag::Death` records the cause with `DeathCause::NeedDeprivation { need: Fatigue }`.
-    - `CriticalWindowReport.failed_rest_opportunities` (from S174) records the upstream failed-rest chain.
+    - `CriticalWindowFrame.failed_rest_opportunities` (from S174), aggregated across the report's `frames`, records the upstream failed-rest chain.
     - Combined chain: failed-rest opportunities → fatigue critical exposure → exhaustion wound creation → wound load → death — all inspectable from authoritative state.
 
 17. **Target patterns**:
@@ -281,7 +315,7 @@ No new components. No registration changes.
 | System | Read | Write |
 |--------|------|-------|
 | Needs system (`worldwake-systems::needs::apply_deprivation_consequences`) | `DeprivationExposure.fatigue_critical_ticks`, `MetabolismProfile.exhaustion_collapse_ticks`, `HomeostaticNeeds.fatigue`, `WoundList` | `WoundList`, `DeprivationExposure.fatigue_critical_ticks` (reset) |
-| Combat / death system (`worldwake-core::combat`) | `WoundList`, `DeprivationKind` (for cause attribution) | `EventTag::Death` payload with `DeathCause::NeedDeprivation { need: Fatigue }` |
+| Needs / death attribution (`worldwake-systems::needs`, `determine_need_death_cause`) | `WoundList` (fatality via `is_wound_load_fatal`), `HomeostaticNeeds` (need pressures for attribution) | `DeadAt` with `DeathCause::NeedDeprivation { need: Fatigue }` |
 | Survival forensics (`worldwake-ai::survival_forensics`) | Wound creation events, death events, S174 `FailedRestOpportunity` records | `CriticalWindowReport.exhaustion_collapse_observed` |
 
 No system commands another. All interaction is via authoritative state, event log, and forensic-extractor read paths.
@@ -289,4 +323,25 @@ No system commands another. All interaction is via authoritative state, event lo
 ## Open Questions
 
 1. Should the `exhaustion_collapse_observed` flag also fire for incapacitation-without-death (e.g., an agent rendered unable to act by wound load but not yet dead)? The current design ties the flag to either wound creation OR death. If S174 / S175 ticket-time review reveals incapacitation as a distinct meaningful state worth flagging separately, a sibling flag is added then.
-2. Should the dominant-deprivation attribution at death break ties deterministically when multiple deprivation wounds contribute equally? The existing code in `combat.rs:175-188` already has a tie-break (last-wound-wins or highest-severity-wins; verify at ticket time). If `Exhaustion` ties with `Starvation` and `Dehydration` exactly, the tie-break behavior is unchanged from current — fatigue is just a third equal player. If a future iteration wants `Exhaustion` to attribute differently (e.g., "exhaustion contributed to collapse but agent died of starvation"), that is a separate refinement spec.
+2. Death-cause attribution is by need *pressure*, computed in `determine_need_death_cause` (`needs.rs:248-255`) — it compares `HomeostaticNeeds` values, not wound contributions. D4 extends it to the three wound-bearing needs (hunger/thirst/fatigue) and keeps the existing tie-break order (hunger > thirst > fatigue) via a stable `max_by_key`. A future iteration that wants attribution by dominant deprivation *wound* (so that "exhaustion contributed but the agent died of starvation" is distinguishable in mixed-deprivation deaths) is a separate refinement spec and requires mixed-deprivation goldens to validate; it is out-of-scope here.
+
+## Outcome
+
+**Completion date**: 2026-05-28
+
+Implemented across tickets S175FATCOLFAI-001 through -004 (all archived under `archive/tickets/`).
+
+**What was delivered**:
+- **D1** — `DeprivationKind::Exhaustion` variant added as a trailing sibling to `Starvation`/`Dehydration` (`crates/worldwake-core/src/wounds.rs`), preserving serialized discriminant indices for save-load backward read. (001)
+- **D2** — Fatigue branch wired into `apply_deprivation_consequences`: sustained `fatigue_critical_ticks ≥ exhaustion_collapse_ticks` creates/worsens an `Exhaustion` wound and resets the counter. (002)
+- **D3** — Recovery reset confirmed needing no code change; the pre-existing `critical_ticks` helper already zeroes the counter below critical. (002, validated by Scenario B)
+- **D4** — `determine_need_death_cause` extended from a two-need to a three-need pressure comparison so exhaustion-wound-load deaths attribute to `Fatigue`. (002)
+- **D5** — `CriticalWindowReport.exhaustion_collapse_observed` derived flag added (`#[serde(default)]`), latched onto the active fatigue window via a new `exhaustion_collapse_signal` argument to `SurvivalForensicExtractor::observe` and a reusable `exhaustion_collapse_signal(world, agent, tick)` helper. (003)
+- **D6** — Confirmed `exhaustion_collapse_ticks` is scenario-authorable as a bare `metabolism_profile` integer; no new contract surface. (004)
+- **D7** — Scenarios A (`survival-exhaustion-collapse.ron`) and B (`survival-exhaustion-recovery.ron`) plus golden tests; the focused liveness tests (Scenario C) live inline in `worldwake-systems/src/needs.rs`. (002, 004)
+
+**Notable correction**: Spec D4's pseudocode comment ("`max_by_key` … keeps the first listed on ties") was factually wrong about Rust stdlib semantics — `Iterator::max_by_key` returns the *last* maximal element on ties. The implementation lists the needs in reverse tie-break priority (`[Fatigue, Thirst, Hunger]`) so "last maximal wins" yields the intended hunger > thirst > fatigue order. The behavioral contract is exactly as the spec intended.
+
+**Notable deviations** (full detail in archived `S175FATCOLFAI-004.md`): Scenario A uses a permanently co-located passive hostile (deterministic `HostileProximity` every tick) rather than a periodically-traveling one; Scenario B nudges the flee-to-safety travel via an external best-effort request (the recovery sleep stays emergent) because the agent's emergent fleeing was found to be triggered by exhaustion-wound pain, which would defeat a recovery-before-collapse proof.
+
+**Verification**: `./scripts/verify.sh` green (fmt, full workspace tests, both clippy gates, generated-doc checks). The four S175 golden tests (collapse + recovery, each with a determinism replay) pass under `--ignored`; the S174 `scenario_e_failed_rest` carrier does not regress.
