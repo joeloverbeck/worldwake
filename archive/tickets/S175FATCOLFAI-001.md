@@ -1,6 +1,6 @@
 # S175FATCOLFAI-001: Add `DeprivationKind::Exhaustion` variant
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-core` wounds enum
@@ -72,3 +72,18 @@ If `wounds.rs`'s `#[cfg(test)]` block (boundary at `wounds.rs:141`) has a derive
 1. `cargo test -p worldwake-core wounds`
 2. `cargo clippy -p worldwake-core --all-targets -- -D warnings`
 3. `cargo build --workspace` (confirms no consumer crate breaks on the new variant)
+
+## Outcome
+
+**Completion date**: 2026-05-28
+
+**What changed**:
+- Added the `Exhaustion` unit variant to `DeprivationKind` in `crates/worldwake-core/src/wounds.rs` as the trailing variant (after `Dehydration`). No derive, `WoundCause`, or accessor changes were needed — the unit variant satisfies all existing derives and slots into the parameterized `find_deprivation_wound`/`find_deprivation_wound_mut` accessors unchanged.
+- Added three focused tests in the module's `#[cfg(test)]` block: `exhaustion_deprivation_cause_roundtrips_through_bincode` (bincode roundtrip of `WoundCause::Deprivation(Exhaustion)`), `deprivation_kind_variants_have_stable_serialized_indices` (asserts Starvation=0, Dehydration=1, Exhaustion=2 — proving save-load backward read is preserved), and `find_deprivation_wound_distinguishes_exhaustion` (accessor selects the Exhaustion wound and rejects a non-matching kind).
+
+**Deviations from plan**: None. The reassessment was accurate — no exhaustive match sites exist on `DeprivationKind` anywhere in the workspace (grep confirmed 0), so the variant addition broke nothing.
+
+**Verification**:
+- `cargo test -p worldwake-core wounds` — 18 passed, 0 failed.
+- `cargo clippy -p worldwake-core --all-targets -- -D warnings` — clean.
+- `cargo build --workspace` — all crates compile, no consumer break.
