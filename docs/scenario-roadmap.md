@@ -714,23 +714,27 @@ The dedicated CI lane is landed at [`.github/workflows/golden-cognitive-archetyp
 - [`scenarios/survival-rest-interrupted-by-danger.ron`](../scenarios/survival-rest-interrupted-by-danger.ron)
 - [`scenarios/survival-failed-rest-cascade.ron`](../scenarios/survival-failed-rest-cascade.ron)
 - [`scenarios/survival-rest-cli.ron`](../scenarios/survival-rest-cli.ron)
+- [`scenarios/survival-exhaustion-collapse.ron`](../scenarios/survival-exhaustion-collapse.ron)
+- [`scenarios/survival-exhaustion-recovery.ron`](../scenarios/survival-exhaustion-recovery.ron)
 
 **Backing goldens**:
 - [`survival_safe_rest.rs`](../crates/worldwake-ai/tests/scenarios/survival_safe_rest.rs) — Scenario A: one tired agent occupies a capacity-1 shelter, the other fails the rest-site start precondition and rough-sleeps or replans; recovery splits between the ≈1.1× shelter occupant and the floor-capped rough sleeper; `FailedRestOpportunity::PreconditionRejected` records.
 - [`survival_sleep_contention.rs`](../crates/worldwake-ai/tests/scenarios/survival_sleep_contention.rs) — Scenario B: a capacity-2 barracks with three tired agents proves two occupants, third queues via the S44 substrate, and queue-grant promotion fires on release.
 - [`survival_rest_interrupted_by_danger.rs`](../crates/worldwake-ai/tests/scenarios/survival_rest_interrupted_by_danger.rs) — Scenario C: hostile co-location aborts sleep mid-episode with `WakeReason::LocalDisturbance { cause: HostileProximity }` and `ActionTraceDetail::SleepInterrupted`, releasing occupancy and preserving partial recovery.
 - [`survival_failed_rest_cascade.rs`](../crates/worldwake-ai/tests/scenarios/survival_failed_rest_cascade.rs) — Scenario E: repeated failed rest accumulates `FailedRestOpportunity` records (initial precondition rejection plus repeated `RoughFallbackToKnownRestSite`) into `fatigue_critical` exposure; this is the carrier feed consumed by spec S175 (fatigue collapse).
+- [`survival_exhaustion_collapse.rs`](../crates/worldwake-ai/tests/scenarios/survival_exhaustion_collapse.rs) — S175 Scenario A (`#[ignore]`, CI-only): a permanently co-located passive hostile interrupts every rough sleep via `HostileProximity`, fatigue stays pinned critical, `DeprivationKind::Exhaustion` wounds form and worsen, and wound load exceeds capacity → `DeadAt { cause: NeedDeprivation { Fatigue } }` with no post-death actions; `CriticalWindowReport.exhaustion_collapse_observed == true` and the aggregated `FailedRestOpportunity` records all carry `HostileProximity`.
+- [`survival_exhaustion_recovery.rs`](../crates/worldwake-ai/tests/scenarios/survival_exhaustion_recovery.rs) — S175 Scenario B (`#[ignore]`, CI-only): the danger-averse agent fails rest at the hostile Wilds, flees to the safe Haven, and rough-sleeps below critical → `fatigue_critical_ticks` resets, no Exhaustion wound, `exhaustion_collapse_observed == false` (the dampener; the collapse loop is escapable).
 - Scenario D (player-POV symmetry) is proven by the rest-occupancy gating tests in [`inspect.rs`](../crates/worldwake-cli/src/handlers/inspect.rs): the controlled agent sees co-located `RestOccupancy` but not remote occupancy absent a lawful belief, and `RestCapacity` (public topology) is displayed under the S163 gating pattern.
 
-**Depends on**: archived [S174 shelter / sleep-surfaces / safe-rest spec](../archive/specs/S174-shelter-sleep-surfaces-safe-rest.md); feeds [S175 fatigue collapse](../specs/S175-fatigue-collapse-and-failed-rest-traceability.md).
+**Depends on**: archived [S174 shelter / sleep-surfaces / safe-rest spec](../archive/specs/S174-shelter-sleep-surfaces-safe-rest.md) and archived [S175 fatigue collapse spec](../archive/specs/S175-fatigue-collapse-and-failed-rest-traceability.md).
 
-These rows are auxiliary behavior coverage, not survival-coexistence landings. They prove the S174 rest-site consequence carriers: concrete `RestCapacity`/`RestOccupancy` place state, the two-path Sleep schema (belief-backed known-rest-site vs. profile-capped targetless rough sleep), structured `SleepFailureCause` wake causes, and the `FailedRestOpportunity` forensic feed.
+These rows are auxiliary behavior coverage, not survival-coexistence landings. They prove the S174 rest-site consequence carriers: concrete `RestCapacity`/`RestOccupancy` place state, the two-path Sleep schema (belief-backed known-rest-site vs. profile-capped targetless rough sleep), structured `SleepFailureCause` wake causes, and the `FailedRestOpportunity` forensic feed — plus the S175 terminal path that consumes that feed: `DeprivationKind::Exhaustion` wounds, `Fatigue`-attributed wound-load death, the `CriticalWindowReport.exhaustion_collapse_observed` flag, and the recovery dampener.
 
 Why they are not roadmap survival-row landings:
 
-- None carry a `survival_health_contract`; each runs on a short focused tick budget (80–220 ticks), not a 1440-tick coexistence run.
+- None carry a `survival_health_contract`; each runs on a short focused tick budget (80–240 ticks), not a 1440-tick coexistence run.
 - `Rest-site contention / safe rest` is now structurally tracked from authored `rest_capacity`, but this is an auxiliary landing analogous to [§5.18](#518-landed-auxiliary-cognitive-archetypes-divergence), not a survival-row promotion.
-- They run in the default `cargo test -p worldwake-ai` / `cargo test -p worldwake-cli` lanes (not `#[ignore]`, no dedicated CI workflow), so they are regular focused goldens rather than long-running ignored scenarios.
+- The S174 rest-site goldens run in the default `cargo test -p worldwake-ai` / `cargo test -p worldwake-cli` lanes (not `#[ignore]`), and the two S175 exhaustion-collapse goldens are `#[ignore]` CI-only (run via the golden-survival workflow, per the long-horizon-collapse convention). Either way they are focused goldens rather than long-running survival-coexistence scenarios.
 
 The long-running, collision-proven survival landing for rest-site scarcity — multi-agent rest contention sustained across a 1440-tick run and colliding with travel, combat, justice, and obligations — remains unproven and is tracked as a Cluster 1 deepening gap in [`docs/gameplay-mechanic-deepening-roadmap.md`](gameplay-mechanic-deepening-roadmap.md).
 
