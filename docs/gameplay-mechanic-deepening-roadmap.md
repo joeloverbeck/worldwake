@@ -156,14 +156,15 @@ Drive escalation has specific evidence that sustained critical dirtiness can inc
 
 Auxiliary simulation-gap evidence proves death traceability from unmet hunger: durable death state, death event, and no post-death action starts.
 
+Sleep now carries a concrete rest-site model. Focused goldens prove rest-site capacity/occupancy contention (two tired agents, one slot → one occupies, the other rough-sleeps or replans), multi-slot contention with S44 queue-grant promotion, hostile-proximity sleep interruption with a structured wake cause, and a failed-rest forensic feed (`FailedRestOpportunity` records) for repeated rest denial. Recovery splits into belief-backed known-rest-site sleep versus profile-capped targetless rough sleep. This is registered as auxiliary behavior coverage in `docs/scenario-roadmap.md` §5.19 (focused goldens, 80–220 ticks); it is not yet a long-running survival-coexistence row and not collision-proven.
+
 ### Not Yet Proven Enough
 
 Current evidence does not prove that self-care is fully mature under:
 
 - severe degradation of food, water, sleep, latrine, or wash access;
-- agents competing for the same rest/relief facilities;
-- injury or pursuit disrupting self-care;
-- shelter/safety constraints around sleep.
+- injury or pursuit broadly disrupting self-care (hostile-proximity sleep interruption now has focused-golden proof; wider injury/pursuit collision with self-care is still unproven);
+- long-running, collision-proven maturity of the rest-site / safe-sleep model. Rest-site capacity/occupancy contention, rough-sleep fallback, structured wake causes, and the failed-rest forensic feed are registered as auxiliary focused-golden coverage (`docs/scenario-roadmap.md` §5.19); multi-agent rest contention has not been proven across a 1440-tick survival-coexistence run or in collision with travel, combat, justice, or obligations.
 
 ### Future Deep-Research Questions
 
