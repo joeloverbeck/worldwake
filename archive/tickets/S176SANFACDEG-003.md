@@ -1,6 +1,6 @@
 # S176SANFACDEG-003: Wash/toilet degradation gates
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `Precondition` enum (sim, 2 variants + evaluation), `apply_wash` effectiveness scaling and `wash_preconditions` (systems), `toilet` inline precondition (systems)
@@ -88,3 +88,23 @@ Rewrite the inline tests named in Assumption Reassessment item 4 to assert the n
 1. `cargo test -p worldwake-systems needs_actions`
 2. `cargo test -p worldwake-sim affordance_query && cargo test -p worldwake-ai`
 3. `scripts/verify.sh`
+
+## Outcome
+
+**Completion date**: 2026-05-29
+
+**What changed**:
+- Added `Precondition::{TargetWashBasinNotTooDirty { target_index }, PlaceLatrineNotFull { target_index }}` (`action_semantics.rs`) with evaluation arms in `action_validation.rs` (authoritative) and `affordance_query.rs` (belief-gating), plus `precondition_target_index` mapping. `ranking.rs` / `needs_actions.rs` / `action_semantics.rs` use catch-alls (verified by clean build).
+- `apply_wash` scales relief by `effective_fraction = (max_effective_dirtiness - dirtiness_level) / max_effective_dirtiness` on the basin's pre-use dirtiness (zero-threshold guarded); the reported `agent_dirtiness_delta` reflects the scaled relief.
+- Added `TargetWashBasinNotTooDirty { target_index: 0 }` to `wash_preconditions()` and `PlaceLatrineNotFull { target_index: 0 }` to the inline `toilet` precondition vec.
+- Rewrote the two old-contract toilet tests (`toilet_at_or_above_critical_threshold_is_blocked`, `toilet_blocked_when_full_does_not_saturate_via_toilet`) to assert suppression; added wash-scaling, wash-too-dirty-suppression, and four `affordance_query` eval tests.
+
+**Engine capability gap fixed (beyond strict ticket scope)**:
+- `FacilityBeliefView` had no latrine-fullness accessor (it has `wash_basin_state`), so the affordance evaluator could not gate `PlaceLatrineNotFull`. Added `FacilityBeliefView::latrine_fullness(place) -> Option<LatrineFullness>` (default `None`), implemented on `PerAgentBeliefView` (co-located returns `Some`, defaulting to empty when the component is absent — mirroring `apply_toilet`'s `unwrap_or_default()`; remote returns `None`) and on the `affordance_query` test stub. This is the affordance-gating trait, distinct from the planner `GoalBeliefView` accessors the spec's "no new accessors" rule (D7) governs.
+
+**Key design decisions**:
+- **Absent `LatrineFullness` = usable.** `apply_toilet` already treats a missing component as `default()` (empty); the precondition matches via `is_none_or` (authoritative) / `Some(default)` co-located (affordance), so latrine places without explicit fullness state remain usable. This kept four pre-existing toilet tests valid without modification.
+- **Unknown remote latrine is optimistically plannable.** The toilet historically had no latrine precondition, so it was plannable to any latrine via travel. A strict `is_some_and` gate would have suppressed the toilet candidate during travel planning (remote latrine → `None`), breaking travel-to-relieve and failing six goldens. The affordance arm treats `None` (unknown/remote) as usable and blocks only a *known*-full latrine; the authoritative commit re-checks the real co-located fill and replans if full. Wash keeps `is_some_and` (consistent with its existing clean-water belief requirement).
+- Updated `latrine_overflow_creates_waste_at_place_and_increments_place_dirtiness` to start fill just below the threshold (750) so the lawful use crosses it (→830), exercising the retained overflow path (a latrine *at* the threshold is now blocked, not relieved).
+
+**Verification**: full `cargo test --workspace` (no failures) and `cargo clippy --workspace --all-targets -- -D warnings` clean. Authoritative-to-AI cycle traced: affordance gating, candidate generation, plan search (travel-to-relieve restored), and commit re-validation all exercised by the restored goldens.

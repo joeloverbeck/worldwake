@@ -375,10 +375,14 @@ fn latrine_overflow_creates_waste_at_place_and_increments_place_dirtiness() {
     let mut h = GoldenHarness::new(Seed([0x8a; 32]));
     h.enable_action_tracing();
     let mut txn = new_txn(&mut h.world, 0);
+    // S176 D3: the latrine starts just below its critical threshold so the
+    // single toilet use is lawful and crosses the threshold, exercising the
+    // retained overflow path (a latrine already at/above the threshold is now
+    // blocked, not relieved).
     txn.set_component_latrine_fullness(
         PUBLIC_LATRINE,
         LatrineFullness {
-            fill: pm(800),
+            fill: pm(750),
             fill_per_use: pm(80),
             critical_threshold: pm(800),
         },
@@ -422,7 +426,7 @@ fn latrine_overflow_creates_waste_at_place_and_increments_place_dirtiness() {
             .get_component_latrine_fullness(PUBLIC_LATRINE)
             .unwrap()
             .fill,
-        pm(880)
+        pm(830)
     );
     assert_eq!(
         h.world

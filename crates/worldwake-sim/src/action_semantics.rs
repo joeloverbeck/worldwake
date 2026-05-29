@@ -74,6 +74,16 @@ pub enum Precondition {
         target_index: u8,
         min: u16,
     },
+    /// Target wash basin's `dirtiness_level` is strictly below its
+    /// `max_effective_dirtiness` threshold (the basin is still usable).
+    TargetWashBasinNotTooDirty {
+        target_index: u8,
+    },
+    /// Target place's latrine `fill` is strictly below its
+    /// `critical_threshold` (the latrine can still accept use).
+    PlaceLatrineNotFull {
+        target_index: u8,
+    },
     TargetNotInContainer(u8),
     TargetUnpossessed(u8),
     TargetDirectlyPossessedByActor(u8),

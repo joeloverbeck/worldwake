@@ -89,7 +89,12 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         defs,
         "toilet",
         toilet_handler,
-        vec![Precondition::ActorAlive],
+        vec![
+            Precondition::ActorAlive,
+            // S176 D3: a full latrine (fill >= critical_threshold) blocks the
+            // toilet action, forcing wilderness relief or empty_latrine.
+            Precondition::PlaceLatrineNotFull { target_index: 0 },
+        ],
         DurationExpr::ActorMetabolism {
             kind: MetabolismDurationKind::Toilet,
         },
@@ -291,6 +296,9 @@ fn wash_preconditions() -> Vec<Precondition> {
             target_index: 0,
             min: 1,
         },
+        // S176 D2: a basin at/above its effective-dirtiness threshold fails the
+        // wash precondition; the planner must clean it, queue, or travel.
+        Precondition::TargetWashBasinNotTooDirty { target_index: 0 },
     ]
 }
 
@@ -1226,11 +1234,29 @@ fn apply_wash(actor: EntityId, basin: EntityId, txn: &mut WorldTxn<'_>) -> Resul
         .clean_water_units
         .min(basin_state.units_per_full_wash);
     let partial = water_consumed < basin_state.units_per_full_wash;
-    let agent_dirtiness_delta = proportional_permille(
+    let raw_agent_dirtiness_delta = proportional_permille(
         needs.dirtiness,
         water_consumed,
         basin_state.units_per_full_wash,
     )?;
+    // S176 D2: relief scales down as the basin's own dirtiness rises toward its
+    // `max_effective_dirtiness` threshold. `effective_fraction =
+    // (max_effective_dirtiness - dirtiness_level) / max_effective_dirtiness`,
+    // evaluated on the basin's pre-use dirtiness. The wash precondition
+    // guarantees `dirtiness_level < max_effective_dirtiness` here, but we guard
+    // the zero-threshold case defensively. A half-filthy basin gives half the
+    // wash benefit.
+    let max_effective = basin_state.max_effective_dirtiness.value();
+    let agent_dirtiness_delta = if max_effective == 0 {
+        Permille::ZERO
+    } else {
+        let effective_numerator = max_effective.saturating_sub(basin_state.dirtiness_level.value());
+        proportional_permille(
+            raw_agent_dirtiness_delta,
+            effective_numerator,
+            max_effective,
+        )?
+    };
     let basin_dirtiness_delta = proportional_permille(
         basin_state.dirtiness_per_use,
         water_consumed,
@@ -2460,7 +2486,11 @@ mod tests {
     }
 
     #[test]
-    fn toilet_already_over_threshold_emits_waste_created_each_tick() {
+    fn toilet_at_or_above_critical_threshold_is_blocked() {
+        // S176 D3 (FND-28): the old "toilet always succeeds + overflow each
+        // tick" contract is replaced by the fullness gate. A latrine already
+        // at/above its critical_threshold suppresses the toilet affordance, so
+        // no further toilet use (and no per-tick overflow via toilet) occurs.
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = prototype_place_entity(PrototypePlace::PublicLatrine);
         let actor = setup_actor_at_place(&mut world, place);
@@ -2476,38 +2506,25 @@ mod tests {
         .unwrap();
         commit_txn(txn);
         let (defs, handlers) = setup_registries();
-        let mut log = EventLog::new();
 
-        let toilet_index = toilet_affordance_index(&world, actor, &defs, &handlers);
-        run_action_to_completion(actor, toilet_index, &mut world, &mut log, &defs, &handlers);
-        let toilet_index = toilet_affordance_index(&world, actor, &defs, &handlers);
-        run_action_to_completion(actor, toilet_index, &mut world, &mut log, &defs, &handlers);
-
+        let toilet_present = affordances_for(&world, actor, &defs, &handlers)
+            .iter()
+            .any(|affordance| affordance.def_id == ActionDefId(3));
+        assert!(
+            !toilet_present,
+            "toilet affordance must be suppressed when latrine fill >= critical_threshold"
+        );
+        // Fill is unchanged: the blocked toilet cannot mutate latrine state.
         assert_eq!(
             world.get_component_latrine_fullness(place).unwrap().fill,
-            pm(1000)
+            pm(900)
         );
-        assert_eq!(
-            world.get_component_place_dirtiness(place).unwrap().value,
-            pm(160)
-        );
-        let waste_created = log.events_by_tag(EventTag::WasteCreated);
-        assert_eq!(waste_created.len(), 2);
-        for event in waste_created {
-            let DecisionEventPayload::WasteCreated(payload) = log
-                .get(*event)
-                .and_then(|record| record.decision_payload())
-                .expect("over-threshold toilet should emit WasteCreated payload")
-            else {
-                panic!("over-threshold toilet should emit WasteCreated payload");
-            };
-            assert_eq!(payload.source, WasteSource::OvercapacityLatrine);
-            assert_eq!(payload.place_dirtiness_delta, pm(80));
-        }
     }
 
     #[test]
-    fn toilet_latrine_fullness_saturates_at_max() {
+    fn toilet_blocked_when_full_does_not_saturate_via_toilet() {
+        // S176 D3: fill can no longer climb to saturation through repeated
+        // toilet use — once at/above the threshold the action is gated out.
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = prototype_place_entity(PrototypePlace::PublicLatrine);
         let actor = setup_actor_at_place(&mut world, place);
@@ -2523,14 +2540,17 @@ mod tests {
         .unwrap();
         commit_txn(txn);
         let (defs, handlers) = setup_registries();
-        let mut log = EventLog::new();
 
-        let toilet_index = toilet_affordance_index(&world, actor, &defs, &handlers);
-        run_action_to_completion(actor, toilet_index, &mut world, &mut log, &defs, &handlers);
-
+        let toilet_present = affordances_for(&world, actor, &defs, &handlers)
+            .iter()
+            .any(|affordance| affordance.def_id == ActionDefId(3));
+        assert!(
+            !toilet_present,
+            "a full latrine must not offer the toilet affordance"
+        );
         assert_eq!(
             world.get_component_latrine_fullness(place).unwrap().fill,
-            pm(1000)
+            pm(950)
         );
     }
 
@@ -2816,6 +2836,80 @@ mod tests {
         assert_eq!(payload.agent_dirtiness_delta, pm(400));
         assert_eq!(payload.basin_dirtiness_delta, pm(25));
         assert!(payload.partial);
+    }
+
+    /// Overwrite a basin's dirtiness threshold/level after `setup_wash_access`.
+    fn set_basin_dirtiness(
+        world: &mut World,
+        basin: EntityId,
+        dirtiness_level: Permille,
+        max_effective_dirtiness: Permille,
+    ) {
+        let mut state = *world.get_component_wash_basin_state(basin).unwrap();
+        state.dirtiness_level = dirtiness_level;
+        state.max_effective_dirtiness = max_effective_dirtiness;
+        let mut txn = new_txn(world, 2);
+        txn.set_component_wash_basin_state(basin, state).unwrap();
+        commit_txn(txn);
+    }
+
+    #[test]
+    fn wash_relief_scales_down_with_basin_dirtiness() {
+        // S176 D2: a half-filthy basin (dirtiness 500 of max-effective 1000)
+        // delivers half the relief of a clean basin.
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        set_actor_dirtiness(&mut world, actor, pm(800));
+        let (basin, _source) = setup_wash_access(&mut world, place, 5);
+        set_basin_dirtiness(&mut world, basin, pm(500), pm(1000));
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        let wash_index = affordances
+            .iter()
+            .position(|affordance| affordance.def_id == ActionDefId(4))
+            .expect("wash should be available below the dirtiness threshold");
+        run_action_to_completion(actor, wash_index, &mut world, &mut log, &defs, &handlers);
+
+        // Raw full-wash relief would be pm(800); scaled by 0.5 -> pm(400).
+        assert_eq!(
+            world
+                .get_component_homeostatic_needs(actor)
+                .unwrap()
+                .dirtiness,
+            pm(400),
+            "relief should halve at half effective-dirtiness"
+        );
+        let wash_events = log.events_by_tag(EventTag::WashFacilityUsed);
+        let DecisionEventPayload::WashFacilityUsed(payload) = log
+            .get(wash_events[0])
+            .and_then(|record| record.decision_payload())
+            .expect("wash should emit WashFacilityUsed payload")
+        else {
+            panic!("wash should emit WashFacilityUsed payload");
+        };
+        assert_eq!(payload.agent_dirtiness_delta, pm(400));
+    }
+
+    #[test]
+    fn wash_affordance_suppressed_when_basin_too_dirty() {
+        // S176 D2: at/above the effective-dirtiness threshold the wash
+        // precondition fails, so the wash candidate is not startable.
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        set_actor_dirtiness(&mut world, actor, pm(800));
+        let (basin, _source) = setup_wash_access(&mut world, place, 5);
+        set_basin_dirtiness(&mut world, basin, pm(900), pm(800));
+        let (defs, handlers) = setup_registries();
+
+        let wash_present = affordances_for(&world, actor, &defs, &handlers)
+            .iter()
+            .any(|affordance| affordance.def_id == ActionDefId(4));
+        assert!(
+            !wash_present,
+            "wash must be suppressed when dirtiness_level >= max_effective_dirtiness"
+        );
     }
 
     #[test]

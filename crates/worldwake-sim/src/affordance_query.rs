@@ -337,6 +337,22 @@ pub fn evaluate_precondition(
             .get(usize::from(target_index))
             .and_then(|target| FacilityBeliefView::wash_basin_state(view, *target))
             .is_some_and(|state| state.clean_water_units >= min),
+        Precondition::TargetWashBasinNotTooDirty { target_index } => targets
+            .get(usize::from(target_index))
+            .and_then(|target| FacilityBeliefView::wash_basin_state(view, *target))
+            .is_some_and(|state| state.dirtiness_level < state.max_effective_dirtiness),
+        // Latrine fullness is a co-located physical fact with no remote belief
+        // carrier. An unknown (remote, `None`) latrine is treated optimistically
+        // as usable so travel-to-relieve stays plannable; the authoritative
+        // commit re-checks the real co-located fill and replans if it is full.
+        // Only a *known* full latrine (co-located observation) suppresses the
+        // candidate.
+        Precondition::PlaceLatrineNotFull { target_index } => targets
+            .get(usize::from(target_index))
+            .is_some_and(|target| {
+                FacilityBeliefView::latrine_fullness(view, *target)
+                    .is_none_or(|fullness| fullness.fill < fullness.critical_threshold)
+            }),
         Precondition::TargetNotInContainer(target_index) => targets
             .get(usize::from(target_index))
             .is_some_and(|target| view.direct_container(*target).is_none()),
@@ -475,6 +491,8 @@ fn precondition_target_index(precondition: Precondition) -> Option<usize> {
         | Precondition::TargetHasWorkstationTag { target_index, .. }
         | Precondition::TargetHasResourceSource { target_index, .. }
         | Precondition::TargetHasWashBasinClean { target_index, .. }
+        | Precondition::TargetWashBasinNotTooDirty { target_index }
+        | Precondition::PlaceLatrineNotFull { target_index }
         | Precondition::TargetHasConsumableEffect { target_index, .. } => {
             Some(usize::from(target_index))
         }
@@ -688,6 +706,7 @@ mod tests {
         workstation_tags: BTreeMap<EntityId, WorkstationTag>,
         resource_sources: BTreeMap<EntityId, ResourceSource>,
         wash_basin_states: BTreeMap<EntityId, WashBasinState>,
+        latrine_fullness: BTreeMap<EntityId, worldwake_core::LatrineFullness>,
         production_jobs: BTreeMap<EntityId, bool>,
         wounds: BTreeMap<EntityId, bool>,
         controllable: BTreeMap<(EntityId, EntityId), bool>,
@@ -1037,6 +1056,10 @@ mod tests {
 
         fn wash_basin_state(&self, entity: EntityId) -> Option<WashBasinState> {
             self.wash_basin_states.get(&entity).copied()
+        }
+
+        fn latrine_fullness(&self, place: EntityId) -> Option<worldwake_core::LatrineFullness> {
+            self.latrine_fullness.get(&place).copied()
         }
 
         fn has_production_job(&self, entity: EntityId) -> bool {
@@ -2213,6 +2236,140 @@ mod tests {
 
         assert_eq!(affordances.len(), 1);
         assert_eq!(affordances[0].bound_targets, vec![basin]);
+    }
+
+    #[test]
+    fn wash_basin_too_dirty_precondition_prunes_candidate() {
+        let actor = entity(1);
+        let basin = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(basin, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(basin, EntityKind::Facility);
+        view.wash_basin_states.insert(
+            basin,
+            WashBasinState {
+                dirtiness_level: worldwake_core::Permille::new_unchecked(900),
+                max_effective_dirtiness: worldwake_core::Permille::new_unchecked(800),
+                ..WashBasinState::default()
+            },
+        );
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::SpecificEntity(basin)],
+            vec![Precondition::TargetWashBasinNotTooDirty { target_index: 0 }],
+        ));
+        let handlers = handler_registry(registry.len());
+
+        let affordances = get_affordances(&view, actor, &registry, &handlers);
+
+        assert!(affordances.is_empty());
+    }
+
+    #[test]
+    fn wash_basin_not_too_dirty_precondition_passes_through() {
+        let actor = entity(1);
+        let basin = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(basin, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(basin, EntityKind::Facility);
+        view.wash_basin_states.insert(
+            basin,
+            WashBasinState {
+                dirtiness_level: worldwake_core::Permille::new_unchecked(400),
+                max_effective_dirtiness: worldwake_core::Permille::new_unchecked(800),
+                ..WashBasinState::default()
+            },
+        );
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::SpecificEntity(basin)],
+            vec![Precondition::TargetWashBasinNotTooDirty { target_index: 0 }],
+        ));
+        let handlers = handler_registry(registry.len());
+
+        let affordances = get_affordances(&view, actor, &registry, &handlers);
+
+        assert_eq!(affordances.len(), 1);
+        assert_eq!(affordances[0].bound_targets, vec![basin]);
+    }
+
+    #[test]
+    fn latrine_full_precondition_prunes_candidate() {
+        let actor = entity(1);
+        let place = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(place, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.latrine_fullness.insert(
+            place,
+            worldwake_core::LatrineFullness {
+                fill: worldwake_core::Permille::new_unchecked(900),
+                fill_per_use: worldwake_core::Permille::new_unchecked(80),
+                critical_threshold: worldwake_core::Permille::new_unchecked(800),
+            },
+        );
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::SpecificEntity(place)],
+            vec![Precondition::PlaceLatrineNotFull { target_index: 0 }],
+        ));
+        let handlers = handler_registry(registry.len());
+
+        let affordances = get_affordances(&view, actor, &registry, &handlers);
+
+        assert!(affordances.is_empty());
+    }
+
+    #[test]
+    fn latrine_not_full_precondition_passes_through() {
+        let actor = entity(1);
+        let place = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(place, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.latrine_fullness.insert(
+            place,
+            worldwake_core::LatrineFullness {
+                fill: worldwake_core::Permille::new_unchecked(200),
+                fill_per_use: worldwake_core::Permille::new_unchecked(80),
+                critical_threshold: worldwake_core::Permille::new_unchecked(800),
+            },
+        );
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::SpecificEntity(place)],
+            vec![Precondition::PlaceLatrineNotFull { target_index: 0 }],
+        ));
+        let handlers = handler_registry(registry.len());
+
+        let affordances = get_affordances(&view, actor, &registry, &handlers);
+
+        assert_eq!(affordances.len(), 1);
+        assert_eq!(affordances[0].bound_targets, vec![place]);
     }
 
     #[test]
