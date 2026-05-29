@@ -139,6 +139,15 @@ Beyond crate attribution accuracy, evaluate whether each cross-system interactio
 
 **Motivating-scenario substrate fidelity**: For specs that cite a concrete in-game scenario as Motivating Evidence (e.g., "Agent A and B competing at North Orchard with `BlockingFact(ReservationConflict)` events"), identify the actual entity types and components the scenario uses (e.g., `ResourceSource`, `ResourceExtractionQueues`) and confirm the spec's named hook fires on that scenario's substrate. Multi-substrate domains commonly tempt specs to author a hook on one substrate while the motivating example uses another — for example, hooking facility-queue grant promotions (`ContentionQueue` in `facility_queue.rs`) when the motivating scenario runs through resource-extraction queues (`ResourceExtractionQueues` in `production_actions.rs`), or hooking goal-emission when the scenario is shaped by goal-ranking. Trace the scenario through actual code: which component holds the contested state, which handler emits the relevant event, which crate owns the mutation. Flag mismatches as HIGH Issues — the spec's named hook will never fire for its headline scenario.
 
+## 3.8B Crates-Section Reconciliation
+
+Reconcile the spec's `## Crates` section against its `## Deliverables` set in both directions — this catches drift that "Pattern Triggers Map to Deliverables" (prose→deliverable, one direction) and 3.8A (crate-attribution accuracy in Cross-System prose) do not:
+
+- **Deliverable → Crates**: for each deliverable, identify every crate it actually touches (including enum-variant homes and evaluation sites surfaced by 3.6 blast-radius analysis) and confirm each appears in the Crates section. A deliverable that lands a `Precondition` variant in `worldwake-sim` while the sim Crates row mentions only an unrelated change is a gap.
+- **Crates → Deliverable**: for each Crates-section entry, confirm a deliverable (not just prose) implements the claimed work. A Crates row that claims CLI/observer work with no backing D-section is a gap — flag it per "Pattern Triggers Map to Deliverables, Not Prose Only."
+
+Flag asymmetries in either direction as Issues. Common drift sources: a new cross-crate enum variant (e.g., a `WasteSource` or `Precondition` variant) lands in a crate the Crates row omits; a Crates row narrates intended work the deliverables never itemize.
+
 ## 3.9 Behavioral Claim Validation
 
 For each claim about who reads/writes a type at runtime, grep all call sites and classify as runtime vs. test-only (`#[cfg(test)]`). Flag contradictions as CRITICAL. If technically wrong but safe (e.g., caller only reads current-tick data), note both the correction and safety argument.
