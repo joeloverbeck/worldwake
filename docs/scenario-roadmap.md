@@ -734,7 +734,7 @@ Why they are not roadmap survival-row landings:
 
 - None carry a `survival_health_contract`; each runs on a short focused tick budget (80–240 ticks), not a 1440-tick coexistence run.
 - `Rest-site contention / safe rest` is now structurally tracked from authored `rest_capacity`, but this is an auxiliary landing analogous to [§5.18](#518-landed-auxiliary-cognitive-archetypes-divergence), not a survival-row promotion.
-- The S174 rest-site goldens run in the default `cargo test -p worldwake-ai` / `cargo test -p worldwake-cli` lanes (not `#[ignore]`), and the two S175 exhaustion-collapse goldens are `#[ignore]` CI-only (run via the golden-survival workflow, per the long-horizon-collapse convention). Either way they are focused goldens rather than long-running survival-coexistence scenarios.
+- The S174 rest-site goldens run in the default `cargo test -p worldwake-ai` / `cargo test -p worldwake-cli` lanes (not `#[ignore]`), and the two S175 exhaustion goldens are `#[ignore]` CI-only through the `exhaustion_collapse` and `exhaustion_recovery` matrix entries in the golden-survival workflow. Either way they are focused goldens rather than long-running survival-coexistence scenarios.
 
 The long-running, collision-proven survival landing for rest-site scarcity — multi-agent rest contention sustained across a 1440-tick run and colliding with travel, combat, justice, and obligations — remains unproven and is tracked as a Cluster 1 deepening gap in [`docs/gameplay-mechanic-deepening-roadmap.md`](gameplay-mechanic-deepening-roadmap.md).
 

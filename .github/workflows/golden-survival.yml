@@ -33,6 +33,10 @@ jobs:
             filter: "scenarios::survival_contested::"
           - scenario: escort
             filter: "scenarios::survival_escort::"
+          - scenario: exhaustion_collapse
+            filter: "scenarios::survival_exhaustion_collapse::"
+          - scenario: exhaustion_recovery
+            filter: "scenarios::survival_exhaustion_recovery::"
           - scenario: final_integration
             filter: "scenarios::final_integration::"
           - scenario: items_decay
