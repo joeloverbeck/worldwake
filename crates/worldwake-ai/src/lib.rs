@@ -180,7 +180,8 @@ pub use side_benefit::{PlanValue, SideBenefit, build_plan_value, detect_side_ben
 pub use source_composite::SourceCompositeRank;
 pub use survival_forensics::{
     ActionTraceSnapshot, ActiveActionSummary, AgendaEntrySnapshot, BlockerSummary,
-    CriticalWindowFrame, CriticalWindowReport, ExhaustionSummary, LocalSurvivalStateSummary,
+    CriticalWindowFrame, CriticalWindowReport, DegradedSelfCareCause, DegradedSelfCareOpportunity,
+    DegradedSelfCareOutcome, ExhaustionSummary, LocalSurvivalStateSummary,
     SurvivalForensicExtractor,
 };
 pub use verification_provider::VerificationRejection;

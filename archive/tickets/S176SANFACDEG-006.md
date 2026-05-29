@@ -1,6 +1,6 @@
 # S176SANFACDEG-006: Survival forensics — DegradedSelfCareOpportunity
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `SurvivalForensicExtractor` + `CriticalWindowFrame` (ai); derived forensic state only (no authoritative state, no save-format bump)
@@ -70,3 +70,19 @@ Add `degraded_self_care_opportunities: Vec<DegradedSelfCareOpportunity>` (`#[ser
 1. `cargo test -p worldwake-ai survival_forensics`
 2. `cargo test -p worldwake-ai`
 3. `scripts/verify.sh`
+
+## Outcome
+
+**Completion date**: 2026-05-29
+
+**What changed**:
+- Added `DegradedSelfCareOpportunity { tick, facility, cause, outcome }` + `DegradedSelfCareCause {BasinTooDirty, BasinDry, LatrineFull}` + `DegradedSelfCareOutcome {WildernessRelief, Cleaned, Queued, DidNothing}` to `survival_forensics.rs`, exported from `lib.rs`.
+- Added `degraded_self_care_opportunities: Vec<…>` (`#[serde(default)]`) to `CriticalWindowFrame`, populated in `build_frame`, and included in `frame_change_detected`.
+- Derivation reads the tick's action-trace events: committed `clean_wash_basin` (Dirtiness window → BasinTooDirty/Cleaned), committed `empty_latrine` (Bladder → LatrineFull/Cleaned), committed `relieve_wilderness` (Bladder + latrine present → LatrineFull/WildernessRelief), and `wash`/`toilet` `StartFailed` whose reason (`{precondition:?}` from `action_validation.rs`) names `TargetWashBasinNotTooDirty` / `TargetHasWashBasinClean` / `PlaceLatrineNotFull` (→ DidNothing).
+
+**Deviations / decisions**:
+- **`facility` = the actor's place.** `ActionTraceEvent` carries no targets, and `build_frame` has no world access, so the record's `facility` is `local_state.place` (the locus of the degraded self-care). For a latrine this *is* the facility (LatrineFullness is on the place); for a basin it is the basin's place rather than the basin entity — sufficient to answer "where/why self-care degraded."
+- **Added `latrine_present: bool` to `LocalSurvivalStateSummary`** (mirrors `wash_basin_present`) so a committed `relieve_wilderness` is only classified as degraded *latrine* self-care when a latrine is actually present — otherwise it is ordinary outdoor relief and is not recorded. Updated `capture` + the observer's `place_survival_state_summary` and all test/fixture construction sites.
+- The `StartFailed` path is derivation-only (constructing a `StartFailed` event in a unit test needs a full `ResolvedRequestTrace`); the focused unit test covers the committed-action signals (the path the goldens exercise). No save-format bump (forensic frame is not authoritative state, FND-27).
+
+**Verification**: `cargo test -p worldwake-ai survival_forensics` (incl. the new record test), full `cargo test --workspace` (no failures), and `cargo clippy --workspace --all-targets -- -D warnings` clean.

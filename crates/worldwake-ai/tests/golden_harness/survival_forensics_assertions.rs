@@ -166,6 +166,7 @@ pub fn sample_local_survival_state_summary() -> worldwake_ai::LocalSurvivalState
         }),
         water_source_present: true,
         wash_basin_present: false,
+        latrine_present: false,
         sleep_affordance_present: true,
         food_source_present: true,
     }

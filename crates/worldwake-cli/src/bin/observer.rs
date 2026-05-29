@@ -2374,6 +2374,8 @@ fn place_survival_state_summary(
     let wash_basin_present = world.query_workstation_marker().any(|(entity, marker)| {
         world.effective_place(entity) == Some(place) && marker.0 == WorkstationTag::WashBasin
     });
+    let latrine_present = world.get_component_latrine_fullness(place).is_some()
+        || world.place_has_tag(place, PlaceTag::Latrine);
     let sleep_affordance_present = [PlaceTag::Inn, PlaceTag::Barracks, PlaceTag::Camp]
         .into_iter()
         .any(|tag| world.place_has_tag(place, tag));
@@ -2387,6 +2389,7 @@ fn place_survival_state_summary(
         place: Some(place),
         water_source_present,
         wash_basin_present,
+        latrine_present,
         sleep_affordance_present,
         food_source_present,
     }
@@ -7004,6 +7007,7 @@ mod tests {
             place: Some(entity(20)),
             water_source_present: true,
             wash_basin_present: false,
+            latrine_present: false,
             sleep_affordance_present: true,
             food_source_present: false,
         }
@@ -7040,6 +7044,7 @@ mod tests {
                 }),
                 local_authoritative_summary: sample_local_survival_state_summary(),
                 failed_rest_opportunities: Vec::new(),
+                degraded_self_care_opportunities: Vec::new(),
             }],
             exhaustion_collapse_observed: false,
         }
