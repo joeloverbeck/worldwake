@@ -80,14 +80,14 @@ pub struct DegradedSelfCareOpportunity {
     pub outcome: DegradedSelfCareOutcome,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum DegradedSelfCareCause {
     BasinTooDirty,
     BasinDry,
     LatrineFull,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum DegradedSelfCareOutcome {
     WildernessRelief,
     Cleaned,

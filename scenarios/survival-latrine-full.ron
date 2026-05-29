@@ -1,0 +1,70 @@
+// S176 focused golden: latrine fullness blocks the toilet, forcing the
+// empty_latrine recovery branch.
+//
+// The latrine place is isolated (no travel edges) and indoor (Latrine tag, not
+// an OUTDOOR_RELIEF_TAGS place), so the cheaper wilderness-relief fallback is
+// unreachable here — isolating the empty_latrine prerequisite branch. The
+// latrine starts above its critical threshold, so the toilet affordance is
+// suppressed until the agent empties it (WasteCreated { LatrineEmptied }), then
+// relieves.
+(
+    seed: 176001,
+    compaction_interval: 0,
+    places: [
+        (
+            name: "Latrine Pit",
+            tags: [Latrine],
+            latrine_fullness: (
+                fill: 900,
+                fill_per_use: 80,
+                critical_threshold: 800,
+            ),
+        ),
+    ],
+    agents: [
+        (
+            name: "Reliever",
+            location: "Latrine Pit",
+            control: Ai,
+            needs: (
+                hunger: 0,
+                thirst: 0,
+                fatigue: 0,
+                bladder: 900,
+                dirtiness: 0,
+            ),
+            utility_profile: (
+                hunger_weight: 0,
+                thirst_weight: 0,
+                fatigue_weight: 0,
+                bladder_weight: 1000,
+                dirtiness_weight: 0,
+                pain_weight: 0,
+                danger_weight: 0,
+                enterprise_weight: 0,
+                social_weight: 0,
+                activity_awareness_weight: 0,
+                side_benefit_weight: 0,
+                bounty_posting_weight: 0,
+                notice_posting_weight: 0,
+                courage: 0,
+                care_weight: 0,
+            ),
+            drive_thresholds: (
+                hunger: (low: 300, medium: 550, high: 780, critical: 900),
+                thirst: (low: 300, medium: 550, high: 780, critical: 900),
+                fatigue: (low: 300, medium: 550, high: 780, critical: 900),
+                bladder: (low: 200, medium: 400, high: 650, critical: 820),
+                dirtiness: (low: 350, medium: 600, high: 820, critical: 920),
+                pain: (low: 150, medium: 350, high: 600, critical: 850),
+                danger: (low: 100, medium: 300, high: 500, critical: 500),
+            ),
+        ),
+    ],
+    survival_health_contract: (
+        max_authored_critical_run_ticks: 240,
+        max_idle_window_ticks_with_elevated_need: 120,
+        elevated_need_floor: 600,
+        required_self_care_families: [Relieve],
+    ),
+)

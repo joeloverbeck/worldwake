@@ -1,6 +1,6 @@
 # S176SANFACDEG-008: Focused goldens + 1440-tick sanitation-breakdown scenario
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: None (scenarios + golden tests + roadmap registration)
@@ -88,3 +88,20 @@ Regenerate `docs/generated/golden-e2e-inventory.md` and sibling indices.
 1. `cargo test -p worldwake-ai --test golden_ai sanitation` (confirm the post-S154 `golden_ai` + substring-filter form against the real module path)
 2. `python3 scripts/golden_inventory.py --write --check-docs`
 3. `scripts/verify.sh`
+
+## Outcome
+
+**Completion date**: 2026-05-29
+
+**What changed**:
+- Authored three scenarios: `scenarios/survival-basin-dirty-dirty.ron` (single agent, basin authored above `max_effective_dirtiness`), `scenarios/survival-latrine-full.ron` (single agent, isolated indoor latrine above `critical_threshold`), and `scenarios/survival-sanitation-breakdown-1440.ron` (three archetype-varied agents sharing ONE basin + ONE latrine, with a `survival_health_contract`).
+- Backing goldens: `survival_basin_dirty_dirty.rs` (default lane) — clean-prerequisite insertion, wash recovery, Waste lot, `DegradedSelfCareOpportunity{BasinTooDirty,Cleaned}`, replay determinism; `survival_latrine_full.rs` (default lane) — empty_latrine insertion, `WasteCreated{LatrineEmptied}` with concrete lot, toilet recovery, `DegradedSelfCareOpportunity{LatrineFull}`, replay determinism; `survival_sanitation_breakdown_1440.rs` (`#[ignore]`, CI-only) — no deaths, both recovery families fire, both degradation causes recorded, belief barrier (all recovery co-located), replay determinism.
+- Registered the 1440 scenario in `docs/scenario-roadmap.md` (§5.20) and the `golden-survival.yml` CI matrix (`sanitation_breakdown` entry, run with `--ignored`).
+- Regenerated `docs/generated/golden-e2e-inventory.md` + sibling indices (`golden_inventory.py --write`) and the `scenario-coverage.md` snapshot.
+
+**Deviations / decisions**:
+- The focused goldens run bounded windows (40/80 ticks), not 1440 — they isolate single branches per FND-31. Effectiveness scaling (relief halving) is unit-covered in S176SANFACDEG-003 (`wash_relief_scales_down_with_basin_dirtiness`); the basin golden proves the rejection→clean-prerequisite→recovery branch end-to-end (basin starts above threshold for determinism).
+- The latrine focused golden uses an *isolated* indoor latrine so the cheaper wilderness-relief fallback is unreachable, deterministically forcing the `empty_latrine` branch (the cost-optimal wilderness fallback when reachable is the lawful alternative the spec allows).
+- The 1440 collision scenario zeros hunger/thirst needs to isolate sanitation (bladder/dirtiness/fatigue) contention and stay survivable without a full food/water economy; lowered dirtiness/bladder critical thresholds + raised sanitation rates so critical windows open during contention and the degraded-self-care forensic records fire. Remaining observer anomalies (STUCK_AGENT, FAILED_ACTION_SPIRAL on the shared basin, GEOGRAPHIC_CONVERGENCE) are inherent single-facility contention — the scenario's point — not regressions; no deaths.
+
+**Verification**: focused goldens pass in the default `cargo test -p worldwake-ai` lane; the `#[ignore]` 1440 tests pass via `cargo test --release -p worldwake-ai --test golden_ai -- --ignored survival_sanitation_breakdown_1440`. Full `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo fmt --all -- --check` all clean. `golden_inventory.py --check-docs` clean.

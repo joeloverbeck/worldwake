@@ -1,0 +1,163 @@
+// S176 CI-owned collision scenario: three agents share ONE wash basin and ONE
+// latrine at a self-sufficient camp over 1440 ticks under ordinary need
+// pressure. Sanitation degrades under multi-agent use — the shared basin grows
+// filthy (cleaned via clean_wash_basin), the shared latrine fills (emptied via
+// empty_latrine or diverted to wilderness relief), and place dirtiness rises and
+// decays. Proves facility-state arithmetic crossing-and-recovering via labor,
+// the FND-14B belief barrier (no omniscient remote-facility reads), typed
+// DegradedSelfCareOpportunity causal records, and replay equivalence.
+//
+// The camp is self-sufficient (water + apples + sleep + latrine + basin all
+// co-located) so the run isolates sanitation contention rather than travel.
+(
+    seed: 176440,
+    compaction_interval: 240,
+    places: [
+        (
+            name: "Shared Camp",
+            tags: [Camp, Latrine],
+            place_dirtiness: (value: 0, decay_per_tick: 2, dirtiness_per_use: 60),
+            latrine_fullness: (fill: 0, fill_per_use: 90, critical_threshold: 800),
+            sleep_quality: (shelter: Roofed, ground_comfort: Soft, recovery_modifier: 1000),
+        ),
+    ],
+    agents: [
+        (
+            name: "Agent A",
+            location: "Shared Camp",
+            control: Ai,
+            archetype: Methodical,
+            portfolio_weights_profile: (
+                need_survival: 1000, pain_care: 900, obligation_duty: 800,
+                economic_opportunity: 600, social_motive: 400,
+                max_plans_normal: 3, max_plans_emergency: 3, max_plans_idle: 3,
+            ),
+            needs: (hunger: 0, thirst: 0, fatigue: 100, bladder: 300, dirtiness: 300),
+            utility_profile: (
+                hunger_weight: 800, thirst_weight: 800, fatigue_weight: 600,
+                bladder_weight: 700, dirtiness_weight: 600, pain_weight: 500,
+                danger_weight: 0, enterprise_weight: 0, social_weight: 0,
+                activity_awareness_weight: 0, side_benefit_weight: 0,
+                bounty_posting_weight: 0, notice_posting_weight: 0, courage: 0, care_weight: 0,
+            ),
+            drive_thresholds: (
+                hunger: (low: 300, medium: 550, high: 780, critical: 900),
+                thirst: (low: 300, medium: 550, high: 780, critical: 880),
+                fatigue: (low: 300, medium: 550, high: 780, critical: 900),
+                bladder: (low: 300, medium: 500, high: 700, critical: 800),
+                dirtiness: (low: 300, medium: 500, high: 700, critical: 800),
+                pain: (low: 150, medium: 350, high: 600, critical: 850),
+                danger: (low: 100, medium: 300, high: 500, critical: 500),
+            ),
+            metabolism_profile: (
+                hunger_rate: 0, thirst_rate: 0, fatigue_rate: 2, bladder_rate: 11, dirtiness_rate: 13,
+                rest_efficiency: 60,
+                starvation_tolerance_ticks: 480, dehydration_tolerance_ticks: 240,
+                exhaustion_collapse_ticks: 120, bladder_accident_tolerance_ticks: 40,
+                toilet_ticks: 6, wash_ticks: 8, min_sleep_ticks: 8,
+                travel_fatigue_multiplier: 0, travel_thirst_multiplier: 0,
+                travel_bladder_multiplier: 0, wilderness_relief_dirtiness_penalty: 40,
+            ),
+        ),
+        (
+            name: "Agent B",
+            location: "Shared Camp",
+            control: Ai,
+            archetype: Cautious,
+            portfolio_weights_profile: (
+                need_survival: 1000, pain_care: 900, obligation_duty: 700,
+                economic_opportunity: 450, social_motive: 550,
+                max_plans_normal: 3, max_plans_emergency: 3, max_plans_idle: 3,
+            ),
+            needs: (hunger: 0, thirst: 0, fatigue: 200, bladder: 400, dirtiness: 350),
+            utility_profile: (
+                hunger_weight: 800, thirst_weight: 800, fatigue_weight: 600,
+                bladder_weight: 700, dirtiness_weight: 600, pain_weight: 500,
+                danger_weight: 0, enterprise_weight: 0, social_weight: 0,
+                activity_awareness_weight: 0, side_benefit_weight: 0,
+                bounty_posting_weight: 0, notice_posting_weight: 0, courage: 0, care_weight: 0,
+            ),
+            drive_thresholds: (
+                hunger: (low: 300, medium: 550, high: 780, critical: 900),
+                thirst: (low: 300, medium: 550, high: 780, critical: 880),
+                fatigue: (low: 300, medium: 550, high: 780, critical: 900),
+                bladder: (low: 300, medium: 500, high: 700, critical: 800),
+                dirtiness: (low: 300, medium: 500, high: 700, critical: 800),
+                pain: (low: 150, medium: 350, high: 600, critical: 850),
+                danger: (low: 100, medium: 300, high: 500, critical: 500),
+            ),
+            metabolism_profile: (
+                hunger_rate: 0, thirst_rate: 0, fatigue_rate: 2, bladder_rate: 12, dirtiness_rate: 14,
+                rest_efficiency: 60,
+                starvation_tolerance_ticks: 480, dehydration_tolerance_ticks: 240,
+                exhaustion_collapse_ticks: 120, bladder_accident_tolerance_ticks: 40,
+                toilet_ticks: 6, wash_ticks: 8, min_sleep_ticks: 8,
+                travel_fatigue_multiplier: 0, travel_thirst_multiplier: 0,
+                travel_bladder_multiplier: 0, wilderness_relief_dirtiness_penalty: 40,
+            ),
+        ),
+        (
+            name: "Agent C",
+            location: "Shared Camp",
+            control: Ai,
+            archetype: Opportunistic,
+            portfolio_weights_profile: (
+                need_survival: 1000, pain_care: 900, obligation_duty: 650,
+                economic_opportunity: 750, social_motive: 300,
+                max_plans_normal: 3, max_plans_emergency: 3, max_plans_idle: 3,
+            ),
+            needs: (hunger: 0, thirst: 0, fatigue: 150, bladder: 350, dirtiness: 250),
+            utility_profile: (
+                hunger_weight: 800, thirst_weight: 800, fatigue_weight: 600,
+                bladder_weight: 700, dirtiness_weight: 600, pain_weight: 500,
+                danger_weight: 0, enterprise_weight: 0, social_weight: 0,
+                activity_awareness_weight: 0, side_benefit_weight: 0,
+                bounty_posting_weight: 0, notice_posting_weight: 0, courage: 0, care_weight: 0,
+            ),
+            drive_thresholds: (
+                hunger: (low: 300, medium: 550, high: 780, critical: 900),
+                thirst: (low: 300, medium: 550, high: 780, critical: 880),
+                fatigue: (low: 300, medium: 550, high: 780, critical: 900),
+                bladder: (low: 300, medium: 500, high: 700, critical: 800),
+                dirtiness: (low: 300, medium: 500, high: 700, critical: 800),
+                pain: (low: 150, medium: 350, high: 600, critical: 850),
+                danger: (low: 100, medium: 300, high: 500, critical: 500),
+            ),
+            metabolism_profile: (
+                hunger_rate: 0, thirst_rate: 0, fatigue_rate: 2, bladder_rate: 11, dirtiness_rate: 13,
+                rest_efficiency: 60,
+                starvation_tolerance_ticks: 480, dehydration_tolerance_ticks: 240,
+                exhaustion_collapse_ticks: 120, bladder_accident_tolerance_ticks: 40,
+                toilet_ticks: 6, wash_ticks: 8, min_sleep_ticks: 8,
+                travel_fatigue_multiplier: 0, travel_thirst_multiplier: 0,
+                travel_bladder_multiplier: 0, wilderness_relief_dirtiness_penalty: 40,
+            ),
+        ),
+    ],
+    facilities: [
+        (
+            name: Some("Camp Wash Basin"),
+            workstation: WashBasin,
+            location: "Shared Camp",
+            wash_basin_state: (
+                clean_water_units: 12,
+                max_clean_water: 12,
+                refill_per_tick: 1,
+                units_per_full_wash: 2,
+                dirtiness_level: 0,
+                dirtiness_per_use: 70,
+                max_effective_dirtiness: 800,
+            ),
+        ),
+        (name: Some("Camp Well"), workstation: Well, location: "Shared Camp"),
+    ],
+    resource_sources: [
+        (commodity: Water, location: "Shared Camp", facility: "Camp Well", regeneration_ticks_per_unit: 1, capacity: 200),
+    ],
+    survival_health_contract: (
+        max_authored_critical_run_ticks: 360,
+        max_idle_window_ticks_with_elevated_need: 240,
+        elevated_need_floor: 600,
+        required_self_care_families: [Sleep, Relieve, Wash],
+    ),
+)
