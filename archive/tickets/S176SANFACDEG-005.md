@@ -1,6 +1,6 @@
 # S176SANFACDEG-005: Planner-op integration for cleaning prerequisites
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `PlannerOpKind` (ai, 2 variants), `classify_action_def` (ai), `GoalKind::Wash`/`Relieve` plan search (ai, `goal_model.rs`)
@@ -82,3 +82,22 @@ In the prerequisite-synthesis path, read facility condition via the existing acc
 1. `cargo test -p worldwake-ai goal_model && cargo test -p worldwake-ai planner_ops`
 2. `cargo test -p worldwake-ai`
 3. `scripts/verify.sh`
+
+## Outcome
+
+**Completion date**: 2026-05-29
+
+**Note on split with S176SANFACDEG-004**: the `PlannerOpKind::{CleanWashBasin, EmptyLatrine}` variants, `classify_action_def` arms, `semantics_for`, and all the exhaustive `PlannerOpKind` match arms (observation/failure_handling/goal_model/htn validation) landed in S176SANFACDEG-004 (the registry-consistency invariant forced classification the moment the actions were registered). This ticket delivered the actual Wash/Relieve **search prerequisite insertion**, the planner facility-state model, the belief guard, and the planner tests.
+
+**What changed**:
+- Added `CleanWashBasin`/`EmptyLatrine` to the existing `WASH_OPS` / `RELIEVE_OPS` relevant-op lists (`goal_schema.rs`) — no new `GoalKind`/`GoalDispatchKey`/declaration surface.
+- Planner facility-state model: `SnapshotFacility.latrine_fullness` (populated from the belief view, `None` for remote/unknown); `PlanningState` gained `wash_basin_state`/`latrine_fullness` override maps + `with_*` builders + a `latrine_fullness` `FacilityBeliefView` impl; `wash_basin_state` read now honours the override.
+- Hypothetical effect sink (`effect_sink_hypothetical.rs`) `clean_wash_basin` resets believed `dirtiness_level` (and consumes water); `empty_latrine` resets believed `fill` — so the search sees the degradation gate unblock after the cleaning step and finds `[clean, wash]` / `[empty_latrine, toilet]`.
+- New search tests: clean-prerequisite insertion at a too-dirty basin, empty_latrine insertion at a full *isolated* latrine (isolated so the cheaper wilderness-relief fallback is unreachable, isolating the branch), and the belief barrier (no synthesis for a remote unknown basin).
+
+**Engine capability gap fixed — synthesized-candidate precondition bypass**:
+- Root-candidate **synthesis** (`goal_synthesized_candidates`) bypassed action preconditions (it is gated only by co-location), so a synthesized Wash candidate "succeeded" at a too-dirty basin, defeating the cleaning search. Added validation of the **S176 degradation gates only** (`TargetWashBasinNotTooDirty` / `PlaceLatrineNotFull`) on synthesized candidates. Scoped narrowly (not all preconditions) after a broader validation regressed the omitted-anchor tracing test (`search_trace_annotates_root_candidate_with_omitted_anchor_reason`) — synthesis intentionally surfaces candidates for unobserved targets, which must not be pruned.
+
+**Design note (cost-optimal fallback)**: at a full latrine with a reachable outdoor place, the search legitimately prefers wilderness relief (cheaper than empty_latrine→toilet) — exactly the spec's "or falls back to wilderness relief". The focused empty_latrine golden isolates the prerequisite branch with an edgeless indoor latrine.
+
+**Verification**: full `cargo test --workspace` (no failures) and `cargo clippy --workspace --all-targets -- -D warnings` clean. Authoritative-to-AI cycle: affordance suppression, candidate generation (incl. synthesis gate), plan search prerequisite insertion, and commit re-validation all exercised.

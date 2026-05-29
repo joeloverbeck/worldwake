@@ -8,7 +8,7 @@ use worldwake_core::{
     BlockingFact, CombatProfile, CommodityConsumableProfile, CommodityKind, ContentionGrant,
     DemandObservation, DisposalProfile, DriveThresholds, EntityId, EntityKind,
     EpistemicDispositionProfile, ExpectationStore, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefRead, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
+    InstitutionalBeliefRead, JusticeDispositionProfile, LastSeenMemory, LatrineFullness, LoadUnits,
     MerchandiseProfile, MetabolismProfile, OfficeData, OfficePatrolDuty, PatrolProfile,
     PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecordData, RecordedViolation,
     ResourceSource, RoutePreference, RoutePreferenceProfile, SocialObservation, StockStoragePolicy,
@@ -201,6 +201,7 @@ pub(crate) struct SnapshotFacility {
     pub(crate) stock_storage_policy: Option<StockStoragePolicy>,
     pub(crate) resource_source: Option<ResourceSource>,
     pub(crate) wash_basin_state: Option<WashBasinState>,
+    pub(crate) latrine_fullness: Option<LatrineFullness>,
     pub(crate) has_production_job: bool,
 }
 
@@ -315,6 +316,7 @@ impl Default for SnapshotEntity {
                 stock_storage_policy: None,
                 resource_source: None,
                 wash_basin_state: None,
+                latrine_fullness: None,
                 has_production_job: false,
             },
             rest_site: SnapshotRestSite {
@@ -1124,6 +1126,10 @@ fn build_snapshot_entity(
     let wash_basin_state = belief_backed
         .and_then(|belief| belief.wash_basin_state)
         .or_else(|| worldwake_sim::FacilityBeliefView::wash_basin_state(view, entity));
+    // S176: co-located/believed latrine fullness so the Relieve search can see
+    // a full latrine (toilet blocked) and insert empty_latrine. `None` for a
+    // remote/unknown place keeps the toilet optimistically plannable.
+    let latrine_fullness = worldwake_sim::FacilityBeliefView::latrine_fullness(view, entity);
     let has_production_job = view.has_production_job(entity);
     let controllable_by_actor = view.can_control(actor, entity);
     let has_control = view.has_control(entity);
@@ -1226,6 +1232,7 @@ fn build_snapshot_entity(
             stock_storage_policy,
             resource_source,
             wash_basin_state,
+            latrine_fullness,
             has_production_job,
         },
         rest_site: SnapshotRestSite {

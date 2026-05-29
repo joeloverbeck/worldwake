@@ -87,6 +87,8 @@ pub struct PlanningState<'snapshot> {
     sale_seller_overrides: SharedMap<PlanningEntityRef, Option<EntityId>>,
     needs_overrides: SharedMap<EntityId, HomeostaticNeeds>,
     pain_overrides: SharedMap<EntityId, Permille>,
+    wash_basin_state_overrides: SharedMap<EntityId, worldwake_core::WashBasinState>,
+    latrine_fullness_overrides: SharedMap<EntityId, worldwake_core::LatrineFullness>,
     support_declaration_overrides: SharedMap<(EntityId, EntityId), Option<EntityId>>,
     office_holder_belief_overrides: SharedMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
     force_controller_belief_overrides:
@@ -119,6 +121,8 @@ impl<'snapshot> PlanningState<'snapshot> {
             sale_seller_overrides: SharedMap::new(),
             needs_overrides: SharedMap::new(),
             pain_overrides: SharedMap::new(),
+            wash_basin_state_overrides: SharedMap::new(),
+            latrine_fullness_overrides: SharedMap::new(),
             support_declaration_overrides: SharedMap::new(),
             office_holder_belief_overrides: SharedMap::new(),
             force_controller_belief_overrides: SharedMap::new(),
@@ -826,6 +830,30 @@ impl<'snapshot> PlanningState<'snapshot> {
     #[must_use]
     pub fn with_pain(mut self, entity: EntityId, pain: Permille) -> Self {
         self.pain_overrides.insert(entity, pain);
+        self
+    }
+
+    /// S176: hypothetical override of a basin's `WashBasinState` (used by the
+    /// planner to simulate `clean_wash_basin` resetting `dirtiness_level`).
+    #[must_use]
+    pub fn with_wash_basin_state(
+        mut self,
+        entity: EntityId,
+        state: worldwake_core::WashBasinState,
+    ) -> Self {
+        self.wash_basin_state_overrides.insert(entity, state);
+        self
+    }
+
+    /// S176: hypothetical override of a place's `LatrineFullness` (used by the
+    /// planner to simulate `empty_latrine` resetting `fill`).
+    #[must_use]
+    pub fn with_latrine_fullness(
+        mut self,
+        entity: EntityId,
+        fullness: worldwake_core::LatrineFullness,
+    ) -> Self {
+        self.latrine_fullness_overrides.insert(entity, fullness);
         self
     }
 
@@ -2442,8 +2470,19 @@ impl FacilityBeliefView for PlanningState<'_> {
     }
 
     fn wash_basin_state(&self, entity: EntityId) -> Option<worldwake_core::WashBasinState> {
+        if let Some(state) = self.wash_basin_state_overrides.get(&entity) {
+            return Some(*state);
+        }
         let snapshot = self.snapshot.entities.get(&entity)?;
         snapshot.facility.wash_basin_state
+    }
+
+    fn latrine_fullness(&self, entity: EntityId) -> Option<worldwake_core::LatrineFullness> {
+        if let Some(fullness) = self.latrine_fullness_overrides.get(&entity) {
+            return Some(*fullness);
+        }
+        let snapshot = self.snapshot.entities.get(&entity)?;
+        snapshot.facility.latrine_fullness
     }
 
     fn has_production_job(&self, entity: EntityId) -> bool {

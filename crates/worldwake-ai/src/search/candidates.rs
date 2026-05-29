@@ -12,7 +12,8 @@ use worldwake_core::{
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance, EconomicBeliefView,
     EntityBeliefView, FacilityBeliefView, InventoryBeliefView, QueueForFacilityUsePayload,
-    RecipeRegistry, SpatialBeliefView, TemporalBeliefView, get_affordances_for_defs,
+    RecipeRegistry, SpatialBeliefView, TemporalBeliefView, evaluate_precondition,
+    get_affordances_for_defs,
 };
 
 use super::SearchNode;
@@ -856,20 +857,46 @@ fn goal_synthesized_candidates(
             let def = registry.get(*def_id)?;
             let semantics = semantics_table.get(def_id)?;
             match goal.synthesized_root_candidate_targets(def, *semantics, actor_place) {
-                RootCandidateSynthesis::Targets(authoritative_targets) => Some(SearchCandidate {
-                    def_id: *def_id,
-                    authoritative_targets: authoritative_targets.clone(),
-                    planning_targets: synthesized_planning_targets(
-                        goal,
-                        state,
-                        *semantics,
-                        authoritative_targets,
-                    ),
-                    payload_override: None,
-                    planner_only: false,
-                    trace_index: None,
-                    expansion_trace_index: None,
-                }),
+                RootCandidateSynthesis::Targets(authoritative_targets) => {
+                    // S176: the synthesized self-care fallback must still respect
+                    // the facility degradation gates. Without this, a synthesized
+                    // wash/toilet candidate would bypass TargetWashBasinNotTooDirty
+                    // / PlaceLatrineNotFull and "succeed" at a too-dirty/full
+                    // facility, defeating the cleaning-prerequisite search. We
+                    // validate ONLY these gates here (not every precondition) so
+                    // other synthesis behaviour — e.g. omitted-anchor tracing for
+                    // unobserved targets — is unchanged.
+                    let actor = state.snapshot().actor();
+                    let degradation_gate_blocked = def.preconditions.iter().any(|precondition| {
+                        matches!(
+                            precondition,
+                            worldwake_sim::Precondition::TargetWashBasinNotTooDirty { .. }
+                                | worldwake_sim::Precondition::PlaceLatrineNotFull { .. }
+                        ) && !evaluate_precondition(
+                            *precondition,
+                            actor,
+                            &authoritative_targets,
+                            state,
+                        )
+                    });
+                    if degradation_gate_blocked {
+                        return None;
+                    }
+                    Some(SearchCandidate {
+                        def_id: *def_id,
+                        authoritative_targets: authoritative_targets.clone(),
+                        planning_targets: synthesized_planning_targets(
+                            goal,
+                            state,
+                            *semantics,
+                            authoritative_targets,
+                        ),
+                        payload_override: None,
+                        planner_only: false,
+                        trace_index: None,
+                        expansion_trace_index: None,
+                    })
+                }
                 RootCandidateSynthesis::NoSynthesisPath
                 | RootCandidateSynthesis::UnsupportedGoalOp
                 | RootCandidateSynthesis::TargetDerivationFailed => None,

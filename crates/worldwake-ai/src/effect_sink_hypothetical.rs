@@ -560,6 +560,35 @@ impl EffectSink for HypotheticalEffectSink<'_> {
         Ok(())
     }
 
+    fn clean_wash_basin(&mut self, _actor: EntityId, basin: EntityId) -> Result<(), Discrepancy> {
+        // S176 D6: simulate the basin's dirtiness reset so the search sees the
+        // `TargetWashBasinNotTooDirty` gate unblock after the cleaning step.
+        let Some(mut state) = FacilityBeliefView::wash_basin_state(&self.state, basin) else {
+            return Ok(());
+        };
+        state.dirtiness_level = Permille::ZERO;
+        let consumed = state
+            .clean_water_units
+            .min(state.units_per_full_wash.max(1));
+        state.clean_water_units -= consumed;
+        self.update_state(|s| s.with_wash_basin_state(basin, state));
+        Ok(())
+    }
+
+    fn empty_latrine(&mut self, actor: EntityId) -> Result<(), Discrepancy> {
+        // S176 D6: simulate the latrine fill reset so the search sees the
+        // `PlaceLatrineNotFull` gate unblock after the emptying step.
+        let Some(place) = self.state.effective_place(actor) else {
+            return Ok(());
+        };
+        let Some(mut fullness) = FacilityBeliefView::latrine_fullness(&self.state, place) else {
+            return Ok(());
+        };
+        fullness.fill = Permille::ZERO;
+        self.update_state(|s| s.with_latrine_fullness(place, fullness));
+        Ok(())
+    }
+
     fn harvest_resource(
         &mut self,
         actor: EntityId,
