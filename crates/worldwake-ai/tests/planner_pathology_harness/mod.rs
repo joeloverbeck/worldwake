@@ -339,6 +339,7 @@ fn seed_forager_lina_cli_evaluation_slice(h: &mut GoldenHarness) -> EntityId {
             travel_thirst_multiplier: pm(0),
             travel_bladder_multiplier: pm(0),
             wilderness_relief_dirtiness_penalty: pm(0),
+            wash_worthwhile_effectiveness_floor: pm(500),
         },
         UtilityProfile {
             hunger_weight: pm(600),

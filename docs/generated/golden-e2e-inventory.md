@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden scenario source files: 69
-- Files contributing `golden_*` tests: 69
-- Total `golden_*` tests: 320
+- Golden scenario source files: 70
+- Files contributing `golden_*` tests: 70
+- Total `golden_*` tests: 322
 
 ## Per-Scenario-File Inventory
 
@@ -56,6 +56,7 @@ Do not hand-edit it.
 | `strategic_budget_scaling.rs` | 2 |
 | `survival_ask_consult.rs` | 1 |
 | `survival_baseline.rs` | 7 |
+| `survival_basin_competition.rs` | 2 |
 | `survival_basin_dirty_dirty.rs` | 2 |
 | `survival_combat.rs` | 2 |
 | `survival_contested.rs` | 9 |
@@ -444,6 +445,11 @@ Do not hand-edit it.
 - `no_stuck_idle_windows_with_elevated_needs`
 - `survival_contract_guard_rejects_missing_authored_contract`
 - `survival_need_run_tracker_uses_authored_drive_thresholds`
+
+### `survival_basin_competition.rs`
+
+- `proactive_cleaning_keeps_agents_recoverable_under_competition`
+- `proactive_cleaning_competition_is_replay_deterministic`
 
 ### `survival_basin_dirty_dirty.rs`
 

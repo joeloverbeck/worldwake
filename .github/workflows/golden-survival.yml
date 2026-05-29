@@ -27,6 +27,8 @@ jobs:
             filter: "scenarios::survival_ask_consult::"
           - scenario: baseline
             filter: "scenarios::survival_baseline::"
+          - scenario: basin_competition
+            filter: "scenarios::survival_basin_competition::"
           - scenario: combat
             filter: "scenarios::survival_combat::"
           - scenario: contested

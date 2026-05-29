@@ -184,6 +184,18 @@ pub struct MetabolismProfile {
     pub travel_bladder_multiplier: Permille,
     /// Additional dirtiness incurred when relieving oneself in the wilderness rather than at a proper facility.
     pub wilderness_relief_dirtiness_penalty: Permille,
+    /// Minimum acceptable wash effectiveness (the effective relief fraction in
+    /// permille) before the planner inserts proactive `clean_wash_basin`
+    /// maintenance ahead of a wash. A basin's live effectiveness is
+    /// `(max_effective_dirtiness - dirtiness_level) / max_effective_dirtiness`.
+    /// When that falls below this floor — while the basin is still below its
+    /// hard `max_effective_dirtiness` block — the agent cleans the basin first
+    /// so the recovered wash delivers worthwhile relief. This is the FND-11
+    /// maintenance-labor dampener engaging before the basin becomes unusable.
+    /// `0` disables proactive cleaning, leaving only the hard authoritative
+    /// block (`TargetWashBasinNotTooDirty`).
+    #[serde(default = "default_wash_worthwhile_effectiveness_floor")]
+    pub wash_worthwhile_effectiveness_floor: Permille,
 }
 
 impl MetabolismProfile {
@@ -241,6 +253,7 @@ impl MetabolismProfile {
             travel_thirst_multiplier,
             travel_bladder_multiplier,
             wilderness_relief_dirtiness_penalty,
+            wash_worthwhile_effectiveness_floor: default_wash_worthwhile_effectiveness_floor(),
         }
     }
 }
@@ -257,6 +270,10 @@ const fn default_clean_basin_duration_ticks() -> NonZeroU32 {
 
 const fn default_empty_latrine_duration_ticks() -> NonZeroU32 {
     nz(16)
+}
+
+const fn default_wash_worthwhile_effectiveness_floor() -> Permille {
+    pm(500)
 }
 
 const fn default_rough_sleep_recovery_floor() -> Permille {
@@ -286,6 +303,7 @@ impl Default for MetabolismProfile {
             travel_thirst_multiplier: pm(0),
             travel_bladder_multiplier: pm(0),
             wilderness_relief_dirtiness_penalty: pm(0),
+            wash_worthwhile_effectiveness_floor: default_wash_worthwhile_effectiveness_floor(),
         }
     }
 }
@@ -485,6 +503,10 @@ mod tests {
         assert_eq!(profile.travel_thirst_multiplier, pm(300));
         assert_eq!(profile.travel_bladder_multiplier, pm(400));
         assert_eq!(profile.wilderness_relief_dirtiness_penalty, pm(100));
+        // Worthwhile-wash floor follows the `rough_sleep_recovery_floor`
+        // precedent: not in the `new()` signature, so `new()` seeds it from the
+        // default.
+        assert_eq!(profile.wash_worthwhile_effectiveness_floor, pm(500));
     }
 
     #[test]
@@ -511,6 +533,7 @@ mod tests {
         assert_eq!(profile.empty_latrine_duration_ticks, nz(16));
         assert_eq!(profile.min_sleep_ticks, nz(8));
         assert_eq!(profile.rough_sleep_recovery_floor, pm(300));
+        assert_eq!(profile.wash_worthwhile_effectiveness_floor, pm(500));
     }
 
     #[test]
@@ -545,6 +568,39 @@ mod tests {
         // durations; serde defaults must hold so they deserialize unchanged.
         assert_eq!(profile.clean_basin_duration_ticks, nz(10));
         assert_eq!(profile.empty_latrine_duration_ticks, nz(16));
+        // Scenarios that omit the worthwhile-wash floor inherit the proactive
+        // cleaning default so the FND-11 dampener engages without opt-in.
+        assert_eq!(profile.wash_worthwhile_effectiveness_floor, pm(500));
+    }
+
+    #[test]
+    fn metabolism_profile_ron_accepts_explicit_wash_worthwhile_floor() {
+        let ron = r"(
+            hunger_rate: 2,
+            thirst_rate: 3,
+            fatigue_rate: 4,
+            bladder_rate: 5,
+            dirtiness_rate: 6,
+            rest_efficiency: 20,
+            starvation_tolerance_ticks: 480,
+            dehydration_tolerance_ticks: 240,
+            exhaustion_collapse_ticks: 120,
+            bladder_accident_tolerance_ticks: 40,
+            toilet_ticks: 8,
+            wash_ticks: 12,
+            wash_worthwhile_effectiveness_floor: 0,
+            travel_fatigue_multiplier: 0,
+            travel_thirst_multiplier: 0,
+            travel_bladder_multiplier: 0,
+            wilderness_relief_dirtiness_penalty: 0,
+        )";
+
+        let profile: MetabolismProfile = ron::Options::default()
+            .with_default_extension(ron::extensions::Extensions::UNWRAP_NEWTYPES)
+            .from_str(ron)
+            .unwrap();
+
+        assert_eq!(profile.wash_worthwhile_effectiveness_floor, pm(0));
     }
 
     #[test]

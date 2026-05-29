@@ -57,6 +57,14 @@
                 toilet_ticks: 6, wash_ticks: 8, min_sleep_ticks: 8,
                 travel_fatigue_multiplier: 0, travel_thirst_multiplier: 0,
                 travel_bladder_multiplier: 0, wilderness_relief_dirtiness_penalty: 40,
+                // SANBASINCLEAN-001: this scenario specifically exercises the
+                // HARD `TargetWashBasinNotTooDirty` block (basin authored with a
+                // low `max_effective_dirtiness: 800`). Disable the proactive
+                // worthwhile-wash floor here so cleaning is driven by the hard
+                // block, keeping the BasinTooDirty forensic regime under test.
+                // The proactive (soft-floor) path is proven separately by
+                // survival-basin-competition-1440.ron.
+                wash_worthwhile_effectiveness_floor: 0,
             ),
         ),
         (
@@ -94,6 +102,14 @@
                 toilet_ticks: 6, wash_ticks: 8, min_sleep_ticks: 8,
                 travel_fatigue_multiplier: 0, travel_thirst_multiplier: 0,
                 travel_bladder_multiplier: 0, wilderness_relief_dirtiness_penalty: 40,
+                // SANBASINCLEAN-001: this scenario specifically exercises the
+                // HARD `TargetWashBasinNotTooDirty` block (basin authored with a
+                // low `max_effective_dirtiness: 800`). Disable the proactive
+                // worthwhile-wash floor here so cleaning is driven by the hard
+                // block, keeping the BasinTooDirty forensic regime under test.
+                // The proactive (soft-floor) path is proven separately by
+                // survival-basin-competition-1440.ron.
+                wash_worthwhile_effectiveness_floor: 0,
             ),
         ),
         (
@@ -131,6 +147,14 @@
                 toilet_ticks: 6, wash_ticks: 8, min_sleep_ticks: 8,
                 travel_fatigue_multiplier: 0, travel_thirst_multiplier: 0,
                 travel_bladder_multiplier: 0, wilderness_relief_dirtiness_penalty: 40,
+                // SANBASINCLEAN-001: this scenario specifically exercises the
+                // HARD `TargetWashBasinNotTooDirty` block (basin authored with a
+                // low `max_effective_dirtiness: 800`). Disable the proactive
+                // worthwhile-wash floor here so cleaning is driven by the hard
+                // block, keeping the BasinTooDirty forensic regime under test.
+                // The proactive (soft-floor) path is proven separately by
+                // survival-basin-competition-1440.ron.
+                wash_worthwhile_effectiveness_floor: 0,
             ),
         ),
     ],

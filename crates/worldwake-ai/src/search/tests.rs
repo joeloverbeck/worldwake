@@ -4828,6 +4828,124 @@ fn search_inserts_clean_wash_basin_prerequisite_at_too_dirty_basin() {
 }
 
 #[test]
+fn search_inserts_proactive_clean_at_basin_below_worthwhile_floor() {
+    // SANBASINCLEAN-001: a co-located basin that is still BELOW its hard
+    // `max_effective_dirtiness` block (so the wash precondition passes) but
+    // whose live effectiveness has fallen below the actor's worthwhile-wash
+    // floor must trigger proactive clean_wash_basin before the wash, so the
+    // FND-11 maintenance dampener engages before the basin becomes unusable.
+    let orchard_farm = prototype_place_entity(PrototypePlace::OrchardFarm);
+    let mut world = World::new(build_prototype_world()).unwrap();
+    let (actor, wash_basin) = {
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        let actor = txn.create_agent("Washer", ControlSource::Ai).unwrap();
+        let wash_basin = txn.create_entity(EntityKind::Facility);
+        txn.set_ground_location(actor, orchard_farm).unwrap();
+        txn.set_ground_location(wash_basin, orchard_farm).unwrap();
+        txn.set_component_homeostatic_needs(
+            actor,
+            HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(700)),
+        )
+        .unwrap();
+        txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+            .unwrap();
+        txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+            .unwrap();
+        // Default profile carries `wash_worthwhile_effectiveness_floor == 500`.
+        txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
+            .unwrap();
+        txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(50)))
+            .unwrap();
+        txn.set_component_workstation_marker(
+            wash_basin,
+            WorkstationMarker(WorkstationTag::WashBasin),
+        )
+        .unwrap();
+        // Effectiveness = (1000 - 600) / 1000 = 400‰ < the 500‰ floor, while the
+        // basin is still below the hard 1000‰ block, so the wash precondition
+        // itself still passes.
+        txn.set_component_wash_basin_state(
+            wash_basin,
+            WashBasinState {
+                dirtiness_level: pm(600),
+                max_effective_dirtiness: pm(1000),
+                ..WashBasinState::default()
+            },
+        )
+        .unwrap();
+        let mut event_log = EventLog::new();
+        let _ = txn.commit(&mut event_log);
+        (actor, wash_basin)
+    };
+
+    let recipes = RecipeRegistry::new();
+    sync_all_beliefs(&mut world, actor, Tick(1));
+
+    let (registry, handlers) = build_registry_with_recipes(&recipes);
+    let semantics = build_semantics_table(&registry);
+    let goal = GoalOffer {
+        anchor: worldwake_core::OpportunityAnchor::Entity(wash_basin),
+        key: GoalKey::from(GoalKind::Wash),
+        evidence_entities: BTreeSet::from([wash_basin]),
+        evidence_places: BTreeSet::from([orchard_farm]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
+        acquisition_quantity: None,
+    };
+    let view = PerAgentBeliefView::from_world(actor, &world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ProfileFixture::default().snapshot_travel_horizon,
+    );
+
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &semantics,
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &recipes,
+        &BlockerMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("a below-floor basin should yield a proactive clean-then-wash plan");
+
+    let clean_index = plan
+        .steps
+        .iter()
+        .position(|step| step.op_kind == PlannerOpKind::CleanWashBasin)
+        .expect("plan should insert a proactive clean_wash_basin step");
+    let wash_index = plan
+        .steps
+        .iter()
+        .position(|step| step.op_kind == PlannerOpKind::Wash)
+        .expect("plan should still terminate in a wash");
+    assert!(
+        clean_index < wash_index,
+        "proactive cleaning must precede the wash: {plan:?}"
+    );
+}
+
+#[test]
 fn search_inserts_empty_latrine_prerequisite_at_full_latrine() {
     // S176 D6: a full co-located latrine blocks the toilet; the Relieve search
     // must insert empty_latrine first. The latrine place is isolated (no travel

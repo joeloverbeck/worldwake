@@ -1,4 +1,5 @@
 mod candidates;
+pub(crate) use candidates::wash_basin_below_worthwhile_floor;
 mod frontier;
 mod heuristic;
 pub(crate) mod landmarks;

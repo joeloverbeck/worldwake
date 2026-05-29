@@ -41,6 +41,7 @@ pub mod source_reliability;
 pub mod strategic_budget_scaling;
 pub mod survival_ask_consult;
 pub mod survival_baseline;
+pub mod survival_basin_competition;
 pub mod survival_basin_dirty_dirty;
 pub mod survival_combat;
 pub mod survival_contested;
