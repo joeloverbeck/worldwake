@@ -1430,6 +1430,7 @@ mod tests {
                 units_per_full_wash: 2,
                 dirtiness_level: pm(0),
                 dirtiness_per_use: pm(50),
+                max_effective_dirtiness: pm(1000),
             },
         )
         .unwrap();
@@ -2728,6 +2729,7 @@ mod tests {
                 units_per_full_wash: 2,
                 dirtiness_level: pm(50),
                 dirtiness_per_use: pm(50),
+                max_effective_dirtiness: pm(1000),
             }
         );
         assert_eq!(
@@ -2791,6 +2793,7 @@ mod tests {
                 units_per_full_wash: 2,
                 dirtiness_level: pm(25),
                 dirtiness_per_use: pm(50),
+                max_effective_dirtiness: pm(1000),
             }
         );
         assert_eq!(

@@ -329,6 +329,7 @@ fn wash_partial_success_proportional_dirtiness_reduction() {
             units_per_full_wash: 2,
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(50),
+            max_effective_dirtiness: pm(1000),
         },
     );
     let agent = seed_agent(
@@ -360,6 +361,7 @@ fn wash_partial_success_proportional_dirtiness_reduction() {
             units_per_full_wash: 2,
             dirtiness_level: pm(25),
             dirtiness_per_use: pm(50),
+            max_effective_dirtiness: pm(1000),
         }
     );
 }
@@ -448,6 +450,7 @@ fn basin_natural_refill_from_colocated_water_source() {
             units_per_full_wash: 2,
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(50),
+            max_effective_dirtiness: pm(1000),
         },
     );
     let source = place_workstation_with_source(
@@ -506,6 +509,7 @@ fn wash_ai_selects_non_empty_basin_when_other_basin_is_empty() {
             units_per_full_wash: 2,
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(50),
+            max_effective_dirtiness: pm(1000),
         },
     );
     let usable = place_wash_basin(
@@ -518,6 +522,7 @@ fn wash_ai_selects_non_empty_basin_when_other_basin_is_empty() {
             units_per_full_wash: 2,
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(50),
+            max_effective_dirtiness: pm(1000),
         },
     );
     let agent = seed_agent(
@@ -739,6 +744,7 @@ fn wash_basin_plateaus_at_zero_with_zero_refill() {
             units_per_full_wash: 2,
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(50),
+            max_effective_dirtiness: pm(1000),
         },
     );
     let agent = seed_agent(

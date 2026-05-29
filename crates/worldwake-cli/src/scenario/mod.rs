@@ -2403,7 +2403,45 @@ mod tests {
                 units_per_full_wash: 3,
                 dirtiness_level: Permille::new(250).unwrap(),
                 dirtiness_per_use: Permille::new(75).unwrap(),
+                // Unauthored in the RON above: defaults to full scale.
+                max_effective_dirtiness: Permille::new(1000).unwrap(),
             })
+        );
+    }
+
+    #[test]
+    fn wash_basin_state_applies_authored_max_effective_dirtiness() {
+        let def = def_from_ron_str(
+            r#"(
+                seed: 42,
+                places: [
+                    (name: "Village", tags: [Village]),
+                ],
+                agents: [],
+                facilities: [
+                    (
+                        name: "Basin",
+                        workstation: WashBasin,
+                        location: "Village",
+                        wash_basin_state: (
+                            dirtiness_level: 100,
+                            max_effective_dirtiness: 600,
+                        ),
+                    ),
+                ],
+            )"#,
+        );
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let basin = named_entity(world, "Basin");
+
+        assert_eq!(
+            world
+                .get_component_wash_basin_state(basin)
+                .unwrap()
+                .max_effective_dirtiness,
+            Permille::new(600).unwrap()
         );
     }
 

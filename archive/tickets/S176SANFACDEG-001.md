@@ -1,6 +1,6 @@
 # S176SANFACDEG-001: WashBasinState effective-dirtiness field + scenario contract
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `WashBasinState` core component (new field), serialized `SimulationState` format (`SAVE_FORMAT_VERSION` bump), scenario contract (`WashBasinStateDef`)
@@ -94,3 +94,17 @@ Bump `SAVE_FORMAT_VERSION` `108 → 109` in `crates/worldwake-sim/src/save_load.
 1. `cargo test -p worldwake-core place_dirtiness`
 2. `cargo test -p worldwake-cli && cargo test -p worldwake-sim save_load`
 3. `scripts/verify.sh`
+
+## Outcome
+
+**Completion date**: 2026-05-29
+
+**What changed**:
+- Added `max_effective_dirtiness: Permille` to `WashBasinState` (`crates/worldwake-core/src/place_dirtiness.rs`), defaulting to `Permille::new_unchecked(1000)` (full scale → `effective_fraction == 1` at `dirtiness_level == 0`, no behavior change until a scenario authors a lower threshold).
+- Added the matching `Option<Permille>` field to `WashBasinStateDef` (`crates/worldwake-cli/src/scenario/types.rs`) and its `From` mapping, so unauthored scenarios deserialize unchanged and authored values flow through.
+- Bumped `SAVE_FORMAT_VERSION` `108 → 109` (`crates/worldwake-sim/src/save_load.rs`); renamed/updated the version-pin tests.
+- Updated all explicit (non-spread) `WashBasinState { … }` literal construction sites across core/sim/systems/cli and the ai test scenarios.
+
+**Deviations**: None. The awk/diagnostic-driven sweep confirmed only literal constructions (not the `-> WashBasinState` accessor fn bodies, which return `::default()`) needed the field. Added a focused authoring test (`wash_basin_state_applies_authored_max_effective_dirtiness`) beyond the default-application test.
+
+**Verification**: `cargo test -p worldwake-core place_dirtiness`, `cargo test -p worldwake-cli` (new scenario tests), `cargo test -p worldwake-sim save_load`, and full `cargo test --workspace` all pass (no failures).

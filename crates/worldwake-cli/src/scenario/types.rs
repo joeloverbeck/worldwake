@@ -548,6 +548,7 @@ pub struct WashBasinStateDef {
     pub units_per_full_wash: Option<u16>,
     pub dirtiness_level: Option<Permille>,
     pub dirtiness_per_use: Option<Permille>,
+    pub max_effective_dirtiness: Option<Permille>,
 }
 
 impl From<WashBasinStateDef> for WashBasinState {
@@ -562,6 +563,9 @@ impl From<WashBasinStateDef> for WashBasinState {
                 .unwrap_or(defaults.units_per_full_wash),
             dirtiness_level: def.dirtiness_level.unwrap_or(defaults.dirtiness_level),
             dirtiness_per_use: def.dirtiness_per_use.unwrap_or(defaults.dirtiness_per_use),
+            max_effective_dirtiness: def
+                .max_effective_dirtiness
+                .unwrap_or(defaults.max_effective_dirtiness),
         }
     }
 }
