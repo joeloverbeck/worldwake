@@ -61,16 +61,16 @@ proof spec. Dismissals, reaffirmations, and per-item rationale:
 
 ```
 S175CIOWN-001 (Exhaustion golden CI ownership)   ── archived ticket; completed; no spec deps
-S176 (Sanitation Facility Degradation)           ── depends on archived S129 / S173 / S174 / S44 / S82; lowest new surface (wires dead state)
+S176 (Sanitation Facility Degradation)           ── ✅ COMPLETED 2026-05-29 (archived); depended on archived S129 / S173 / S174 / S44 / S82; wired dead facility state into consequences
 S177 (Water Quality, Depletion, Reliability)     ── depends on archived S79 / S38 / S151 / S129; couples to S176 (basin refill quality) ; realizes canonical scenario D for water
 S178 (Perishable Food Spoilage)                  ── depends on archived S82 / S79; first emitter of LotOperation::Spoiled
 ```
 
-S176 is the recommended first slice (the report's §17 pick): it wires existing
-inert facility state with the least new conceptual surface. S177 and S178 are
-independent of each other; S177 couples to S176 only through basin-refill water
-quality. None of the three depends on another's completion, but S176-then-S177
-sequences cleanly because both touch the basin.
+S176 was the recommended first slice (the report's §17 pick) and is now
+**completed and archived** (tickets S176SANFACDEG-001..008, 2026-05-29). S177
+and S178 are independent of each other; S177 couples to S176 only through
+basin-refill water quality (it consumes the now-live `WashBasinState`). Neither
+remaining spec depends on the other's completion.
 
 ### Completed Proof-Integrity Ticket (not held)
 
@@ -81,18 +81,21 @@ sequences cleanly because both touch the basin.
   docs only; no engine change. Proof-integrity correction, exempt from the gameplay
   hold.
 
-### Authored, Awaiting Activation
+### Completed (this wave)
 
-- **S176 — Sanitation Facility Degradation Consequences** —
-  `specs/S176-sanitation-facility-degradation-consequences.md` — *Status: Draft.*
-  Wires the inert `WashBasinState.dirtiness_level` into wash effectiveness +
-  legality and the inert `LatrineFullness.fill` into a Toilet precondition gate;
-  adds `clean_wash_basin` / `empty_latrine` maintenance actions (duration,
-  occupancy, Waste aftermath); extends `SurvivalForensicExtractor` with
-  `DegradedSelfCareOpportunity`. No new ECS component. Focused goldens
-  (`survival-basin-dirty-dirty`, `survival-latrine-full`) plus a 1440-tick
-  `survival-sanitation-breakdown-1440` collision scenario.
-  **FND-1/3/4/7/8/10/11/14A/14B/19/20/21/26/28/29/29A/31.**
+- **S176 — Sanitation Facility Degradation Consequences** — *Status: ✅ COMPLETED 2026-05-29.*
+  `archive/specs/S176-sanitation-facility-degradation-consequences.md` (tickets
+  `archive/tickets/S176SANFACDEG-001..008`). Wired the inert
+  `WashBasinState.dirtiness_level` into wash effectiveness + legality and the
+  inert `LatrineFullness.fill` into a Toilet precondition gate; added
+  `clean_wash_basin` / `empty_latrine` maintenance actions (duration, occupancy,
+  Waste aftermath) inserted by the GOAP search as `Wash`/`Relieve` prerequisites;
+  extended `SurvivalForensicExtractor` with `DegradedSelfCareOpportunity`. No new
+  ECS component, no new `GoalKind`. Landed with focused goldens
+  (`survival-basin-dirty-dirty`, `survival-latrine-full`) plus the CI-owned
+  1440-tick `survival-sanitation-breakdown-1440` collision scenario.
+
+### Authored, Awaiting Activation
 
 - **S177 — Water Source Quality, Depletion Observation, and Reliability Memory** —
   `specs/S177-water-source-quality-depletion-reliability.md` — *Status: Draft.*

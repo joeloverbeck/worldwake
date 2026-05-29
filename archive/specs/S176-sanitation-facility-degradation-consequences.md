@@ -20,7 +20,7 @@ Phase 7: Consequence Carriers
 
 ## Status
 
-📝 DRAFT — authored, reassessed, awaiting activation (held adjunct wave; see `specs/IMPLEMENTATION-ORDER.md`)
+✅ COMPLETED — implemented via tickets S176SANFACDEG-001..008 (2026-05-29).
 
 ## Crates
 
@@ -302,3 +302,17 @@ This spec modifies action preconditions (D2 wash, D3 toilet) and the self-care p
 - **`survival-sanitation-breakdown-1440.ron`** — multiple agents share one basin and one latrine over 1440 ticks under ordinary need pressure. Sanitation degrades; agents queue (S44 occupancy), clean, empty, and fall back to wilderness relief; place dirtiness rises and decays. Assertions prove: facility-state arithmetic (dirtiness/fill cross thresholds and recover via labor), no omniscient remote-facility reads (belief barrier), `DegradedSelfCareOpportunity` causal records, and replay equivalence.
 
 **Illegal paths this spec must not produce:** wash relief unaffected by `dirtiness_level`; toilet succeeding at/above `critical_threshold`; facility state resetting without a cleaning/decay action; a planner cleaning prerequisite synthesized for a remote facility with no belief carrier; a new `GoalKind` for cleaning; any `sanitation_score`.
+
+## Outcome
+
+**Completion date**: 2026-05-29 (tickets S176SANFACDEG-001..008, all archived under `archive/tickets/`).
+
+**What landed**:
+- D1/D9/D10 carriers: `WashBasinState.max_effective_dirtiness` (`Permille`, default full-scale) + `WashBasinStateDef` contract; `MetabolismProfile.clean_basin_duration_ticks` / `empty_latrine_duration_ticks` (serde-defaulted, mirroring `rough_sleep_recovery_floor` — not added to `MetabolismProfile::new()`); two `SAVE_FORMAT_VERSION` bumps (108→110); observer place summary surfaces co-located basin dirtiness/clean-units + latrine fill.
+- D2/D3/D4 gates: `Precondition::{TargetWashBasinNotTooDirty, PlaceLatrineNotFull}` with evaluation in `action_validation.rs` + `affordance_query.rs`; `apply_wash` relief scales with basin dirtiness; toilet blocked at/above latrine `critical_threshold`. Added `FacilityBeliefView::latrine_fullness` for affordance gating (absent component / unknown-remote = optimistically usable; only a known-full co-located latrine is gated, with authoritative commit re-check).
+- D5: `clean_wash_basin` + `empty_latrine` duration/occupancy-bearing actions with explicit abort handlers, via new `EffectStep::{CleanWashBasin, EmptyLatrine}` + `EffectSink` methods; `WasteSource::LatrineEmptied`; `SelfCareUseKind::{CleanWashBasin, EmptyLatrine}`.
+- D6/D7: `PlannerOpKind::{CleanWashBasin, EmptyLatrine}` in the `WASH_OPS`/`RELIEVE_OPS` relevant-op lists; the planner models facility condition (snapshot `latrine_fullness`, `PlanningState` overrides) and the hypothetical effect sink simulates the cleaning reset so the GOAP search finds `[clean, wash]` / `[empty_latrine, toilet]`. Synthesized self-care candidates now respect the degradation gates (a synthesized wash can no longer bypass a too-dirty basin). No new `GoalKind`/`GoalDispatchKey`.
+- D8: `DegradedSelfCareOpportunity` forensic record on `CriticalWindowFrame`, derived from action-trace recovery/fallback commits + degradation-gated start failures; added `latrine_present` to `LocalSurvivalStateSummary`.
+- Validation: focused goldens `survival-basin-dirty-dirty` / `survival-latrine-full` (default lane) + the `#[ignore]` 1440-tick `survival-sanitation-breakdown-1440` collision golden (registered in `docs/scenario-roadmap.md` §5.20 and the `golden-survival` CI matrix).
+
+**Notable deviations** are documented per-ticket in the archived tickets — chiefly: `PlannerOpKind` classification landed in 004 (registry-consistency invariant); the planner facility-state model + synthesized-candidate gate were engine capability gaps fixed in 005; the 1440 scenario isolates sanitation (food/water zeroed) to stay survivable.

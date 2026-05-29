@@ -32,7 +32,7 @@ Phase 7: Consequence Carriers
 - `archive/specs/S79-resource-source-consumption-affordances.md` — provides the `ResourceSource` extraction/consumption affordance substrate this spec extends.
 - `archive/specs/S38-learned-route-source-preferences.md` — provides the learned **source-preference** substrate this spec extends with reliability memory (rather than introducing a new memory component). *Reassessment must confirm the exact `LearnedSourcePreferences` shape before ticket decomposition.*
 - `archive/specs/S151-testimony-reliability-and-route-preferences.md` — provides the testimony/reliability precedent for how a believed source-reliability fact is acquired, decays, and is discounted.
-- `archive/specs/S129-place-dirtiness-facility-wear.md` + `specs/S176-sanitation-facility-degradation-consequences.md` — basin refill quality preference and the `WashBasinState.dirtiness_level` consequence S177 feeds (dirty water dirties the basin).
+- `archive/specs/S129-place-dirtiness-facility-wear.md` + `archive/specs/S176-sanitation-facility-degradation-consequences.md` — basin refill quality preference and the `WashBasinState.dirtiness_level` consequence S177 feeds (dirty water dirties the basin).
 - `archive/specs/S120-survival-critical-window-forensics.md` — `SurvivalForensicExtractor` extended with source-failure records.
 
 ## Design Goals
