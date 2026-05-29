@@ -129,6 +129,8 @@ pub(crate) fn classify_discrepancy(
             }
         }
         PlannerOpKind::Wash
+        | PlannerOpKind::CleanWashBasin
+        | PlannerOpKind::EmptyLatrine
         | PlannerOpKind::Patrol
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
@@ -653,7 +655,9 @@ fn classify_input_failure(
         | PlannerOpKind::WithdrawBounty
         | PlannerOpKind::PostBounty
         | PlannerOpKind::PostNotice
-        | PlannerOpKind::Wash => None,
+        | PlannerOpKind::Wash
+        | PlannerOpKind::CleanWashBasin
+        | PlannerOpKind::EmptyLatrine => None,
     }?;
 
     (view.commodity_quantity(agent, commodity) == Quantity(0))
@@ -700,6 +704,8 @@ fn target_gone(view: &dyn RuntimeBeliefView, agent: EntityId, step: &PlannedStep
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
         | PlannerOpKind::Wash
+        | PlannerOpKind::CleanWashBasin
+        | PlannerOpKind::EmptyLatrine
         | PlannerOpKind::Heal
         | PlannerOpKind::Tell
         | PlannerOpKind::ConsultRecord
@@ -1412,6 +1418,8 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
         | PlannerOpKind::Wash
+        | PlannerOpKind::CleanWashBasin
+        | PlannerOpKind::EmptyLatrine
         | PlannerOpKind::EstablishCamp
         | PlannerOpKind::Investigate
         | PlannerOpKind::SearchPlace
@@ -1501,6 +1509,8 @@ fn related_place(
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
         | PlannerOpKind::Wash
+        | PlannerOpKind::CleanWashBasin
+        | PlannerOpKind::EmptyLatrine
         | PlannerOpKind::Heal
         | PlannerOpKind::Loot
         | PlannerOpKind::Attack

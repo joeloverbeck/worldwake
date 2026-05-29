@@ -907,6 +907,8 @@ fn reconcile_committed_facility_queue_intents(
         | crate::PlannerOpKind::Trade
         | crate::PlannerOpKind::Consume
         | crate::PlannerOpKind::Wash
+        | crate::PlannerOpKind::CleanWashBasin
+        | crate::PlannerOpKind::EmptyLatrine
         | crate::PlannerOpKind::Heal
         | crate::PlannerOpKind::MoveCargo
         | crate::PlannerOpKind::DropItem

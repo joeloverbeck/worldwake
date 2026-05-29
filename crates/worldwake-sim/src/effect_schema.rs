@@ -143,6 +143,10 @@ pub enum EffectStep {
     UseWashBasin {
         basin: EffectEntityRef,
     },
+    CleanWashBasin {
+        basin: EffectEntityRef,
+    },
+    EmptyLatrine,
     HarvestResource {
         workstation: EffectEntityRef,
     },
@@ -386,6 +390,14 @@ pub trait EffectSink {
     }
 
     fn use_wash_basin(&mut self, _actor: EntityId, _basin: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn clean_wash_basin(&mut self, _actor: EntityId, _basin: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn empty_latrine(&mut self, _actor: EntityId) -> Result<(), Discrepancy> {
         Err(Discrepancy::ImproperPlanningState)
     }
 
@@ -863,6 +875,13 @@ fn apply_step(
         EffectStep::UseWashBasin { basin } => {
             let basin = resolve_entity_ref(*basin, context)?;
             sink.use_wash_basin(context.actor, basin)?;
+        }
+        EffectStep::CleanWashBasin { basin } => {
+            let basin = resolve_entity_ref(*basin, context)?;
+            sink.clean_wash_basin(context.actor, basin)?;
+        }
+        EffectStep::EmptyLatrine => {
+            sink.empty_latrine(context.actor)?;
         }
         EffectStep::HarvestResource { workstation } => {
             let workstation = resolve_entity_ref(*workstation, context)?;

@@ -51,6 +51,18 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         commit_wash,
         abort_release_self_care_occupancy,
     ));
+    let clean_wash_basin_handler = handlers.register(ActionHandler::new(
+        start_self_care_occupancy,
+        tick_continue,
+        commit_clean_wash_basin,
+        abort_release_self_care_occupancy,
+    ));
+    let empty_latrine_handler = handlers.register(ActionHandler::new(
+        start_self_care_occupancy,
+        tick_continue,
+        commit_empty_latrine,
+        abort_release_self_care_occupancy,
+    ));
     let relieve_wilderness_handler = handlers.register(ActionHandler::new(
         start_noop,
         tick_continue,
@@ -110,6 +122,26 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         },
         vec![ReservationReq { target_index: 0 }],
     );
+    register_def(
+        defs,
+        "clean_wash_basin",
+        clean_wash_basin_handler,
+        clean_wash_basin_preconditions(),
+        DurationExpr::ActorMetabolism {
+            kind: MetabolismDurationKind::CleanBasin,
+        },
+        vec![ReservationReq { target_index: 0 }],
+    );
+    register_def(
+        defs,
+        "empty_latrine",
+        empty_latrine_handler,
+        vec![Precondition::ActorAlive],
+        DurationExpr::ActorMetabolism {
+            kind: MetabolismDurationKind::EmptyLatrine,
+        },
+        vec![ReservationReq { target_index: 0 }],
+    );
 
     // relieve_wilderness: registered directly because it needs SamePlace visibility
     // and WildernessRelief event tag, unlike the other needs actions.
@@ -163,7 +195,7 @@ fn register_def(
         name: name.to_string(),
         domain: worldwake_core::ActionDomain::Needs,
         actor_constraints: match name {
-            "toilet" => vec![
+            "toilet" | "empty_latrine" => vec![
                 Constraint::ActorAlive,
                 Constraint::ActorAtPlaceTag(PlaceTag::Latrine),
             ],
@@ -173,10 +205,10 @@ fn register_def(
             "eat" | "drink" => vec![TargetSpec::EntityAtActorPlace {
                 kind: worldwake_core::EntityKind::ItemLot,
             }],
-            "wash" => vec![TargetSpec::EntityAtActorPlace {
+            "wash" | "clean_wash_basin" => vec![TargetSpec::EntityAtActorPlace {
                 kind: worldwake_core::EntityKind::Facility,
             }],
-            "toilet" => vec![TargetSpec::ActorPlace],
+            "toilet" | "empty_latrine" => vec![TargetSpec::ActorPlace],
             _ => Vec::new(),
         },
         preconditions: preconditions.clone(),
@@ -192,14 +224,19 @@ fn register_def(
         visibility: VisibilitySpec::ParticipantsOnly,
         causal_event_tags: match name {
             "wash" => BTreeSet::from([EventTag::WorldMutation, EventTag::WashFacilityUsed]),
+            "empty_latrine" => BTreeSet::from([EventTag::WorldMutation, EventTag::WasteCreated]),
             _ => BTreeSet::from([EventTag::WorldMutation]),
         },
         payload: ActionPayload::None,
         handler,
         binding_strictness: match name {
             "eat" | "drink" => worldwake_sim::BindingStrictness::FungibleEquivalentCommodity,
-            "sleep" | "toilet" => worldwake_sim::BindingStrictness::AnyLegalTarget,
-            "wash" => worldwake_sim::BindingStrictness::EquivalentWorkstationTagAtSamePlace,
+            "sleep" | "toilet" | "empty_latrine" => {
+                worldwake_sim::BindingStrictness::AnyLegalTarget
+            }
+            "wash" | "clean_wash_basin" => {
+                worldwake_sim::BindingStrictness::EquivalentWorkstationTagAtSamePlace
+            }
             other => panic!("unexpected needs action {other}"),
         },
         guard_template: None,
@@ -232,6 +269,19 @@ fn needs_effect_schema(name: &str) -> EffectSchema {
             steps: vec![EffectStep::UseWashBasin {
                 basin: EffectEntityRef::Target { index: 0 },
             }],
+        },
+        "clean_wash_basin" => EffectSchema {
+            preconditions: vec![EffectPrecondition::CoLocated {
+                actor: EffectEntityRef::Actor,
+                target: EffectEntityRef::Target { index: 0 },
+            }],
+            steps: vec![EffectStep::CleanWashBasin {
+                basin: EffectEntityRef::Target { index: 0 },
+            }],
+        },
+        "empty_latrine" => EffectSchema {
+            preconditions: Vec::new(),
+            steps: vec![EffectStep::EmptyLatrine],
         },
         other => panic!("unexpected needs action {other}"),
     }
@@ -299,6 +349,29 @@ fn wash_preconditions() -> Vec<Precondition> {
         // S176 D2: a basin at/above its effective-dirtiness threshold fails the
         // wash precondition; the planner must clean it, queue, or travel.
         Precondition::TargetWashBasinNotTooDirty { target_index: 0 },
+    ]
+}
+
+/// S176 D5: cleaning targets a co-located `WashBasin` facility that still has
+/// clean water (cleaning consumes water). Deliberately omits the
+/// `TargetWashBasinNotTooDirty` gate — cleaning a dirty basin is the point.
+fn clean_wash_basin_preconditions() -> Vec<Precondition> {
+    vec![
+        Precondition::ActorAlive,
+        Precondition::TargetExists(0),
+        Precondition::TargetAtActorPlace(0),
+        Precondition::TargetKind {
+            target_index: 0,
+            kind: worldwake_core::EntityKind::Facility,
+        },
+        Precondition::TargetHasWorkstationTag {
+            target_index: 0,
+            tag: WorkstationTag::WashBasin,
+        },
+        Precondition::TargetHasWashBasinClean {
+            target_index: 0,
+            min: 1,
+        },
     ]
 }
 
@@ -440,9 +513,19 @@ fn self_care_target(
             SelfCareUseKind::Wash,
             GoalKind::Wash,
         )),
+        "clean_wash_basin" => Ok((
+            first_target(instance)?,
+            SelfCareUseKind::CleanWashBasin,
+            GoalKind::Wash,
+        )),
         "toilet" => Ok((
             self_care_target_entity(def, instance, txn)?,
             SelfCareUseKind::LatrineRelief,
+            GoalKind::Relieve,
+        )),
+        "empty_latrine" => Ok((
+            self_care_target_entity(def, instance, txn)?,
+            SelfCareUseKind::EmptyLatrine,
             GoalKind::Relieve,
         )),
         other => Err(ActionError::InternalError(format!(
@@ -457,8 +540,8 @@ fn self_care_target_entity(
     txn: &WorldTxn<'_>,
 ) -> Result<EntityId, ActionError> {
     match def.name.as_str() {
-        "wash" => first_target(instance),
-        "toilet" => instance
+        "wash" | "clean_wash_basin" => first_target(instance),
+        "toilet" | "empty_latrine" => instance
             .targets
             .first()
             .copied()
@@ -967,6 +1050,14 @@ impl EffectSink for NeedsEffectSink<'_, '_> {
     fn use_wash_basin(&mut self, actor: EntityId, basin: EntityId) -> Result<(), Discrepancy> {
         apply_wash(actor, basin, self.txn).map_err(|err| self.record_error(err))
     }
+
+    fn clean_wash_basin(&mut self, actor: EntityId, basin: EntityId) -> Result<(), Discrepancy> {
+        apply_clean_wash_basin(actor, basin, self.txn).map_err(|err| self.record_error(err))
+    }
+
+    fn empty_latrine(&mut self, actor: EntityId) -> Result<(), Discrepancy> {
+        apply_empty_latrine(actor, self.txn).map_err(|err| self.record_error(err))
+    }
 }
 
 fn resolve_needs_effect_entity_ref(
@@ -1063,6 +1154,34 @@ fn apply_consumable_effects(
 }
 
 fn commit_toilet(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let outcome = apply_needs_effect_schema(def, instance, context.tick, txn)?;
+    let target = self_care_target_entity(def, instance, txn)?;
+    clear_self_care_occupancy(txn, target)?;
+    Ok(outcome)
+}
+
+fn commit_clean_wash_basin(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let outcome = apply_needs_effect_schema(def, instance, context.tick, txn)?;
+    let target = self_care_target_entity(def, instance, txn)?;
+    clear_self_care_occupancy(txn, target)?;
+    Ok(outcome)
+}
+
+fn commit_empty_latrine(
     def: &ActionDef,
     instance: &ActionInstance,
     context: &worldwake_sim::ActionExecutionContext<'_>,
@@ -1291,6 +1410,94 @@ fn apply_wash(actor: EntityId, basin: EntityId, txn: &mut WorldTxn<'_>) -> Resul
                 partial,
             },
         ));
+    Ok(())
+}
+
+/// S176 D5: clean a wash basin. Single-commit full reset of `dirtiness_level`
+/// to zero, consuming up to `units_per_full_wash` clean-water units (cleaning
+/// uses water). The displaced grime materialises as a `Waste` lot on the place
+/// ground and raises `PlaceDirtiness` (FND-4: the grime goes somewhere).
+fn apply_clean_wash_basin(
+    actor: EntityId,
+    basin: EntityId,
+    txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    let mut basin_state = txn
+        .get_component_wash_basin_state(basin)
+        .copied()
+        .ok_or(ActionError::InvalidTarget(basin))?;
+    if basin_state.clean_water_units == 0 {
+        return Err(ActionError::PreconditionFailed(format!(
+            "wash basin {basin} has no clean water to clean with"
+        )));
+    }
+    let place = txn
+        .effective_place(actor)
+        .ok_or_else(|| ActionError::InternalError(format!("actor {actor} has no place")))?;
+
+    let water_consumed = basin_state
+        .clean_water_units
+        .min(basin_state.units_per_full_wash.max(1));
+    basin_state.clean_water_units -= water_consumed;
+    basin_state.dirtiness_level = Permille::ZERO;
+    txn.set_component_wash_basin_state(basin, basin_state)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+
+    // The grime becomes a concrete Waste lot on the ground (conservation).
+    let waste = txn
+        .create_item_lot(CommodityKind::Waste, Quantity(1))
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.set_ground_location(waste, place)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+
+    let mut place_dirtiness = txn
+        .get_component_place_dirtiness(place)
+        .copied()
+        .unwrap_or_default();
+    place_dirtiness.value = place_dirtiness
+        .value
+        .saturating_add(place_dirtiness.dirtiness_per_use);
+    txn.set_component_place_dirtiness(place, place_dirtiness)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    Ok(())
+}
+
+/// S176 D5: empty a latrine. Single-commit full reset of `fill` to zero. The
+/// accumulated fill is transformed into a `Waste` lot whose quantity is the
+/// number of `fill_per_use`-sized deposits emptied (concrete, derived from the
+/// latrine's own per-use increment — no magic constant). Emits
+/// `WasteCreated { source: LatrineEmptied }`.
+fn apply_empty_latrine(actor: EntityId, txn: &mut WorldTxn<'_>) -> Result<(), ActionError> {
+    let place = txn
+        .effective_place(actor)
+        .ok_or_else(|| ActionError::InternalError(format!("actor {actor} has no place")))?;
+    let mut latrine = txn
+        .get_component_latrine_fullness(place)
+        .copied()
+        .unwrap_or_default();
+
+    // Quantity = number of per-use deposits accumulated (at least one), tying
+    // the conserved waste to the latrine's own fill arithmetic.
+    let fill_per_use = latrine.fill_per_use.value().max(1);
+    let waste_units = (latrine.fill.value() / fill_per_use).max(1);
+    let waste = txn
+        .create_item_lot(CommodityKind::Waste, Quantity(waste_units.into()))
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.set_ground_location(waste, place)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+
+    latrine.fill = Permille::ZERO;
+    txn.set_component_latrine_fullness(place, latrine)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+
+    txn.add_tag(EventTag::WasteCreated)
+        .set_decision_payload(DecisionEventPayload::WasteCreated(WasteCreatedPayload {
+            creator: actor,
+            place,
+            waste_lot: waste,
+            source: WasteSource::LatrineEmptied,
+            place_dirtiness_delta: Permille::ZERO,
+        }));
     Ok(())
 }
 
@@ -1582,10 +1789,37 @@ mod tests {
     }
 
     #[test]
-    fn register_needs_actions_adds_all_six_defs_and_handlers() {
+    fn register_needs_actions_adds_all_eight_defs_and_handlers() {
         let (defs, handlers) = setup_registries();
-        assert_eq!(defs.len(), 6);
-        assert_eq!(handlers.len(), 6);
+        assert_eq!(defs.len(), 8);
+        assert_eq!(handlers.len(), 8);
+        let clean = defs
+            .iter()
+            .find(|def| def.name == "clean_wash_basin")
+            .expect("clean_wash_basin should be registered");
+        assert_eq!(
+            clean.effect_schema.steps,
+            vec![EffectStep::CleanWashBasin {
+                basin: worldwake_sim::EffectEntityRef::Target { index: 0 }
+            }]
+        );
+        assert_eq!(
+            clean.duration,
+            worldwake_sim::DurationExpr::ActorMetabolism {
+                kind: worldwake_sim::MetabolismDurationKind::CleanBasin,
+            }
+        );
+        let empty = defs
+            .iter()
+            .find(|def| def.name == "empty_latrine")
+            .expect("empty_latrine should be registered");
+        assert_eq!(empty.effect_schema.steps, vec![EffectStep::EmptyLatrine]);
+        assert_eq!(
+            empty.duration,
+            worldwake_sim::DurationExpr::ActorMetabolism {
+                kind: worldwake_sim::MetabolismDurationKind::EmptyLatrine,
+            }
+        );
         assert_eq!(defs.get(ActionDefId(0)).unwrap().name, "eat");
         assert!(
             !defs
@@ -1661,8 +1895,10 @@ mod tests {
             )),
             "wash should no longer gate on a direct water-source target"
         );
-        let relieve = defs.get(ActionDefId(5)).unwrap();
-        assert_eq!(relieve.name, "relieve_wilderness");
+        let relieve = defs
+            .iter()
+            .find(|def| def.name == "relieve_wilderness")
+            .unwrap();
         assert_eq!(
             relieve.effect_schema.steps,
             vec![EffectStep::RelieveWilderness]
@@ -1686,10 +1922,7 @@ mod tests {
             abort_emit_self_care_interrupted as worldwake_sim::ActionAbortFn,
         ));
         assert!(std::ptr::fn_addr_eq(
-            handlers
-                .get(defs.get(ActionDefId(5)).unwrap().handler)
-                .unwrap()
-                .on_abort,
+            handlers.get(relieve.handler).unwrap().on_abort,
             abort_emit_self_care_interrupted as worldwake_sim::ActionAbortFn,
         ));
     }
@@ -3251,7 +3484,232 @@ mod tests {
     }
 
     fn relieve_wilderness_def_id() -> ActionDefId {
-        ActionDefId(5)
+        let (defs, _handlers) = setup_registries();
+        defs.iter()
+            .find(|def| def.name == "relieve_wilderness")
+            .expect("relieve_wilderness should be registered")
+            .id
+    }
+
+    fn affordance_index_by_name(
+        world: &World,
+        actor: EntityId,
+        defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
+        name: &str,
+    ) -> Option<usize> {
+        let def_id = defs.iter().find(|def| def.name == name)?.id;
+        affordances_for(world, actor, defs, handlers)
+            .iter()
+            .position(|affordance| affordance.def_id == def_id)
+    }
+
+    #[test]
+    fn clean_wash_basin_resets_dirtiness_consumes_water_and_emits_waste() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        let (basin, _source) = setup_wash_access(&mut world, place, 5);
+        set_basin_dirtiness(&mut world, basin, pm(900), pm(1000));
+        let baseline_place_dirtiness = world
+            .get_component_place_dirtiness(place)
+            .map_or(Permille::ZERO, |d| d.value);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+
+        let index = affordance_index_by_name(&world, actor, &defs, &handlers, "clean_wash_basin")
+            .expect("clean_wash_basin affordance should exist at a dirty, watered basin");
+        run_action_to_completion(actor, index, &mut world, &mut log, &defs, &handlers);
+
+        let state = world.get_component_wash_basin_state(basin).unwrap();
+        assert_eq!(state.dirtiness_level, pm(0), "cleaning resets dirtiness");
+        assert_eq!(
+            state.clean_water_units, 3,
+            "cleaning consumes units_per_full_wash (2) clean-water units"
+        );
+        let waste_count = world
+            .ground_entities_at(place)
+            .into_iter()
+            .filter(|entity| {
+                world
+                    .get_component_item_lot(*entity)
+                    .is_some_and(|lot| lot.commodity == CommodityKind::Waste)
+            })
+            .count();
+        assert_eq!(waste_count, 1, "cleaning leaves a Waste lot on the ground");
+        assert!(
+            world.get_component_place_dirtiness(place).unwrap().value > baseline_place_dirtiness,
+            "cleaning raises place dirtiness (the grime goes somewhere)"
+        );
+        assert!(
+            world.get_component_self_care_occupancy(basin).is_none(),
+            "clean_wash_basin commit releases basin occupancy"
+        );
+    }
+
+    #[test]
+    fn empty_latrine_resets_fill_and_emits_latrine_emptied_waste() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::PublicLatrine);
+        let actor = setup_actor_at_place(&mut world, place);
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_component_latrine_fullness(
+            place,
+            LatrineFullness {
+                fill: pm(900),
+                fill_per_use: pm(80),
+                critical_threshold: pm(800),
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+
+        let index = affordance_index_by_name(&world, actor, &defs, &handlers, "empty_latrine")
+            .expect("empty_latrine affordance should exist at a full latrine");
+        run_action_to_completion(actor, index, &mut world, &mut log, &defs, &handlers);
+
+        assert_eq!(
+            world.get_component_latrine_fullness(place).unwrap().fill,
+            pm(0),
+            "emptying resets latrine fill"
+        );
+        let waste_created = log.events_by_tag(EventTag::WasteCreated);
+        assert_eq!(waste_created.len(), 1);
+        let DecisionEventPayload::WasteCreated(payload) = log
+            .get(waste_created[0])
+            .and_then(|record| record.decision_payload())
+            .expect("empty_latrine should emit WasteCreated")
+        else {
+            panic!("empty_latrine should emit WasteCreated");
+        };
+        assert_eq!(payload.source, WasteSource::LatrineEmptied);
+        assert_eq!(payload.place, place);
+        // 900 fill / 80 per-use = 11 deposits worth of waste.
+        assert_eq!(
+            world
+                .get_component_item_lot(payload.waste_lot)
+                .map(|lot| (lot.commodity, lot.quantity)),
+            Some((CommodityKind::Waste, Quantity(11)))
+        );
+        assert!(
+            world.get_component_self_care_occupancy(place).is_none(),
+            "empty_latrine commit releases latrine occupancy"
+        );
+    }
+
+    #[test]
+    fn clean_wash_basin_abort_releases_occupancy() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        let (basin, _source) = setup_wash_access(&mut world, place, 5);
+        set_basin_dirtiness(&mut world, basin, pm(900), pm(1000));
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+        let index = affordance_index_by_name(&world, actor, &defs, &handlers, "clean_wash_basin")
+            .expect("clean_wash_basin affordance should exist");
+        let affordance = affordances_for(&world, actor, &defs, &handlers)[index].clone();
+
+        let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng();
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap();
+        assert!(world.get_component_self_care_occupancy(basin).is_some());
+
+        abort_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
+            worldwake_sim::ExternalAbortReason::Other,
+        )
+        .unwrap();
+
+        assert!(
+            world.get_component_self_care_occupancy(basin).is_none(),
+            "aborted clean_wash_basin must release occupancy"
+        );
+    }
+
+    #[test]
+    fn empty_latrine_abort_releases_occupancy() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::PublicLatrine);
+        let actor = setup_actor_at_place(&mut world, place);
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_component_latrine_fullness(
+            place,
+            LatrineFullness {
+                fill: pm(900),
+                fill_per_use: pm(80),
+                critical_threshold: pm(800),
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+        let index = affordance_index_by_name(&world, actor, &defs, &handlers, "empty_latrine")
+            .expect("empty_latrine affordance should exist");
+        let affordance = affordances_for(&world, actor, &defs, &handlers)[index].clone();
+
+        let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng();
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap();
+        assert!(world.get_component_self_care_occupancy(place).is_some());
+
+        abort_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
+            worldwake_sim::ExternalAbortReason::Other,
+        )
+        .unwrap();
+
+        assert!(
+            world.get_component_self_care_occupancy(place).is_none(),
+            "aborted empty_latrine must release occupancy"
+        );
     }
 
     fn toilet_affordance_index(

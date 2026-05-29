@@ -1,6 +1,6 @@
 # S176SANFACDEG-004: clean_wash_basin & empty_latrine maintenance actions
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — 2 new actions (systems), `WasteSource::LatrineEmptied` (core), `SelfCareUseKind::{CleanWashBasin, EmptyLatrine}` (core + 8-file exhaustive-match arms)
@@ -86,3 +86,22 @@ Register the action (target = `ActorPlace`, `DurationExpr::ActorMetabolism { kin
 1. `cargo test -p worldwake-systems needs_actions`
 2. `cargo test -p worldwake-core && cargo test -p worldwake-sim`
 3. `scripts/verify.sh`
+
+## Outcome
+
+**Completion date**: 2026-05-29
+
+**What changed**:
+- `WasteSource::LatrineEmptied` and `SelfCareUseKind::{CleanWashBasin, EmptyLatrine}` variants added (core). No exhaustive `SelfCareUseKind` match needed arms — the enum is construction-only at its match sites (the ticket's "~24 exhaustive sites" was construction sites).
+- New `EffectStep::{CleanWashBasin, EmptyLatrine}` + `EffectSink::{clean_wash_basin, empty_latrine}` trait methods + dispatch (sim `effect_schema.rs`); `effect_schema_index.rs` no-key grouping. The authoritative `NeedsEffectSink` overrides them to call `apply_clean_wash_basin` / `apply_empty_latrine`.
+- `apply_clean_wash_basin`: single-commit reset of `dirtiness_level` to zero, consumes `min(clean_water_units, units_per_full_wash)` water, emits a `Waste` lot to the ground, raises `PlaceDirtiness`. Requires clean water (precondition `TargetHasWashBasinClean`); deliberately omits the `TargetWashBasinNotTooDirty` gate.
+- `apply_empty_latrine`: single-commit reset of `fill` to zero; `Waste` lot quantity = `fill / fill_per_use` (≥1) deposits — concrete, derived from the latrine's own per-use increment (no magic constant); emits `WasteCreated { source: LatrineEmptied }`.
+- Two actions registered through `register_def` with `start_self_care_occupancy` / commit / `abort_release_self_care_occupancy` (explicit abort handler per S173). Extended `self_care_target`, `self_care_target_entity`, `register_def` match arms (constraints/targets/tags/binding), and `needs_effect_schema`.
+- New focused tests: clean reset+water+waste+dirtiness, empty reset+`LatrineEmptied` provenance+proportional quantity, abort-releases-occupancy for both.
+
+**Engine-coupling deviation (classify_action_def pulled forward from S176SANFACDEG-005)**:
+- The ticket's Out-of-Scope assigned `PlannerOpKind` + `classify_action_def` to S176SANFACDEG-005. But the registry-consistency invariant test `build_semantics_table_classifies_registered_planner_action_defs` requires *every registered action def* to be classified; registering the two actions without classifying them breaks it. So `PlannerOpKind::{CleanWashBasin, EmptyLatrine}` + `classify_action_def` arms + `semantics_for` (mid-plan prerequisite, not a barrier) + all the exhaustive `PlannerOpKind` match arms across `observation.rs`, `failure_handling.rs`, `goal_model.rs`, and `htn_registry_validation.rs` (each treating the new ops like Wash/Relieve) landed here to keep the workspace green. The actual Wash/Relieve **search prerequisite insertion** (op lists, `apply_planner_step`, belief-backed read guard) and planner tests remain S176SANFACDEG-005's work.
+
+**Action-ID shift**: registering the two actions before `relieve_wilderness`/production actions shifted dynamic IDs. Replaced hardcoded `ActionDefId(5)` test assumptions with name lookups; updated the `register_needs_actions` count test (6→8) and one observer decision-history golden fixture (a downstream action ID 9→11 — cosmetic, behavior identical).
+
+**Verification**: full `cargo test --workspace` (no failures) and `cargo clippy --workspace --all-targets -- -D warnings` clean.
