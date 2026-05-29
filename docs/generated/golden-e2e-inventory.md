@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden scenario source files: 66
-- Files contributing `golden_*` tests: 66
-- Total `golden_*` tests: 314
+- Golden scenario source files: 70
+- Files contributing `golden_*` tests: 70
+- Total `golden_*` tests: 322
 
 ## Per-Scenario-File Inventory
 
@@ -56,6 +56,8 @@ Do not hand-edit it.
 | `strategic_budget_scaling.rs` | 2 |
 | `survival_ask_consult.rs` | 1 |
 | `survival_baseline.rs` | 7 |
+| `survival_basin_competition.rs` | 2 |
+| `survival_basin_dirty_dirty.rs` | 2 |
 | `survival_combat.rs` | 2 |
 | `survival_contested.rs` | 9 |
 | `survival_drive_escalation.rs` | 4 |
@@ -65,12 +67,14 @@ Do not hand-edit it.
 | `survival_failed_rest_cascade.rs` | 2 |
 | `survival_items_decay.rs` | 2 |
 | `survival_justice.rs` | 5 |
+| `survival_latrine_full.rs` | 2 |
 | `survival_offices.rs` | 2 |
 | `survival_patrol.rs` | 2 |
 | `survival_preferences.rs` | 3 |
 | `survival_production.rs` | 2 |
 | `survival_rest_interrupted_by_danger.rs` | 2 |
 | `survival_safe_rest.rs` | 2 |
+| `survival_sanitation_breakdown_1440.rs` | 2 |
 | `survival_scattered.rs` | 8 |
 | `survival_self_care_interruption.rs` | 5 |
 | `survival_sleep_contention.rs` | 2 |
@@ -442,6 +446,16 @@ Do not hand-edit it.
 - `survival_contract_guard_rejects_missing_authored_contract`
 - `survival_need_run_tracker_uses_authored_drive_thresholds`
 
+### `survival_basin_competition.rs`
+
+- `proactive_cleaning_keeps_agents_recoverable_under_competition`
+- `proactive_cleaning_competition_is_replay_deterministic`
+
+### `survival_basin_dirty_dirty.rs`
+
+- `too_dirty_basin_forces_clean_then_wash_recovery`
+- `basin_degradation_run_is_replay_deterministic`
+
 ### `survival_combat.rs`
 
 - `survival_combat_proves_combat_and_bandit_camp_abandonment`
@@ -499,6 +513,11 @@ Do not hand-edit it.
 - `survival_justice_proves_institutional_bounty_posted`
 - `survival_justice_replays_deterministically`
 
+### `survival_latrine_full.rs`
+
+- `full_latrine_forces_empty_then_relieve_recovery`
+- `latrine_fullness_run_is_replay_deterministic`
+
 ### `survival_offices.rs`
 
 - `survival_offices_proves_force_law_uptake`
@@ -529,6 +548,11 @@ Do not hand-edit it.
 
 - `scenario_a_rest_site_contention`
 - `scenario_a_rest_site_contention_replays_deterministically`
+
+### `survival_sanitation_breakdown_1440.rs`
+
+- `shared_facilities_degrade_and_recover_over_1440_ticks`
+- `shared_facility_collision_is_replay_deterministic`
 
 ### `survival_scattered.rs`
 

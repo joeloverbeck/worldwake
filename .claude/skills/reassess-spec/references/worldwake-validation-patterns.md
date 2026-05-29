@@ -77,6 +77,8 @@ When any of the patterns below trigger, every named integration point must appea
 4. `classify_action_def` match arm in `crates/worldwake-ai/src/planner_ops.rs`
 5. Affordance query — how the planner discovers this action is available
 6. `Authoritative-to-AI Impact Rule` checklist (CLAUDE.md) if modifying preconditions
+7. **Metabolism-duration coupling** — if the action uses `DurationExpr::ActorMetabolism`, a new `MetabolismDurationKind` variant is required (`crates/worldwake-sim/src/action_semantics.rs`) with resolver arms at *both* sites that map a kind to a profile field: the authoritative resolver in `action_semantics.rs` AND the planner-facing duration estimate in `crates/worldwake-sim/src/belief_view.rs`. Missing the second arm leaves the planner's cost estimate stale.
+8. **Self-care occupancy coupling** — if the action reuses `SelfCareOccupancy`, a new `SelfCareUseKind` variant is required (`crates/worldwake-core/src/self_care_occupancy.rs`). It is consumed by `ActionTraceDetail::SelfCareInterrupted` (`crates/worldwake-sim/src/action_trace.rs`) and its workspace-wide match sites — grep `SelfCareUseKind::` to enumerate the blast radius before declaring the deliverable complete.
 
 ## New Scenario Design
 

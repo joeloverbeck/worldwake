@@ -169,6 +169,18 @@ fn need_with_facilities_conditions(
         band: need_threshold_band(view, agent, need),
     });
     conditions.insert(ExhaustionInvalidationCondition::FacilitiesChanged);
+    // A facility-satisfied need (Wash at a basin, Sleep at a camp) is
+    // travel-gated: the facility sits at a remote place the agent must reach.
+    // A frontier exhaustion therefore reflects the actor's *position* at search
+    // time, not a permanent structural impossibility — once the agent arrives
+    // somewhere new (closer to the facility, or with a more complete perceived
+    // travel graph) the goal is worth re-searching. Without this, a Wash goal
+    // (PermanentUntilInvalidator) that exhausts while a distant agent is far
+    // from the only basin stays suppressed forever even as the agent walks
+    // within trivial reach, because the need is pinned at its critical band and
+    // its believed facilities are stable. This mirrors `ProduceCommodity`, the
+    // other facilities-gated goal, which already invalidates on PositionChanged.
+    conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
 }
 
 fn need_with_position_conditions(
@@ -1874,6 +1886,79 @@ mod tests {
                 need: HomeostaticNeedId::Dirtiness,
                 band: need_threshold_band(&view, entity(1), HomeostaticNeedId::Dirtiness),
             },
+        );
+    }
+
+    #[test]
+    fn wash_frontier_exhaustion_lifts_only_after_the_distant_agent_moves() {
+        // Regression for SCATSELFCARETRIP-001: a distant agent at critical
+        // dirtiness frontier-exhausts the Wash search for a remote basin. The
+        // Wash goal uses `PermanentUntilInvalidator`, so the resulting cache
+        // entry suppresses planning until one of its invalidation conditions
+        // fires. With dirtiness pinned at its critical band (it cannot rise
+        // further) and the believed basin stable, only a position change can
+        // lawfully lift the block — modelling "I walked somewhere new, the trip
+        // is worth re-planning". Without `PositionChanged` in the derived
+        // conditions the agent stays permanently dirty even as it wanders to
+        // within trivial reach of the basin.
+        let agent = entity(1);
+        let far_place = entity(10);
+        let nearer_place = entity(11);
+        // Dirtiness saturated at the critical band; it can never change band.
+        let view_far = MockView {
+            effective_places: vec![(agent, far_place)],
+            needs: vec![(
+                agent,
+                HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(1000)),
+            )],
+            drive_thresholds: vec![(agent, DriveThresholds::default())],
+            ..MockView::default()
+        };
+
+        let (conditions, baseline) = derive_invalidation_conditions(
+            &GoalKind::Wash,
+            agent,
+            &view_far,
+            &RecipeRegistry::new(),
+        );
+        assert_has_condition(
+            &conditions,
+            &ExhaustionInvalidationCondition::PositionChanged,
+        );
+
+        let wash_goal = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Wash),
+            anchor: worldwake_core::OpportunityAnchor::Entity(entity(30)),
+        };
+        let entry = ExhaustionEntry::frontier_exhausted(conditions, baseline);
+        assert!(
+            entry.suppresses_planning(),
+            "a frontier-exhausted Wash goal must suppress planning until invalidated"
+        );
+
+        // Same position, dirtiness still maxed, facilities unchanged: the entry
+        // must remain — proving the goal would otherwise be permanently stuck.
+        let mut cache = BTreeMap::from([(wash_goal, entry)]);
+        invalidate_exhausted_goals(&mut cache, &view_far, agent, false, false, false);
+        assert!(
+            cache.contains_key(&wash_goal),
+            "Wash suppression must persist while the agent stays put with a saturated need"
+        );
+
+        // The agent arrives somewhere new (closer to the basin): the block lifts.
+        let view_nearer = MockView {
+            effective_places: vec![(agent, nearer_place)],
+            needs: vec![(
+                agent,
+                HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(1000)),
+            )],
+            drive_thresholds: vec![(agent, DriveThresholds::default())],
+            ..MockView::default()
+        };
+        invalidate_exhausted_goals(&mut cache, &view_nearer, agent, false, false, false);
+        assert!(
+            !cache.contains_key(&wash_goal),
+            "arriving at a new place must lift the Wash suppression so the trip is re-planned"
         );
     }
 

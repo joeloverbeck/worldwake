@@ -2094,14 +2094,45 @@ fn format_local_survival_state_summary(
         || "In transit".to_string(),
         |place| entity_display_name(world, place),
     );
-    format!(
+    let mut line = format!(
         "{}: water={}, wash={}, sleep={}, food={}",
         place_name,
         yes_no(summary.water_source_present),
         yes_no(summary.wash_basin_present),
         yes_no(summary.sleep_affordance_present),
         yes_no(summary.food_source_present)
-    )
+    );
+    // S176 D10: surface co-located facility condition. The summary's place is
+    // the agent's own (co-located) place, so reading the basin/latrine state
+    // here is a lawful FND-14A physical observation — never a remote read.
+    if let Some(place) = summary.place {
+        if let Some(basin_state) = colocated_wash_basin_state(world, place) {
+            let _ = write!(
+                line,
+                ", basin_dirt={}, basin_water={}/{}",
+                basin_state.dirtiness_level.value(),
+                basin_state.clean_water_units,
+                basin_state.max_clean_water,
+            );
+        }
+        if let Some(latrine) = world.get_component_latrine_fullness(place) {
+            let _ = write!(line, ", latrine_fill={}", latrine.fill.value());
+        }
+    }
+    line
+}
+
+/// The co-located `WashBasinState` for a basin at `place`, if one exists.
+fn colocated_wash_basin_state(
+    world: &worldwake_core::World,
+    place: EntityId,
+) -> Option<worldwake_core::WashBasinState> {
+    world
+        .query_workstation_marker()
+        .find(|(entity, marker)| {
+            world.effective_place(*entity) == Some(place) && marker.0 == WorkstationTag::WashBasin
+        })
+        .and_then(|(entity, _)| world.get_component_wash_basin_state(entity).copied())
 }
 
 fn yes_no(value: bool) -> &'static str {
@@ -2374,6 +2405,8 @@ fn place_survival_state_summary(
     let wash_basin_present = world.query_workstation_marker().any(|(entity, marker)| {
         world.effective_place(entity) == Some(place) && marker.0 == WorkstationTag::WashBasin
     });
+    let latrine_present = world.get_component_latrine_fullness(place).is_some()
+        || world.place_has_tag(place, PlaceTag::Latrine);
     let sleep_affordance_present = [PlaceTag::Inn, PlaceTag::Barracks, PlaceTag::Camp]
         .into_iter()
         .any(|tag| world.place_has_tag(place, tag));
@@ -2387,6 +2420,7 @@ fn place_survival_state_summary(
         place: Some(place),
         water_source_present,
         wash_basin_present,
+        latrine_present,
         sleep_affordance_present,
         food_source_present,
     }
@@ -2396,7 +2430,7 @@ fn is_lawful_split_support_convergence_place(
     world: &worldwake_core::World,
     place: EntityId,
 ) -> bool {
-    let summary = place_survival_state_summary(world, place);
+    let summary = crate::place_survival_state_summary(world, place);
     let supports = [
         summary.water_source_present,
         summary.wash_basin_present,
@@ -7004,9 +7038,74 @@ mod tests {
             place: Some(entity(20)),
             water_source_present: true,
             wash_basin_present: false,
+            latrine_present: false,
             sleep_affordance_present: true,
             food_source_present: false,
         }
+    }
+
+    #[test]
+    fn place_summary_surfaces_colocated_basin_and_latrine_condition() {
+        let place = prototype_place_entity(PrototypePlace::PublicLatrine);
+        let mut world = World::new(build_prototype_world()).expect("world");
+        {
+            let mut txn = WorldTxn::new(
+                &mut world,
+                Tick(1),
+                worldwake_core::CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::SamePlace,
+                WitnessData::default(),
+            );
+            let basin = txn.create_entity(worldwake_core::EntityKind::Facility);
+            txn.set_ground_location(basin, place).unwrap();
+            txn.set_component_workstation_marker(
+                basin,
+                WorkstationMarker(WorkstationTag::WashBasin),
+            )
+            .unwrap();
+            txn.set_component_wash_basin_state(
+                basin,
+                worldwake_core::WashBasinState {
+                    clean_water_units: 4,
+                    max_clean_water: 10,
+                    dirtiness_level: Permille::new(650).unwrap(),
+                    ..worldwake_core::WashBasinState::default()
+                },
+            )
+            .unwrap();
+            txn.set_component_latrine_fullness(
+                place,
+                worldwake_core::LatrineFullness {
+                    fill: Permille::new(720).unwrap(),
+                    ..worldwake_core::LatrineFullness::default()
+                },
+            )
+            .unwrap();
+            let mut log = worldwake_core::EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        let summary = crate::place_survival_state_summary(&world, place);
+        let rendered = crate::format_local_survival_state_summary(&world, &summary);
+        assert!(
+            rendered.contains("basin_dirt=650") && rendered.contains("basin_water=4/10"),
+            "co-located basin condition should be surfaced: {rendered}"
+        );
+        assert!(
+            rendered.contains("latrine_fill=720"),
+            "co-located latrine fill should be surfaced: {rendered}"
+        );
+
+        // A place with no basin/latrine surfaces no condition (no remote read).
+        let bare_place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let bare_summary = crate::place_survival_state_summary(&world, bare_place);
+        let bare_rendered = crate::format_local_survival_state_summary(&world, &bare_summary);
+        assert!(
+            !bare_rendered.contains("basin_dirt=") && !bare_rendered.contains("latrine_fill="),
+            "places without facilities show no condition: {bare_rendered}"
+        );
     }
 
     fn sample_critical_window_report(agent: EntityId) -> CriticalWindowReport {
@@ -7040,6 +7139,7 @@ mod tests {
                 }),
                 local_authoritative_summary: sample_local_survival_state_summary(),
                 failed_rest_opportunities: Vec::new(),
+                degraded_self_care_opportunities: Vec::new(),
             }],
             exhaustion_collapse_observed: false,
         }

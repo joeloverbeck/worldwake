@@ -27,12 +27,18 @@ jobs:
             filter: "scenarios::survival_ask_consult::"
           - scenario: baseline
             filter: "scenarios::survival_baseline::"
+          - scenario: basin_competition
+            filter: "scenarios::survival_basin_competition::"
           - scenario: combat
             filter: "scenarios::survival_combat::"
           - scenario: contested
             filter: "scenarios::survival_contested::"
           - scenario: escort
             filter: "scenarios::survival_escort::"
+          - scenario: exhaustion_collapse
+            filter: "scenarios::survival_exhaustion_collapse::"
+          - scenario: exhaustion_recovery
+            filter: "scenarios::survival_exhaustion_recovery::"
           - scenario: final_integration
             filter: "scenarios::final_integration::"
           - scenario: items_decay
@@ -49,6 +55,8 @@ jobs:
             filter: "scenarios::survival_preferences::"
           - scenario: production
             filter: "scenarios::survival_production::"
+          - scenario: sanitation_breakdown
+            filter: "scenarios::survival_sanitation_breakdown_1440::"
           - scenario: scattered
             filter: "scenarios::survival_scattered::"
           - scenario: tell

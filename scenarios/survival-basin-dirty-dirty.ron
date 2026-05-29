@@ -1,0 +1,107 @@
+// S176 focused golden: a wash basin degraded above its effective-dirtiness
+// threshold blocks the Wash action, forcing the clean_wash_basin recovery
+// prerequisite before a lawful wash.
+//
+// The single basin starts at dirtiness_level 900 with max_effective_dirtiness
+// 800, so the Wash precondition (TargetWashBasinNotTooDirty) fails. The agent's
+// dirtiness need keeps it under wash pressure; the planner must insert
+// clean_wash_basin (resetting dirtiness, consuming clean water, leaving a Waste
+// lot + raising PlaceDirtiness) before the wash can lawfully recover. Effectiveness
+// scaling itself is unit-covered (needs_actions::wash_relief_scales_down_with_basin_dirtiness);
+// this golden proves the rejection -> clean-prerequisite -> recovery branch end-to-end.
+(
+    seed: 176002,
+    compaction_interval: 0,
+    places: [
+        (
+            name: "Wash Camp",
+            tags: [Camp],
+            place_dirtiness: (value: 0, decay_per_tick: 2, dirtiness_per_use: 80),
+        ),
+    ],
+    agents: [
+        (
+            name: "Washer",
+            location: "Wash Camp",
+            control: Ai,
+            needs: (
+                hunger: 0,
+                thirst: 0,
+                fatigue: 0,
+                bladder: 0,
+                dirtiness: 1000,
+            ),
+            utility_profile: (
+                hunger_weight: 0,
+                thirst_weight: 0,
+                fatigue_weight: 0,
+                bladder_weight: 0,
+                dirtiness_weight: 1000,
+                pain_weight: 0,
+                danger_weight: 0,
+                enterprise_weight: 0,
+                social_weight: 0,
+                activity_awareness_weight: 0,
+                side_benefit_weight: 0,
+                bounty_posting_weight: 0,
+                notice_posting_weight: 0,
+                courage: 0,
+                care_weight: 0,
+            ),
+            drive_thresholds: (
+                hunger: (low: 300, medium: 550, high: 780, critical: 900),
+                thirst: (low: 300, medium: 550, high: 780, critical: 900),
+                fatigue: (low: 300, medium: 550, high: 780, critical: 900),
+                bladder: (low: 300, medium: 550, high: 780, critical: 900),
+                dirtiness: (low: 200, medium: 400, high: 650, critical: 820),
+                pain: (low: 150, medium: 350, high: 600, critical: 850),
+                danger: (low: 100, medium: 300, high: 500, critical: 500),
+            ),
+            metabolism_profile: (
+                hunger_rate: 0,
+                thirst_rate: 0,
+                fatigue_rate: 0,
+                bladder_rate: 0,
+                dirtiness_rate: 30,
+                rest_efficiency: 20,
+                starvation_tolerance_ticks: 480,
+                dehydration_tolerance_ticks: 240,
+                exhaustion_collapse_ticks: 120,
+                bladder_accident_tolerance_ticks: 40,
+                toilet_ticks: 8,
+                wash_ticks: 12,
+                min_sleep_ticks: 8,
+                travel_fatigue_multiplier: 0,
+                travel_thirst_multiplier: 0,
+                travel_bladder_multiplier: 0,
+                wilderness_relief_dirtiness_penalty: 0,
+            ),
+        ),
+    ],
+    facilities: [
+        (
+            name: Some("Camp Wash Basin"),
+            workstation: WashBasin,
+            location: "Wash Camp",
+            wash_basin_state: (
+                clean_water_units: 10,
+                max_clean_water: 10,
+                refill_per_tick: 2,
+                units_per_full_wash: 2,
+                dirtiness_level: 900,
+                dirtiness_per_use: 50,
+                max_effective_dirtiness: 800,
+            ),
+        ),
+        (name: Some("Camp Well"), workstation: Well, location: "Wash Camp"),
+    ],
+    resource_sources: [
+        (commodity: Water, location: "Wash Camp", facility: "Camp Well", regeneration_ticks_per_unit: 1, capacity: 60),
+    ],
+    survival_health_contract: (
+        max_authored_critical_run_ticks: 240,
+        max_idle_window_ticks_with_elevated_need: 120,
+        elevated_need_floor: 600,
+        required_self_care_families: [Wash],
+    ),
+)

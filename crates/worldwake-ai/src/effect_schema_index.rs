@@ -115,6 +115,8 @@ fn collect_effect_keys(step: &EffectStep, keys: &mut Vec<EffectFactKey>) {
         | EffectStep::UseToilet
         | EffectStep::RelieveWilderness
         | EffectStep::UseWashBasin { .. }
+        | EffectStep::CleanWashBasin { .. }
+        | EffectStep::EmptyLatrine
         | EffectStep::StoreStock { .. }
         | EffectStep::StageStockForSale { .. }
         | EffectStep::UnstageStock { .. }

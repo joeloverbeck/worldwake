@@ -77,6 +77,24 @@ pub fn classify_revalidation(
     if exact_target_belief_contradicted(view, actor, &targets, def) {
         return invalidated_target_gone(step, actor);
     }
+    // SANBASINCLEAN-001: once the agent is co-located and observes that the
+    // basin is below its worthwhile-wash floor, a committed wash step must
+    // replan into a clean-then-wash. The planner search already refuses to
+    // synthesize a below-floor wash; this is the matching revalidation surface,
+    // engaging the FND-11 dampener on arrival when the remote belief that was
+    // clean at plan time has been refreshed to dirty. The hard
+    // `TargetWashBasinNotTooDirty` block stays the absolute legality gate;
+    // disabling the floor (profile floor 0) skips this entirely.
+    if step.op_kind == PlannerOpKind::Wash
+        && let Some(basin) = step.primary_target()
+        && crate::search::wash_basin_below_worthwhile_floor(view, actor, basin)
+    {
+        return RevalidationOutcome::Invalidated {
+            reason: worldwake_core::PlanInvalidationReason::ExpectationMismatch { step_index },
+            expectation_kind: Some(ExpectationKindTag::State),
+            mismatch_detail: None,
+        };
+    }
     let single_def = BTreeSet::from([step.def_id]);
     let affordance_match = get_affordances_for_defs(view, actor, registry, handlers, &single_def)
         .into_iter()

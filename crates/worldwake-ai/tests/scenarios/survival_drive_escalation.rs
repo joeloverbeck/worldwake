@@ -338,6 +338,7 @@ fn build_belief_only_wash_harness() -> (GoldenHarness, EntityId, EntityId) {
             units_per_full_wash: 4,
             dirtiness_level: pm(700),
             dirtiness_per_use: pm(90),
+            max_effective_dirtiness: pm(1000),
         },
     )
     .expect("belief-barrier harness should keep remote wash basin state writable");

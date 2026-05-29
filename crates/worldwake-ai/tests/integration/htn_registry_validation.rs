@@ -93,6 +93,8 @@ fn planner_op_is_known(op: PlannerOpKind) -> bool {
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
         | PlannerOpKind::Wash
+        | PlannerOpKind::CleanWashBasin
+        | PlannerOpKind::EmptyLatrine
         | PlannerOpKind::EstablishCamp
         | PlannerOpKind::Trade
         | PlannerOpKind::QueueForFacilityUse

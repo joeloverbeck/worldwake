@@ -73,6 +73,7 @@ pub struct WasteCreatedPayload {
 pub enum WasteSource {
     WildernessRelief,
     OvercapacityLatrine,
+    LatrineEmptied,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

@@ -4,7 +4,7 @@ use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
 /// S174SHESLESUR-001 stores rest-site components and structured sleep wake causes.
-pub const SAVE_FORMAT_VERSION: u32 = 108;
+pub const SAVE_FORMAT_VERSION: u32 = 110;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -524,6 +524,7 @@ mod tests {
                     units_per_full_wash: 3,
                     dirtiness_level: worldwake_core::Permille::new(250).unwrap(),
                     dirtiness_per_use: worldwake_core::Permille::new(60).unwrap(),
+                    max_effective_dirtiness: worldwake_core::Permille::new(900).unwrap(),
                 },
             )
             .unwrap();
@@ -1400,8 +1401,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_108_after_rest_site_foundation() {
-        assert_eq!(SAVE_FORMAT_VERSION, 108);
+    fn save_format_version_is_110_after_metabolism_cleaning_durations() {
+        assert_eq!(SAVE_FORMAT_VERSION, 110);
     }
 
     #[test]
@@ -1412,7 +1413,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 108);
+        assert_eq!(SAVE_FORMAT_VERSION, 110);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]

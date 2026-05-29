@@ -129,7 +129,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `ai_decisions.rs:1393`
+- Source: `ai_decisions.rs:1394`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -1685,7 +1685,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 365: Latrine Overflow Creates Waste And Place Dirtiness
 
-- Source: `place_dirtiness.rs:367`
+- Source: `place_dirtiness.rs:369`
 
 **Setup**: A human-controlled agent uses an already-critical latrine.
 
@@ -1695,7 +1695,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 366: Basin Natural Refill Draws From Co-Located Water
 
-- Source: `place_dirtiness.rs:434`
+- Source: `place_dirtiness.rs:440`
 
 **Setup**: An empty basin shares a place with a finite water ResourceSource and no agent actions.
 
@@ -1705,7 +1705,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 367: AI Selects Non-Empty Basin After Empty Basin Is Unusable
 
-- Source: `place_dirtiness.rs:490`
+- Source: `place_dirtiness.rs:497`
 
 **Setup**: A dirty AI agent knows two local basins; one is empty and the other has water.
 
@@ -1715,7 +1715,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 367A: Wash Re-emerges After First Cycle Relief
 
-- Source: `place_dirtiness.rs:580`
+- Source: `place_dirtiness.rs:589`
 
 **Setup**: A dirty AI agent washes at a stocked local basin, then its dirtiness
 
@@ -1725,7 +1725,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 368: Place Dirtiness Saturates With Zero Decay
 
-- Source: `place_dirtiness.rs:679`
+- Source: `place_dirtiness.rs:688`
 
 **Setup**: Repeated wilderness relief occurs at a zero-decay outdoor place.
 
@@ -1735,7 +1735,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 369: Wash Basin Plateaus At Zero With Zero Refill
 
-- Source: `place_dirtiness.rs:724`
+- Source: `place_dirtiness.rs:733`
 
 **Setup**: One partial wash drains a zero-refill basin, then maintenance advances.
 
@@ -2176,7 +2176,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 375: Source Composite Wait Reranks Same-Commodity Siblings
 
-- Source: `source_composite.rs:346`
+- Source: `source_composite.rs:347`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2189,7 +2189,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 376: Source Composite Does Not Cross Goal Categories
 
-- Source: `source_composite.rs:390`
+- Source: `source_composite.rs:391`
 - Systems: AI, SourceReliability, Dirtiness
 - GoalKinds: Wash, AcquireCommodity(SelfConsume)
 - ActionDomains: Needs, Production
@@ -2202,7 +2202,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 377: Fresh Capacity Bonus Reranks Same-Commodity Siblings
 
-- Source: `source_composite.rs:431`
+- Source: `source_composite.rs:432`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2215,7 +2215,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 378: Stale Capacity Observation Is Neutral
 
-- Source: `source_composite.rs:480`
+- Source: `source_composite.rs:481`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2228,7 +2228,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 379: Empty Fresh Capacity Demotes Source
 
-- Source: `source_composite.rs:522`
+- Source: `source_composite.rs:523`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2241,7 +2241,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 380: Missing Source Records Are Neutral
 
-- Source: `source_composite.rs:559`
+- Source: `source_composite.rs:560`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2794,7 +2794,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 478: S173 Self-Care Abort Traces Cover Every Family
 
-- Source: `survival_self_care_interruption.rs:455`
+- Source: `survival_self_care_interruption.rs:456`
 
 **Setup**: Human-controlled agents start each self-care action family and cancel before commit.
 
@@ -2802,7 +2802,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 479: S173 Contested Wash Basin Promotes One Occupant
 
-- Source: `survival_self_care_interruption.rs:671`
+- Source: `survival_self_care_interruption.rs:672`
 
 **Setup**: Two dirty agents wait in the same wash-basin facility queue; the queue system grants the head claimant, and that claimant starts a real wash action.
 
@@ -2810,7 +2810,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 480: S173 Interrupted Wash Releases Basin And Promotes Waiter
 
-- Source: `survival_self_care_interruption.rs:760`
+- Source: `survival_self_care_interruption.rs:761`
 
 **Setup**: Agent A starts wash and writes occupancy; Agent B waits in the same basin queue. Cancelling A's wash releases occupancy, then the same tick's post-action system pass promotes B.
 
@@ -2818,7 +2818,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 481: S173 Repeated Self-Care Interruption Can End In Deprivation Death
 
-- Source: `survival_self_care_interruption.rs:840`
+- Source: `survival_self_care_interruption.rs:841`
 
 **Setup**: An AI-controlled dirty agent repeatedly selects a local wash action. The harness applies repeated external local cancellations before commit, while hunger rises under the normal needs system and no food source is available.
 

@@ -2257,6 +2257,24 @@ impl FacilityBeliefView for PerAgentBeliefView<'_> {
             .and_then(|state| state.wash_basin_state)
     }
 
+    fn latrine_fullness(&self, place: EntityId) -> Option<LatrineFullness> {
+        // FND-14A: latrine fullness is a co-located physical fact. The toilet
+        // affordance targets the actor's own place, so the co-located read is
+        // the live path; remote places have no authoritative read here.
+        // Co-located returns `Some` even when the component is absent (default
+        // = empty/usable, mirroring `apply_toilet`'s `unwrap_or_default()`), so
+        // `None` strictly signals a remote/unknown place.
+        if place == self.agent || self.has_authoritative_local_visibility(place) {
+            return Some(
+                self.world
+                    .get_component_latrine_fullness(place)
+                    .copied()
+                    .unwrap_or_default(),
+            );
+        }
+        None
+    }
+
     fn self_care_occupant(&self, entity: EntityId) -> Option<EntityId> {
         if entity == self.agent
             || self.world.effective_place(self.agent) == Some(entity)

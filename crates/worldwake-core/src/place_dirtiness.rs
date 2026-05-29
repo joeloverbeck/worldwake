@@ -49,6 +49,9 @@ pub struct WashBasinState {
     pub units_per_full_wash: u16,
     pub dirtiness_level: Permille,
     pub dirtiness_per_use: Permille,
+    /// Wash relief scales down linearly as `dirtiness_level` rises toward this
+    /// threshold; at or above it the Wash precondition fails. Scenario-authored.
+    pub max_effective_dirtiness: Permille,
 }
 
 impl Default for WashBasinState {
@@ -60,6 +63,10 @@ impl Default for WashBasinState {
             units_per_full_wash: 2,
             dirtiness_level: Permille::ZERO,
             dirtiness_per_use: Permille::new_unchecked(50),
+            // Full scale: a clean basin (dirtiness_level == 0) yields
+            // effective_fraction == 1 and never blocks the Wash precondition
+            // until a scenario authors a lower threshold.
+            max_effective_dirtiness: Permille::new_unchecked(1000),
         }
     }
 }
@@ -112,6 +119,7 @@ mod tests {
                 units_per_full_wash: 2,
                 dirtiness_level: Permille::ZERO,
                 dirtiness_per_use: Permille::new_unchecked(50),
+                max_effective_dirtiness: Permille::new_unchecked(1000),
             }
         );
     }
@@ -142,6 +150,7 @@ mod tests {
             units_per_full_wash: 4,
             dirtiness_level: Permille::new_unchecked(250),
             dirtiness_per_use: Permille::new_unchecked(75),
+            max_effective_dirtiness: Permille::new_unchecked(900),
         });
     }
 

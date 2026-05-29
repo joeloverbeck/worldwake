@@ -734,9 +734,26 @@ Why they are not roadmap survival-row landings:
 
 - None carry a `survival_health_contract`; each runs on a short focused tick budget (80–240 ticks), not a 1440-tick coexistence run.
 - `Rest-site contention / safe rest` is now structurally tracked from authored `rest_capacity`, but this is an auxiliary landing analogous to [§5.18](#518-landed-auxiliary-cognitive-archetypes-divergence), not a survival-row promotion.
-- The S174 rest-site goldens run in the default `cargo test -p worldwake-ai` / `cargo test -p worldwake-cli` lanes (not `#[ignore]`), and the two S175 exhaustion-collapse goldens are `#[ignore]` CI-only (run via the golden-survival workflow, per the long-horizon-collapse convention). Either way they are focused goldens rather than long-running survival-coexistence scenarios.
+- The S174 rest-site goldens run in the default `cargo test -p worldwake-ai` / `cargo test -p worldwake-cli` lanes (not `#[ignore]`), and the two S175 exhaustion goldens are `#[ignore]` CI-only through the `exhaustion_collapse` and `exhaustion_recovery` matrix entries in the golden-survival workflow. Either way they are focused goldens rather than long-running survival-coexistence scenarios.
 
 The long-running, collision-proven survival landing for rest-site scarcity — multi-agent rest contention sustained across a 1440-tick run and colliding with travel, combat, justice, and obligations — remains unproven and is tracked as a Cluster 1 deepening gap in [`docs/gameplay-mechanic-deepening-roadmap.md`](gameplay-mechanic-deepening-roadmap.md).
+
+### 5.20 Landed Auxiliary: Sanitation Facility Degradation Consequences
+
+**Status**: Landed (auxiliary behavior coverage)
+**Source scenarios**:
+- [`scenarios/survival-basin-dirty-dirty.ron`](../scenarios/survival-basin-dirty-dirty.ron) — focused branch golden (default lane).
+- [`scenarios/survival-latrine-full.ron`](../scenarios/survival-latrine-full.ron) — focused branch golden (default lane).
+- [`scenarios/survival-sanitation-breakdown-1440.ron`](../scenarios/survival-sanitation-breakdown-1440.ron) — 1440-tick multi-agent collision (`#[ignore]`, CI-only via the `sanitation_breakdown` matrix entry in [`golden-survival.yml`](../.github/workflows/golden-survival.yml)); carries a `survival_health_contract`.
+
+**Backing goldens**:
+- [`survival_basin_dirty_dirty.rs`](../crates/worldwake-ai/tests/scenarios/survival_basin_dirty_dirty.rs) — a basin authored above `max_effective_dirtiness` blocks Wash; the planner inserts `clean_wash_basin` ahead of the wash, cleaning leaves a `Waste` lot, and a `DegradedSelfCareOpportunity { BasinTooDirty, Cleaned }` records. Replay-deterministic.
+- [`survival_latrine_full.rs`](../crates/worldwake-ai/tests/scenarios/survival_latrine_full.rs) — an isolated indoor latrine above `critical_threshold` blocks Toilet; the planner inserts `empty_latrine` (emitting `WasteCreated { LatrineEmptied }`) before relieving, with a `DegradedSelfCareOpportunity { LatrineFull }` record. Replay-deterministic.
+- [`survival_sanitation_breakdown_1440.rs`](../crates/worldwake-ai/tests/scenarios/survival_sanitation_breakdown_1440.rs) — three archetype-varied agents share ONE basin and ONE latrine for 1440 ticks: no deaths, both recovery families fire (proving the basin/latrine cross their thresholds and recover through labor), both degradation causes leave forensic records, the FND-14B belief barrier holds (all cleaning/emptying is co-located), and the run is replay-deterministic.
+
+**Depends on**: [S176 sanitation facility degradation spec](../archive/specs/S176-sanitation-facility-degradation-consequences.md) and the carriers it consumes (S129 `WashBasinState`/`LatrineFullness`, S173 `SelfCareOccupancy`, S174 rest substrate, S120 critical-window forensics, S82 waste lots).
+
+These rows are auxiliary behavior coverage, not a survival-coexistence landing: the focused goldens run short tick budgets, and the 1440 collision scenario isolates sanitation contention (food/water needs zeroed) rather than colliding with the full survival economy. They prove the S176 consequence wiring — wash effectiveness/legality gated by `dirtiness_level`, toilet legality gated by latrine `fill`, the `clean_wash_basin`/`empty_latrine` recovery labor inserted by the GOAP search, and the `DegradedSelfCareOpportunity` forensic feed.
 
 ## 6. Maintenance Workflow
 

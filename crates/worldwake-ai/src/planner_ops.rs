@@ -18,6 +18,8 @@ pub enum PlannerOpKind {
     Sleep,
     Relieve,
     Wash,
+    CleanWashBasin,
+    EmptyLatrine,
     EstablishCamp,
     Trade,
     QueueForFacilityUse,
@@ -90,6 +92,8 @@ pub(crate) fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Needs, "sleep") => Some(PlannerOpKind::Sleep),
         (ActionDomain::Needs, "toilet" | "relieve_wilderness") => Some(PlannerOpKind::Relieve),
         (ActionDomain::Needs, "wash") => Some(PlannerOpKind::Wash),
+        (ActionDomain::Needs, "clean_wash_basin") => Some(PlannerOpKind::CleanWashBasin),
+        (ActionDomain::Needs, "empty_latrine") => Some(PlannerOpKind::EmptyLatrine),
         (ActionDomain::Generic, "establish_camp") => Some(PlannerOpKind::EstablishCamp),
         (ActionDomain::Trade, "trade") => Some(PlannerOpKind::Trade),
         (ActionDomain::Trade, "staff_market") => Some(PlannerOpKind::StaffMarket),
@@ -167,6 +171,10 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
         | PlannerOpKind::Wash
+        // S176: cleaning/emptying are mid-plan prerequisites of Wash/Relieve
+        // (like QueueForFacilityUse) — not materialization barriers.
+        | PlannerOpKind::CleanWashBasin
+        | PlannerOpKind::EmptyLatrine
         | PlannerOpKind::EstablishCamp
         | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::Heal
@@ -1314,6 +1322,8 @@ mod tests {
             ("toilet", PlannerOpKind::Relieve),
             ("relieve_wilderness", PlannerOpKind::Relieve),
             ("wash", PlannerOpKind::Wash),
+            ("clean_wash_basin", PlannerOpKind::CleanWashBasin),
+            ("empty_latrine", PlannerOpKind::EmptyLatrine),
             ("establish_camp", PlannerOpKind::EstablishCamp),
             ("travel", PlannerOpKind::Travel),
             ("drop_item", PlannerOpKind::DropItem),

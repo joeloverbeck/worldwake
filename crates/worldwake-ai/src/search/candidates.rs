@@ -11,8 +11,9 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance, EconomicBeliefView,
-    EntityBeliefView, FacilityBeliefView, InventoryBeliefView, QueueForFacilityUsePayload,
-    RecipeRegistry, SpatialBeliefView, TemporalBeliefView, get_affordances_for_defs,
+    EntityBeliefView, FacilityBeliefView, InventoryBeliefView, ProfileBeliefView,
+    QueueForFacilityUsePayload, RecipeRegistry, SpatialBeliefView, TemporalBeliefView,
+    evaluate_precondition, get_affordances_for_defs,
 };
 
 use super::SearchNode;
@@ -247,9 +248,31 @@ pub(super) fn search_candidates_with_expansion_trace(
         semantics_table,
         &raw_affordance_candidates,
     );
+    let proactive_clean_actor = node.state.snapshot().actor();
     let affordance_candidates = raw_affordance_candidates
         .into_iter()
         .filter(|candidate| {
+            // SANBASINCLEAN-001: suppress a co-located wash affordance whose
+            // basin has degraded below the actor's worthwhile-wash floor so the
+            // Wash plan must clean the basin first (FND-11). The co-located
+            // clean_wash_basin affordance is left intact, and the wash reappears
+            // once cleaning resets the basin in the hypothetical successor.
+            if semantics_table
+                .get(&candidate.def_id)
+                .is_some_and(|semantics| semantics.op_kind == PlannerOpKind::Wash)
+                && candidate
+                    .authoritative_targets
+                    .first()
+                    .is_some_and(|basin| {
+                        wash_basin_below_worthwhile_floor(
+                            &node.state,
+                            proactive_clean_actor,
+                            *basin,
+                        )
+                    })
+            {
+                return false;
+            }
             semantics_table
                 .get(&candidate.def_id)
                 .is_none_or(|semantics| {
@@ -836,6 +859,56 @@ fn direct_possession_quantity(
         .sum()
 }
 
+/// Planner-side proactive-cleaning gate. Returns `true` when washing at `basin`
+/// would deliver less relief than the actor's worthwhile-wash floor, while the
+/// basin is still below its hard `max_effective_dirtiness` block. In that band
+/// the wash is lawful but near-useless, so the Wash plan must insert
+/// `clean_wash_basin` maintenance first — the FND-11 dampener engaging before
+/// the basin becomes unusable. The hard authoritative block is handled
+/// separately by `TargetWashBasinNotTooDirty`; this only governs the still-usable
+/// soft band below it. Reads the basin through the same belief view as wash
+/// affordance enumeration, so a fully-unknown remote basin yields `false`
+/// (no proactive cleaning synthesized without belief, FND-14B).
+///
+/// Generic over the belief view so both the planner search (`PlanningState`) and
+/// plan revalidation (`&dyn RuntimeBeliefView`) share one definition of the
+/// floor: the search refuses to synthesize a below-floor wash, and revalidation
+/// invalidates a committed wash once the agent arrives and observes the basin is
+/// below the floor, forcing a clean-then-wash replan on co-located arrival.
+pub(crate) fn wash_basin_below_worthwhile_floor<V>(
+    view: &V,
+    actor: EntityId,
+    basin: EntityId,
+) -> bool
+where
+    V: ProfileBeliefView + FacilityBeliefView + ?Sized,
+{
+    let Some(profile) = view.metabolism_profile(actor) else {
+        return false;
+    };
+    let floor = profile.wash_worthwhile_effectiveness_floor.value();
+    if floor == 0 {
+        return false;
+    }
+    let Some(basin_state) = FacilityBeliefView::wash_basin_state(view, basin) else {
+        return false;
+    };
+    let max_effective = basin_state.max_effective_dirtiness.value();
+    if max_effective == 0 {
+        return false;
+    }
+    let dirtiness = basin_state.dirtiness_level.value();
+    if dirtiness >= max_effective {
+        // The hard authoritative block already rejects washing here; the soft
+        // floor only governs the still-usable band below it.
+        return false;
+    }
+    // effective_fraction = (max_effective - dirtiness) / max_effective, in
+    // permille — the same scaling `apply_wash` uses for wash relief.
+    let effective_fraction = u32::from(max_effective - dirtiness) * 1000 / u32::from(max_effective);
+    effective_fraction < u32::from(floor)
+}
+
 fn goal_synthesized_candidates(
     goal: &GoalOffer,
     state: &PlanningState<'_>,
@@ -856,20 +929,62 @@ fn goal_synthesized_candidates(
             let def = registry.get(*def_id)?;
             let semantics = semantics_table.get(def_id)?;
             match goal.synthesized_root_candidate_targets(def, *semantics, actor_place) {
-                RootCandidateSynthesis::Targets(authoritative_targets) => Some(SearchCandidate {
-                    def_id: *def_id,
-                    authoritative_targets: authoritative_targets.clone(),
-                    planning_targets: synthesized_planning_targets(
-                        goal,
-                        state,
-                        *semantics,
-                        authoritative_targets,
-                    ),
-                    payload_override: None,
-                    planner_only: false,
-                    trace_index: None,
-                    expansion_trace_index: None,
-                }),
+                RootCandidateSynthesis::Targets(authoritative_targets) => {
+                    // S176: the synthesized self-care fallback must still respect
+                    // the facility degradation gates. Without this, a synthesized
+                    // wash/toilet candidate would bypass TargetWashBasinNotTooDirty
+                    // / PlaceLatrineNotFull and "succeed" at a too-dirty/full
+                    // facility, defeating the cleaning-prerequisite search. We
+                    // validate ONLY these gates here (not every precondition) so
+                    // other synthesis behaviour — e.g. omitted-anchor tracing for
+                    // unobserved targets — is unchanged.
+                    let actor = state.snapshot().actor();
+                    let degradation_gate_blocked = def.preconditions.iter().any(|precondition| {
+                        matches!(
+                            precondition,
+                            worldwake_sim::Precondition::TargetWashBasinNotTooDirty { .. }
+                                | worldwake_sim::Precondition::PlaceLatrineNotFull { .. }
+                        ) && !evaluate_precondition(
+                            *precondition,
+                            actor,
+                            &authoritative_targets,
+                            state,
+                        )
+                    });
+                    // SANBASINCLEAN-001: the proactive-cleaning trigger. Even
+                    // when the hard `TargetWashBasinNotTooDirty` gate still
+                    // passes, suppress the synthesized wash root if the basin is
+                    // below the actor's worthwhile-wash floor, so the Wash search
+                    // must insert clean_wash_basin first (FND-11). The clean op
+                    // resets the basin in the hypothetical successor, after which
+                    // the wash is re-synthesized.
+                    let wash_below_worthwhile_floor =
+                        def.preconditions.iter().any(|precondition| {
+                            matches!(
+                                precondition,
+                                worldwake_sim::Precondition::TargetWashBasinNotTooDirty { .. }
+                            )
+                        }) && authoritative_targets.first().is_some_and(|basin| {
+                            wash_basin_below_worthwhile_floor(state, actor, *basin)
+                        });
+                    if degradation_gate_blocked || wash_below_worthwhile_floor {
+                        return None;
+                    }
+                    Some(SearchCandidate {
+                        def_id: *def_id,
+                        authoritative_targets: authoritative_targets.clone(),
+                        planning_targets: synthesized_planning_targets(
+                            goal,
+                            state,
+                            *semantics,
+                            authoritative_targets,
+                        ),
+                        payload_override: None,
+                        planner_only: false,
+                        trace_index: None,
+                        expansion_trace_index: None,
+                    })
+                }
                 RootCandidateSynthesis::NoSynthesisPath
                 | RootCandidateSynthesis::UnsupportedGoalOp
                 | RootCandidateSynthesis::TargetDerivationFailed => None,

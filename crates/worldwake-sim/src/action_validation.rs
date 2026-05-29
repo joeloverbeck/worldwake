@@ -111,6 +111,20 @@ pub(crate) fn evaluate_precondition_authoritatively(
             .get(usize::from(target_index))
             .and_then(|target| world.get_component_wash_basin_state(*target))
             .is_some_and(|state| state.clean_water_units >= min),
+        Precondition::TargetWashBasinNotTooDirty { target_index } => targets
+            .get(usize::from(target_index))
+            .and_then(|target| world.get_component_wash_basin_state(*target))
+            .is_some_and(|state| state.dirtiness_level < state.max_effective_dirtiness),
+        // A latrine place with no `LatrineFullness` component is treated as
+        // empty/usable, mirroring `apply_toilet`'s `unwrap_or_default()`. Only a
+        // present-and-full component blocks the action.
+        Precondition::PlaceLatrineNotFull { target_index } => targets
+            .get(usize::from(target_index))
+            .is_some_and(|target| {
+                world
+                    .get_component_latrine_fullness(*target)
+                    .is_none_or(|fullness| fullness.fill < fullness.critical_threshold)
+            }),
         Precondition::TargetNotInContainer(target_index) => targets
             .get(usize::from(target_index))
             .is_some_and(|target| world.direct_container(*target).is_none()),

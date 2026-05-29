@@ -74,6 +74,16 @@ pub enum Precondition {
         target_index: u8,
         min: u16,
     },
+    /// Target wash basin's `dirtiness_level` is strictly below its
+    /// `max_effective_dirtiness` threshold (the basin is still usable).
+    TargetWashBasinNotTooDirty {
+        target_index: u8,
+    },
+    /// Target place's latrine `fill` is strictly below its
+    /// `critical_threshold` (the latrine can still accept use).
+    PlaceLatrineNotFull {
+        target_index: u8,
+    },
     TargetNotInContainer(u8),
     TargetUnpossessed(u8),
     TargetDirectlyPossessedByActor(u8),
@@ -104,6 +114,8 @@ pub enum ConsumableEffect {
 pub enum MetabolismDurationKind {
     Toilet,
     Wash,
+    CleanBasin,
+    EmptyLatrine,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -230,6 +242,10 @@ impl DurationExpr {
                 let ticks = match kind {
                     MetabolismDurationKind::Toilet => profile.toilet_ticks.get(),
                     MetabolismDurationKind::Wash => profile.wash_ticks.get(),
+                    MetabolismDurationKind::CleanBasin => profile.clean_basin_duration_ticks.get(),
+                    MetabolismDurationKind::EmptyLatrine => {
+                        profile.empty_latrine_duration_ticks.get()
+                    }
                 };
                 Ok(ActionDuration::new(ticks))
             }
@@ -775,6 +791,24 @@ mod tests {
             .resolve_for(&world, actor, &[target], &ActionPayload::None)
             .unwrap(),
             ActionDuration::new(9)
+        );
+        // The cleaning durations are seeded from defaults by `new()` (not in
+        // its signature); the resolver must map the new kinds to them.
+        assert_eq!(
+            DurationExpr::ActorMetabolism {
+                kind: MetabolismDurationKind::CleanBasin,
+            }
+            .resolve_for(&world, actor, &[target], &ActionPayload::None)
+            .unwrap(),
+            ActionDuration::new(10)
+        );
+        assert_eq!(
+            DurationExpr::ActorMetabolism {
+                kind: MetabolismDurationKind::EmptyLatrine,
+            }
+            .resolve_for(&world, actor, &[target], &ActionPayload::None)
+            .unwrap(),
+            ActionDuration::new(16)
         );
     }
 

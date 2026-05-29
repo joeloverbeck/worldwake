@@ -329,6 +329,7 @@ fn wash_partial_success_proportional_dirtiness_reduction() {
             units_per_full_wash: 2,
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(50),
+            max_effective_dirtiness: pm(1000),
         },
     );
     let agent = seed_agent(
@@ -360,6 +361,7 @@ fn wash_partial_success_proportional_dirtiness_reduction() {
             units_per_full_wash: 2,
             dirtiness_level: pm(25),
             dirtiness_per_use: pm(50),
+            max_effective_dirtiness: pm(1000),
         }
     );
 }
@@ -373,10 +375,14 @@ fn latrine_overflow_creates_waste_at_place_and_increments_place_dirtiness() {
     let mut h = GoldenHarness::new(Seed([0x8a; 32]));
     h.enable_action_tracing();
     let mut txn = new_txn(&mut h.world, 0);
+    // S176 D3: the latrine starts just below its critical threshold so the
+    // single toilet use is lawful and crosses the threshold, exercising the
+    // retained overflow path (a latrine already at/above the threshold is now
+    // blocked, not relieved).
     txn.set_component_latrine_fullness(
         PUBLIC_LATRINE,
         LatrineFullness {
-            fill: pm(800),
+            fill: pm(750),
             fill_per_use: pm(80),
             critical_threshold: pm(800),
         },
@@ -420,7 +426,7 @@ fn latrine_overflow_creates_waste_at_place_and_increments_place_dirtiness() {
             .get_component_latrine_fullness(PUBLIC_LATRINE)
             .unwrap()
             .fill,
-        pm(880)
+        pm(830)
     );
     assert_eq!(
         h.world
@@ -448,6 +454,7 @@ fn basin_natural_refill_from_colocated_water_source() {
             units_per_full_wash: 2,
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(50),
+            max_effective_dirtiness: pm(1000),
         },
     );
     let source = place_workstation_with_source(
@@ -506,6 +513,7 @@ fn wash_ai_selects_non_empty_basin_when_other_basin_is_empty() {
             units_per_full_wash: 2,
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(50),
+            max_effective_dirtiness: pm(1000),
         },
     );
     let usable = place_wash_basin(
@@ -518,6 +526,7 @@ fn wash_ai_selects_non_empty_basin_when_other_basin_is_empty() {
             units_per_full_wash: 2,
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(50),
+            max_effective_dirtiness: pm(1000),
         },
     );
     let agent = seed_agent(
@@ -739,6 +748,7 @@ fn wash_basin_plateaus_at_zero_with_zero_refill() {
             units_per_full_wash: 2,
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(50),
+            max_effective_dirtiness: pm(1000),
         },
     );
     let agent = seed_agent(

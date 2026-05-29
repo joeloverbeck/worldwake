@@ -7,7 +7,7 @@ Scenarios: 6
 
 ### Scenario 375: Source Composite Wait Reranks Same-Commodity Siblings
 
-- Source: `source_composite.rs:346`
+- Source: `source_composite.rs:347`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -23,7 +23,7 @@ Scenarios: 6
 
 ### Scenario 376: Source Composite Does Not Cross Goal Categories
 
-- Source: `source_composite.rs:390`
+- Source: `source_composite.rs:391`
 - Systems: AI, SourceReliability, Dirtiness
 - GoalKinds: Wash, AcquireCommodity(SelfConsume)
 - ActionDomains: Needs, Production
@@ -39,7 +39,7 @@ Scenarios: 6
 
 ### Scenario 377: Fresh Capacity Bonus Reranks Same-Commodity Siblings
 
-- Source: `source_composite.rs:431`
+- Source: `source_composite.rs:432`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -55,7 +55,7 @@ Scenarios: 6
 
 ### Scenario 378: Stale Capacity Observation Is Neutral
 
-- Source: `source_composite.rs:480`
+- Source: `source_composite.rs:481`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -71,7 +71,7 @@ Scenarios: 6
 
 ### Scenario 379: Empty Fresh Capacity Demotes Source
 
-- Source: `source_composite.rs:522`
+- Source: `source_composite.rs:523`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -87,7 +87,7 @@ Scenarios: 6
 
 ### Scenario 380: Missing Source Records Are Neutral
 
-- Source: `source_composite.rs:559`
+- Source: `source_composite.rs:560`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel

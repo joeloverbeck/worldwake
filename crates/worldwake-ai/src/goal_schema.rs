@@ -101,8 +101,19 @@ const ACQUIRE_OPS: &[PlannerOpKind] = &[
 const SLEEP_RELEVANT_OPS: &[PlannerOpKind] =
     &[PlannerOpKind::Sleep, PlannerOpKind::QueueForFacilityUse];
 const SLEEP_PROGRESS_BARRIER_OPS: &[PlannerOpKind] = &[PlannerOpKind::Sleep];
-const RELIEVE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Relieve, PlannerOpKind::Travel];
-const WASH_OPS: &[PlannerOpKind] = &[PlannerOpKind::Wash, PlannerOpKind::Travel];
+// S176: empty_latrine / clean_wash_basin are prerequisite ops the Relieve /
+// Wash search inserts when the latrine-full / basin-too-dirty gate blocks the
+// terminal self-care op (mirroring QueueForFacilityUse for Sleep).
+const RELIEVE_OPS: &[PlannerOpKind] = &[
+    PlannerOpKind::Relieve,
+    PlannerOpKind::EmptyLatrine,
+    PlannerOpKind::Travel,
+];
+const WASH_OPS: &[PlannerOpKind] = &[
+    PlannerOpKind::Wash,
+    PlannerOpKind::CleanWashBasin,
+    PlannerOpKind::Travel,
+];
 const FREE_CARRY_CAPACITY_OPS: &[PlannerOpKind] = &[PlannerOpKind::DropItem];
 const ENGAGE_HOSTILE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Attack];
 const RAID_TARGET_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Attack];

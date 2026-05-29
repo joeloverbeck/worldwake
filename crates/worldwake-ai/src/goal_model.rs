@@ -1606,6 +1606,8 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Sleep
             | PlannerOpKind::Relieve
             | PlannerOpKind::Wash
+            | PlannerOpKind::CleanWashBasin
+            | PlannerOpKind::EmptyLatrine
             | PlannerOpKind::Patrol
             | PlannerOpKind::Defend
             | PlannerOpKind::Bribe

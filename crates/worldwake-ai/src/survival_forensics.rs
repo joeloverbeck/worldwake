@@ -48,6 +48,8 @@ pub struct CriticalWindowFrame {
     pub local_authoritative_summary: LocalSurvivalStateSummary,
     #[serde(default)]
     pub failed_rest_opportunities: Vec<FailedRestOpportunity>,
+    #[serde(default)]
+    pub degraded_self_care_opportunities: Vec<DegradedSelfCareOpportunity>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,6 +66,33 @@ pub enum FailedRestKind {
     PreconditionRejected,
     RoughFallbackToKnownRestSite,
     PreemptedByHigherNeed { need: HomeostaticNeedId },
+}
+
+/// S176 D8: derived evidence that a self-care affordance was degraded or
+/// blocked by facility wear, and what the agent did about it. Mirrors
+/// [`FailedRestOpportunity`]; derived forensic state (FND-27), never
+/// authoritative.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DegradedSelfCareOpportunity {
+    pub tick: Tick,
+    pub facility: EntityId,
+    pub cause: DegradedSelfCareCause,
+    pub outcome: DegradedSelfCareOutcome,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum DegradedSelfCareCause {
+    BasinTooDirty,
+    BasinDry,
+    LatrineFull,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum DegradedSelfCareOutcome {
+    WildernessRelief,
+    Cleaned,
+    Queued,
+    DidNothing,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -100,6 +129,7 @@ pub struct LocalSurvivalStateSummary {
     pub place: Option<EntityId>,
     pub water_source_present: bool,
     pub wash_basin_present: bool,
+    pub latrine_present: bool,
     pub sleep_affordance_present: bool,
     pub food_source_present: bool,
 }
@@ -112,6 +142,7 @@ impl LocalSurvivalStateSummary {
                 place: None,
                 water_source_present: false,
                 wash_basin_present: false,
+                latrine_present: false,
                 sleep_affordance_present: false,
                 food_source_present: false,
             };
@@ -124,6 +155,10 @@ impl LocalSurvivalStateSummary {
         let wash_basin_present = world.query_workstation_marker().any(|(entity, marker)| {
             world.effective_place(entity) == Some(place) && marker.0 == WorkstationTag::WashBasin
         });
+        // A latrine is present when the place tracks fullness or carries the
+        // Latrine tag. Used to attribute wilderness relief to a degraded latrine.
+        let latrine_present = world.get_component_latrine_fullness(place).is_some()
+            || world.place_has_tag(place, PlaceTag::Latrine);
         let sleep_affordance_present = SLEEP_PLACE_TAGS
             .into_iter()
             .any(|tag| world.place_has_tag(place, tag));
@@ -141,6 +176,7 @@ impl LocalSurvivalStateSummary {
             place: Some(place),
             water_source_present,
             wash_basin_present,
+            latrine_present,
             sleep_affordance_present,
             food_source_present,
         }
@@ -369,6 +405,92 @@ fn build_frame(
             action_trace_snapshot,
             local_state,
         ),
+        degraded_self_care_opportunities: degraded_self_care_opportunities(
+            tick,
+            need,
+            action_trace_snapshot,
+            local_state,
+        ),
+    }
+}
+
+/// S176 D8: derive degraded/blocked self-care evidence for the active window.
+/// Basin degradation attaches to the Dirtiness window; latrine degradation to
+/// the Bladder window — mirroring how `failed_rest_opportunities` attaches only
+/// to the Fatigue window. Signals are read from the tick's action-trace events:
+/// committed recovery/fallback actions (`clean_wash_basin` / `empty_latrine` /
+/// `relieve_wilderness`) and start-failed self-care rejected by a degradation gate.
+fn degraded_self_care_opportunities(
+    tick: Tick,
+    active_need: HomeostaticNeedId,
+    action_trace_snapshot: &ActionTraceSnapshot<'_>,
+    local_state: LocalSurvivalStateSummary,
+) -> Vec<DegradedSelfCareOpportunity> {
+    let Some(facility) = local_state.place else {
+        return Vec::new();
+    };
+    action_trace_snapshot
+        .tick_events
+        .iter()
+        .filter_map(|event| {
+            let committed = matches!(event.kind, ActionTraceKind::Committed { .. });
+            let start_failed = matches!(event.kind, ActionTraceKind::StartFailed { .. });
+            let cause_outcome = match active_need {
+                HomeostaticNeedId::Dirtiness => match event.action_name.as_str() {
+                    "clean_wash_basin" if committed => Some((
+                        DegradedSelfCareCause::BasinTooDirty,
+                        DegradedSelfCareOutcome::Cleaned,
+                    )),
+                    "wash" if start_failed => match start_failure_reason(event) {
+                        Some(reason) if reason.contains("TargetWashBasinNotTooDirty") => Some((
+                            DegradedSelfCareCause::BasinTooDirty,
+                            DegradedSelfCareOutcome::DidNothing,
+                        )),
+                        Some(reason) if reason.contains("TargetHasWashBasinClean") => Some((
+                            DegradedSelfCareCause::BasinDry,
+                            DegradedSelfCareOutcome::DidNothing,
+                        )),
+                        _ => None,
+                    },
+                    _ => None,
+                },
+                HomeostaticNeedId::Bladder => match event.action_name.as_str() {
+                    "empty_latrine" if committed => Some((
+                        DegradedSelfCareCause::LatrineFull,
+                        DegradedSelfCareOutcome::Cleaned,
+                    )),
+                    // Wilderness relief is degraded self-care only when a latrine
+                    // is present here — otherwise it is ordinary outdoor relief.
+                    "relieve_wilderness" if committed && local_state.latrine_present => Some((
+                        DegradedSelfCareCause::LatrineFull,
+                        DegradedSelfCareOutcome::WildernessRelief,
+                    )),
+                    "toilet" if start_failed => start_failure_reason(event)
+                        .filter(|reason| reason.contains("PlaceLatrineNotFull"))
+                        .map(|_| {
+                            (
+                                DegradedSelfCareCause::LatrineFull,
+                                DegradedSelfCareOutcome::DidNothing,
+                            )
+                        }),
+                    _ => None,
+                },
+                _ => None,
+            };
+            cause_outcome.map(|(cause, outcome)| DegradedSelfCareOpportunity {
+                tick,
+                facility,
+                cause,
+                outcome,
+            })
+        })
+        .collect()
+}
+
+fn start_failure_reason(event: &ActionTraceEvent) -> Option<&str> {
+    match &event.kind {
+        ActionTraceKind::StartFailed { reason, .. } => Some(reason.as_str()),
+        _ => None,
     }
 }
 
@@ -567,6 +689,7 @@ fn frame_change_detected(previous: &CriticalWindowFrame, current: &CriticalWindo
         || previous.exhaustion_state != current.exhaustion_state
         || previous.blocker_summary != current.blocker_summary
         || previous.failed_rest_opportunities != current.failed_rest_opportunities
+        || previous.degraded_self_care_opportunities != current.degraded_self_care_opportunities
 }
 
 fn selected_goal_from_trace(trace: &AgentDecisionTrace) -> Option<GoalKey> {
@@ -722,7 +845,7 @@ mod tests {
         VisibilitySpec, WitnessData, WorkstationMarker, WorldTxn, build_prototype_world,
         prototype_place_entity,
     };
-    use worldwake_sim::{ActionTraceDetail, ActionTraceEvent, ActionTraceKind};
+    use worldwake_sim::{ActionTraceDetail, ActionTraceEvent, ActionTraceKind, CommitOutcome};
 
     #[test]
     fn detects_window_start_and_end_ticks() {
@@ -913,6 +1036,101 @@ mod tests {
                 need: HomeostaticNeedId::Thirst,
             }
         );
+    }
+
+    fn committed_event(action_name: &str) -> ActionTraceEvent {
+        ActionTraceEvent {
+            tick: Tick(5),
+            sequence_in_tick: 0,
+            actor: entity(1),
+            def_id: ActionDefId(0),
+            action_name: action_name.to_string(),
+            detail: None,
+            kind: ActionTraceKind::Committed {
+                instance_id: ActionInstanceId(1),
+                outcome: CommitOutcome::empty(),
+            },
+        }
+    }
+
+    #[test]
+    fn degraded_self_care_records_cleaning_emptying_and_wilderness_fallback() {
+        let basin_place = LocalSurvivalStateSummary {
+            place: Some(entity(70)),
+            water_source_present: true,
+            wash_basin_present: true,
+            latrine_present: false,
+            sleep_affordance_present: false,
+            food_source_present: false,
+        };
+        let latrine_place = LocalSurvivalStateSummary {
+            place: Some(entity(71)),
+            water_source_present: false,
+            wash_basin_present: false,
+            latrine_present: true,
+            sleep_affordance_present: false,
+            food_source_present: false,
+        };
+
+        // clean_wash_basin in the Dirtiness window → BasinTooDirty / Cleaned.
+        let clean_event = committed_event("clean_wash_basin");
+        let clean_snapshot = ActionTraceSnapshot {
+            active_action: None,
+            tick_events: vec![&clean_event],
+        };
+        let cleaned = degraded_self_care_opportunities(
+            Tick(5),
+            HomeostaticNeedId::Dirtiness,
+            &clean_snapshot,
+            basin_place,
+        );
+        assert_eq!(
+            cleaned,
+            vec![DegradedSelfCareOpportunity {
+                tick: Tick(5),
+                facility: entity(70),
+                cause: DegradedSelfCareCause::BasinTooDirty,
+                outcome: DegradedSelfCareOutcome::Cleaned,
+            }]
+        );
+
+        // empty_latrine in the Bladder window → LatrineFull / Cleaned.
+        let empty_event = committed_event("empty_latrine");
+        let empty_snapshot = ActionTraceSnapshot {
+            active_action: None,
+            tick_events: vec![&empty_event],
+        };
+        let emptied = degraded_self_care_opportunities(
+            Tick(5),
+            HomeostaticNeedId::Bladder,
+            &empty_snapshot,
+            latrine_place,
+        );
+        assert_eq!(emptied[0].cause, DegradedSelfCareCause::LatrineFull);
+        assert_eq!(emptied[0].outcome, DegradedSelfCareOutcome::Cleaned);
+
+        // relieve_wilderness with a latrine present → LatrineFull / WildernessRelief.
+        let wild_event = committed_event("relieve_wilderness");
+        let wild_snapshot = ActionTraceSnapshot {
+            active_action: None,
+            tick_events: vec![&wild_event],
+        };
+        let wild = degraded_self_care_opportunities(
+            Tick(5),
+            HomeostaticNeedId::Bladder,
+            &wild_snapshot,
+            latrine_place,
+        );
+        assert_eq!(wild[0].outcome, DegradedSelfCareOutcome::WildernessRelief);
+
+        // relieve_wilderness with NO latrine present → not degraded self-care.
+        let no_latrine = degraded_self_care_opportunities(
+            Tick(5),
+            HomeostaticNeedId::Bladder,
+            &wild_snapshot,
+            basin_place,
+        );
+        assert!(no_latrine.is_empty());
     }
 
     #[test]
@@ -1633,6 +1851,7 @@ mod tests {
             place: Some(entity(50)),
             water_source_present: true,
             wash_basin_present: false,
+            latrine_present: false,
             sleep_affordance_present: true,
             food_source_present: true,
         }

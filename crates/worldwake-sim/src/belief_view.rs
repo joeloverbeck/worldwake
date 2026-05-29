@@ -1602,6 +1602,12 @@ pub trait FacilityBeliefView {
         let _ = entity;
         None
     }
+    /// Co-located/believed latrine fullness for the affordance-gating view.
+    /// `None` when the place is remote and no belief is held.
+    fn latrine_fullness(&self, place: EntityId) -> Option<LatrineFullness> {
+        let _ = place;
+        None
+    }
     fn self_care_occupant(&self, entity: EntityId) -> Option<EntityId> {
         let _ = entity;
         None
@@ -2741,6 +2747,12 @@ pub fn estimate_duration_from_beliefs(
             let ticks = match kind {
                 crate::MetabolismDurationKind::Toilet => profile.toilet_ticks.get(),
                 crate::MetabolismDurationKind::Wash => profile.wash_ticks.get(),
+                crate::MetabolismDurationKind::CleanBasin => {
+                    profile.clean_basin_duration_ticks.get()
+                }
+                crate::MetabolismDurationKind::EmptyLatrine => {
+                    profile.empty_latrine_duration_ticks.get()
+                }
             };
             Some(ActionDuration::new(ticks))
         }
