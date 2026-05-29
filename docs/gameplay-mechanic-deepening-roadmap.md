@@ -160,11 +160,13 @@ Sleep now carries a concrete rest-site model. Focused goldens prove rest-site ca
 
 S175 closes the failed-rest chain's terminal path. Sustained fatigue critical exposure now creates `DeprivationKind::Exhaustion` wounds (`exhaustion_collapse_ticks` is finally a live profile parameter), wound-load death is attributed to `HomeostaticNeedId::Fatigue`, and the derived `CriticalWindowReport.exhaustion_collapse_observed` flag plus the per-frame `FailedRestOpportunity` chain make the collapse causally inspectable end to end. Focused goldens prove both the collapse cascade (repeated `HostileProximity`-interrupted rough sleep → Exhaustion wound → worsening → `Fatigue` death, no post-death actions) and the recovery dampener (flee to a safe place, rough-sleep below critical, counter resets, no wound — the loop is escapable). This is focused-golden coverage only (CI-only, 120–240 ticks; `docs/scenario-roadmap.md` §5.19), not a long-running collision-proven survival row.
 
+S176 makes the wash and latrine facilities real consequence carriers. Wash effectiveness now scales with `WashBasinState.dirtiness_level` and fails the Wash precondition at/above an authored `max_effective_dirtiness`; the Toilet precondition is gated by `LatrineFullness.fill < critical_threshold`. Recovery is concrete labor — `clean_wash_basin` and `empty_latrine` are duration-/occupancy-bearing actions (with explicit abort handlers) the GOAP search inserts as ordinary `Wash`/`Relieve` prerequisites when the degradation gate blocks the terminal self-care op, leaving `Waste` lots and `PlaceDirtiness` aftermath (`WasteCreated { LatrineEmptied }` on emptying); a full latrine also diverts lawfully to wilderness relief. The `DegradedSelfCareOpportunity` forensic record makes "why did this agent clean / empty / relieve in the wild?" answerable from typed critical-window state. Focused goldens (`survival-basin-dirty-dirty`, `survival-latrine-full`) plus a CI-only 1440-tick multi-agent collision (`survival-sanitation-breakdown-1440`, three agents sharing one basin + one latrine; `docs/scenario-roadmap.md` §5.20) prove degradation-then-recovery via labor, the belief barrier, and replay equivalence. This is auxiliary behavior coverage; the 1440 collision isolates sanitation (food/water needs zeroed) rather than colliding with the full survival economy.
+
 ### Not Yet Proven Enough
 
 Current evidence does not prove that self-care is fully mature under:
 
-- severe degradation of food, water, sleep, latrine, or wash access;
+- severe degradation of food, water, or sleep access (latrine and wash-facility degradation now have focused + 1440-tick collision proof via S176: dirtiness-gated wash, fullness-gated toilet, and `clean_wash_basin`/`empty_latrine` recovery labor);
 - injury or pursuit broadly disrupting self-care (hostile-proximity sleep interruption now has focused-golden proof; wider injury/pursuit collision with self-care is still unproven);
 - long-running, collision-proven maturity of the rest-site / safe-sleep model. Rest-site capacity/occupancy contention, rough-sleep fallback, structured wake causes, and the failed-rest forensic feed are registered as auxiliary focused-golden coverage (`docs/scenario-roadmap.md` §5.19); multi-agent rest contention has not been proven across a 1440-tick survival-coexistence run or in collision with travel, combat, justice, or obligations.
 
@@ -172,9 +174,9 @@ Current evidence does not prove that self-care is fully mature under:
 
 A future spec pass should investigate:
 
-- whether each self-care action has adequate physical preconditions, duration, cost, occupancy, interruption, and aftermath;
+- whether each self-care action's physical preconditions, duration, cost, occupancy, interruption, and aftermath are adequately *tuned/balanced* under pressure (the property set itself is now structurally present for every self-care action — eat/drink/sleep plus, via S176, wash/toilet/`clean_wash_basin`/`empty_latrine` with gates, durations, `SelfCareOccupancy`, abort handlers, and Waste/dirtiness aftermath);
 - whether need relief always comes from concrete world actions and not direct stat satisfaction;
-- whether deprivation, waste, dirtiness, and recovery have traceable world-state consequences across all five needs (hunger/thirst deprivation death and fatigue exhaustion collapse are now traceable — concrete wounds, death event, and forensic flag — but the remaining needs and the collision/maturity case are still open);
+- whether deprivation, waste, dirtiness, and recovery have traceable world-state consequences across all five needs (hunger/thirst deprivation death and fatigue exhaustion collapse are traceable via concrete wounds, death event, and forensic flag; and S176 makes bladder/dirtiness consequences traceable — `Waste`/`PlaceDirtiness` aftermath, `WasteCreated { LatrineEmptied }` provenance, and `DegradedSelfCareOpportunity` records — so waste, dirtiness, and recovery now have traceable consequences; the broad cross-cluster collision/maturity case is still open);
 - whether survival priorities remain embodied under travel, trade, combat, escort, and justice pressure.
 
 Do not prescribe exact formulas here. The spec pass should discover the right model from FOUNDATIONS-aligned constraints and current code behavior.
@@ -185,7 +187,7 @@ Future validation should include:
 
 - baseline 1440-tick sustainment;
 - harsher scarcity and degradation;
-- multi-agent contention for water, relief, and sleep affordances;
+- multi-agent contention for water and sleep affordances (relief and wash-facility contention over a shared latrine + basin is now proven by the S176 1440-tick collision golden);
 - collision with travel, trade, theft, injury, escort, and obligations;
 - consequences visible through world state and event logs, not scripted assertions.
 
