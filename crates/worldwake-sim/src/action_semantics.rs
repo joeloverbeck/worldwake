@@ -104,6 +104,8 @@ pub enum ConsumableEffect {
 pub enum MetabolismDurationKind {
     Toilet,
     Wash,
+    CleanBasin,
+    EmptyLatrine,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -230,6 +232,10 @@ impl DurationExpr {
                 let ticks = match kind {
                     MetabolismDurationKind::Toilet => profile.toilet_ticks.get(),
                     MetabolismDurationKind::Wash => profile.wash_ticks.get(),
+                    MetabolismDurationKind::CleanBasin => profile.clean_basin_duration_ticks.get(),
+                    MetabolismDurationKind::EmptyLatrine => {
+                        profile.empty_latrine_duration_ticks.get()
+                    }
                 };
                 Ok(ActionDuration::new(ticks))
             }
@@ -775,6 +781,24 @@ mod tests {
             .resolve_for(&world, actor, &[target], &ActionPayload::None)
             .unwrap(),
             ActionDuration::new(9)
+        );
+        // The cleaning durations are seeded from defaults by `new()` (not in
+        // its signature); the resolver must map the new kinds to them.
+        assert_eq!(
+            DurationExpr::ActorMetabolism {
+                kind: MetabolismDurationKind::CleanBasin,
+            }
+            .resolve_for(&world, actor, &[target], &ActionPayload::None)
+            .unwrap(),
+            ActionDuration::new(10)
+        );
+        assert_eq!(
+            DurationExpr::ActorMetabolism {
+                kind: MetabolismDurationKind::EmptyLatrine,
+            }
+            .resolve_for(&world, actor, &[target], &ActionPayload::None)
+            .unwrap(),
+            ActionDuration::new(16)
         );
     }
 

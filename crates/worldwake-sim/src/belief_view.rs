@@ -2741,6 +2741,12 @@ pub fn estimate_duration_from_beliefs(
             let ticks = match kind {
                 crate::MetabolismDurationKind::Toilet => profile.toilet_ticks.get(),
                 crate::MetabolismDurationKind::Wash => profile.wash_ticks.get(),
+                crate::MetabolismDurationKind::CleanBasin => {
+                    profile.clean_basin_duration_ticks.get()
+                }
+                crate::MetabolismDurationKind::EmptyLatrine => {
+                    profile.empty_latrine_duration_ticks.get()
+                }
             };
             Some(ActionDuration::new(ticks))
         }

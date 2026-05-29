@@ -276,6 +276,8 @@ Per-agent physiology parameters that drive metabolism and recovery.
 | `bladder_accident_tolerance_ticks` | `NonZeroU32` | Ticks at critical bladder pressure before an accident occurs. (default: `nz(40)`) |
 | `toilet_ticks` | `NonZeroU32` | Duration in ticks to complete a toilet action. (default: `nz(8)`) |
 | `wash_ticks` | `NonZeroU32` | Duration in ticks to complete a washing action. (default: `nz(12)`) |
+| `clean_basin_duration_ticks` | `NonZeroU32` | Duration in ticks to complete a wash-basin cleaning action. (default: `default_clean_basin_duration_ticks()`) |
+| `empty_latrine_duration_ticks` | `NonZeroU32` | Duration in ticks to complete a latrine-emptying action. (default: `default_empty_latrine_duration_ticks()`) |
 | `min_sleep_ticks` | `NonZeroU32` | Minimum duration in ticks for a sleep episode. (default: `default_min_sleep_ticks()`) |
 | `rough_sleep_recovery_floor` | `Permille` | Hard ceiling on per-tick fatigue recovery when sleeping rough without a known rest site. (default: `default_rough_sleep_recovery_floor()`) |
 | `travel_fatigue_multiplier` | `Permille` | Multiplier applied to fatigue rate while traveling. (default: `pm(0)`) |

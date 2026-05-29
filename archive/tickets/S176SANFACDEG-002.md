@@ -1,6 +1,6 @@
 # S176SANFACDEG-002: MetabolismProfile cleaning durations + MetabolismDurationKind
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `MetabolismProfile` core profile (2 new fields), `MetabolismDurationKind` enum (sim, 2 variants + 2 resolver arms), serialized `SimulationState` format (`SAVE_FORMAT_VERSION` bump), generated profile docs
@@ -90,3 +90,20 @@ Update the 18 construction sites / `::new()` callers; bump `SAVE_FORMAT_VERSION`
 1. `cargo test -p worldwake-core needs && cargo test -p worldwake-sim action_semantics`
 2. `python3 scripts/profile_docs.py --write && cargo test -p worldwake-cli`
 3. `scripts/verify.sh`
+
+## Outcome
+
+**Completion date**: 2026-05-29
+
+**What changed**:
+- Added `clean_basin_duration_ticks: NonZeroU32` and `empty_latrine_duration_ticks: NonZeroU32` to `MetabolismProfile` (`crates/worldwake-core/src/needs.rs`), each with a `#[serde(default = "…")]` (`default_clean_basin_duration_ticks` = 10, `default_empty_latrine_duration_ticks` = 16) and inclusion in the `Default` impl.
+- Added `MetabolismDurationKind::{CleanBasin, EmptyLatrine}` (`crates/worldwake-sim/src/action_semantics.rs`) plus resolver arms at both sites: the authoritative resolver (`action_semantics.rs`) and the planner-facing estimate (`belief_view.rs`).
+- Bumped `SAVE_FORMAT_VERSION` `109 → 110`; updated the version-pin tests.
+- Regenerated `docs/profiles/all-profiles.md` (`scripts/profile_docs.py --write`).
+
+**Deviations from the ticket**:
+- The ticket called for adding the two fields to the `MetabolismProfile::new(...)` signature. Reassessment found ~40 `::new()` call sites and that the most recent comparable field (`rough_sleep_recovery_floor`) was *not* added to the `new()` signature — it is seeded inside `new()` from its `const fn` default and authored only via serde. I followed that precedent: the cleaning durations are seeded from `const fn` defaults inside `new()` (no signature change, no call-site churn) and authored via serde (`metabolism_profile` whole-struct deserialization). This is DRYer and avoids touching ~40 unrelated call sites. Net struct-literal breakage was a single enumerated site (`planner_pathology_harness/mod.rs`), which was updated.
+- The ticket's `--check-docs` flag does not exist on `profile_docs.py` (only `--write`); docs regenerated via `--write` and confirmed consistent.
+- Resolver unit coverage: the authoritative resolver has a direct assertion (`duration_expr_resolves_consumable_and_metabolism_driven_ticks` extended for both new kinds). The `belief_view.rs` resolver is the identical 4-line mirror; it has no dedicated unit test (the existing test stub is a unit struct returning `None` for every profile, so a focused test would require a full `GoalBeliefView` mock) and is instead exercised end-to-end by the planner duration-estimate path in the S176SANFACDEG-005/008 goldens.
+
+**Verification**: `cargo test -p worldwake-core needs`, `cargo test -p worldwake-sim action_semantics`, and full `cargo test --workspace` all pass (no failures). All 24 inline-`metabolism_profile` scenarios continue to deserialize (serde defaults hold).

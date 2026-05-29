@@ -164,6 +164,12 @@ pub struct MetabolismProfile {
     pub toilet_ticks: NonZeroU32,
     /// Duration in ticks to complete a washing action.
     pub wash_ticks: NonZeroU32,
+    /// Duration in ticks to complete a wash-basin cleaning action.
+    #[serde(default = "default_clean_basin_duration_ticks")]
+    pub clean_basin_duration_ticks: NonZeroU32,
+    /// Duration in ticks to complete a latrine-emptying action.
+    #[serde(default = "default_empty_latrine_duration_ticks")]
+    pub empty_latrine_duration_ticks: NonZeroU32,
     /// Minimum duration in ticks for a sleep episode.
     #[serde(default = "default_min_sleep_ticks")]
     pub min_sleep_ticks: NonZeroU32,
@@ -227,6 +233,8 @@ impl MetabolismProfile {
             bladder_accident_tolerance_ticks,
             toilet_ticks,
             wash_ticks,
+            clean_basin_duration_ticks: default_clean_basin_duration_ticks(),
+            empty_latrine_duration_ticks: default_empty_latrine_duration_ticks(),
             min_sleep_ticks,
             rough_sleep_recovery_floor: default_rough_sleep_recovery_floor(),
             travel_fatigue_multiplier,
@@ -241,6 +249,14 @@ impl Component for MetabolismProfile {}
 
 fn default_min_sleep_ticks() -> NonZeroU32 {
     nz(8)
+}
+
+const fn default_clean_basin_duration_ticks() -> NonZeroU32 {
+    nz(10)
+}
+
+const fn default_empty_latrine_duration_ticks() -> NonZeroU32 {
+    nz(16)
 }
 
 const fn default_rough_sleep_recovery_floor() -> Permille {
@@ -262,6 +278,8 @@ impl Default for MetabolismProfile {
             bladder_accident_tolerance_ticks: nz(40),
             toilet_ticks: nz(8),
             wash_ticks: nz(12),
+            clean_basin_duration_ticks: default_clean_basin_duration_ticks(),
+            empty_latrine_duration_ticks: default_empty_latrine_duration_ticks(),
             min_sleep_ticks: default_min_sleep_ticks(),
             rough_sleep_recovery_floor: default_rough_sleep_recovery_floor(),
             travel_fatigue_multiplier: pm(0),
@@ -457,6 +475,10 @@ mod tests {
         assert_eq!(profile.bladder_accident_tolerance_ticks, nz(130));
         assert_eq!(profile.toilet_ticks, nz(14));
         assert_eq!(profile.wash_ticks, nz(16));
+        // Cleaning durations follow the `rough_sleep_recovery_floor` precedent:
+        // not in the `new()` signature, so `new()` seeds them from defaults.
+        assert_eq!(profile.clean_basin_duration_ticks, nz(10));
+        assert_eq!(profile.empty_latrine_duration_ticks, nz(16));
         assert_eq!(profile.min_sleep_ticks, nz(18));
         assert_eq!(profile.rough_sleep_recovery_floor, pm(300));
         assert_eq!(profile.travel_fatigue_multiplier, pm(200));
@@ -485,6 +507,8 @@ mod tests {
         assert!(profile.bladder_accident_tolerance_ticks.get() > 0);
         assert!(profile.toilet_ticks.get() > 0);
         assert!(profile.wash_ticks.get() > 0);
+        assert_eq!(profile.clean_basin_duration_ticks, nz(10));
+        assert_eq!(profile.empty_latrine_duration_ticks, nz(16));
         assert_eq!(profile.min_sleep_ticks, nz(8));
         assert_eq!(profile.rough_sleep_recovery_floor, pm(300));
     }
@@ -517,6 +541,42 @@ mod tests {
 
         assert_eq!(profile.min_sleep_ticks, nz(8));
         assert_eq!(profile.rough_sleep_recovery_floor, pm(300));
+        // The 24 inline `metabolism_profile` scenarios omit the cleaning
+        // durations; serde defaults must hold so they deserialize unchanged.
+        assert_eq!(profile.clean_basin_duration_ticks, nz(10));
+        assert_eq!(profile.empty_latrine_duration_ticks, nz(16));
+    }
+
+    #[test]
+    fn metabolism_profile_ron_accepts_explicit_cleaning_durations() {
+        let ron = r"(
+            hunger_rate: 2,
+            thirst_rate: 3,
+            fatigue_rate: 4,
+            bladder_rate: 5,
+            dirtiness_rate: 6,
+            rest_efficiency: 20,
+            starvation_tolerance_ticks: 480,
+            dehydration_tolerance_ticks: 240,
+            exhaustion_collapse_ticks: 120,
+            bladder_accident_tolerance_ticks: 40,
+            toilet_ticks: 8,
+            wash_ticks: 12,
+            clean_basin_duration_ticks: 25,
+            empty_latrine_duration_ticks: 30,
+            travel_fatigue_multiplier: 0,
+            travel_thirst_multiplier: 0,
+            travel_bladder_multiplier: 0,
+            wilderness_relief_dirtiness_penalty: 0,
+        )";
+
+        let profile: MetabolismProfile = ron::Options::default()
+            .with_default_extension(ron::extensions::Extensions::UNWRAP_NEWTYPES)
+            .from_str(ron)
+            .unwrap();
+
+        assert_eq!(profile.clean_basin_duration_ticks, nz(25));
+        assert_eq!(profile.empty_latrine_duration_ticks, nz(30));
     }
 
     #[test]
