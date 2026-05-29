@@ -1,6 +1,6 @@
 # S176SANFACDEG-007: Observer basin/latrine condition display
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: None (observer/CLI only)
@@ -65,3 +65,15 @@ Extend the observer place summary to surface basin `dirtiness_level` / `clean_wa
 1. `cargo test -p worldwake-cli observer`
 2. `cargo test -p worldwake-cli`
 3. `scripts/verify.sh`
+
+## Outcome
+
+**Completion date**: 2026-05-29
+
+**What changed**:
+- Extended the observer's place summary (`format_local_survival_state_summary`) to append `basin_dirt=<dirtiness>, basin_water=<clean>/<max>` for a co-located wash basin and `latrine_fill=<fill>` for a co-located latrine, via a new `colocated_wash_basin_state` helper. Condition is appended only when the facility is present, so places/scenarios without them are unchanged (no golden-fixture churn).
+- New focused observer test: condition surfaces for a co-located basin+latrine; a place with neither shows no condition.
+
+**FND-14A note**: the summary's `place` is always the agent's own co-located place (captured from `effective_place`), so reading the basin/latrine condition from the world here is a lawful same-tick co-located physical observation — equivalent to the belief-view co-located read, never a remote authoritative read. No engine/simulation change (`Engine Changes: None` holds).
+
+**Verification**: `cargo test -p worldwake-cli` (incl. the new test, no failures) and `cargo clippy -p worldwake-cli --all-targets -- -D warnings` clean (converted `push_str(&format!())` to `write!`).
