@@ -182,6 +182,7 @@ fn orchard_source(h: &mut GoldenHarness, place: EntityId, quantity: u32) -> Enti
             last_regeneration_tick: None,
             extraction_slots: NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: NonZeroU32::new(3).unwrap(),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     )
@@ -206,6 +207,7 @@ fn place_wash_basin(h: &mut GoldenHarness) -> EntityId {
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(50),
             max_effective_dirtiness: pm(1000),
+            ..WashBasinState::default()
         },
     )
     .unwrap();
@@ -228,6 +230,8 @@ fn record(
         wait_observation_count,
         last_observed_capacity,
         last_observed_capacity_tick,
+        last_observed_quality: None,
+        last_observed_quality_tick: Tick(0),
     }
 }
 
@@ -584,6 +588,7 @@ fn no_record_neutrality_falls_through_to_lower_tiebreakers() {
         assert_eq!(rank.trust_factor_permille, 1000);
         assert_eq!(rank.wait_factor_permille, 1000);
         assert_eq!(rank.capacity_factor_permille, 1000);
+        assert_eq!(rank.quality_factor_permille, 1000);
         assert_eq!(rank.composite_permille, 1000);
     }
     assert_ne!(

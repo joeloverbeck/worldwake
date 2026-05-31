@@ -79,6 +79,7 @@ fn place_well(h: &mut GoldenHarness) -> EntityId {
             last_regeneration_tick: None,
             extraction_slots: NonZeroU8::new(WELL_CAPACITY as u8).unwrap(),
             extraction_duration_ticks: NonZeroU32::new(3).unwrap(),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     )

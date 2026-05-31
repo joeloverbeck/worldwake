@@ -414,6 +414,7 @@ fn spawn_entities(
         if facility_def.workstation == worldwake_core::WorkstationTag::WashBasin {
             let basin_state: WashBasinState = facility_def
                 .wash_basin_state
+                .clone()
                 .map(Into::into)
                 .unwrap_or_default();
             txn.set_component_wash_basin_state(facility_id, basin_state)?;
@@ -504,6 +505,7 @@ fn spawn_entities(
                 extraction_slots,
                 extraction_duration_ticks: NonZeroU32::new(source_def.extraction_duration_ticks)
                     .unwrap_or(NonZeroU32::MIN),
+                quality: source_def.quality,
             },
         )?;
         txn.set_component_resource_extraction_queues(
@@ -977,6 +979,11 @@ fn spawn_agent(
     txn.set_component_drive_escalation_profile(agent_id, drive_escalation_profile)?;
     let metabolism = agent_def.metabolism_profile.unwrap_or_default();
     txn.set_component_metabolism_profile(agent_id, metabolism)?;
+    let water_tolerance = agent_def
+        .water_tolerance_profile
+        .clone()
+        .unwrap_or_default();
+    txn.set_component_water_tolerance_profile(agent_id, water_tolerance)?;
     if let Some(profile) = agent_def.disposal_profile {
         txn.set_component_disposal_profile(agent_id, profile)?;
     }
@@ -1950,7 +1957,8 @@ mod tests {
         PursuitProfile, Quantity, RiskWeightProfile, RoutePreferenceProfile, ShelterTag,
         SleepQualityProfile, SleepRecoveryModifier, SubstitutePreferences, TellProfile,
         TestimonyTrustProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
-        ViolationDispositionProfile, WashBasinState, WorkstationTag, default_commodity_decay_map,
+        ViolationDispositionProfile, WashBasinState, WaterQuality, WaterToleranceProfile,
+        WorkstationTag, default_commodity_decay_map,
     };
     use worldwake_core::{CognitiveArchetypeComponent, EventTag, EventView};
     use worldwake_sim::{BeliefRead, BelievedAuthorityView, PerAgentBeliefView};
@@ -1986,6 +1994,7 @@ mod tests {
             drive_thresholds: None,
             drive_escalation_profile: None,
             metabolism_profile: None,
+            water_tolerance_profile: None,
             disposal_profile: None,
             exploration_profile: None,
             diversification_profile: None,
@@ -2234,6 +2243,75 @@ mod tests {
             world.get_component_survey_memory(agent_id),
             Some(&SurveyMemory::default())
         );
+        assert_eq!(
+            world.get_component_water_tolerance_profile(agent_id),
+            Some(&WaterToleranceProfile::default())
+        );
+    }
+
+    #[test]
+    fn spawn_agent_applies_authored_water_tolerance_override() {
+        let profile = WaterToleranceProfile {
+            thirst_relief_factor: BTreeMap::from([(
+                WaterQuality::Muddy,
+                Permille::new(275).unwrap(),
+            )]),
+            dirtiness_penalty: BTreeMap::from([(WaterQuality::Muddy, Permille::new(325).unwrap())]),
+        };
+        let mut def = minimal_def();
+        def.agents[0].water_tolerance_profile = Some(profile.clone());
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent_id = world.entities_with_name_and_agent_data().next().unwrap();
+
+        assert_eq!(
+            world.get_component_water_tolerance_profile(agent_id),
+            Some(&profile)
+        );
+    }
+
+    #[test]
+    fn spawn_agent_parses_ron_water_tolerance_override() {
+        let def = def_from_ron_str(
+            r#"(
+                seed: 42,
+                places: [
+                    (name: "Village", tags: [Village]),
+                ],
+                agents: [
+                    (
+                        name: "Alice",
+                        location: "Village",
+                        control: Ai,
+                        water_tolerance_profile: Some((
+                            thirst_relief_factor: {
+                                Muddy: 275,
+                            },
+                            dirtiness_penalty: {
+                                Muddy: 325,
+                            },
+                        )),
+                    ),
+                ],
+            )"#,
+        );
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent_id = world.entities_with_name_and_agent_data().next().unwrap();
+        let profile = world
+            .get_component_water_tolerance_profile(agent_id)
+            .expect("authored water tolerance profile should be set");
+
+        assert_eq!(
+            profile.thirst_relief_factor(WaterQuality::Muddy),
+            Permille::new(275).unwrap()
+        );
+        assert_eq!(
+            profile.dirtiness_penalty(WaterQuality::Muddy),
+            Permille::new(325).unwrap()
+        );
     }
 
     #[test]
@@ -2405,6 +2483,7 @@ mod tests {
                 dirtiness_per_use: Permille::new(75).unwrap(),
                 // Unauthored in the RON above: defaults to full scale.
                 max_effective_dirtiness: Permille::new(1000).unwrap(),
+                dirty_water_refill_penalty: WashBasinState::default().dirty_water_refill_penalty,
             })
         );
     }
@@ -3622,6 +3701,7 @@ mod tests {
                 capacity: Quantity(20),
                 extraction_slots: 1,
                 extraction_duration_ticks: 1,
+                quality: None,
             }],
             hostilities: vec![],
             commodity_decay: None,
@@ -3769,6 +3849,7 @@ mod tests {
                 capacity: Quantity(20),
                 extraction_slots: 1,
                 extraction_duration_ticks: 1,
+                quality: None,
             }],
             hostilities: vec![],
             commodity_decay: None,
@@ -3847,6 +3928,7 @@ mod tests {
                 capacity: Quantity(15),
                 extraction_slots: 1,
                 extraction_duration_ticks: 1,
+                quality: None,
             }],
             hostilities: vec![],
             commodity_decay: None,
@@ -5423,6 +5505,7 @@ mod tests {
             capacity: Quantity(20),
             extraction_slots: 1,
             extraction_duration_ticks: 1,
+            quality: None,
         }];
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -5446,6 +5529,7 @@ mod tests {
             capacity: Quantity(40),
             extraction_slots: 5,
             extraction_duration_ticks: 4,
+            quality: Some(worldwake_core::WaterQuality::Stale),
         }];
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -5456,6 +5540,7 @@ mod tests {
             .expect("resource source should be spawned");
         assert_eq!(source.extraction_slots.get(), 5);
         assert_eq!(source.extraction_duration_ticks.get(), 4);
+        assert_eq!(source.quality, Some(worldwake_core::WaterQuality::Stale));
     }
 
     #[test]
@@ -5469,6 +5554,7 @@ mod tests {
             capacity: Quantity(40),
             extraction_slots: 5,
             extraction_duration_ticks: 4,
+            quality: None,
         }];
 
         let spawned = spawn_scenario(&def).unwrap();

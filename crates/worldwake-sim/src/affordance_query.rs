@@ -1055,7 +1055,7 @@ mod tests {
         }
 
         fn wash_basin_state(&self, entity: EntityId) -> Option<WashBasinState> {
-            self.wash_basin_states.get(&entity).copied()
+            self.wash_basin_states.get(&entity).cloned()
         }
 
         fn latrine_fullness(&self, place: EntityId) -> Option<worldwake_core::LatrineFullness> {

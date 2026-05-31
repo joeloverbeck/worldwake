@@ -1854,6 +1854,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
 
@@ -1929,6 +1930,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
         connect(&mut view, place_a, place_b, 3);
@@ -2217,6 +2219,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
         register_workstation(&mut view, mill, mill_place, WorkstationTag::Mill);
@@ -2447,6 +2450,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
         connect(&mut view, place_a, place_b, 7);
@@ -2510,6 +2514,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
         view.kinds.insert(local_lot, EntityKind::ItemLot);
@@ -2580,6 +2585,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
         register_facility(
@@ -2594,6 +2600,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
         connect(&mut view, place_a, place_b, 5);

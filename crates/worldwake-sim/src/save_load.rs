@@ -3,8 +3,8 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-/// S174SHESLESUR-001 stores rest-site components and structured sleep wake causes.
-pub const SAVE_FORMAT_VERSION: u32 = 110;
+/// S177WATSRCQUA-006 stores basin dirty-water refill penalties.
+pub const SAVE_FORMAT_VERSION: u32 = 115;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -220,14 +220,16 @@ mod tests {
         PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
         PursuitInvalidationReasonTag, Quantity, RankedGoalComparisonDimensionTag, RecordRef,
         RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
-        ReplanTriggeredPayload, ReservationId, RestCapacity, RestOccupancy, RewardEncumbrance,
-        RiskWeightProfile, RoutePreferenceProfile, RoutePreferenceSummary, RouteSegment, Seed,
-        SelfCareOccupancy, SelfCareUseKind, ShelterTag, SleepEpisode, SleepEpisodeEndedPayload,
-        SleepEpisodeStartedPayload, SleepFailureCause, SleepQualityProfile, SleepRecoveryModifier,
-        StateHash, SuspensionReason, TestimonyTrustProfile, TestimonyTrustSummary, Tick, TickRange,
-        TopicScope, UniqueItemKind, UtilityProfile, VisibilitySpec, WakeCondition, WakeReason,
-        WashBasinState, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
+        ReplanTriggeredPayload, ReservationId, ResourceSourceQualityObservedPayload, RestCapacity,
+        RestOccupancy, RewardEncumbrance, RiskWeightProfile, RoutePreferenceProfile,
+        RoutePreferenceSummary, RouteSegment, Seed, SelfCareOccupancy, SelfCareUseKind, ShelterTag,
+        SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepFailureCause,
+        SleepQualityProfile, SleepRecoveryModifier, SourceKeyPayload, StateHash, SuspensionReason,
+        TestimonyTrustProfile, TestimonyTrustSummary, Tick, TickRange, TopicScope, UniqueItemKind,
+        UtilityProfile, VisibilitySpec, WakeCondition, WakeReason, WashBasinState,
+        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WaterQuality,
+        WaterToleranceProfile, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -354,6 +356,19 @@ mod tests {
                     ..MetabolismProfile::default()
                 },
             )
+            .unwrap();
+        let water_tolerance = WaterToleranceProfile {
+            thirst_relief_factor: std::collections::BTreeMap::from([(
+                WaterQuality::Muddy,
+                worldwake_core::Permille::new_unchecked(325),
+            )]),
+            dirtiness_penalty: std::collections::BTreeMap::from([(
+                WaterQuality::Muddy,
+                worldwake_core::Permille::new_unchecked(275),
+            )]),
+        };
+        profile_txn
+            .set_component_water_tolerance_profile(actor, water_tolerance)
             .unwrap();
         profile_txn
             .set_component_risk_weight_profile(
@@ -525,6 +540,7 @@ mod tests {
                     dirtiness_level: worldwake_core::Permille::new(250).unwrap(),
                     dirtiness_per_use: worldwake_core::Permille::new(60).unwrap(),
                     max_effective_dirtiness: worldwake_core::Permille::new(900).unwrap(),
+                    ..WashBasinState::default()
                 },
             )
             .unwrap();
@@ -1387,6 +1403,20 @@ mod tests {
                     }],
                 }),
             ),
+            (
+                EventTag::ResourceSourceQualityObserved,
+                DecisionEventPayload::ResourceSourceQualityObserved(
+                    ResourceSourceQualityObservedPayload {
+                        observer: actor,
+                        source: SourceKeyPayload {
+                            entity: target,
+                            commodity: CommodityKind::Water,
+                        },
+                        quality: WaterQuality::Muddy,
+                        observed_at_tick: Tick(37),
+                    },
+                ),
+            ),
         ]
     }
 
@@ -1401,8 +1431,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_110_after_metabolism_cleaning_durations() {
-        assert_eq!(SAVE_FORMAT_VERSION, 110);
+    fn save_format_version_is_115_after_basin_dirty_water_refill_penalty() {
+        assert_eq!(SAVE_FORMAT_VERSION, 115);
     }
 
     #[test]
@@ -1413,7 +1443,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 110);
+        assert_eq!(SAVE_FORMAT_VERSION, 115);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1590,6 +1620,18 @@ mod tests {
                 .unwrap()
                 .min_sleep_ticks,
             NonZeroU32::new(11).unwrap()
+        );
+        let restored_water_tolerance = restored
+            .world()
+            .get_component_water_tolerance_profile(actor)
+            .expect("water tolerance profile should roundtrip");
+        assert_eq!(
+            restored_water_tolerance.thirst_relief_factor(WaterQuality::Muddy),
+            worldwake_core::Permille::new_unchecked(325)
+        );
+        assert_eq!(
+            restored_water_tolerance.dirtiness_penalty(WaterQuality::Muddy),
+            worldwake_core::Permille::new_unchecked(275)
         );
         let restored_sleep_place = state.world().topology().place_ids().next().unwrap();
         assert_eq!(
@@ -1800,6 +1842,11 @@ mod tests {
             .chain(state.event_log().events_by_tag(EventTag::RepairApplied))
             .chain(state.event_log().events_by_tag(EventTag::ReplanTriggered))
             .chain(state.event_log().events_by_tag(EventTag::BlockerRecorded))
+            .chain(
+                state
+                    .event_log()
+                    .events_by_tag(EventTag::ResourceSourceQualityObserved),
+            )
             .map(|event_id| {
                 state
                     .event_log()
@@ -1855,6 +1902,11 @@ mod tests {
                 restored
                     .event_log()
                     .events_by_tag(EventTag::BlockerRecorded),
+            )
+            .chain(
+                restored
+                    .event_log()
+                    .events_by_tag(EventTag::ResourceSourceQualityObserved),
             )
             .map(|event_id| {
                 restored

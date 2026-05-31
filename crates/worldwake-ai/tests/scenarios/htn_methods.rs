@@ -139,6 +139,7 @@ fn setup_htn_production_harness(
             last_regeneration_tick: None,
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: nz(1),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     );

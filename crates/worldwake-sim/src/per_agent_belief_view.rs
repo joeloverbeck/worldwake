@@ -26,8 +26,8 @@ use worldwake_core::{
     RouteExperience, RoutePreferenceProfile, SleepQualityProfile, SocialObservation,
     SourceReliability, StockStoragePolicy, SubstitutePreferences, SurveyMemory, TellMemoryKey,
     TellProfile, TellTopic, TestimonyTrustProfile, Tick, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, UtilityProfile, WashBasinState, WorkstationTag, World,
-    Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
+    TradeDispositionProfile, UniqueItemKind, UtilityProfile, WashBasinState, WaterToleranceProfile,
+    WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -755,6 +755,16 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
+    fn water_tolerance_profile(&self, agent: EntityId) -> Option<WaterToleranceProfile> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_water_tolerance_profile(agent)
+                    .cloned()
+            })
+            .flatten()
+    }
+
     fn testimony_trust_profile(&self, agent: EntityId) -> Option<TestimonyTrustProfile> {
         (agent == self.agent)
             .then(|| {
@@ -830,7 +840,7 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
             return self
                 .world
                 .get_component_wash_basin_state(basin)
-                .copied()
+                .cloned()
                 .unwrap_or_default();
         }
         // FND-14A: physical state requires co-location to observe; off-place
@@ -838,7 +848,7 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
         // (`BelievedEntityState::wash_basin_state`) rather than reading
         // authoritative state for a non-co-located entity.
         self.believed_entity(basin)
-            .and_then(|state| state.wash_basin_state)
+            .and_then(|state| state.wash_basin_state.clone())
             .unwrap_or_default()
     }
 
@@ -2247,14 +2257,14 @@ impl FacilityBeliefView for PerAgentBeliefView<'_> {
 
     fn wash_basin_state(&self, entity: EntityId) -> Option<WashBasinState> {
         if entity == self.agent || self.has_authoritative_local_visibility(entity) {
-            return self.world.get_component_wash_basin_state(entity).copied();
+            return self.world.get_component_wash_basin_state(entity).cloned();
         }
         // FND-14A: off-place reads consult the most recent stored belief
         // about the basin's state. The authoritative wash precondition
         // re-validates live state at action time, so stale beliefs trigger
         // replan rather than commit-against-stale-state.
         self.believed_entity(entity)
-            .and_then(|state| state.wash_basin_state)
+            .and_then(|state| state.wash_basin_state.clone())
     }
 
     fn latrine_fullness(&self, place: EntityId) -> Option<LatrineFullness> {
@@ -2407,8 +2417,9 @@ mod tests {
         RestCapacity, RestOccupancy, RightKind, RiskWeightProfile, RouteExperience,
         SelfCareOccupancy, SelfCareUseKind, StockStoragePolicy, SuccessionLaw, TellMemoryKey,
         TellTopic, Tick, TickRange, ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId,
-        UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-        WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state, build_prototype_world,
+        UtilityProfile, VisibilitySpec, WaterToleranceProfile, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state,
+        build_prototype_world,
         test_utils::{
             sample_blocker_memory, sample_commodity_valuation_profile, sample_discrepancy_memory,
             sample_learned_opportunity_memory, sample_preference_profile, sample_repair_memory,
@@ -4011,6 +4022,41 @@ mod tests {
     }
 
     #[test]
+    fn water_tolerance_profile_belief_view_returns_self_authoritative() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let profile = WaterToleranceProfile::default();
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Briar", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            txn.set_component_water_tolerance_profile(agent, profile.clone())
+                .unwrap();
+            commit_txn(txn);
+            (agent, other)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            ProfileBeliefView::water_tolerance_profile(&view, agent),
+            Some(profile.clone())
+        );
+        assert_eq!(
+            GoalBeliefView::water_tolerance_profile(&view, agent),
+            Some(profile)
+        );
+        assert_eq!(
+            ProfileBeliefView::water_tolerance_profile(&view, other),
+            None
+        );
+        assert_eq!(GoalBeliefView::water_tolerance_profile(&view, other), None);
+    }
+
+    #[test]
     fn artifact_posting_profile_returns_actor_profile_when_present() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
@@ -4567,6 +4613,7 @@ mod tests {
                     last_regeneration_tick: None,
                     extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                     extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                    quality: None,
                 },
             )
             .unwrap();
@@ -4634,6 +4681,7 @@ mod tests {
                     last_regeneration_tick: None,
                     extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                     extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                    quality: None,
                 },
             )
             .unwrap();
@@ -4667,6 +4715,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             }),
             "belief-side facility/resource knowledge should remain stale until refreshed"
         );
@@ -7077,6 +7126,7 @@ mod tests {
                     last_regeneration_tick: None,
                     extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                     extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                    quality: None,
                 },
             )
             .unwrap();
@@ -7090,6 +7140,7 @@ mod tests {
                     last_regeneration_tick: None,
                     extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                     extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                    quality: None,
                 },
             )
             .unwrap();

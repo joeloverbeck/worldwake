@@ -4136,7 +4136,7 @@ mod tests {
         }
 
         fn wash_basin_state(&self, entity: EntityId) -> Option<WashBasinState> {
-            self.wash_basin_states.get(&entity).copied()
+            self.wash_basin_states.get(&entity).cloned()
         }
 
         fn has_production_job(&self, _entity: EntityId) -> bool {
@@ -6907,6 +6907,7 @@ mod tests {
                         last_regeneration_tick: None,
                         extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                         extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                        quality: None,
                     }),
                 ),
             )],
@@ -7089,6 +7090,7 @@ mod tests {
                         last_regeneration_tick: None,
                         extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                         extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                        quality: None,
                     }),
                 ),
             )],
@@ -8007,6 +8009,7 @@ mod tests {
                         last_regeneration_tick: None,
                         extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                         extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                        quality: None,
                     }),
                 ),
             )],
@@ -8099,6 +8102,7 @@ mod tests {
                         last_regeneration_tick: None,
                         extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                         extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                        quality: None,
                     }),
                 ),
             )],

@@ -124,6 +124,8 @@ pub mod valuation;
 pub mod verification;
 pub mod violation;
 pub mod visibility;
+pub mod water_quality;
+pub mod water_tolerance_profile;
 pub mod witness;
 pub mod world;
 pub mod world_txn;
@@ -201,11 +203,11 @@ pub use decision_event_payload::{
     OpportunityExpectationKindTag, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
     PlanInvalidationReason, PursuitInvalidationReasonTag, RankedGoalComparisonDimensionTag,
     RecordRef, RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
-    ReplanTriggeredPayload, RoutePreferenceSummary, SleepEpisodeEndedPayload,
-    SleepEpisodeStartedPayload, SleepFailureCause, SourceAttributionOutcomeTag,
-    SourceExpectationFailurePayload, SourceKeyPayload, SurveyRecordedPayload,
-    TestimonyTrustSummary, VerificationProviderKind, WakeReason, WashFacilityUsedPayload,
-    WasteCreatedPayload, WasteSource,
+    ReplanTriggeredPayload, ResourceSourceQualityObservedPayload, RoutePreferenceSummary,
+    SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepFailureCause,
+    SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKeyPayload,
+    SurveyRecordedPayload, TestimonyTrustSummary, VerificationProviderKind, WakeReason,
+    WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
 };
 pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,
@@ -285,7 +287,7 @@ pub use motive_source_slot_map::slot_for as motive_source_slot_for;
 pub use needs::{
     BodyCostPerTick, DeprivationExposure, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile,
 };
-pub use numerics::{BackoffScalePermille, LoadUnits, Permille, Quantity};
+pub use numerics::{BackoffScalePermille, LoadUnits, Permille, Quantity, scale_permille};
 pub use obligation::{ObligationExecutionTracker, ObligationSatiationProfile};
 pub use observation_context::{ObservationContext, PlaceVisibilityProfile};
 pub use offices::{
@@ -353,6 +355,8 @@ pub use violation::{
     RecordedViolation, ViolationDispositionProfile, ViolationId, ViolationKind, ViolationMemory,
 };
 pub use visibility::VisibilitySpec;
+pub use water_quality::WaterQuality;
+pub use water_tolerance_profile::WaterToleranceProfile;
 pub use witness::WitnessData;
 pub use world::World;
 pub use world::lifecycle::{

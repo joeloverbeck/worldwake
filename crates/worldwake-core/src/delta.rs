@@ -26,7 +26,8 @@ use crate::{
     StockAssignment, StockStoragePolicy, SubstitutePreferences, SurveyMemory, TellProfile,
     TestimonyTrustProfile, TheftDispositionProfile, TradeDispositionProfile, UniqueItem,
     UtilityProfile, ViolationDispositionProfile, ViolationMemory, WashBasinState,
-    WorkstationMarker, WoundList, component_schema::with_component_schema_entries,
+    WaterToleranceProfile, WorkstationMarker, WoundList,
+    component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 
@@ -306,7 +307,7 @@ mod tests {
         StockStoragePolicy, SurveyMemory, SurveyRecord, TellProfile, TestimonyTrustProfile,
         TheftDispositionProfile, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind,
         ViolationDispositionProfile, ViolationMemory, WakeCondition, WashBasinState,
-        WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
+        WaterToleranceProfile, WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
         test_utils::{
             sample_blocker_memory, sample_commodity_valuation_profile,
             sample_contention_disposition_profile, sample_demand_memory, sample_discrepancy_memory,
@@ -729,6 +730,7 @@ mod tests {
                 dirtiness_critical_ticks: 5,
             }),
             ComponentValue::MetabolismProfile(MetabolismProfile::default()),
+            ComponentValue::WaterToleranceProfile(WaterToleranceProfile::default()),
             ComponentValue::CarryCapacity(CarryCapacity(LoadUnits(14))),
             ComponentValue::KnownRecipes(KnownRecipes::with([
                 crate::RecipeId(2),
@@ -747,6 +749,7 @@ mod tests {
                 last_regeneration_tick: Some(Tick(12)),
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             }),
             ComponentValue::LastHarvestTrace(LastHarvestTrace {
                 entries: vec![crate::HarvestTraceEntry {
@@ -810,6 +813,7 @@ mod tests {
                 dirtiness_level: Permille::new(250).unwrap(),
                 dirtiness_per_use: Permille::new(50).unwrap(),
                 max_effective_dirtiness: Permille::new(900).unwrap(),
+                ..WashBasinState::default()
             }),
             ComponentValue::BanditFactionPolicy(BanditFactionPolicy {
                 min_regroup_count: 3,
@@ -906,6 +910,7 @@ mod tests {
                     related_lot: Some(entity(9)),
                     amount: Quantity(4),
                 }],
+                quality: None,
             }),
             ComponentValue::UniqueItem(UniqueItem {
                 kind: UniqueItemKind::Artifact,
@@ -1081,6 +1086,7 @@ mod tests {
                 ComponentKind::HomeostaticNeeds,
                 ComponentKind::DeprivationExposure,
                 ComponentKind::MetabolismProfile,
+                ComponentKind::WaterToleranceProfile,
                 ComponentKind::CarryCapacity,
                 ComponentKind::KnownRecipes,
                 ComponentKind::DemandMemory,

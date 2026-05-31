@@ -46,7 +46,7 @@ Scenarios: 9
 
 ### Scenario 365: Latrine Overflow Creates Waste And Place Dirtiness
 
-- Source: `place_dirtiness.rs:369`
+- Source: `place_dirtiness.rs:371`
 - Primary tests: `latrine_overflow_creates_waste_at_place_and_increments_place_dirtiness`
 - Replay tests: None
 - All tests: `latrine_overflow_creates_waste_at_place_and_increments_place_dirtiness`
@@ -59,7 +59,7 @@ Scenarios: 9
 
 ### Scenario 366: Basin Natural Refill Draws From Co-Located Water
 
-- Source: `place_dirtiness.rs:440`
+- Source: `place_dirtiness.rs:442`
 - Primary tests: `basin_natural_refill_from_colocated_water_source`
 - Replay tests: None
 - All tests: `basin_natural_refill_from_colocated_water_source`
@@ -72,7 +72,7 @@ Scenarios: 9
 
 ### Scenario 367: AI Selects Non-Empty Basin After Empty Basin Is Unusable
 
-- Source: `place_dirtiness.rs:497`
+- Source: `place_dirtiness.rs:501`
 - Primary tests: `wash_ai_selects_non_empty_basin_when_other_basin_is_empty`
 - Replay tests: None
 - All tests: `wash_ai_selects_non_empty_basin_when_other_basin_is_empty`
@@ -85,7 +85,7 @@ Scenarios: 9
 
 ### Scenario 367A: Wash Re-emerges After First Cycle Relief
 
-- Source: `place_dirtiness.rs:589`
+- Source: `place_dirtiness.rs:595`
 - Primary tests: `wash_re_emerges_after_first_cycle_drops_dirtiness_below_critical`
 - Replay tests: None
 - All tests: `wash_re_emerges_after_first_cycle_drops_dirtiness_below_critical`
@@ -98,7 +98,7 @@ Scenarios: 9
 
 ### Scenario 368: Place Dirtiness Saturates With Zero Decay
 
-- Source: `place_dirtiness.rs:688`
+- Source: `place_dirtiness.rs:695`
 - Primary tests: `place_dirtiness_saturates_with_zero_decay`
 - Replay tests: None
 - All tests: `place_dirtiness_saturates_with_zero_decay`
@@ -111,7 +111,7 @@ Scenarios: 9
 
 ### Scenario 369: Wash Basin Plateaus At Zero With Zero Refill
 
-- Source: `place_dirtiness.rs:733`
+- Source: `place_dirtiness.rs:740`
 - Primary tests: `wash_basin_plateaus_at_zero_with_zero_refill`
 - Replay tests: None
 - All tests: `wash_basin_plateaus_at_zero_with_zero_refill`

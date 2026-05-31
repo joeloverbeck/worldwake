@@ -1,6 +1,8 @@
 //! Shared production and transport schema used by core components and sim registries.
 
-use crate::{CommodityKind, Component, EntityId, LoadUnits, Quantity, Tick, TravelEdgeId};
+use crate::{
+    CommodityKind, Component, EntityId, LoadUnits, Quantity, Tick, TravelEdgeId, WaterQuality,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::num::{NonZeroU8, NonZeroU32};
@@ -80,6 +82,8 @@ pub struct ResourceSource {
     pub last_regeneration_tick: Option<Tick>,
     pub extraction_slots: NonZeroU8,
     pub extraction_duration_ticks: NonZeroU32,
+    #[serde(default)]
+    pub quality: Option<WaterQuality>,
 }
 
 impl Component for ResourceSource {}
@@ -179,7 +183,9 @@ mod tests {
         LastHarvestTrace, ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
         RecipeId, ResourceSource, WorkstationMarker, WorkstationTag,
     };
-    use crate::{CommodityKind, Component, EntityId, LoadUnits, Quantity, Tick, TravelEdgeId};
+    use crate::{
+        CommodityKind, Component, EntityId, LoadUnits, Quantity, Tick, TravelEdgeId, WaterQuality,
+    };
     use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeSet;
     use std::num::{NonZeroU8, NonZeroU32};
@@ -376,6 +382,7 @@ mod tests {
             last_regeneration_tick: None,
             extraction_slots: NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
+            quality: None,
         };
 
         let bytes = bincode::serialize(&source).unwrap();
@@ -394,6 +401,7 @@ mod tests {
             last_regeneration_tick: Some(Tick(44)),
             extraction_slots: NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
+            quality: None,
         };
 
         let bytes = bincode::serialize(&source).unwrap();
@@ -412,6 +420,7 @@ mod tests {
             last_regeneration_tick: Some(Tick(12)),
             extraction_slots: NonZeroU8::new(5).unwrap(),
             extraction_duration_ticks: NonZeroU32::new(8).unwrap(),
+            quality: Some(WaterQuality::Muddy),
         };
 
         let bytes = bincode::serialize(&source).unwrap();
@@ -420,6 +429,27 @@ mod tests {
         assert_eq!(roundtrip, source);
         assert_eq!(roundtrip.extraction_slots.get(), 5);
         assert_eq!(roundtrip.extraction_duration_ticks.get(), 8);
+        assert_eq!(roundtrip.quality, Some(WaterQuality::Muddy));
+    }
+
+    #[test]
+    fn resource_source_bincode_roundtrip_preserves_absent_quality() {
+        let source = ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(9),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+            extraction_slots: NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
+            quality: None,
+        };
+
+        let bytes = bincode::serialize(&source).unwrap();
+        let roundtrip: ResourceSource = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip.quality, None);
+        assert_eq!(roundtrip, source);
     }
 
     #[test]

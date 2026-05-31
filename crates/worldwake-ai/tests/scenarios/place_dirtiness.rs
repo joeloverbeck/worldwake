@@ -330,6 +330,7 @@ fn wash_partial_success_proportional_dirtiness_reduction() {
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(50),
             max_effective_dirtiness: pm(1000),
+            ..WashBasinState::default()
         },
     );
     let agent = seed_agent(
@@ -362,6 +363,7 @@ fn wash_partial_success_proportional_dirtiness_reduction() {
             dirtiness_level: pm(25),
             dirtiness_per_use: pm(50),
             max_effective_dirtiness: pm(1000),
+            ..WashBasinState::default()
         }
     );
 }
@@ -455,6 +457,7 @@ fn basin_natural_refill_from_colocated_water_source() {
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(50),
             max_effective_dirtiness: pm(1000),
+            ..WashBasinState::default()
         },
     );
     let source = place_workstation_with_source(
@@ -470,6 +473,7 @@ fn basin_natural_refill_from_colocated_water_source() {
             last_regeneration_tick: None,
             extraction_slots: NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     );
@@ -514,6 +518,7 @@ fn wash_ai_selects_non_empty_basin_when_other_basin_is_empty() {
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(50),
             max_effective_dirtiness: pm(1000),
+            ..WashBasinState::default()
         },
     );
     let usable = place_wash_basin(
@@ -527,6 +532,7 @@ fn wash_ai_selects_non_empty_basin_when_other_basin_is_empty() {
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(50),
             max_effective_dirtiness: pm(1000),
+            ..WashBasinState::default()
         },
     );
     let agent = seed_agent(
@@ -615,6 +621,7 @@ fn wash_re_emerges_after_first_cycle_drops_dirtiness_below_critical() {
             last_regeneration_tick: None,
             extraction_slots: NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     );
@@ -749,6 +756,7 @@ fn wash_basin_plateaus_at_zero_with_zero_refill() {
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(50),
             max_effective_dirtiness: pm(1000),
+            ..WashBasinState::default()
         },
     );
     let agent = seed_agent(

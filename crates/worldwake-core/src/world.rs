@@ -26,7 +26,8 @@ use crate::{
     StockStoragePolicy, SubstitutePreferences, SurveyMemory, TellProfile, TestimonyTrustProfile,
     TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
     UtilityProfile, ViolationDispositionProfile, ViolationMemory, WashBasinState,
-    WorkstationMarker, WorldError, WoundList, component_schema::with_component_schema_entries,
+    WaterToleranceProfile, WorkstationMarker, WorldError, WoundList,
+    component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -251,6 +252,10 @@ impl World {
                 entity,
                 DriveEscalationProfile::default(),
             )?;
+            world.insert_component_water_tolerance_profile(
+                entity,
+                WaterToleranceProfile::default(),
+            )?;
             Ok(())
         })
     }
@@ -285,6 +290,16 @@ impl World {
         quantity: Quantity,
         tick: Tick,
     ) -> Result<EntityId, WorldError> {
+        self.create_item_lot_with_quality(commodity, quantity, tick, None)
+    }
+
+    pub(crate) fn create_item_lot_with_quality(
+        &mut self,
+        commodity: CommodityKind,
+        quantity: Quantity,
+        tick: Tick,
+        quality: Option<crate::WaterQuality>,
+    ) -> Result<EntityId, WorldError> {
         self.create_item_lot_with_provenance(
             commodity,
             quantity,
@@ -296,6 +311,7 @@ impl World {
                 related_lot: None,
                 amount: quantity,
             }],
+            quality,
         )
     }
 
@@ -312,9 +328,9 @@ impl World {
             ));
         }
 
-        let (commodity, available) = {
+        let (commodity, available, quality) = {
             let lot = self.require_item_lot(lot_id)?;
-            (lot.commodity, lot.quantity)
+            (lot.commodity, lot.quantity, lot.quality)
         };
         let remaining = available
             .checked_sub(amount)
@@ -351,6 +367,7 @@ impl World {
                     amount,
                 },
             ],
+            quality,
         )?;
 
         {
@@ -615,6 +632,7 @@ impl World {
         quantity: Quantity,
         tick: Tick,
         provenance: Vec<ProvenanceEntry>,
+        quality: Option<crate::WaterQuality>,
     ) -> Result<EntityId, WorldError> {
         if quantity == Quantity(0) {
             return Err(WorldError::InvalidOperation(
@@ -629,6 +647,7 @@ impl World {
                     commodity,
                     quantity,
                     provenance,
+                    quality,
                 },
             )
         })
@@ -705,8 +724,8 @@ mod tests {
         ReservationRecord, ResourceSource, RightKind, RiskWeightProfile, RoutePreferenceProfile,
         SubstitutePreferences, SuccessionLaw, SurveyMemory, TellProfile, TestimonyTrustProfile,
         TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId,
-        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound,
-        WoundCause, WoundList, build_prototype_world,
+        UniqueItem, UniqueItemKind, WaterToleranceProfile, WorkstationMarker, WorkstationTag,
+        WorldError, Wound, WoundCause, WoundList, build_prototype_world,
         test_utils::{
             sample_blocker_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
@@ -985,6 +1004,7 @@ mod tests {
             last_regeneration_tick: Some(Tick(7)),
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         }
     }
 
@@ -1208,6 +1228,7 @@ mod tests {
                     related_lot: None,
                     amount: Quantity(6),
                 }],
+                quality: None,
             })
         );
         assert_eq!(
@@ -1388,6 +1409,10 @@ mod tests {
             world.get_component_disposal_profile(id),
             Some(&DisposalProfile::default())
         );
+        assert_eq!(
+            world.get_component_water_tolerance_profile(id),
+            Some(&WaterToleranceProfile::default())
+        );
     }
 
     #[test]
@@ -1457,6 +1482,7 @@ mod tests {
                     related_lot: None,
                     amount: Quantity(10),
                 }],
+                quality: None,
             })
         );
     }
@@ -4887,6 +4913,7 @@ mod tests {
                         related_lot: None,
                         amount: Quantity(2),
                     }],
+                    quality: None,
                 },
             )
             .unwrap_err();
@@ -5838,6 +5865,7 @@ mod tests {
                         related_lot: None,
                         amount: Quantity(5),
                     }],
+                    quality: None,
                 },
             )
             .unwrap_err();
@@ -5913,6 +5941,7 @@ mod tests {
             last_regeneration_tick: None,
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         };
 
         world

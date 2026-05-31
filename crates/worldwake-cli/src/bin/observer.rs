@@ -35,7 +35,7 @@ use worldwake_core::{
     IntentionAbandonCondition, IntentionFrame, IntentionResumeCondition, KnownRecipes,
     MetabolismProfile, MethodSchemaId, MotiveSource, MotiveSourceRef, OpportunityAnchor, PlaceTag,
     PlanInvalidationReason, Quantity, RecipeId, ReplanReason, RoutePreferenceSummary, SlotKind,
-    TestimonyTrustSummary, Tick, WorkstationTag,
+    SourceKey, TestimonyTrustSummary, Tick, WaterQuality, WorkstationTag,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionTraceEvent, ActionTraceKind, ActionTraceSink,
@@ -427,6 +427,7 @@ fn decision_payload_agent(payload: &DecisionEventPayload) -> EntityId {
         DecisionEventPayload::PlanInvalidated(inner) => inner.agent,
         DecisionEventPayload::ExpectationMismatch(inner) => inner.agent,
         DecisionEventPayload::SourceExpectationFailure(inner) => inner.agent,
+        DecisionEventPayload::ResourceSourceQualityObserved(inner) => inner.observer,
         DecisionEventPayload::RepairApplied(inner) => inner.agent,
         DecisionEventPayload::ReplanTriggered(inner) => inner.agent,
         DecisionEventPayload::BlockerRecorded(inner) => inner.agent,
@@ -449,6 +450,7 @@ fn decision_event_name(payload: &DecisionEventPayload) -> &'static str {
         DecisionEventPayload::PlanInvalidated(_) => "PlanInvalidated",
         DecisionEventPayload::ExpectationMismatch(_) => "ExpectationMismatch",
         DecisionEventPayload::SourceExpectationFailure(_) => "SourceExpectationFailure",
+        DecisionEventPayload::ResourceSourceQualityObserved(_) => "ResourceSourceQualityObserved",
         DecisionEventPayload::RepairApplied(_) => "RepairApplied",
         DecisionEventPayload::ReplanTriggered(_) => "ReplanTriggered",
         DecisionEventPayload::BlockerRecorded(_) => "BlockerRecorded",
@@ -650,6 +652,10 @@ fn decision_payload_summary(
             );
             summary
         }
+        DecisionEventPayload::ResourceSourceQualityObserved(inner) => format!(
+            "source={:?}:{:?} quality={:?} observed_tick={}",
+            inner.source.entity, inner.source.commodity, inner.quality, inner.observed_at_tick.0
+        ),
         DecisionEventPayload::RepairApplied(inner) => format!(
             "goal={:?} step={} kind={:?} target={:?} provider={:?}",
             inner.goal_key.kind,
@@ -1755,7 +1761,12 @@ fn format_critical_window_forensics(
                 active_action,
                 format_frame_exhaustion(frame.exhaustion_state.as_ref()),
                 format_frame_blocker(frame.blocker_summary.as_ref()),
-                format_local_survival_state_summary(world, &frame.local_authoritative_summary),
+                format_local_survival_state_summary_for_agent(
+                    world,
+                    &frame.local_authoritative_summary,
+                    report.agent,
+                    frame.tick,
+                ),
             )
             .unwrap();
         }
@@ -2086,9 +2097,30 @@ fn format_frame_blocker(summary: Option<&worldwake_ai::BlockerSummary>) -> Strin
     summary.map_or_else(|| "-".to_string(), format_blocker_summary)
 }
 
+#[cfg(test)]
 fn format_local_survival_state_summary(
     world: &worldwake_core::World,
     summary: &LocalSurvivalStateSummary,
+) -> String {
+    format_local_survival_state_summary_inner(world, summary, None)
+}
+
+fn format_local_survival_state_summary_for_agent(
+    world: &worldwake_core::World,
+    summary: &LocalSurvivalStateSummary,
+    agent: EntityId,
+    current_tick: Tick,
+) -> String {
+    let water_source = summary
+        .place
+        .and_then(|place| water_source_render_info_for_agent(world, agent, place, current_tick));
+    format_local_survival_state_summary_inner(world, summary, water_source.as_ref())
+}
+
+fn format_local_survival_state_summary_inner(
+    world: &worldwake_core::World,
+    summary: &LocalSurvivalStateSummary,
+    water_source: Option<&WaterSourceRenderInfo>,
 ) -> String {
     let place_name = summary.place.map_or_else(
         || "In transit".to_string(),
@@ -2102,6 +2134,9 @@ fn format_local_survival_state_summary(
         yes_no(summary.sleep_affordance_present),
         yes_no(summary.food_source_present)
     );
+    if let Some(info) = water_source {
+        let _ = write!(line, ", {}", format_water_source_render_info(info));
+    }
     // S176 D10: surface co-located facility condition. The summary's place is
     // the agent's own (co-located) place, so reading the basin/latrine state
     // here is a lawful FND-14A physical observation — never a remote read.
@@ -2122,6 +2157,83 @@ fn format_local_survival_state_summary(
     line
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct WaterSourceRenderInfo {
+    present: bool,
+    quality: Option<WaterQuality>,
+    freshness: WaterSourceFreshness,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WaterSourceFreshness {
+    Direct,
+    Belief { ticks_ago: u64 },
+}
+
+fn water_source_render_info_for_agent(
+    world: &worldwake_core::World,
+    agent: EntityId,
+    place: EntityId,
+    current_tick: Tick,
+) -> Option<WaterSourceRenderInfo> {
+    let agent_place = world.effective_place(agent);
+    let water_sources_at_place = || {
+        world
+            .query_resource_source()
+            .filter(move |(source_id, source)| {
+                world.effective_place(*source_id) == Some(place)
+                    && source.commodity == CommodityKind::Water
+            })
+    };
+
+    if agent_place == Some(place) {
+        return water_sources_at_place()
+            .filter(|(_, source)| source.available_quantity > Quantity(0))
+            .map(|(_, source)| WaterSourceRenderInfo {
+                present: true,
+                quality: source.quality,
+                freshness: WaterSourceFreshness::Direct,
+            })
+            .next();
+    }
+
+    let reliability = world.get_component_source_reliability(agent)?;
+    water_sources_at_place().find_map(|(source_id, source)| {
+        let record = reliability.sources.get(&SourceKey {
+            entity: source_id,
+            commodity: source.commodity,
+        })?;
+        Some(WaterSourceRenderInfo {
+            present: record.last_observed_capacity > 0,
+            quality: record.last_observed_quality,
+            freshness: WaterSourceFreshness::Belief {
+                ticks_ago: current_tick
+                    .0
+                    .saturating_sub(record.last_observed_quality_tick.0),
+            },
+        })
+    })
+}
+
+fn format_water_source_render_info(info: &WaterSourceRenderInfo) -> String {
+    let presence = if info.present {
+        "water_source=yes"
+    } else {
+        "water_source=no"
+    };
+    let quality = info
+        .quality
+        .map_or_else(|| "unknown".to_string(), |quality| format!("{quality:?}"));
+    match info.freshness {
+        WaterSourceFreshness::Direct => {
+            format!("{presence}, water_quality={quality} (observed now)")
+        }
+        WaterSourceFreshness::Belief { ticks_ago } => {
+            format!("{presence}, water_quality={quality} (observed {ticks_ago} ticks ago)")
+        }
+    }
+}
+
 /// The co-located `WashBasinState` for a basin at `place`, if one exists.
 fn colocated_wash_basin_state(
     world: &worldwake_core::World,
@@ -2132,7 +2244,7 @@ fn colocated_wash_basin_state(
         .find(|(entity, marker)| {
             world.effective_place(*entity) == Some(place) && marker.0 == WorkstationTag::WashBasin
         })
-        .and_then(|(entity, _)| world.get_component_wash_basin_state(entity).copied())
+        .and_then(|(entity, _)| world.get_component_wash_basin_state(entity).cloned())
 }
 
 fn yes_no(value: bool) -> &'static str {
@@ -5917,6 +6029,7 @@ fn main() {
                     &thresholds,
                     decision_trace,
                     &action_snapshot,
+                    event_log,
                     &local_state,
                     exhaustion_collapse_signal,
                 );
@@ -6204,12 +6317,13 @@ mod tests {
         OmissionReason, OpportunityAnchor, OpportunityKey, PendingEvent, PercentileBucket,
         Permille, Place, PlaceTag, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
         PlanInvalidationReason, PrototypePlace, Quantity, RankedGoalComparisonDimensionTag,
-        RecipeId, RecordRef, ResourceSource, RoutePreferenceSummary, RouteSegment, SaleListing,
-        SaliencePolicy, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
-        SleepRecoveryModifier, TellTopic, TestimonyTrustSummary, Tick, TopicScope, Topology,
-        VisibilitySpec, WakeCondition, WakeReason, WashFacilityUsedPayload, WasteCreatedPayload,
-        WasteSource, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
-        build_prototype_world, prototype_place_entity,
+        RecipeId, RecordRef, ReliabilityRecord, ResourceSource, RoutePreferenceSummary,
+        RouteSegment, SaleListing, SaliencePolicy, SleepEpisodeEndedPayload,
+        SleepEpisodeStartedPayload, SleepRecoveryModifier, SourceKey, SourceReliability, TellTopic,
+        TestimonyTrustSummary, Tick, TopicScope, Topology, VisibilitySpec, WakeCondition,
+        WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WaterQuality,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
+        prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionHandlerId, ActionInstanceId, ActionPayload,
@@ -7108,6 +7222,201 @@ mod tests {
         );
     }
 
+    fn world_with_water_source(
+        agent_control: ControlSource,
+        agent_place: EntityId,
+        source_place: EntityId,
+        source_quality: Option<WaterQuality>,
+    ) -> (World, EntityId, EntityId) {
+        let mut world = World::new(build_prototype_world()).expect("world");
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        let agent = txn
+            .create_agent("Observer Subject", agent_control)
+            .expect("agent");
+        txn.set_ground_location(agent, agent_place)
+            .expect("agent location");
+        let source = txn.create_entity(EntityKind::Facility);
+        txn.set_ground_location(source, source_place)
+            .expect("source location");
+        txn.set_component_resource_source(
+            source,
+            support_water_source_with_quality(source_quality),
+        )
+        .expect("source component");
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+        (world, agent, source)
+    }
+
+    fn set_source_belief(
+        world: &mut World,
+        agent: EntityId,
+        source: EntityId,
+        capacity: u16,
+        quality: Option<WaterQuality>,
+        observed_tick: Tick,
+    ) {
+        let mut record = ReliabilityRecord::new(observed_tick);
+        record.observe_capacity(capacity, observed_tick);
+        if let Some(quality) = quality {
+            record.observe_quality(quality, observed_tick);
+        }
+        let mut txn = WorldTxn::new(
+            world,
+            Tick(observed_tick.0.saturating_add(1)),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        txn.set_component_source_reliability(
+            agent,
+            SourceReliability {
+                sources: BTreeMap::from([(
+                    SourceKey {
+                        entity: source,
+                        commodity: CommodityKind::Water,
+                    },
+                    record,
+                )]),
+            },
+        )
+        .expect("source reliability");
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+    }
+
+    #[test]
+    fn observer_renders_colocated_source_quality_directly() {
+        let place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let (world, agent, _source) = world_with_water_source(
+            ControlSource::Human,
+            place,
+            place,
+            Some(WaterQuality::Clean),
+        );
+
+        let info = crate::water_source_render_info_for_agent(&world, agent, place, Tick(10))
+            .expect("colocated water source");
+
+        assert_eq!(
+            info,
+            crate::WaterSourceRenderInfo {
+                present: true,
+                quality: Some(WaterQuality::Clean),
+                freshness: crate::WaterSourceFreshness::Direct,
+            }
+        );
+        assert_eq!(
+            crate::format_water_source_render_info(&info),
+            "water_source=yes, water_quality=Clean (observed now)"
+        );
+    }
+
+    #[test]
+    fn observer_renders_remote_source_quality_from_belief_with_freshness() {
+        let agent_place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let source_place = prototype_place_entity(PrototypePlace::ForestPath);
+        let (mut world, agent, source) = world_with_water_source(
+            ControlSource::Human,
+            agent_place,
+            source_place,
+            Some(WaterQuality::Muddy),
+        );
+        set_source_belief(
+            &mut world,
+            agent,
+            source,
+            4,
+            Some(WaterQuality::Muddy),
+            Tick(25),
+        );
+
+        let info =
+            crate::water_source_render_info_for_agent(&world, agent, source_place, Tick(225))
+                .expect("remote water-source belief");
+
+        assert_eq!(
+            info,
+            crate::WaterSourceRenderInfo {
+                present: true,
+                quality: Some(WaterQuality::Muddy),
+                freshness: crate::WaterSourceFreshness::Belief { ticks_ago: 200 },
+            }
+        );
+    }
+
+    #[test]
+    fn observer_omits_unobserved_remote_source() {
+        let agent_place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let source_place = prototype_place_entity(PrototypePlace::ForestPath);
+        let (world, agent, _source) = world_with_water_source(
+            ControlSource::Human,
+            agent_place,
+            source_place,
+            Some(WaterQuality::Stale),
+        );
+
+        assert_eq!(
+            crate::water_source_render_info_for_agent(&world, agent, source_place, Tick(50)),
+            None
+        );
+    }
+
+    #[test]
+    fn observer_renders_identically_for_human_and_ai_controlled_agents() {
+        let agent_place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let source_place = prototype_place_entity(PrototypePlace::ForestPath);
+        let (mut human_world, human_agent, human_source) = world_with_water_source(
+            ControlSource::Human,
+            agent_place,
+            source_place,
+            Some(WaterQuality::Muddy),
+        );
+        let (mut ai_world, ai_agent, ai_source) = world_with_water_source(
+            ControlSource::Ai,
+            agent_place,
+            source_place,
+            Some(WaterQuality::Muddy),
+        );
+        set_source_belief(
+            &mut human_world,
+            human_agent,
+            human_source,
+            2,
+            Some(WaterQuality::Muddy),
+            Tick(15),
+        );
+        set_source_belief(
+            &mut ai_world,
+            ai_agent,
+            ai_source,
+            2,
+            Some(WaterQuality::Muddy),
+            Tick(15),
+        );
+
+        let human = crate::water_source_render_info_for_agent(
+            &human_world,
+            human_agent,
+            source_place,
+            Tick(40),
+        );
+        let ai =
+            crate::water_source_render_info_for_agent(&ai_world, ai_agent, source_place, Tick(40));
+
+        assert_eq!(human, ai);
+    }
+
     fn sample_critical_window_report(agent: EntityId) -> CriticalWindowReport {
         CriticalWindowReport {
             agent,
@@ -7140,6 +7449,7 @@ mod tests {
                 local_authoritative_summary: sample_local_survival_state_summary(),
                 failed_rest_opportunities: Vec::new(),
                 degraded_self_care_opportunities: Vec::new(),
+                source_acquisition_failures: Vec::new(),
             }],
             exhaustion_collapse_observed: false,
         }
@@ -7279,6 +7589,14 @@ mod tests {
             last_regeneration_tick: None,
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
+        }
+    }
+
+    fn support_water_source_with_quality(quality: Option<WaterQuality>) -> ResourceSource {
+        ResourceSource {
+            quality,
+            ..support_resource_source(CommodityKind::Water)
         }
     }
 

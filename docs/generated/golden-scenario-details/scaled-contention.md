@@ -7,7 +7,7 @@ Scenarios: 1
 
 ### Scenario 445: S153 Scaled Contention Route Blocker Composition
 
-- Source: `scaled_contention.rs:295`
+- Source: `scaled_contention.rs:296`
 - Systems: AI, Needs, Travel, Production, Contention
 - GoalKinds: ConsumeOwnedCommodity, AcquireCommodity, Wash
 - ActionDomains: Production, Travel, Needs

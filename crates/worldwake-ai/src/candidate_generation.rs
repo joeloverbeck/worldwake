@@ -8761,7 +8761,7 @@ mod tests {
         }
 
         fn wash_basin_state(&self, entity: EntityId) -> Option<WashBasinState> {
-            self.wash_basin_states.get(&entity).copied()
+            self.wash_basin_states.get(&entity).cloned()
         }
 
         fn self_care_occupant(&self, entity: EntityId) -> Option<EntityId> {
@@ -11153,6 +11153,7 @@ mod tests {
             last_regeneration_tick: None,
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         };
         view.resource_sources.insert(workstation, source.clone());
         view.beliefs.insert(
@@ -11240,6 +11241,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
 
@@ -11328,6 +11330,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
 
@@ -11423,6 +11426,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
         view.workstations.insert(
@@ -11510,6 +11514,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
         view.workstations.insert(
@@ -12591,6 +12596,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
         view.resource_sources.insert(
@@ -12603,6 +12609,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
 
@@ -12727,6 +12734,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
 
@@ -12870,6 +12878,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
         view.acquisition_exhaustion_counts
@@ -13030,6 +13039,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
         let mut recipes = RecipeRegistry::new();
@@ -14591,6 +14601,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
 
@@ -14646,6 +14657,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
 
@@ -14728,6 +14740,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
 
@@ -14866,6 +14879,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
         view.resource_sources.insert(
@@ -14878,6 +14892,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
 
@@ -14966,6 +14981,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
         view.resource_sources.insert(
@@ -14978,6 +14994,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
 
@@ -15101,6 +15118,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
 
@@ -19750,6 +19768,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
         // Provide belief provenance for the workstation/resource-source entity
@@ -20838,6 +20857,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             }),
             alive: true,
             wounds: Vec::new(),
@@ -22961,6 +22981,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
 
@@ -23050,6 +23071,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
 
@@ -23346,6 +23368,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
 
@@ -23582,6 +23605,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
         view.sources_at
@@ -23677,6 +23701,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
         view.sources_at
@@ -23776,6 +23801,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         );
         view.sources_at

@@ -3,8 +3,8 @@ use worldwake_ai::{
     ActionTraceSnapshot, GoalPriorityClass, SelectedPlanSource, SurvivalForensicExtractor,
 };
 use worldwake_core::{
-    AcquisitionQuantity, CommodityKind, CommodityPurpose, DriveThresholds, EntityId, GoalKey,
-    GoalKind, HomeostaticNeeds, Tick,
+    AcquisitionQuantity, CommodityKind, CommodityPurpose, DriveThresholds, EntityId, EventLog,
+    GoalKey, GoalKind, HomeostaticNeeds, Tick,
 };
 
 #[test]
@@ -56,6 +56,7 @@ fn forensic_wash_vs_water_competition() {
             &thresholds,
             Some(&trace),
             &ActionTraceSnapshot::empty(),
+            &EventLog::new(),
             &local_state,
             false,
         );

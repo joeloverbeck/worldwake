@@ -4534,6 +4534,7 @@ fn search_finds_restock_progress_barrier_from_branchy_market_hub() {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         )
         .unwrap();
@@ -5406,6 +5407,7 @@ fn build_restock_threat_fixture(with_combat_belief: bool) -> RestockThreatFixtur
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         )
         .unwrap();
@@ -5713,6 +5715,7 @@ fn build_exclusive_orchard_fixture(granted: bool) -> ExclusiveOrchardFixture {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         )
         .unwrap();
@@ -6472,6 +6475,7 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         )
         .unwrap();
@@ -7039,6 +7043,7 @@ fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         )
         .unwrap();
@@ -12018,6 +12023,7 @@ fn search_trace_metadata_records_acquire_prerequisite_for_known_remote_acquire_s
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         )
         .unwrap();
@@ -15069,6 +15075,7 @@ fn search_trace_records_ask_witness_omission_when_no_stale_epistemic_subjects_ex
                     last_regeneration_tick: None,
                     extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                     extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                    quality: None,
                 }),
             ),
         )],
@@ -15161,6 +15168,7 @@ fn search_trace_records_ask_witness_omission_when_no_witness_affordance_exists()
                     last_regeneration_tick: None,
                     extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                     extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                    quality: None,
                 }),
             ),
         )],

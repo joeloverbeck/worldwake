@@ -7,7 +7,7 @@ Scenarios: 5
 
 ### Scenario 126: Remote Travel To Resource Under Local Scarcity
 
-- Source: `simulation_gaps.rs:378`
+- Source: `simulation_gaps.rs:380`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Travel, Needs, Production
@@ -25,7 +25,7 @@ Scenarios: 5
 
 ### Scenario 127: Idle Cap Under Remote Resource Scarcity
 
-- Source: `simulation_gaps.rs:405`
+- Source: `simulation_gaps.rs:407`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: Sleep, Relieve, AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Travel, Needs, Production
@@ -43,7 +43,7 @@ Scenarios: 5
 
 ### Scenario 130: Multi-Agent Convergence Under Remote Resource Scarcity
 
-- Source: `simulation_gaps.rs:653`
+- Source: `simulation_gaps.rs:657`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity, Sleep, Relieve
 - ActionDomains: Travel, Production, Needs
@@ -61,7 +61,7 @@ Scenarios: 5
 
 ### Scenario 131: Death Traceability Under Unmet Needs
 
-- Source: `simulation_gaps.rs:1024`
+- Source: `simulation_gaps.rs:1030`
 - Systems: Needs, Wounds, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep, Relieve
 - ActionDomains: Needs
@@ -79,7 +79,7 @@ Scenarios: 5
 
 ### Scenario 132: Harvest-To-Consume Chain At Resource Source Locations
 
-- Source: `simulation_gaps.rs:1052`
+- Source: `simulation_gaps.rs:1058`
 - Systems: Production, Needs, AI
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Production, Needs

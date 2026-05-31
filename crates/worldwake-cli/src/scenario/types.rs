@@ -22,7 +22,8 @@ use worldwake_core::{
     RiskWeightProfile, RoutePreferenceProfile, ShelterTag, SleepQualityProfile,
     SleepRecoveryModifier, SubstitutePreferences, SuccessionLaw, TellProfile,
     TestimonyTrustProfile, TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
-    ViolationDispositionProfile, WashBasinState, WorkstationTag, items::CommodityKind,
+    ViolationDispositionProfile, WashBasinState, WaterQuality, WaterToleranceProfile,
+    WorkstationTag, items::CommodityKind,
     social_artifact::SuspensionReason as ArtifactSuspensionReason, topology::PlaceTag,
 };
 
@@ -539,7 +540,7 @@ impl From<LatrineFullnessDef> for LatrineFullness {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct WashBasinStateDef {
     pub clean_water_units: Option<u16>,
@@ -549,6 +550,7 @@ pub struct WashBasinStateDef {
     pub dirtiness_level: Option<Permille>,
     pub dirtiness_per_use: Option<Permille>,
     pub max_effective_dirtiness: Option<Permille>,
+    pub dirty_water_refill_penalty: Option<BTreeMap<WaterQuality, Permille>>,
 }
 
 impl From<WashBasinStateDef> for WashBasinState {
@@ -566,6 +568,9 @@ impl From<WashBasinStateDef> for WashBasinState {
             max_effective_dirtiness: def
                 .max_effective_dirtiness
                 .unwrap_or(defaults.max_effective_dirtiness),
+            dirty_water_refill_penalty: def
+                .dirty_water_refill_penalty
+                .unwrap_or(defaults.dirty_water_refill_penalty),
         }
     }
 }
@@ -638,6 +643,8 @@ pub struct AgentDef {
     pub drive_escalation_profile: Option<DriveEscalationProfile>,
     #[serde(default)]
     pub metabolism_profile: Option<MetabolismProfile>,
+    #[serde(default)]
+    pub water_tolerance_profile: Option<WaterToleranceProfile>,
     #[serde(default)]
     pub disposal_profile: Option<DisposalProfile>,
     #[serde(default)]
@@ -828,6 +835,8 @@ pub struct ResourceSourceDef {
     pub extraction_slots: u8,
     #[serde(default = "default_extraction_duration_ticks")]
     pub extraction_duration_ticks: u32,
+    #[serde(default)]
+    pub quality: Option<WaterQuality>,
 }
 
 fn default_extraction_slots() -> u8 {
@@ -2001,6 +2010,30 @@ mod tests {
             def.resource_sources[0].extraction_duration_ticks, 1,
             "extraction_duration_ticks default must be 1"
         );
+        assert_eq!(def.resource_sources[0].quality, None);
+    }
+
+    #[test]
+    fn scenario_def_resource_source_deserializes_quality() {
+        let ron_str = r#"(
+            seed: 1,
+            places: [
+                (name: "RiverBank", tags: [Forest]),
+            ],
+            resource_sources: [
+                (
+                    commodity: Water,
+                    location: "RiverBank",
+                    regeneration_ticks_per_unit: Some(3),
+                    capacity: 30,
+                    quality: Muddy,
+                ),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+
+        assert_eq!(def.resource_sources[0].quality, Some(WaterQuality::Muddy));
     }
 
     #[test]

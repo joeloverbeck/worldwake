@@ -26,7 +26,7 @@ use worldwake_core::{
     SocialObservation, SourceReliability, StockStoragePolicy, SubstitutePreferences, TellMemoryKey,
     TellProfile, TellTopic, TestimonyTrustProfile, Tick, TickRange, ToldBeliefMemory,
     TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationDispositionProfile,
-    WashBasinState, WorkstationTag, Wound, effective_claim_confidence,
+    WashBasinState, WaterToleranceProfile, WorkstationTag, Wound, effective_claim_confidence,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -538,6 +538,10 @@ pub trait GoalBeliefView: BelievedAuthorityView + LocalPhysicalObservationView {
         let _ = agent;
         None
     }
+    fn water_tolerance_profile(&self, agent: EntityId) -> Option<WaterToleranceProfile> {
+        let _ = agent;
+        None
+    }
     fn testimony_trust_profile(&self, agent: EntityId) -> Option<TestimonyTrustProfile> {
         let _ = agent;
         None
@@ -1040,6 +1044,10 @@ pub trait ProfileBeliefView {
         None
     }
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
+    fn water_tolerance_profile(&self, agent: EntityId) -> Option<WaterToleranceProfile> {
+        let _ = agent;
+        None
+    }
     fn testimony_trust_profile(&self, agent: EntityId) -> Option<TestimonyTrustProfile> {
         let _ = agent;
         None
@@ -2158,6 +2166,13 @@ where
         ProfileBeliefView::metabolism_profile(self, agent)
     }
 
+    fn water_tolerance_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::WaterToleranceProfile> {
+        ProfileBeliefView::water_tolerance_profile(self, agent)
+    }
+
     fn testimony_trust_profile(
         &self,
         agent: worldwake_core::EntityId,
@@ -3237,11 +3252,11 @@ mod tests {
         basin: EntityId,
         dirtiness: PlaceDirtiness,
         fullness: LatrineFullness,
-        basin_state: WashBasinState,
+        basin_state: &WashBasinState,
     ) {
         assert_eq!(view.place_dirtiness(actor, place), dirtiness);
         assert_eq!(view.latrine_fullness(actor, place), fullness);
-        assert_eq!(view.wash_basin_state(actor, basin), basin_state);
+        assert_eq!(&view.wash_basin_state(actor, basin), basin_state);
     }
 
     fn observed_entity(
@@ -3845,14 +3860,22 @@ mod tests {
             txn.set_component_latrine_fullness(place, fullness).unwrap();
             let basin = txn.create_entity(EntityKind::Facility);
             txn.set_ground_location(basin, place).unwrap();
-            txn.set_component_wash_basin_state(basin, basin_state)
+            txn.set_component_wash_basin_state(basin, basin_state.clone())
                 .unwrap();
             commit_txn(txn);
             (actor, basin)
         };
         let view = PerAgentBeliefView::from_world(actor, &world);
 
-        assert_goal_hygiene_reads(&view, actor, place, basin, dirtiness, fullness, basin_state);
+        assert_goal_hygiene_reads(
+            &view,
+            actor,
+            place,
+            basin,
+            dirtiness,
+            fullness,
+            &basin_state,
+        );
     }
 
     #[test]

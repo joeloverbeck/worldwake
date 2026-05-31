@@ -358,6 +358,7 @@ fn scheduler_multi_step_transport_preserves_stock_accounting_and_route_occupancy
         last_regeneration_tick: None,
         extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
         extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+        quality: None,
     });
 
     assert_eq!(
@@ -489,6 +490,7 @@ fn scheduler_harvest_depletion_and_regeneration_gate_affordances_on_concrete_sto
         last_regeneration_tick: Some(Tick(0)),
         extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
         extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+        quality: None,
     });
 
     harness.queue_action("harvest:Harvest Apples", vec![harness.orchard_workstation]);
@@ -575,6 +577,7 @@ fn scheduler_craft_preserves_staged_inputs_and_applies_exact_recipe_deltas() {
         last_regeneration_tick: None,
         extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
         extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+        quality: None,
     });
     let grain = add_controlled_lot(&mut harness, CommodityKind::Grain, 2);
 
@@ -628,6 +631,7 @@ fn scheduler_partial_pickup_and_travel_replays_deterministically() {
             last_regeneration_tick: None,
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         });
         let water = add_controlled_lot(&mut harness, CommodityKind::Water, 3);
         {

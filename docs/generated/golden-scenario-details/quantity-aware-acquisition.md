@@ -7,7 +7,7 @@ Scenarios: 5
 
 ### Scenario 351: Single-Slot Queue Forms With Concrete Wait Projection
 
-- Source: `quantity_aware_acquisition.rs:216`
+- Source: `quantity_aware_acquisition.rs:218`
 - Systems: AI, Needs, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Needs
@@ -25,7 +25,7 @@ Scenarios: 5
 
 ### Scenario 352: Multi-Slot Source Grants Three Concurrent Harvesters
 
-- Source: `quantity_aware_acquisition.rs:346`
+- Source: `quantity_aware_acquisition.rs:348`
 - Systems: AI, Needs, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Needs
@@ -43,7 +43,7 @@ Scenarios: 5
 
 ### Scenario 353: Partial-Success Harvest Surfaces Partial Quantity
 
-- Source: `quantity_aware_acquisition.rs:426`
+- Source: `quantity_aware_acquisition.rs:428`
 - Systems: AI, Needs, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Needs
@@ -61,7 +61,7 @@ Scenarios: 5
 
 ### Scenario 354: Quantity-Aware Acquisition Lands Through The AI Pipeline
 
-- Source: `quantity_aware_acquisition.rs:545`
+- Source: `quantity_aware_acquisition.rs:547`
 - Systems: AI, Needs, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Needs
@@ -79,7 +79,7 @@ Scenarios: 5
 
 ### Scenario 355: Queue Abandonment Promotes The Next Actor
 
-- Source: `quantity_aware_acquisition.rs:687`
+- Source: `quantity_aware_acquisition.rs:689`
 - Systems: AI, Needs, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Needs

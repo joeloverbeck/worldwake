@@ -44,6 +44,7 @@ pub enum EventTag {
     PlanInvalidated,
     ExpectationMismatch,
     SourceExpectationFailure,
+    ResourceSourceQualityObserved,
     RepairApplied,
     ReplanTriggered,
     BlockerRecorded,
@@ -65,7 +66,7 @@ mod tests {
     >() {
     }
 
-    const ALL_EVENT_TAGS: [EventTag; 47] = [
+    const ALL_EVENT_TAGS: [EventTag; 48] = [
         EventTag::WorldMutation,
         EventTag::Inventory,
         EventTag::Transfer,
@@ -105,6 +106,7 @@ mod tests {
         EventTag::PlanInvalidated,
         EventTag::ExpectationMismatch,
         EventTag::SourceExpectationFailure,
+        EventTag::ResourceSourceQualityObserved,
         EventTag::RepairApplied,
         EventTag::ReplanTriggered,
         EventTag::BlockerRecorded,
@@ -122,13 +124,14 @@ mod tests {
 
     #[test]
     fn event_tag_includes_all_required_variants() {
-        assert_eq!(ALL_EVENT_TAGS.len(), 47);
+        assert_eq!(ALL_EVENT_TAGS.len(), 48);
         assert!(ALL_EVENT_TAGS.contains(&EventTag::ContentionResolved));
         assert!(ALL_EVENT_TAGS.contains(&EventTag::WasteCreated));
         assert!(ALL_EVENT_TAGS.contains(&EventTag::WashFacilityUsed));
         assert!(ALL_EVENT_TAGS.contains(&EventTag::SurveyRecorded));
         assert!(ALL_EVENT_TAGS.contains(&EventTag::ArtifactTransition));
         assert!(ALL_EVENT_TAGS.contains(&EventTag::PersonalityAssigned));
+        assert!(ALL_EVENT_TAGS.contains(&EventTag::ResourceSourceQualityObserved));
     }
 
     #[test]

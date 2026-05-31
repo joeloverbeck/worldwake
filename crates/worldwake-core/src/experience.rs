@@ -1,6 +1,8 @@
 //! Per-agent learned route and source experience state.
 
-use crate::{CommodityKind, Component, EntityId, EventId, Permille, Tick, TravelEdgeId};
+use crate::{
+    CommodityKind, Component, EntityId, EventId, Permille, Tick, TravelEdgeId, WaterQuality,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -75,6 +77,10 @@ pub struct SourceKey {
     pub commodity: CommodityKind,
 }
 
+fn default_observed_quality_tick() -> Tick {
+    Tick(0)
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ReliabilityRecord {
     pub successful_acquisitions: u16,
@@ -95,6 +101,12 @@ pub struct ReliabilityRecord {
     pub last_observed_capacity: u16,
     /// Tick when `last_observed_capacity` was last refreshed.
     pub last_observed_capacity_tick: Tick,
+    /// Most recent perception-time water quality observation.
+    #[serde(default)]
+    pub last_observed_quality: Option<WaterQuality>,
+    /// Tick when `last_observed_quality` was last refreshed.
+    #[serde(default = "default_observed_quality_tick")]
+    pub last_observed_quality_tick: Tick,
 }
 
 impl Default for ReliabilityRecord {
@@ -115,6 +127,8 @@ impl ReliabilityRecord {
             wait_observation_count: 0,
             last_observed_capacity: 0,
             last_observed_capacity_tick: Tick(0),
+            last_observed_quality: None,
+            last_observed_quality_tick: Tick(0),
         }
     }
 
@@ -138,6 +152,11 @@ impl ReliabilityRecord {
     pub fn observe_capacity(&mut self, capacity: u16, tick: Tick) {
         self.last_observed_capacity = capacity;
         self.last_observed_capacity_tick = tick;
+    }
+
+    pub fn observe_quality(&mut self, quality: WaterQuality, tick: Tick) {
+        self.last_observed_quality = Some(quality);
+        self.last_observed_quality_tick = tick;
     }
 
     pub fn push_provenance(&mut self, event: EventId) {
@@ -501,6 +520,8 @@ mod tests {
                 wait_observation_count: 2,
                 last_observed_capacity: 7,
                 last_observed_capacity_tick: Tick(20),
+                last_observed_quality: None,
+                last_observed_quality_tick: Tick(0),
             })
         );
     }
@@ -907,6 +928,20 @@ mod tests {
     }
 
     #[test]
+    fn observe_quality_overwrites_value_and_tick() {
+        let mut record = ReliabilityRecord::new(Tick(1));
+
+        record.observe_quality(crate::WaterQuality::Stale, Tick(100));
+        record.observe_quality(crate::WaterQuality::Muddy, Tick(200));
+
+        assert_eq!(
+            record.last_observed_quality,
+            Some(crate::WaterQuality::Muddy)
+        );
+        assert_eq!(record.last_observed_quality_tick, Tick(200));
+    }
+
+    #[test]
     fn reliability_record_provenance_keeps_bounded_recent_event_ring() {
         let mut record = ReliabilityRecord::new(Tick(1));
 
@@ -937,6 +972,8 @@ mod tests {
         assert_eq!(record.wait_observation_count, 0);
         assert_eq!(record.last_observed_capacity, 0);
         assert_eq!(record.last_observed_capacity_tick, Tick(0));
+        assert_eq!(record.last_observed_quality, None);
+        assert_eq!(record.last_observed_quality_tick, Tick(0));
     }
 
     #[test]
@@ -973,6 +1010,8 @@ mod tests {
                     wait_observation_count: 3,
                     last_observed_capacity: 18,
                     last_observed_capacity_tick: Tick(35),
+                    last_observed_quality: Some(crate::WaterQuality::Muddy),
+                    last_observed_quality_tick: Tick(36),
                 },
             )]),
         };

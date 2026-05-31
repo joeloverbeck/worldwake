@@ -7,7 +7,7 @@ Scenarios: 3
 
 ### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
 
-- Source: `experience_preferences.rs:548`
+- Source: `experience_preferences.rs:549`
 - Systems: Travel, learned route experience, belief view, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -22,7 +22,7 @@ Scenarios: 3
 
 ### Scenario 92: Combat-Aborted Travel Still Creates Hostile Route Memory
 
-- Source: `experience_preferences.rs:572`
+- Source: `experience_preferences.rs:573`
 - Systems: Travel, interrupt/abort, learned route experience, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -37,7 +37,7 @@ Scenarios: 3
 
 ### Scenario 93: Preference Profiles Create Route Diversity From the Same Memory
 
-- Source: `experience_preferences.rs:593`
+- Source: `experience_preferences.rs:594`
 - Systems: learned route experience, belief view, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production

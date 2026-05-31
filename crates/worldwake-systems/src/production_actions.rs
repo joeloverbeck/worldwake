@@ -1016,12 +1016,19 @@ fn apply_harvest_resource(
     }
 
     source.available_quantity = Quantity(available - actual);
+    let source_quality = source.quality;
     txn.set_component_resource_source(workstation, source)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
 
     let owner = resolve_output_owner(txn, actor, workstation)?;
     let lot = txn
-        .create_item_lot_with_owner(payload.output_commodity, Quantity(actual), place, owner)
+        .create_item_lot_with_owner_and_quality(
+            payload.output_commodity,
+            Quantity(actual),
+            place,
+            owner,
+            source_quality,
+        )
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_target(lot);
     txn.project_self_produced_lot_belief(actor, lot, owner)
@@ -1280,7 +1287,7 @@ mod tests {
         EventView, HomeostaticNeeds, LoadUnits, MetabolismProfile, PerceptionSource, Permille,
         PreferenceProfile, ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity,
         RelationDelta, RelationKind, RelationValue, ReliabilityRecord, ResourceSource, Seed,
-        SourceKey, SourceReliability, StateDelta, Tick, VisibilitySpec, WitnessData,
+        SourceKey, SourceReliability, StateDelta, Tick, VisibilitySpec, WaterQuality, WitnessData,
         WorkstationMarker, WorkstationTag, World, WorldTxn, build_believed_entity_state,
         build_prototype_world,
     };
@@ -1366,6 +1373,24 @@ mod tests {
         harvest_recipe_registry_with_tools(body_cost_per_tick, Vec::new())
     }
 
+    fn harvest_recipe_registry_for(
+        commodity: CommodityKind,
+        workstation_tag: WorkstationTag,
+        body_cost_per_tick: BodyCostPerTick,
+    ) -> (RecipeRegistry, worldwake_core::RecipeId) {
+        let mut recipes = RecipeRegistry::new();
+        let recipe_id = recipes.register(RecipeDefinition {
+            name: format!("Harvest {commodity:?}"),
+            inputs: Vec::new(),
+            outputs: vec![(commodity, Quantity(2))],
+            work_ticks: nz(2),
+            required_workstation_tag: Some(workstation_tag),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick,
+        });
+        (recipes, recipe_id)
+    }
+
     fn harvest_recipe_registry_with_tools(
         body_cost_per_tick: BodyCostPerTick,
         required_tool_kinds: Vec<worldwake_core::UniqueItemKind>,
@@ -1407,6 +1432,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         )
         .unwrap();
@@ -1598,6 +1624,7 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         )
         .unwrap();
@@ -2034,6 +2061,7 @@ mod tests {
                     last_regeneration_tick: None,
                     extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                     extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                    quality: None,
                 },
             )
             .unwrap();
@@ -3401,6 +3429,7 @@ mod tests {
                     last_regeneration_tick: None,
                     extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                     extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                    quality: None,
                 },
             )
             .unwrap();
@@ -3957,6 +3986,25 @@ mod tests {
         commit_txn(txn);
     }
 
+    fn set_source_commodity_and_quality(
+        world: &mut World,
+        workstation: EntityId,
+        commodity: CommodityKind,
+        quality: Option<WaterQuality>,
+        tick: u64,
+    ) {
+        let mut txn = new_txn(world, tick);
+        let mut source = txn
+            .get_component_resource_source(workstation)
+            .cloned()
+            .unwrap();
+        source.commodity = commodity;
+        source.quality = quality;
+        txn.set_component_resource_source(workstation, source)
+            .unwrap();
+        commit_txn(txn);
+    }
+
     #[test]
     fn commit_harvest_full_success_emits_no_partial_trace() {
         // Recipe outputs 2 apples; source has 5 — full success.
@@ -4004,6 +4052,64 @@ mod tests {
         assert_eq!(entry.harvester, actor);
         assert_eq!(entry.quantity, 2);
         assert!(!entry.partial);
+    }
+
+    #[test]
+    fn harvest_propagates_source_quality_to_produced_lot() {
+        let (recipes, recipe_id) = harvest_recipe_registry_for(
+            CommodityKind::Water,
+            WorkstationTag::Well,
+            BodyCostPerTick::zero(),
+        );
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor, workstation, place) = setup_world(false, WorkstationTag::Well, 5);
+        set_source_commodity_and_quality(
+            &mut world,
+            workstation,
+            CommodityKind::Water,
+            Some(WaterQuality::Muddy),
+            2,
+        );
+        grant_recipe(&mut world, actor, recipe_id);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
+
+        invoke_commit_harvest(&mut world, &defs, &handlers, ids[0], actor, workstation, 12)
+            .expect("water harvest commit succeeds");
+
+        let water_lots: Vec<_> = world
+            .query_item_lot()
+            .filter(|(entity, lot)| {
+                lot.commodity == CommodityKind::Water
+                    && world.effective_place(*entity) == Some(place)
+            })
+            .collect();
+        assert_eq!(water_lots.len(), 1);
+        assert_eq!(water_lots[0].1.quantity, Quantity(2));
+        assert_eq!(water_lots[0].1.quality, Some(WaterQuality::Muddy));
+    }
+
+    #[test]
+    fn harvest_non_water_source_produces_lot_with_none_quality() {
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor, workstation, place) =
+            setup_world(false, WorkstationTag::OrchardRow, 5);
+        grant_recipe(&mut world, actor, recipe_id);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
+
+        invoke_commit_harvest(&mut world, &defs, &handlers, ids[0], actor, workstation, 12)
+            .expect("apple harvest commit succeeds");
+
+        let apple_lots: Vec<_> = world
+            .query_item_lot()
+            .filter(|(entity, lot)| {
+                lot.commodity == CommodityKind::Apple
+                    && world.effective_place(*entity) == Some(place)
+            })
+            .collect();
+        assert_eq!(apple_lots.len(), 1);
+        assert_eq!(apple_lots[0].1.quantity, Quantity(2));
+        assert_eq!(apple_lots[0].1.quality, None);
     }
 
     #[test]

@@ -7,7 +7,7 @@ Scenarios: 4
 
 ### Scenario 478: S173 Self-Care Abort Traces Cover Every Family
 
-- Source: `survival_self_care_interruption.rs:456`
+- Source: `survival_self_care_interruption.rs:457`
 - Primary tests: `golden_self_care_abort_traces_cover_every_family`
 - Replay tests: None
 - All tests: `golden_self_care_abort_traces_cover_every_family`
@@ -18,7 +18,7 @@ Scenarios: 4
 
 ### Scenario 479: S173 Contested Wash Basin Promotes One Occupant
 
-- Source: `survival_self_care_interruption.rs:672`
+- Source: `survival_self_care_interruption.rs:673`
 - Primary tests: `golden_self_care_contested_basin_promotes_one_occupant`
 - Replay tests: None
 - All tests: `golden_self_care_contested_basin_promotes_one_occupant`
@@ -29,7 +29,7 @@ Scenarios: 4
 
 ### Scenario 480: S173 Interrupted Wash Releases Basin And Promotes Waiter
 
-- Source: `survival_self_care_interruption.rs:761`
+- Source: `survival_self_care_interruption.rs:762`
 - Primary tests: `golden_interrupted_wash_releases_basin_and_promotes_waiter`
 - Replay tests: None
 - All tests: `golden_interrupted_wash_releases_basin_and_promotes_waiter`
@@ -40,7 +40,7 @@ Scenarios: 4
 
 ### Scenario 481: S173 Repeated Self-Care Interruption Can End In Deprivation Death
 
-- Source: `survival_self_care_interruption.rs:841`
+- Source: `survival_self_care_interruption.rs:842`
 - Primary tests: `golden_repeated_self_care_interruption_can_end_in_deprivation_death`
 - Replay tests: `golden_repeated_self_care_interruption_collapse_replays_deterministically`
 - All tests: `golden_repeated_self_care_interruption_can_end_in_deprivation_death`, `golden_repeated_self_care_interruption_collapse_replays_deterministically`

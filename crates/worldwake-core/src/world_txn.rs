@@ -464,6 +464,19 @@ impl<'w> WorldTxn<'w> {
         Ok(entity)
     }
 
+    pub fn create_item_lot_with_quality(
+        &mut self,
+        commodity: CommodityKind,
+        quantity: Quantity,
+        quality: Option<crate::WaterQuality>,
+    ) -> Result<EntityId, WorldError> {
+        let entity = self
+            .staged_world
+            .create_item_lot_with_quality(commodity, quantity, self.tick, quality)?;
+        self.record_created_entity(entity, EntityKind::ItemLot);
+        Ok(entity)
+    }
+
     pub fn create_unique_item(
         &mut self,
         kind: UniqueItemKind,
@@ -837,7 +850,18 @@ impl<'w> WorldTxn<'w> {
         place: EntityId,
         owner: Option<EntityId>,
     ) -> Result<EntityId, WorldError> {
-        let lot = self.create_item_lot(commodity, quantity)?;
+        self.create_item_lot_with_owner_and_quality(commodity, quantity, place, owner, None)
+    }
+
+    pub fn create_item_lot_with_owner_and_quality(
+        &mut self,
+        commodity: CommodityKind,
+        quantity: Quantity,
+        place: EntityId,
+        owner: Option<EntityId>,
+        quality: Option<crate::WaterQuality>,
+    ) -> Result<EntityId, WorldError> {
+        let lot = self.create_item_lot_with_quality(commodity, quantity, quality)?;
         self.set_ground_location(lot, place)?;
         if let Some(owner_id) = owner {
             self.set_owner(lot, owner_id)?;
@@ -2111,7 +2135,7 @@ mod tests {
         PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource, PortfolioWeightsProfile,
         PreferenceProfile, RecordData, RecordEntryId, RecordKind, RiskWeightProfile,
         RoutePreferenceProfile, SubstitutePreferences, SuccessionLaw, SurveyMemory, TellProfile,
-        TestimonyTrustProfile, TradeDispositionProfile, UtilityProfile,
+        TestimonyTrustProfile, TradeDispositionProfile, UtilityProfile, WaterToleranceProfile,
         component_schema::with_component_schema_entries,
         test_utils::{
             sample_blocker_memory, sample_demand_memory, sample_merchandise_profile,
@@ -2184,6 +2208,7 @@ mod tests {
             last_regeneration_tick: Some(Tick(3)),
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         }
     }
 
@@ -2667,6 +2692,12 @@ mod tests {
                 component_kind: ComponentKind::DriveEscalationProfile,
                 before: None,
                 after: ComponentValue::DriveEscalationProfile(DriveEscalationProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::WaterToleranceProfile,
+                before: None,
+                after: ComponentValue::WaterToleranceProfile(WaterToleranceProfile::default()),
             }),
             StateDelta::Component(ComponentDelta::Set {
                 entity: agent,
@@ -4327,6 +4358,7 @@ mod tests {
             last_regeneration_tick: Some(Tick(9)),
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         };
         world
             .insert_component_resource_source(facility, before.clone())

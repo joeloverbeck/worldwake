@@ -63,6 +63,7 @@ use crate::{
     utility_profile::UtilityProfile,
     valuation::CommodityValuationProfile,
     violation::{ViolationDispositionProfile, ViolationMemory},
+    water_tolerance_profile::WaterToleranceProfile,
     wounds::WoundList,
 };
 use serde::{Deserialize, Serialize};
@@ -459,6 +460,7 @@ mod tests {
                     related_lot: None,
                     amount: Quantity(6),
                 }],
+                quality: None,
             },
         );
         tables.insert_unique_item(
@@ -779,6 +781,7 @@ mod tests {
             last_regeneration_tick: Some(Tick(9)),
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         };
 
         assert_eq!(tables.insert_resource_source(id, source.clone()), None);
@@ -1272,6 +1275,7 @@ mod tests {
                     related_lot: None,
                     amount: Quantity(2),
                 }],
+                quality: None,
             },
         );
         tables.insert_unique_item(
@@ -1360,6 +1364,7 @@ mod tests {
                 related_lot: None,
                 amount: Quantity(4),
             }],
+            quality: None,
         };
 
         assert_eq!(tables.insert_item_lot(id, lot.clone()), None);

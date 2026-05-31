@@ -1,0 +1,67 @@
+// S177 focused golden: an agent travels to a believed-clean water source and
+// locally observes that it is muddy on arrival.
+(
+    seed: 1770091,
+    compaction_interval: 0,
+    places: [
+        (name: "Trailhead", tags: [Camp]),
+        (name: "Muddy Spring", tags: [Forest]),
+        (name: "Clear Spring", tags: [Camp]),
+    ],
+    edges: [
+        (from: "Trailhead", to: "Muddy Spring", travel_ticks: 2, bidirectional: true),
+        (from: "Trailhead", to: "Clear Spring", travel_ticks: 5, bidirectional: true),
+    ],
+    agents: [
+        (
+            name: "Quality Scout",
+            location: "Trailhead",
+            control: Ai,
+            known_recipes: ["Harvest Water"],
+            needs: (hunger: 0, thirst: 950, fatigue: 0, bladder: 0, dirtiness: 0),
+            utility_profile: (
+                hunger_weight: 0,
+                thirst_weight: 1000,
+                fatigue_weight: 0,
+                bladder_weight: 0,
+                dirtiness_weight: 0,
+                pain_weight: 0,
+                danger_weight: 0,
+                enterprise_weight: 0,
+                social_weight: 0,
+                activity_awareness_weight: 0,
+                side_benefit_weight: 0,
+                bounty_posting_weight: 0,
+                notice_posting_weight: 0,
+                courage: 500,
+                care_weight: 0,
+            ),
+            metabolism_profile: (
+                hunger_rate: 0,
+                thirst_rate: 1,
+                fatigue_rate: 0,
+                bladder_rate: 0,
+                dirtiness_rate: 0,
+                rest_efficiency: 20,
+                starvation_tolerance_ticks: 480,
+                dehydration_tolerance_ticks: 240,
+                exhaustion_collapse_ticks: 120,
+                bladder_accident_tolerance_ticks: 40,
+                toilet_ticks: 8,
+                wash_ticks: 12,
+                travel_fatigue_multiplier: 0,
+                travel_thirst_multiplier: 0,
+                travel_bladder_multiplier: 0,
+                wilderness_relief_dirtiness_penalty: 0,
+            ),
+        ),
+    ],
+    facilities: [
+        (name: Some("Believed Well"), workstation: Well, location: "Muddy Spring"),
+        (name: Some("Backup Spring"), workstation: Well, location: "Clear Spring"),
+    ],
+    resource_sources: [
+        (commodity: Water, location: "Muddy Spring", facility: "Believed Well", regeneration_ticks_per_unit: 1, capacity: 20, quality: Some(Muddy)),
+        (commodity: Water, location: "Clear Spring", facility: "Backup Spring", regeneration_ticks_per_unit: 1, capacity: 20, quality: Some(Clean)),
+    ],
+)

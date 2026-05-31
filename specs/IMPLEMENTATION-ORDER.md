@@ -62,15 +62,15 @@ proof spec. Dismissals, reaffirmations, and per-item rationale:
 ```
 S175CIOWN-001 (Exhaustion golden CI ownership)   ── archived ticket; completed; no spec deps
 S176 (Sanitation Facility Degradation)           ── ✅ COMPLETED 2026-05-29 (archived); depended on archived S129 / S173 / S174 / S44 / S82; wired dead facility state into consequences
-S177 (Water Quality, Depletion, Reliability)     ── depends on archived S79 / S38 / S151 / S129; couples to S176 (basin refill quality) ; realizes canonical scenario D for water
+S177 (Water Quality, Depletion, Reliability)     ── ✅ COMPLETED 2026-05-31 (archived); depended on archived S79 / S38 / S151 / S129; coupled to S176 (basin refill quality); realized canonical scenario D for water
 S178 (Perishable Food Spoilage)                  ── depends on archived S82 / S79; first emitter of LotOperation::Spoiled
 ```
 
 S176 was the recommended first slice (the report's §17 pick) and is now
-**completed and archived** (tickets S176SANFACDEG-001..008, 2026-05-29). S177
-and S178 are independent of each other; S177 couples to S176 only through
-basin-refill water quality (it consumes the now-live `WashBasinState`). Neither
-remaining spec depends on the other's completion.
+**completed and archived** (tickets S176SANFACDEG-001..008, 2026-05-29). S177 is
+also **completed and archived** (tickets S177WATSRCQUA-001..010, 2026-05-31);
+it coupled to S176 only through basin-refill water quality (consuming the now-live
+`WashBasinState`). S178 remains independent of S177's completion.
 
 ### Completed Proof-Integrity Ticket (not held)
 
@@ -95,18 +95,21 @@ remaining spec depends on the other's completion.
   (`survival-basin-dirty-dirty`, `survival-latrine-full`) plus the CI-owned
   1440-tick `survival-sanitation-breakdown-1440` collision scenario.
 
-### Authored, Awaiting Activation
-
 - **S177 — Water Source Quality, Depletion Observation, and Reliability Memory** —
-  `specs/S177-water-source-quality-depletion-reliability.md` — *Status: Draft.*
-  Adds `WaterQuality` (`Clean`/`Stale`/`Muddy`) to water sources with thirst/dirtiness
-  and basin-refill consequences; adds belief-backed source-reliability memory
-  (extends the S38 learned-source substrate) so agents discover depletion locally and
+  *Status: ✅ COMPLETED 2026-05-31.*
+  `archive/specs/S177-water-source-quality-depletion-reliability.md` (tickets
+  `archive/tickets/S177WATSRCQUA-001..010`).
+  Added `WaterQuality` (`Clean`/`Stale`/`Muddy`) to water sources with thirst/dirtiness
+  and basin-refill consequences; added belief-backed source-reliability memory
+  (extends the S38 learned-source substrate) so agents discover quality locally and
   prefer fallbacks — realizing **canonical regression scenario D** for water.
-  Explicitly **defers** any unsafe-water sickness/wound (no disease ecology). Focused
-  goldens (`survival-water-source-depleted`, `survival-dirty-water-tradeoff`) plus a
-  1440-tick `survival-degrading-water-1440` collision scenario.
+  Explicitly **deferred** any unsafe-water sickness/wound (no disease ecology). Focused
+  goldens (`survival-water-quality-on-arrival`, `survival-dirty-water-tolerance-tradeoff`,
+  `survival-muddy-basin-refill`) plus a 1440-tick
+  `survival-quality-degrading-1440` collision scenario.
   **FND-1/3/4/7/14/14A/14B/15/16/17/19/21/22A/26/28/29/29A/31.**
+
+### Authored, Awaiting Activation
 
 - **S178 — Perishable Food Spoilage and Lot Condition** —
   `specs/S178-perishable-food-spoilage.md` — *Status: Draft.*

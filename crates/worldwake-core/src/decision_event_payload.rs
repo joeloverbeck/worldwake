@@ -3,7 +3,7 @@ use crate::{
     EntityBeliefAspect, EntityId, ExpectationKindTag, FrameAssumption, FrameClearReason, GoalKey,
     HomeostaticNeedId, HypothesisKind, MaterializationTag, MismatchDetail, MotiveSourceRef,
     OpportunityKey, Permille, RecipeId, RouteSegment, SleepRecoveryModifier, SuspensionReason,
-    Tick, TopicScope, WakeCondition,
+    Tick, TopicScope, WakeCondition, WaterQuality,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -22,6 +22,7 @@ pub enum DecisionEventPayload {
     PlanInvalidated(PlanInvalidatedPayload),
     ExpectationMismatch(ExpectationMismatchPayload),
     SourceExpectationFailure(SourceExpectationFailurePayload),
+    ResourceSourceQualityObserved(ResourceSourceQualityObservedPayload),
     RepairApplied(RepairAppliedPayload),
     ReplanTriggered(ReplanTriggeredPayload),
     BlockerRecorded(BlockerRecordedPayload),
@@ -413,6 +414,14 @@ pub struct SourceExpectationFailurePayload {
     pub decisive_records: Vec<RecordRef>,
     #[serde(default)]
     pub decisive_world_observations: Vec<ObservationRef>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub struct ResourceSourceQualityObservedPayload {
+    pub observer: EntityId,
+    pub source: SourceKeyPayload,
+    pub quality: WaterQuality,
+    pub observed_at_tick: Tick,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]

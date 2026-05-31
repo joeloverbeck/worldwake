@@ -7,7 +7,7 @@ Scenarios: 10
 
 ### Scenario 58: Travel Need Escalation
 
-- Source: `travel_physiology.rs:51`
+- Source: `travel_physiology.rs:52`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production, Needs
@@ -25,7 +25,7 @@ Scenarios: 10
 
 ### Scenario 59: Critical Bladder Local Relief
 
-- Source: `travel_physiology.rs:201`
+- Source: `travel_physiology.rs:202`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -43,7 +43,7 @@ Scenarios: 10
 
 ### Scenario 60: Agent Diversity in Travel Escalation
 
-- Source: `travel_physiology.rs:343`
+- Source: `travel_physiology.rs:344`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -61,7 +61,7 @@ Scenarios: 10
 
 ### Scenario 61: Travel Bladder Escalation Switches To Relief Between Legs
 
-- Source: `travel_physiology.rs:522`
+- Source: `travel_physiology.rs:523`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: Relieve, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs, Production
@@ -79,7 +79,7 @@ Scenarios: 10
 
 ### Scenario 62: Latrine Preferred — toilet at Latrine place
 
-- Source: `travel_physiology.rs:740`
+- Source: `travel_physiology.rs:741`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -97,7 +97,7 @@ Scenarios: 10
 
 ### Scenario 63: Wilderness Fallback — relieve_wilderness at outdoor place
 
-- Source: `travel_physiology.rs:918`
+- Source: `travel_physiology.rs:919`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -115,7 +115,7 @@ Scenarios: 10
 
 ### Scenario 64: Deprivation Accident — no relief option available
 
-- Source: `travel_physiology.rs:1095`
+- Source: `travel_physiology.rs:1096`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -133,7 +133,7 @@ Scenarios: 10
 
 ### Scenario 65: Witness Observation — co-located agent perceives wilderness relief
 
-- Source: `travel_physiology.rs:1255`
+- Source: `travel_physiology.rs:1256`
 - Systems: Needs, AI, Perception
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -151,7 +151,7 @@ Scenarios: 10
 
 ### Scenario 66: No Witness — isolated agent produces no social consequences
 
-- Source: `travel_physiology.rs:1467`
+- Source: `travel_physiology.rs:1468`
 - Systems: Needs, AI, Perception
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -169,7 +169,7 @@ Scenarios: 10
 
 ### Scenario 67: Need Continuity — cross-path bladder and dirtiness invariants
 
-- Source: `travel_physiology.rs:1661`
+- Source: `travel_physiology.rs:1662`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
