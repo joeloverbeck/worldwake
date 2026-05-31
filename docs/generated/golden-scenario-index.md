@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 246
-- Contributing golden scenario source files: 64
-- Associated tests: 303
+- Scenario blocks: 252
+- Contributing golden scenario source files: 65
+- Associated tests: 309
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -2712,6 +2712,80 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: the agent satisfies the authored survival contract, selects a real
 
 **Cross-system chain**: local mill + possessed Firewood belief -> selected ProduceCommodity
+
+### Scenario 496: Quality-Degrading Water Collision Completes 1440 Ticks
+
+- Source: `survival_quality_degrading_1440.rs:232`
+- Systems: AI, Needs, Production, SourceReliability, WaterToleranceProfile
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+- ActionDomains: Production, Needs, Travel
+- Places: Riverside Camp, Backup Camp, Clear Ridge
+- Principles: 1, 3, 7, 14, 22, 31
+
+**Setup**: three agents with seeded source/location beliefs share a finite clean source and can travel to muddy or clean fallback sources; unrelated trade/combat/sleep/social branches are absent.
+
+**Proves**: the authored 1440-tick scenario loads and runs to completion while exercising water-quality observation.
+
+### Scenario 497: Quality-Degrading Water Collision Records Muddy Beliefs
+
+- Source: `survival_quality_degrading_1440.rs:254`
+- Systems: Perception, SourceReliability
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Travel, Production
+- Places: Backup Camp
+- Principles: 14A, 15, 17, 22A, 31
+
+**Setup**: source/location beliefs are seeded, but source-reliability quality memory is empty until co-located perception observes the fallback source.
+
+**Proves**: the normal perception path emits `ResourceSourceQualityObserved` for Muddy water and forensics records it as a quality-rejected source-acquisition failure candidate.
+
+### Scenario 498: Quality-Degrading Water Collision Diverges By Tolerance
+
+- Source: `survival_quality_degrading_1440.rs:281`
+- Systems: AI, SourceReliability, WaterToleranceProfile
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+- ActionDomains: Production, Needs, Travel
+- Places: Backup Camp, Clear Ridge
+- Principles: 3, 20, 22, 31
+
+**Setup**: Aria has high Muddy tolerance, Bram uses the default profile, and Cael has low Muddy relief plus high dirtiness penalty in the same source layout.
+
+**Proves**: tolerance diversity produces different committed drink locations: at least one agent drinks at the muddy backup, and at least one agent reaches the farther clean fallback for drinking.
+
+### Scenario 499: Quality-Degrading Water Collision Produces Critical Window
+
+- Source: `survival_quality_degrading_1440.rs:307`
+- Systems: Needs, SurvivalForensicExtractor
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Production, Needs, Travel
+- Places: Riverside Camp, Backup Camp, Clear Ridge
+- Principles: 10, 29, 31
+
+**Setup**: clean-source capacity is two units with 24-tick regeneration under three thirsty agents, so depletion and travel delay push at least one thirst run into the authored critical band.
+
+**Proves**: the long-run collision emits thirst critical-window forensics and records a concrete drink-anyway or travel-to-fallback source outcome.
+
+### Scenario 500: Quality-Degrading Water Collision Dirties Backup Basin
+
+- Source: `survival_quality_degrading_1440.rs:337`
+- Systems: ItemDecay, Dirtiness
+- GoalKinds: Wash
+- ActionDomains: Needs
+- Places: Backup Camp
+- Principles: 3, 4, 26, 31
+
+**Setup**: the Backup Camp basin starts empty and refills from the colocated Muddy Spring, whose authored refill penalty is 90‰.
+
+**Proves**: basin refill from muddy water raises the basin's concrete dirtiness level during the 1440-tick run.
+
+### Scenario 501: Quality-Degrading Water Collision Replay Is Deterministic
+
+- Source: `survival_quality_degrading_1440.rs:359`
+- Systems: AI, Needs, Production, Perception
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+- ActionDomains: Production, Needs, Travel
+- Places: Riverside Camp, Backup Camp, Clear Ridge
+- Principles: 2, 9, 31
 
 ### Scenario 484: S174 Hostile-Proximity Rest Interruption
 

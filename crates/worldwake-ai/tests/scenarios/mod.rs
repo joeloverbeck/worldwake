@@ -59,6 +59,7 @@ pub mod survival_offices;
 pub mod survival_patrol;
 pub mod survival_preferences;
 pub mod survival_production;
+pub mod survival_quality_degrading_1440;
 pub mod survival_rest_interrupted_by_danger;
 pub mod survival_safe_rest;
 pub mod survival_sanitation_breakdown_1440;

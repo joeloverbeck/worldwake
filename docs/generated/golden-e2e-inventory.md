@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden scenario source files: 73
-- Files contributing `golden_*` tests: 73
-- Total `golden_*` tests: 330
+- Golden scenario source files: 74
+- Files contributing `golden_*` tests: 74
+- Total `golden_*` tests: 336
 
 ## Per-Scenario-File Inventory
 
@@ -74,6 +74,7 @@ Do not hand-edit it.
 | `survival_patrol.rs` | 2 |
 | `survival_preferences.rs` | 3 |
 | `survival_production.rs` | 2 |
+| `survival_quality_degrading_1440.rs` | 6 |
 | `survival_rest_interrupted_by_danger.rs` | 2 |
 | `survival_safe_rest.rs` | 2 |
 | `survival_sanitation_breakdown_1440.rs` | 2 |
@@ -552,6 +553,15 @@ Do not hand-edit it.
 
 - `survival_production_lands_row_eight`
 - `survival_production_replays_deterministically`
+
+### `survival_quality_degrading_1440.rs`
+
+- `golden_survival_quality_degrading_1440_completes_1440_ticks_without_panic`
+- `golden_survival_quality_degrading_1440_records_quality_beliefs`
+- `golden_survival_quality_degrading_1440_diverges_agents_by_tolerance`
+- `golden_survival_quality_degrading_1440_produces_critical_window`
+- `golden_survival_quality_degrading_1440_raises_basin_dirtiness`
+- `golden_survival_quality_degrading_1440_replays_deterministically`
 
 ### `survival_rest_interrupted_by_danger.rs`
 
