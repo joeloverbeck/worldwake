@@ -8,6 +8,7 @@ use worldwake_core::{
     SelfCareUseKind, SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
     SleepFailureCause, SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition, WakeReason,
     WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WorkstationTag, WorldTxn,
+    scale_permille,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -373,17 +374,6 @@ fn clean_wash_basin_preconditions() -> Vec<Precondition> {
             min: 1,
         },
     ]
-}
-
-fn lot_profile(
-    txn: &WorldTxn<'_>,
-    lot_id: EntityId,
-) -> Result<worldwake_core::CommodityConsumableProfile, ActionError> {
-    let lot = lot(txn, lot_id)?;
-    lot.commodity
-        .spec()
-        .consumable_profile
-        .ok_or_else(|| ActionError::PreconditionFailed(format!("lot {lot_id} is not consumable")))
 }
 
 fn lot(txn: &WorldTxn<'_>, lot_id: EntityId) -> Result<ItemLot, ActionError> {
@@ -1126,7 +1116,10 @@ fn apply_consumable_effects(
     effect: ConsumableEffect,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
-    let profile = lot_profile(txn, target)?;
+    let lot = lot(txn, target)?;
+    let profile = lot.commodity.spec().consumable_profile.ok_or_else(|| {
+        ActionError::PreconditionFailed(format!("lot {target} is not consumable"))
+    })?;
     match effect {
         ConsumableEffect::Hunger if profile.hunger_relief_per_unit.value() == 0 => {
             return Err(ActionError::PreconditionFailed(format!(
@@ -1142,12 +1135,32 @@ fn apply_consumable_effects(
     }
 
     let needs = actor_needs(txn, actor)?;
+    let (thirst_relief, dirtiness_penalty) = if lot.commodity == CommodityKind::Water
+        && let Some(quality) = lot.quality
+    {
+        let tolerance = txn
+            .get_component_water_tolerance_profile(actor)
+            .ok_or_else(|| {
+                ActionError::InternalError(format!(
+                    "actor {actor} lacks universal WaterToleranceProfile"
+                ))
+            })?;
+        (
+            scale_permille(
+                profile.thirst_relief_per_unit,
+                tolerance.thirst_relief_factor(quality),
+            ),
+            tolerance.dirtiness_penalty(quality),
+        )
+    } else {
+        (profile.thirst_relief_per_unit, Permille::ZERO)
+    };
     let next = HomeostaticNeeds::new(
         needs.hunger.saturating_sub(profile.hunger_relief_per_unit),
-        needs.thirst.saturating_sub(profile.thirst_relief_per_unit),
+        needs.thirst.saturating_sub(thirst_relief),
         needs.fatigue,
         needs.bladder.saturating_add(profile.bladder_fill_per_unit),
-        needs.dirtiness,
+        needs.dirtiness.saturating_add(dirtiness_penalty),
     );
     consume_one_unit(txn, target)?;
     set_actor_needs(txn, actor, next)
@@ -1521,7 +1534,9 @@ const fn pm(value: u16) -> Permille {
 
 #[cfg(test)]
 mod tests {
-    use super::{abort_emit_self_care_interrupted, register_needs_actions};
+    use super::{
+        abort_emit_self_care_interrupted, apply_consumable_effects, register_needs_actions,
+    };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -1533,14 +1548,15 @@ mod tests {
         PrototypePlace, Quantity, ResourceSource, RestCapacity, RestOccupancy, Seed,
         SelfCareOccupancy, SelfCareUseKind, SleepEpisode, SleepFailureCause, SleepQualityProfile,
         SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition, WakeReason, WashBasinState,
-        WasteSource, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
-        build_believed_entity_state, build_prototype_world, prototype_place_entity,
+        WasteSource, WaterQuality, WaterToleranceProfile, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, build_believed_entity_state, build_prototype_world,
+        prototype_place_entity, scale_permille,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionHandlerRegistry,
         ActionInstance, ActionInstanceId, ActionPayload, ActionState, Affordance,
-        BindingStrictness, DeterministicRng, EffectStep, PerAgentBeliefView, Precondition,
-        TickOutcome, abort_action, get_affordances, start_action, tick_action,
+        BindingStrictness, ConsumableEffect, DeterministicRng, EffectStep, PerAgentBeliefView,
+        Precondition, TickOutcome, abort_action, get_affordances, start_action, tick_action,
     };
 
     fn pm(value: u16) -> Permille {
@@ -1972,13 +1988,18 @@ mod tests {
         let water = {
             let mut txn = new_txn(&mut world, 2);
             let water = txn
-                .create_item_lot(CommodityKind::Water, Quantity(2))
+                .create_item_lot_with_quality(
+                    CommodityKind::Water,
+                    Quantity(2),
+                    Some(WaterQuality::Clean),
+                )
                 .unwrap();
             txn.set_ground_location(water, place).unwrap();
             txn.set_possessor(water, actor).unwrap();
             commit_txn(txn);
             water
         };
+
         let (defs, handlers) = setup_registries();
         let mut log = EventLog::new();
 
@@ -2000,6 +2021,179 @@ mod tests {
         assert_eq!(
             needs.bladder,
             pm(200).saturating_add(profile.bladder_fill_per_unit)
+        );
+        assert_eq!(needs.dirtiness, pm(350));
+    }
+
+    #[test]
+    fn drink_water_muddy_scales_relief_and_raises_dirtiness() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        let water = {
+            let mut txn = new_txn(&mut world, 2);
+            let water = txn
+                .create_item_lot_with_quality(
+                    CommodityKind::Water,
+                    Quantity(2),
+                    Some(WaterQuality::Muddy),
+                )
+                .unwrap();
+            txn.set_ground_location(water, place).unwrap();
+            txn.set_possessor(water, actor).unwrap();
+            commit_txn(txn);
+            water
+        };
+
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        let drink_index = affordances
+            .iter()
+            .position(|affordance| affordance.def_id == ActionDefId(1))
+            .unwrap();
+        run_action_to_completion(actor, drink_index, &mut world, &mut log, &defs, &handlers);
+
+        let needs = world.get_component_homeostatic_needs(actor).unwrap();
+        let lot = world.get_component_item_lot(water).unwrap();
+        let profile = CommodityKind::Water.spec().consumable_profile.unwrap();
+        let tolerance = WaterToleranceProfile::default();
+        assert_eq!(lot.quantity, Quantity(1));
+        assert_eq!(
+            needs.thirst,
+            pm(650).saturating_sub(scale_permille(
+                profile.thirst_relief_per_unit,
+                tolerance.thirst_relief_factor(WaterQuality::Muddy),
+            ))
+        );
+        assert_eq!(
+            needs.bladder,
+            pm(200).saturating_add(profile.bladder_fill_per_unit)
+        );
+        assert_eq!(
+            needs.dirtiness,
+            pm(350).saturating_add(tolerance.dirtiness_penalty(WaterQuality::Muddy))
+        );
+    }
+
+    #[test]
+    fn drink_water_clean_preserves_baseline_relief_no_dirtiness() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        {
+            let mut txn = new_txn(&mut world, 2);
+            let water = txn
+                .create_item_lot_with_quality(
+                    CommodityKind::Water,
+                    Quantity(1),
+                    Some(WaterQuality::Clean),
+                )
+                .unwrap();
+            txn.set_ground_location(water, place).unwrap();
+            txn.set_possessor(water, actor).unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        let drink_index = affordances
+            .iter()
+            .position(|affordance| affordance.def_id == ActionDefId(1))
+            .unwrap();
+        run_action_to_completion(actor, drink_index, &mut world, &mut log, &defs, &handlers);
+
+        let needs = world.get_component_homeostatic_needs(actor).unwrap();
+        let profile = CommodityKind::Water.spec().consumable_profile.unwrap();
+        assert_eq!(
+            needs.thirst,
+            pm(650).saturating_sub(profile.thirst_relief_per_unit)
+        );
+        assert_eq!(needs.dirtiness, pm(350));
+    }
+
+    #[test]
+    fn drink_non_water_lot_unchanged_behavior() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        let apple = {
+            let mut txn = new_txn(&mut world, 2);
+            let apple = txn
+                .create_item_lot_with_quality(
+                    CommodityKind::Apple,
+                    Quantity(2),
+                    Some(WaterQuality::Muddy),
+                )
+                .unwrap();
+            txn.set_ground_location(apple, place).unwrap();
+            txn.set_possessor(apple, actor).unwrap();
+            commit_txn(txn);
+            apple
+        };
+        let mut txn = new_txn(&mut world, 3);
+        apply_consumable_effects(actor, apple, ConsumableEffect::Thirst, &mut txn).unwrap();
+        commit_txn(txn);
+
+        let needs = world.get_component_homeostatic_needs(actor).unwrap();
+        let lot = world.get_component_item_lot(apple).unwrap();
+        let profile = CommodityKind::Apple.spec().consumable_profile.unwrap();
+        assert_eq!(lot.quantity, Quantity(1));
+        assert_eq!(
+            needs.thirst,
+            pm(650).saturating_sub(profile.thirst_relief_per_unit)
+        );
+        assert_eq!(
+            needs.bladder,
+            pm(200).saturating_add(profile.bladder_fill_per_unit)
+        );
+        assert_eq!(needs.dirtiness, pm(350));
+    }
+
+    #[test]
+    fn drink_water_stale_with_hardy_tolerance_override() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        let tolerance = WaterToleranceProfile {
+            thirst_relief_factor: BTreeMap::from([(WaterQuality::Stale, pm(900))]),
+            dirtiness_penalty: BTreeMap::from([(WaterQuality::Stale, pm(20))]),
+        };
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_component_water_tolerance_profile(actor, tolerance.clone())
+                .unwrap();
+            let water = txn
+                .create_item_lot_with_quality(
+                    CommodityKind::Water,
+                    Quantity(1),
+                    Some(WaterQuality::Stale),
+                )
+                .unwrap();
+            txn.set_ground_location(water, place).unwrap();
+            txn.set_possessor(water, actor).unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        let drink_index = affordances
+            .iter()
+            .position(|affordance| affordance.def_id == ActionDefId(1))
+            .unwrap();
+        run_action_to_completion(actor, drink_index, &mut world, &mut log, &defs, &handlers);
+
+        let needs = world.get_component_homeostatic_needs(actor).unwrap();
+        let profile = CommodityKind::Water.spec().consumable_profile.unwrap();
+        assert_eq!(
+            needs.thirst,
+            pm(650).saturating_sub(scale_permille(
+                profile.thirst_relief_per_unit,
+                tolerance.thirst_relief_factor(WaterQuality::Stale),
+            ))
+        );
+        assert_eq!(
+            needs.dirtiness,
+            pm(350).saturating_add(tolerance.dirtiness_penalty(WaterQuality::Stale))
         );
     }
 

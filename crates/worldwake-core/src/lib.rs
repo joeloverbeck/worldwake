@@ -287,7 +287,7 @@ pub use motive_source_slot_map::slot_for as motive_source_slot_for;
 pub use needs::{
     BodyCostPerTick, DeprivationExposure, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile,
 };
-pub use numerics::{BackoffScalePermille, LoadUnits, Permille, Quantity};
+pub use numerics::{BackoffScalePermille, LoadUnits, Permille, Quantity, scale_permille};
 pub use obligation::{ObligationExecutionTracker, ObligationSatiationProfile};
 pub use observation_context::{ObservationContext, PlaceVisibilityProfile};
 pub use offices::{

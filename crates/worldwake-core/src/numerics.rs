@@ -64,6 +64,11 @@ impl Permille {
     }
 }
 
+#[must_use]
+pub fn scale_permille(value: Permille, factor: Permille) -> Permille {
+    Permille::new_unchecked(((u32::from(value.value()) * u32::from(factor.value())) / 1000) as u16)
+}
+
 impl fmt::Display for Permille {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}‰", self.0)
@@ -182,6 +187,22 @@ mod tests {
             .saturating_sub(Permille::new(10).unwrap());
 
         assert_eq!(result, Permille::new(0).unwrap());
+    }
+
+    #[test]
+    fn scale_permille_multiplies_by_permille_factor() {
+        assert_eq!(
+            scale_permille(Permille::new(320).unwrap(), Permille::new(450).unwrap()),
+            Permille::new(144).unwrap()
+        );
+        assert_eq!(
+            scale_permille(Permille::new(320).unwrap(), Permille::new(1000).unwrap()),
+            Permille::new(320).unwrap()
+        );
+        assert_eq!(
+            scale_permille(Permille::new(320).unwrap(), Permille::ZERO),
+            Permille::ZERO
+        );
     }
 
     // --- Quantity ---
