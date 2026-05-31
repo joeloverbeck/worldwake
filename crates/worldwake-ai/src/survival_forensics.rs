@@ -416,6 +416,7 @@ impl WindowBuilder {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_frame(
     agent: EntityId,
     tick: Tick,

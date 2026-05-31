@@ -258,13 +258,13 @@ Note: the original spec proposed a "contested" cause for queue contention; that 
 
 ### D8. CLI player-POV gating for source quality
 
-Today the observer surfaces only `available_quantity > 0` boolean presence (`crates/worldwake-cli/src/bin/observer.rs:2400-2404`). Add player-POV gating so that:
+Implemented by `archive/tickets/S177WATSRCQUA-008.md`: before that ticket, the observer surfaced only `available_quantity > 0` boolean presence in its local survival summary and anomaly-support helper. The landed player-POV gating follows these rules:
 
 - When the controlled agent is co-located with a water source, surface its `quality` (FND-14A direct read of authoritative state is lawful because perception would deliver the same fact same-tick).
 - When the controlled agent is *not* co-located, surface only what the agent's `SourceReliability.last_observed_quality` records, with freshness annotation (e.g., "Muddy (observed 200 ticks ago)").
 - Apply identical legality to AI agents — agent symmetry per FND-19.
 
-The CLI does not invent a new accessor; it reuses the same `GoalBeliefView` surface (`water_source_quality` flows through the existing `resource_source(entity)` accessor since quality is a field on `ResourceSource`).
+The CLI did not invent a new `GoalBeliefView` accessor. The observer-local helper keeps the same legal source split explicitly: co-located reads use authoritative state under FND-14A, and remote reads use the controlled agent's `SourceReliability.last_observed_quality` record.
 
 ## Authoritative-to-AI Impact Analysis
 
