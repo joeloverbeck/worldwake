@@ -182,6 +182,7 @@ fn orchard_source(h: &mut GoldenHarness, place: EntityId, quantity: u32) -> Enti
             last_regeneration_tick: None,
             extraction_slots: NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: NonZeroU32::new(3).unwrap(),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     )

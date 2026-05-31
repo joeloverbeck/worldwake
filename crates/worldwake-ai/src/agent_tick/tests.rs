@@ -1397,6 +1397,7 @@ fn build_exclusive_queue_harness() -> ExclusiveQueueHarness {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         )
         .unwrap();
@@ -6686,6 +6687,7 @@ fn refresh_runtime_for_read_phase_uses_committed_source_for_local_failure_detect
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             },
         )
         .unwrap();

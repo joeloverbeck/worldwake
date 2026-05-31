@@ -89,6 +89,7 @@ fn golden_goal_invalidation_by_another_agent() {
             last_regeneration_tick: None,
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     );
@@ -228,6 +229,7 @@ fn run_unrelated_commodity_change_preserves_frontier_exhaustion(
             last_regeneration_tick: None,
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     );
@@ -507,6 +509,7 @@ fn golden_local_depleted_source_regenerates_without_spurious_failure_memory() {
             last_regeneration_tick: None,
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     );
@@ -794,6 +797,7 @@ fn golden_wash_action() {
             last_regeneration_tick: None,
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     );
@@ -1302,6 +1306,7 @@ fn golden_goal_switching_during_multi_leg_travel() {
             last_regeneration_tick: None,
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     );
@@ -1484,6 +1489,7 @@ fn golden_utility_weight_diversity_in_need_selection() {
             last_regeneration_tick: None,
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     );

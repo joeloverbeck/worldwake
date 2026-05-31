@@ -124,6 +124,7 @@ pub mod valuation;
 pub mod verification;
 pub mod violation;
 pub mod visibility;
+pub mod water_quality;
 pub mod witness;
 pub mod world;
 pub mod world_txn;
@@ -353,6 +354,7 @@ pub use violation::{
     RecordedViolation, ViolationDispositionProfile, ViolationId, ViolationKind, ViolationMemory,
 };
 pub use visibility::VisibilitySpec;
+pub use water_quality::WaterQuality;
 pub use witness::WitnessData;
 pub use world::World;
 pub use world::lifecycle::{

@@ -305,6 +305,7 @@ fn build_belief_only_wash_harness() -> (GoldenHarness, EntityId, EntityId) {
             last_regeneration_tick: None,
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     );
@@ -556,6 +557,7 @@ fn build_escalation_relief_harness() -> (GoldenHarness, EntityId) {
             last_regeneration_tick: None,
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     );

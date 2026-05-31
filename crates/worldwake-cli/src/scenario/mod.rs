@@ -504,6 +504,7 @@ fn spawn_entities(
                 extraction_slots,
                 extraction_duration_ticks: NonZeroU32::new(source_def.extraction_duration_ticks)
                     .unwrap_or(NonZeroU32::MIN),
+                quality: source_def.quality,
             },
         )?;
         txn.set_component_resource_extraction_queues(
@@ -3622,6 +3623,7 @@ mod tests {
                 capacity: Quantity(20),
                 extraction_slots: 1,
                 extraction_duration_ticks: 1,
+                quality: None,
             }],
             hostilities: vec![],
             commodity_decay: None,
@@ -3769,6 +3771,7 @@ mod tests {
                 capacity: Quantity(20),
                 extraction_slots: 1,
                 extraction_duration_ticks: 1,
+                quality: None,
             }],
             hostilities: vec![],
             commodity_decay: None,
@@ -3847,6 +3850,7 @@ mod tests {
                 capacity: Quantity(15),
                 extraction_slots: 1,
                 extraction_duration_ticks: 1,
+                quality: None,
             }],
             hostilities: vec![],
             commodity_decay: None,
@@ -5423,6 +5427,7 @@ mod tests {
             capacity: Quantity(20),
             extraction_slots: 1,
             extraction_duration_ticks: 1,
+            quality: None,
         }];
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -5446,6 +5451,7 @@ mod tests {
             capacity: Quantity(40),
             extraction_slots: 5,
             extraction_duration_ticks: 4,
+            quality: Some(worldwake_core::WaterQuality::Stale),
         }];
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -5456,6 +5462,7 @@ mod tests {
             .expect("resource source should be spawned");
         assert_eq!(source.extraction_slots.get(), 5);
         assert_eq!(source.extraction_duration_ticks.get(), 4);
+        assert_eq!(source.quality, Some(worldwake_core::WaterQuality::Stale));
     }
 
     #[test]
@@ -5469,6 +5476,7 @@ mod tests {
             capacity: Quantity(40),
             extraction_slots: 5,
             extraction_duration_ticks: 4,
+            quality: None,
         }];
 
         let spawned = spawn_scenario(&def).unwrap();

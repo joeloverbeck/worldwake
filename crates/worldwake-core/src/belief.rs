@@ -3101,6 +3101,7 @@ mod tests {
             last_regeneration_tick: None,
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         }
     }
 
@@ -3556,6 +3557,7 @@ mod tests {
                     last_regeneration_tick: Some(Tick(6)),
                     extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                     extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                    quality: None,
                 })),
                 PerceptionSource::DirectObservation,
                 7,
@@ -3597,6 +3599,7 @@ mod tests {
                 last_regeneration_tick: Some(Tick(6)),
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             })
         );
         assert_eq!(
@@ -4079,6 +4082,7 @@ mod tests {
                 last_regeneration_tick: Some(Tick(2)),
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
             }),
             alive: true,
             wounds: Vec::new(),
@@ -4542,6 +4546,7 @@ mod tests {
             last_regeneration_tick: None,
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         });
         let mut transient_item = sample_state(2, 1);
         transient_item.believed_kind = Some(EntityKind::ItemLot);
@@ -4780,6 +4785,7 @@ mod tests {
                         last_regeneration_tick: None,
                         extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                         extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                        quality: None,
                     })),
                     PerceptionSource::DirectObservation,
                     9,
@@ -4802,6 +4808,7 @@ mod tests {
                     last_regeneration_tick: None,
                     extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                     extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                    quality: None,
                 }),
                 alive: true,
                 wounds: Vec::new(),
@@ -4846,6 +4853,7 @@ mod tests {
                         last_regeneration_tick: None,
                         extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                         extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                        quality: None,
                     })),
                     PerceptionSource::DirectObservation,
                     9,
@@ -4863,6 +4871,7 @@ mod tests {
                         last_regeneration_tick: None,
                         extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                         extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                        quality: None,
                     })),
                     PerceptionSource::DirectObservation,
                     8,
@@ -4934,6 +4943,7 @@ mod tests {
                         last_regeneration_tick: None,
                         extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                         extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                        quality: None,
                     })),
                     PerceptionSource::DirectObservation,
                     8,
@@ -4951,6 +4961,7 @@ mod tests {
                         last_regeneration_tick: None,
                         extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                         extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                        quality: None,
                     })),
                     PerceptionSource::DirectObservation,
                     9,
@@ -4968,6 +4979,7 @@ mod tests {
                         last_regeneration_tick: None,
                         extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                         extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                        quality: None,
                     })),
                     PerceptionSource::DirectObservation,
                     10,
@@ -5076,6 +5088,7 @@ mod tests {
                         last_regeneration_tick: None,
                         extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                         extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                        quality: None,
                     })),
                     PerceptionSource::DirectObservation,
                     0,

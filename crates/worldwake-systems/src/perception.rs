@@ -2038,6 +2038,7 @@ mod tests {
                     last_regeneration_tick: None,
                     extraction_slots: NonZeroU8::new(1).unwrap(),
                     extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
+                    quality: None,
                 },
             )
             .unwrap();
@@ -5070,6 +5071,7 @@ mod tests {
                         last_regeneration_tick: None,
                         extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                         extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                        quality: None,
                     }),
                     alive: true,
                     wounds: Vec::new(),
@@ -5103,6 +5105,7 @@ mod tests {
                     last_regeneration_tick: None,
                     extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                     extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                    quality: None,
                 },
             )
             .unwrap();
@@ -5175,6 +5178,7 @@ mod tests {
                     last_regeneration_tick: None,
                     extraction_slots: NonZeroU8::new(1).unwrap(),
                     extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
+                    quality: None,
                 },
             )
             .unwrap();
@@ -5230,6 +5234,7 @@ mod tests {
                     last_regeneration_tick: None,
                     extraction_slots: NonZeroU8::new(1).unwrap(),
                     extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
+                    quality: None,
                 },
             )
             .unwrap();
@@ -5253,6 +5258,7 @@ mod tests {
                     last_regeneration_tick: None,
                     extraction_slots: NonZeroU8::new(1).unwrap(),
                     extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
+                    quality: None,
                 },
             )
             .unwrap();

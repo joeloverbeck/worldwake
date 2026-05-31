@@ -26,7 +26,7 @@ Phase 7: Consequence Carriers
 
 ## Status
 
-📝 DRAFT — authored, awaiting activation (held adjunct wave; see `specs/IMPLEMENTATION-ORDER.md`)
+🚧 IN PROGRESS — implementation started with `archive/tickets/S177WATSRCQUA-001.md` on 2026-05-31.
 
 ## Crates
 

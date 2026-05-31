@@ -470,6 +470,7 @@ fn basin_natural_refill_from_colocated_water_source() {
             last_regeneration_tick: None,
             extraction_slots: NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     );
@@ -615,6 +616,7 @@ fn wash_re_emerges_after_first_cycle_drops_dirtiness_below_critical() {
             last_regeneration_tick: None,
             extraction_slots: NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     );

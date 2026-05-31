@@ -22,8 +22,9 @@ use worldwake_core::{
     RiskWeightProfile, RoutePreferenceProfile, ShelterTag, SleepQualityProfile,
     SleepRecoveryModifier, SubstitutePreferences, SuccessionLaw, TellProfile,
     TestimonyTrustProfile, TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
-    ViolationDispositionProfile, WashBasinState, WorkstationTag, items::CommodityKind,
-    social_artifact::SuspensionReason as ArtifactSuspensionReason, topology::PlaceTag,
+    ViolationDispositionProfile, WashBasinState, WaterQuality, WorkstationTag,
+    items::CommodityKind, social_artifact::SuspensionReason as ArtifactSuspensionReason,
+    topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -828,6 +829,8 @@ pub struct ResourceSourceDef {
     pub extraction_slots: u8,
     #[serde(default = "default_extraction_duration_ticks")]
     pub extraction_duration_ticks: u32,
+    #[serde(default)]
+    pub quality: Option<WaterQuality>,
 }
 
 fn default_extraction_slots() -> u8 {
@@ -2001,6 +2004,30 @@ mod tests {
             def.resource_sources[0].extraction_duration_ticks, 1,
             "extraction_duration_ticks default must be 1"
         );
+        assert_eq!(def.resource_sources[0].quality, None);
+    }
+
+    #[test]
+    fn scenario_def_resource_source_deserializes_quality() {
+        let ron_str = r#"(
+            seed: 1,
+            places: [
+                (name: "RiverBank", tags: [Forest]),
+            ],
+            resource_sources: [
+                (
+                    commodity: Water,
+                    location: "RiverBank",
+                    regeneration_ticks_per_unit: Some(3),
+                    capacity: 30,
+                    quality: Muddy,
+                ),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+
+        assert_eq!(def.resource_sources[0].quality, Some(WaterQuality::Muddy));
     }
 
     #[test]

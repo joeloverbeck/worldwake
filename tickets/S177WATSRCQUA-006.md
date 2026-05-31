@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-core/place_dirtiness` (field addition to `WashBasinState`), `worldwake-systems/item_decay` (`first_colocated_water_source` rewritten from first-match to cleanest-preference; `next_wash_basin_refill` raises basin dirtiness on muddy refill), `worldwake-sim/save_load` (SAVE_FORMAT_VERSION bump)
-**Deps**: S177WATSRCQUA-001
+**Deps**: `archive/tickets/S177WATSRCQUA-001.md`
 
 ## Problem
 

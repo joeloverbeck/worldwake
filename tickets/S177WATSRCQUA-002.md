@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-core/items` (field addition to `ItemLot`), `worldwake-systems/production_actions` (extraction commit writes source quality onto produced lot), `worldwake-sim/save_load` (SAVE_FORMAT_VERSION bump)
-**Deps**: S177WATSRCQUA-001
+**Deps**: `archive/tickets/S177WATSRCQUA-001.md`
 
 ## Problem
 

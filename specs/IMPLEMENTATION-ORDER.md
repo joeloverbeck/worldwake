@@ -98,7 +98,7 @@ remaining spec depends on the other's completion.
 ### Authored, Awaiting Activation
 
 - **S177 — Water Source Quality, Depletion Observation, and Reliability Memory** —
-  `specs/S177-water-source-quality-depletion-reliability.md` — *Status: Draft.*
+  `specs/S177-water-source-quality-depletion-reliability.md` — *Status: In progress.*
   Adds `WaterQuality` (`Clean`/`Stale`/`Muddy`) to water sources with thirst/dirtiness
   and basin-refill consequences; adds belief-backed source-reliability memory
   (extends the S38 learned-source substrate) so agents discover depletion locally and

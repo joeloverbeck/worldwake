@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `worldwake-core` (new module, component_schema registration, `create_agent` seeding), `worldwake-sim/belief_view` (new accessor + RuntimeBeliefView impl), `worldwake-cli/scenario` (AgentDef field + spawn_agent setter), `worldwake-sim/save_load` (SAVE_FORMAT_VERSION bump), `docs/profiles` (regeneration)
-**Deps**: S177WATSRCQUA-001
+**Deps**: `archive/tickets/S177WATSRCQUA-001.md`
 
 ## Problem
 

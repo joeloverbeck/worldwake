@@ -54,6 +54,7 @@ fn place_well(
             last_regeneration_tick: None,
             extraction_slots: NonZeroU8::new(extraction_slots).unwrap(),
             extraction_duration_ticks: NonZeroU32::new(3).unwrap(),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     )
@@ -79,6 +80,7 @@ fn place_orchard(
             last_regeneration_tick: None,
             extraction_slots: NonZeroU8::new(extraction_slots).unwrap(),
             extraction_duration_ticks: NonZeroU32::new(3).unwrap(),
+            quality: None,
         },
         ProductionOutputOwner::Actor,
     )

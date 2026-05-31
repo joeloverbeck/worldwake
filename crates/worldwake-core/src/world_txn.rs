@@ -2184,6 +2184,7 @@ mod tests {
             last_regeneration_tick: Some(Tick(3)),
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         }
     }
 
@@ -4327,6 +4328,7 @@ mod tests {
             last_regeneration_tick: Some(Tick(9)),
             extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
             extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            quality: None,
         };
         world
             .insert_component_resource_source(facility, before.clone())
