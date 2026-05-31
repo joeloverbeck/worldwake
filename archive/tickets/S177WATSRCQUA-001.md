@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-core` (new enum, field addition to `ResourceSource`), `worldwake-cli/scenario` (`ResourceSourceDef.quality` + `spawn_scenario` propagation), `worldwake-sim/save_load` (SAVE_FORMAT_VERSION bump)
-**Deps**: `specs/S177-water-source-quality-depletion-reliability.md`
+**Deps**: `archive/specs/S177-water-source-quality-depletion-reliability.md`
 
 ## Problem
 

@@ -26,7 +26,7 @@ Phase 7: Consequence Carriers
 
 ## Status
 
-🚧 IN PROGRESS — implementation started with `archive/tickets/S177WATSRCQUA-001.md` on 2026-05-31.
+✅ COMPLETED — implemented by `archive/tickets/S177WATSRCQUA-001.md` through `archive/tickets/S177WATSRCQUA-010.md` on 2026-05-31.
 
 ## Crates
 
@@ -385,3 +385,12 @@ No system commands another.
 - `scenarios/survival-basin-competition-1440.ron`
 
 **Illegal paths this spec must not produce:** a planner candidate for a remote source's quality with no belief carrier; instant omniscient quality-belief correction before arrival; a global `water_scarcity` scalar; any sickness/wound from water (deferred); water appearing without a source/regeneration path; a parallel "depletion belief" surface coexisting with `SourceReliability.last_observed_capacity` (FND-28).
+
+## Outcome
+
+Completed on 2026-05-31.
+
+- Added `WaterQuality` on water resource sources, water-lot quality propagation, quality-aware Drink relief and dirtiness consequences, quality observation memory on `SourceReliability`, the `ResourceSourceQualityObserved` event tag/payload, the universal `WaterToleranceProfile`, basin dirty-water refill penalties, survival forensics for source-acquisition failures, and player-POV source-quality gating.
+- Added focused S177 goldens for quality-on-arrival, dirty-water tolerance tradeoff, and muddy-basin refill; added the CI-owned ignored 1440-tick `survival-quality-degrading-1440` collision scenario and registered it in the golden-survival workflow.
+- Deviations from the draft: the 1440-tick collision uses three places rather than two so a low-tolerance agent has a farther Clean fallback; the long-run golden seeds source/location entity beliefs while stripping quality so fallback selection is belief-backed and quality still enters through co-located perception; water-borne disease/illness remains explicitly deferred.
+- Verification completed across the ticket family included focused crate/unit/golden coverage per ticket, `cargo test -p worldwake-ai`, the ignored `survival_quality_degrading_1440` and `survival_basin_competition` golden-survival filters, and `python3 scripts/golden_inventory.py --write --check-docs`. Final pre-push `./scripts/verify.sh` remains the harness final branch gate.

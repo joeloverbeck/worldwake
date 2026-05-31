@@ -77,7 +77,7 @@ recorded as a watchlist scenario-authoring item.
   `empty_latrine` maintenance actions; extends forensics with
   `DegradedSelfCareOpportunity`. No new ECS component — lowest new surface, the
   report's §17 first-slice pick.
-- **`specs/S177-water-source-quality-depletion-reliability.md`** (report §10 water,
+- **`archive/specs/S177-water-source-quality-depletion-reliability.md`** (report §10 water,
   §13 degrading-water scenario) — adds `WaterQuality` to water sources +
   belief-backed source-reliability memory; realizes canonical regression scenario D
   for water. Disease consequence deferred (see reassessment).

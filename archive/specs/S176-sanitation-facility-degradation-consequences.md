@@ -57,7 +57,7 @@ Phase 7: Consequence Carriers
 - **No new contention queue.** Cleaning actions reuse the existing S44/S173 `SelfCareOccupancy` on the basin/latrine place. A full latrine being emptied is occupied like any other self-care use.
 - **No new belief-view accessors.** D7 reads facility condition through the **existing** `facility_wash_basin_state` / `wash_basin_state` / `latrine_fullness` accessors on `GoalBeliefView`.
 - **No global sanitation/settlement-health score.** All state is per-facility concrete carriers (FND-3).
-- **No water-source quality model.** Basin refill clean/dirty-water preference is owned by the paired `specs/S177-water-source-quality-depletion-reliability.md`; S176 consumes only the existing `WashBasinState.clean_water_units` precondition and the basin's own `dirtiness_level`.
+- **No water-source quality model.** Basin refill clean/dirty-water preference is owned by the paired `archive/specs/S177-water-source-quality-depletion-reliability.md`; S176 consumes only the existing `WashBasinState.clean_water_units` precondition and the basin's own `dirtiness_level`.
 - **No food spoilage.** Owned by `specs/S178-perishable-food-spoilage.md`.
 - **No HTN method.** Cleaning/refill ops are flat GOAP prerequisite operations.
 - **No backward-compatibility shim.** The Toilet action's "always succeeds" behavior is replaced by the fullness gate; goldens depending on the old behavior are updated (FND-28).
