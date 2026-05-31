@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: No — observer/CLI rendering only, no simulation state mutation
-**Deps**: `archive/tickets/S177WATSRCQUA-001.md`, S177WATSRCQUA-004
+**Deps**: `archive/tickets/S177WATSRCQUA-001.md`, `archive/tickets/S177WATSRCQUA-004.md`
 
 ## Problem
 

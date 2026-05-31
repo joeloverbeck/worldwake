@@ -427,6 +427,7 @@ fn decision_payload_agent(payload: &DecisionEventPayload) -> EntityId {
         DecisionEventPayload::PlanInvalidated(inner) => inner.agent,
         DecisionEventPayload::ExpectationMismatch(inner) => inner.agent,
         DecisionEventPayload::SourceExpectationFailure(inner) => inner.agent,
+        DecisionEventPayload::ResourceSourceQualityObserved(inner) => inner.observer,
         DecisionEventPayload::RepairApplied(inner) => inner.agent,
         DecisionEventPayload::ReplanTriggered(inner) => inner.agent,
         DecisionEventPayload::BlockerRecorded(inner) => inner.agent,
@@ -449,6 +450,7 @@ fn decision_event_name(payload: &DecisionEventPayload) -> &'static str {
         DecisionEventPayload::PlanInvalidated(_) => "PlanInvalidated",
         DecisionEventPayload::ExpectationMismatch(_) => "ExpectationMismatch",
         DecisionEventPayload::SourceExpectationFailure(_) => "SourceExpectationFailure",
+        DecisionEventPayload::ResourceSourceQualityObserved(_) => "ResourceSourceQualityObserved",
         DecisionEventPayload::RepairApplied(_) => "RepairApplied",
         DecisionEventPayload::ReplanTriggered(_) => "ReplanTriggered",
         DecisionEventPayload::BlockerRecorded(_) => "BlockerRecorded",
@@ -650,6 +652,10 @@ fn decision_payload_summary(
             );
             summary
         }
+        DecisionEventPayload::ResourceSourceQualityObserved(inner) => format!(
+            "source={:?}:{:?} quality={:?} observed_tick={}",
+            inner.source.entity, inner.source.commodity, inner.quality, inner.observed_at_tick.0
+        ),
         DecisionEventPayload::RepairApplied(inner) => format!(
             "goal={:?} step={} kind={:?} target={:?} provider={:?}",
             inner.goal_key.kind,

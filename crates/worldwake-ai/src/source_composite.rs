@@ -2,7 +2,7 @@ use crate::{GoalOffer, ranking::RankingContext};
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
     CommodityKind, EntityId, PreferenceProfile, ReliabilityRecord, SourceKey, Tick,
-    failure_ratio_permille,
+    WaterToleranceProfile, failure_ratio_permille,
 };
 
 const NEUTRAL_FACTOR_PERMILLE: u32 = 1000;
@@ -18,6 +18,7 @@ pub struct SourceCompositeRank {
     pub trust_factor_permille: u32,
     pub wait_factor_permille: u32,
     pub capacity_factor_permille: u32,
+    pub quality_factor_permille: u32,
     pub composite_permille: u32,
 }
 
@@ -28,6 +29,10 @@ pub(crate) fn source_composite_rank(
     let (source_entity, commodity) = crate::ranking::source_reliability_discount_scope(candidate)?;
     let source_reliability = context.view.source_reliability(context.agent);
     let profile = context.view.preference_profile(context.agent)?;
+    let water_tolerance = context
+        .view
+        .water_tolerance_profile(context.agent)
+        .unwrap_or_default();
     Some(source_composite_rank_from_record(
         source_entity,
         commodity,
@@ -38,6 +43,7 @@ pub(crate) fn source_composite_rank(
             })
         }),
         profile,
+        &water_tolerance,
         context.current_tick,
     ))
 }
@@ -47,6 +53,7 @@ fn source_composite_rank_from_reliability(
     candidate: &GoalOffer,
     source_reliability: &worldwake_core::SourceReliability,
     profile: PreferenceProfile,
+    water_tolerance: &WaterToleranceProfile,
     current_tick: Tick,
 ) -> Option<SourceCompositeRank> {
     let (source_entity, commodity) = crate::ranking::source_reliability_discount_scope(candidate)?;
@@ -59,6 +66,7 @@ fn source_composite_rank_from_reliability(
         commodity,
         source_reliability.sources.get(&key),
         profile,
+        water_tolerance,
         current_tick,
     ))
 }
@@ -68,6 +76,7 @@ fn source_composite_rank_from_record(
     commodity: CommodityKind,
     record: Option<&ReliabilityRecord>,
     profile: PreferenceProfile,
+    water_tolerance: &WaterToleranceProfile,
     current_tick: Tick,
 ) -> SourceCompositeRank {
     let trust_factor_permille = record.map_or(NEUTRAL_FACTOR_PERMILLE, |record| {
@@ -79,10 +88,14 @@ fn source_composite_rank_from_record(
     let capacity_factor_permille = record.map_or(NEUTRAL_FACTOR_PERMILLE, |record| {
         capacity_factor_permille(record, profile, current_tick)
     });
+    let quality_factor_permille = record.map_or(NEUTRAL_FACTOR_PERMILLE, |record| {
+        quality_factor_permille(record, commodity, water_tolerance, profile, current_tick)
+    });
     let composite_permille = compose_factors(
         trust_factor_permille,
         wait_factor_permille,
         capacity_factor_permille,
+        quality_factor_permille,
     );
 
     SourceCompositeRank {
@@ -91,6 +104,7 @@ fn source_composite_rank_from_record(
         trust_factor_permille,
         wait_factor_permille,
         capacity_factor_permille,
+        quality_factor_permille,
         composite_permille,
     }
 }
@@ -158,9 +172,38 @@ fn capacity_signal_permille(record: &ReliabilityRecord, profile: PreferenceProfi
         .min(NEUTRAL_FACTOR_PERMILLE)
 }
 
-fn compose_factors(trust: u32, wait: u32, capacity: u32) -> u32 {
+fn quality_factor_permille(
+    record: &ReliabilityRecord,
+    commodity: CommodityKind,
+    water_tolerance: &WaterToleranceProfile,
+    profile: PreferenceProfile,
+    current_tick: Tick,
+) -> u32 {
+    if commodity != CommodityKind::Water {
+        return NEUTRAL_FACTOR_PERMILLE;
+    }
+    let Some(quality) = record.last_observed_quality else {
+        return NEUTRAL_FACTOR_PERMILLE;
+    };
+    let quality_age_ticks = current_tick
+        .0
+        .saturating_sub(record.last_observed_quality_tick.0);
+    if quality_age_ticks > profile.memory_retention_ticks {
+        return NEUTRAL_FACTOR_PERMILLE;
+    }
+
+    let tolerance_factor = u32::from(water_tolerance.thirst_relief_factor(quality).value());
+    let discount = NEUTRAL_FACTOR_PERMILLE.saturating_sub(tolerance_factor);
+    let freshness = freshness_factor_permille(quality_age_ticks, profile);
+    NEUTRAL_FACTOR_PERMILLE
+        .saturating_sub(discount.saturating_mul(freshness) / NEUTRAL_FACTOR_PERMILLE)
+}
+
+fn compose_factors(trust: u32, wait: u32, capacity: u32, quality: u32) -> u32 {
     (trust.saturating_mul(wait) / NEUTRAL_FACTOR_PERMILLE)
         .saturating_mul(capacity)
+        .saturating_div(NEUTRAL_FACTOR_PERMILLE)
+        .saturating_mul(quality)
         .saturating_div(NEUTRAL_FACTOR_PERMILLE)
         .min(MAX_FACTOR_PERMILLE)
 }
@@ -171,7 +214,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
         AcquisitionQuantity, CommodityPurpose, EntityId, GoalKey, GoalKind, OpportunityAnchor,
-        Permille, SourceReliability,
+        Permille, SourceReliability, WaterQuality,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -307,7 +350,72 @@ mod tests {
 
     #[test]
     fn compose_factors_clamps_at_2000_permille() {
-        assert_eq!(compose_factors(2000, 2000, 2000), 2000);
+        assert_eq!(compose_factors(2000, 2000, 2000, 2000), 2000);
+    }
+
+    #[test]
+    fn quality_factor_neutral_without_observation() {
+        assert_eq!(
+            quality_factor_permille(
+                &record(),
+                CommodityKind::Water,
+                &WaterToleranceProfile::default(),
+                profile(),
+                Tick(10)
+            ),
+            1000
+        );
+    }
+
+    #[test]
+    fn quality_factor_neutral_for_clean_observation() {
+        let mut record = record();
+        record.observe_quality(WaterQuality::Clean, Tick(10));
+
+        assert_eq!(
+            quality_factor_permille(
+                &record,
+                CommodityKind::Water,
+                &WaterToleranceProfile::default(),
+                profile(),
+                Tick(10)
+            ),
+            1000
+        );
+    }
+
+    #[test]
+    fn quality_factor_floors_at_tolerance_for_muddy_observation() {
+        let mut record = record();
+        record.observe_quality(WaterQuality::Muddy, Tick(10));
+
+        assert_eq!(
+            quality_factor_permille(
+                &record,
+                CommodityKind::Water,
+                &WaterToleranceProfile::default(),
+                profile(),
+                Tick(10)
+            ),
+            450
+        );
+    }
+
+    #[test]
+    fn quality_factor_neutral_for_stale_quality_observation() {
+        let mut record = record();
+        record.observe_quality(WaterQuality::Muddy, Tick(10));
+
+        assert_eq!(
+            quality_factor_permille(
+                &record,
+                CommodityKind::Water,
+                &WaterToleranceProfile::default(),
+                profile(),
+                Tick(111)
+            ),
+            1000
+        );
     }
 
     #[test]
@@ -319,6 +427,7 @@ mod tests {
                 &goal(GoalKind::Sleep),
                 &reliability,
                 profile(),
+                &WaterToleranceProfile::default(),
                 Tick(10)
             ),
             None
@@ -336,6 +445,7 @@ mod tests {
             &acquisition_goal(source, CommodityKind::Bread),
             &reliability,
             profile(),
+            &WaterToleranceProfile::default(),
             Tick(10),
         )
         .expect("record absence should still produce neutral source composite");
@@ -345,6 +455,49 @@ mod tests {
         assert_eq!(rank.trust_factor_permille, 1000);
         assert_eq!(rank.wait_factor_permille, 1000);
         assert_eq!(rank.capacity_factor_permille, 1000);
+        assert_eq!(rank.quality_factor_permille, 1000);
         assert_eq!(rank.composite_permille, 1000);
+    }
+
+    #[test]
+    fn composite_rank_orders_clean_above_muddy_for_default_tolerance() {
+        let clean_source = entity(2);
+        let muddy_source = entity(3);
+        let clean_key = SourceKey {
+            entity: clean_source,
+            commodity: CommodityKind::Water,
+        };
+        let muddy_key = SourceKey {
+            entity: muddy_source,
+            commodity: CommodityKind::Water,
+        };
+        let mut clean_record = record();
+        clean_record.observe_quality(WaterQuality::Clean, Tick(10));
+        let mut muddy_record = record();
+        muddy_record.observe_quality(WaterQuality::Muddy, Tick(10));
+        let reliability = SourceReliability {
+            sources: BTreeMap::from([(clean_key, clean_record), (muddy_key, muddy_record)]),
+        };
+
+        let clean_rank = source_composite_rank_from_reliability(
+            &acquisition_goal(clean_source, CommodityKind::Water),
+            &reliability,
+            profile(),
+            &WaterToleranceProfile::default(),
+            Tick(10),
+        )
+        .unwrap();
+        let muddy_rank = source_composite_rank_from_reliability(
+            &acquisition_goal(muddy_source, CommodityKind::Water),
+            &reliability,
+            profile(),
+            &WaterToleranceProfile::default(),
+            Tick(10),
+        )
+        .unwrap();
+
+        assert!(clean_rank.composite_permille > muddy_rank.composite_permille);
+        assert_eq!(clean_rank.quality_factor_permille, 1000);
+        assert_eq!(muddy_rank.quality_factor_permille, 450);
     }
 }

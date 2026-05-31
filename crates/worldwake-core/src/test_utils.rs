@@ -166,6 +166,8 @@ pub fn sample_source_reliability() -> SourceReliability {
                 wait_observation_count: 2,
                 last_observed_capacity: 7,
                 last_observed_capacity_tick: Tick(20),
+                last_observed_quality: None,
+                last_observed_quality_tick: Tick(0),
             },
         )]),
     }

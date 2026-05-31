@@ -3,8 +3,8 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-/// S177WATSRCQUA-002 stores water quality on item lots.
-pub const SAVE_FORMAT_VERSION: u32 = 113;
+/// S177WATSRCQUA-004 stores water-quality observations on source reliability.
+pub const SAVE_FORMAT_VERSION: u32 = 114;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -220,13 +220,14 @@ mod tests {
         PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
         PursuitInvalidationReasonTag, Quantity, RankedGoalComparisonDimensionTag, RecordRef,
         RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
-        ReplanTriggeredPayload, ReservationId, RestCapacity, RestOccupancy, RewardEncumbrance,
-        RiskWeightProfile, RoutePreferenceProfile, RoutePreferenceSummary, RouteSegment, Seed,
-        SelfCareOccupancy, SelfCareUseKind, ShelterTag, SleepEpisode, SleepEpisodeEndedPayload,
-        SleepEpisodeStartedPayload, SleepFailureCause, SleepQualityProfile, SleepRecoveryModifier,
-        StateHash, SuspensionReason, TestimonyTrustProfile, TestimonyTrustSummary, Tick, TickRange,
-        TopicScope, UniqueItemKind, UtilityProfile, VisibilitySpec, WakeCondition, WakeReason,
-        WashBasinState, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WaterQuality,
+        ReplanTriggeredPayload, ReservationId, ResourceSourceQualityObservedPayload, RestCapacity,
+        RestOccupancy, RewardEncumbrance, RiskWeightProfile, RoutePreferenceProfile,
+        RoutePreferenceSummary, RouteSegment, Seed, SelfCareOccupancy, SelfCareUseKind, ShelterTag,
+        SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepFailureCause,
+        SleepQualityProfile, SleepRecoveryModifier, SourceKeyPayload, StateHash, SuspensionReason,
+        TestimonyTrustProfile, TestimonyTrustSummary, Tick, TickRange, TopicScope, UniqueItemKind,
+        UtilityProfile, VisibilitySpec, WakeCondition, WakeReason, WashBasinState,
+        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WaterQuality,
         WaterToleranceProfile, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
         build_prototype_world,
         test_utils::{
@@ -1401,6 +1402,20 @@ mod tests {
                     }],
                 }),
             ),
+            (
+                EventTag::ResourceSourceQualityObserved,
+                DecisionEventPayload::ResourceSourceQualityObserved(
+                    ResourceSourceQualityObservedPayload {
+                        observer: actor,
+                        source: SourceKeyPayload {
+                            entity: target,
+                            commodity: CommodityKind::Water,
+                        },
+                        quality: WaterQuality::Muddy,
+                        observed_at_tick: Tick(37),
+                    },
+                ),
+            ),
         ]
     }
 
@@ -1415,8 +1430,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_113_after_water_tolerance_profile() {
-        assert_eq!(SAVE_FORMAT_VERSION, 113);
+    fn save_format_version_is_114_after_source_quality_observation() {
+        assert_eq!(SAVE_FORMAT_VERSION, 114);
     }
 
     #[test]
@@ -1427,7 +1442,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 113);
+        assert_eq!(SAVE_FORMAT_VERSION, 114);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1826,6 +1841,11 @@ mod tests {
             .chain(state.event_log().events_by_tag(EventTag::RepairApplied))
             .chain(state.event_log().events_by_tag(EventTag::ReplanTriggered))
             .chain(state.event_log().events_by_tag(EventTag::BlockerRecorded))
+            .chain(
+                state
+                    .event_log()
+                    .events_by_tag(EventTag::ResourceSourceQualityObserved),
+            )
             .map(|event_id| {
                 state
                     .event_log()
@@ -1881,6 +1901,11 @@ mod tests {
                 restored
                     .event_log()
                     .events_by_tag(EventTag::BlockerRecorded),
+            )
+            .chain(
+                restored
+                    .event_log()
+                    .events_by_tag(EventTag::ResourceSourceQualityObserved),
             )
             .map(|event_id| {
                 restored

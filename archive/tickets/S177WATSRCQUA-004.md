@@ -1,6 +1,6 @@
 # S177WATSRCQUA-004: Quality observation on `SourceReliability` + new `EventTag::ResourceSourceQualityObserved`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-core/experience` (field additions to `ReliabilityRecord`), `worldwake-core/event_tag` + payload (new variant), `worldwake-systems/perception` (write `observe_quality` at co-located observation site), `worldwake-ai/source_composite` (new quality factor in composite rank), `worldwake-sim/save_load` (SAVE_FORMAT_VERSION bump)
@@ -30,7 +30,7 @@ The spec's D4 deliverable extends the existing capacity-observation pipeline wit
 2. New `ResourceSourceQualityObserved` event (vs. widening `SourceExpectationFailure`) — quality observation is not a failure; it's a routine perception write. Conflating the two would obscure the causal record (FND-29A). New variant is the FND-26 state-cohesion choice.
 3. Quality factor in `compose_factors` (vs. a separate ranking pipeline) — quality belongs in the same composite as trust/wait/capacity per FND-26. The factor is gated on `last_observed_quality.is_some()` so unobserved sources are neutral (no discount).
 
-## Verification Layers
+## Verified Layers
 
 1. Field additions on `ReliabilityRecord` compile and roundtrip via bincode — focused test in `experience.rs`.
 2. `observe_quality` write site fires on co-located water-source observation — focused integration test in `perception.rs`.
@@ -39,9 +39,9 @@ The spec's D4 deliverable extends the existing capacity-observation pipeline wit
 5. Composite-rank ordering preserves: fresh `Clean` > fresh `Stale` > fresh `Muddy` for an agent with default tolerance — focused ordering test.
 6. SAVE_FORMAT_VERSION migration — version-gate test.
 
-## What to Change
+## Implemented Changes
 
-### 1. Extend `ReliabilityRecord`
+### 1. Extended `ReliabilityRecord`
 
 `crates/worldwake-core/src/experience.rs:79-98`:
 
@@ -75,11 +75,11 @@ pub fn observe_quality(&mut self, quality: WaterQuality, tick: Tick) {
 
 Update the 4 ReliabilityRecord construction sites that don't use spread syntax to add the new fields.
 
-### 2. Add `EventTag::ResourceSourceQualityObserved` variant
+### 2. Added `EventTag::ResourceSourceQualityObserved` variant
 
 `crates/worldwake-core/src/event_tag.rs`: add the new variant near the existing `SourceExpectationFailure` at line 46. Update the variant-count assertion at line 68 (47 → 48). Grep workspace-wide for exhaustive `match` arms on `EventTag` and add the new arm — most matches use `_ =>` catch-all, but verify.
 
-### 3. Add `DecisionEventPayload::ResourceSourceQualityObserved` variant + payload type
+### 3. Added `DecisionEventPayload::ResourceSourceQualityObserved` variant + payload type
 
 In `crates/worldwake-core/src/decision_event_payload.rs` (or wherever `DecisionEventPayload` lives — verify via grep): add the new payload variant carrying source attribution:
 
@@ -105,13 +105,14 @@ Follow the `SourceExpectationFailurePayload` precedent for derive set and field 
 if state.commodity == CommodityKind::Water {
     if let Some(quality) = state.quality {
         record.observe_quality(quality, tick);
-        // Emit DecisionEventPayload::ResourceSourceQualityObserved at the same site
-        // (mirror the SourceExpectationFailure emission pattern from agent_tick/mod.rs:1051-1052)
+        // Emits one DecisionEventPayload::ResourceSourceQualityObserved event
+        // per observed water-source quality so each observed source keeps
+        // exact provenance.
     }
 }
 ```
 
-Locate the existing emission pattern by grepping for `EventTag::SourceExpectationFailure` in `agent_tick/mod.rs` (around line 1051) and follow the same shape. The emission may live in a sibling function — verify whether perception itself emits or whether a downstream consumer translates the perception write into the event.
+The landed implementation emits hidden `ResourceSourceQualityObserved` events directly from the passive-perception source-observation pass before committing the batched `SourceReliability` component update. This keeps each quality observation's provenance event id exact even when multiple sources are observed in one tick.
 
 ### 5. Quality factor in `source_composite_rank`
 
@@ -125,11 +126,11 @@ Add the new factor to `compose_factors` (line 161) — extend it to 4 inputs (tr
 
 Update the test module to add quality-factor tests following the existing test pattern.
 
-### 6. Bump `SAVE_FORMAT_VERSION`
+### 6. Bumped `SAVE_FORMAT_VERSION`
 
-`crates/worldwake-sim/src/save_load.rs:7`: change `113` to `114`.
+`crates/worldwake-sim/src/save_load.rs:7`: changed `113` to `114`.
 
-## Files to Touch
+## Touched Files
 
 - `crates/worldwake-core/src/experience.rs` (modify — add fields to `ReliabilityRecord`, add `observe_quality` method, update `new` constructor, update non-spread construction sites within this file)
 - `crates/worldwake-core/src/test_utils.rs` (modify — 1 site at line 151 if not using spread)
@@ -142,7 +143,7 @@ Update the test module to add quality-factor tests following the existing test p
 - `crates/worldwake-ai/src/ranking.rs` (modify — 1 ReliabilityRecord site; verify quality factor flows through `apply_source_reliability_discount`)
 - `crates/worldwake-ai/src/agent_tick/mod.rs` (modify if perception emission lives here per existing `SourceExpectationFailure` pattern)
 - `crates/worldwake-ai/tests/scenarios/source_composite.rs` (modify — 1 ReliabilityRecord site; extend existing tests to cover quality observation)
-- `crates/worldwake-sim/src/save_load.rs` (modify — bump `SAVE_FORMAT_VERSION` 113→114)
+- `crates/worldwake-sim/src/save_load.rs` (modified — bumped `SAVE_FORMAT_VERSION` from 113 to 114)
 
 ## Out of Scope
 
@@ -151,9 +152,9 @@ Update the test module to add quality-factor tests following the existing test p
 - CLI player-POV gating for `last_observed_quality` — owned by ticket 008.
 - Authoring tolerance overrides — owned by ticket 003 and exercised by tickets 009-010.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests Passed Or Substituted
 
 1. New: `reliability_record_observe_quality_writes_fields` — `observe_quality(Muddy, Tick(100))` sets `last_observed_quality = Some(Muddy)` and `last_observed_quality_tick = Tick(100)`.
 2. New: `reliability_record_quality_roundtrip` — bincode roundtrip with both `Some` and `None` quality.
@@ -163,8 +164,8 @@ Update the test module to add quality-factor tests following the existing test p
 6. New: `quality_factor_neutral_for_clean_observation` — Clean → 1000.
 7. New: `quality_factor_neutral_for_stale_quality_observation` — observation older than freshness window → 1000.
 8. New: `composite_rank_orders_clean_above_muddy_for_default_tolerance` — fresh Clean ranks higher than fresh Muddy.
-9. New: `resource_source_quality_observed_event_emitted_at_perception_site` — decision-trace assertion analogous to `survival_preferences.rs:110`.
-10. Existing: `cargo test --workspace` passes — the variant-count assertion update, the spread-syntax-dominant construction sites, and the existing capacity-observation tests all hold.
+9. New: `perception_writes_quality_observation_for_co_located_water_source` asserts the `ResourceSourceQualityObserved` event payload at the perception site.
+10. Existing: `cargo test --workspace` passed — the variant-count assertion update, constructor fallout, observer/bin payload renderers, and existing capacity-observation tests all hold.
 
 ### Invariants
 
@@ -174,21 +175,41 @@ Update the test module to add quality-factor tests following the existing test p
 4. `source_composite_rank` quality factor is neutral for unobserved or stale-observation sources; only fresh observations drive the discount.
 5. Perception is the only writer of `last_observed_quality`. Ranking reads only via belief-view. No system commands another (FND-26).
 
-## Test Plan
-
-### New/Modified Tests
+## Added/Modified Tests
 
 1. `crates/worldwake-core/src/experience.rs` (test module extension) — `observe_quality` write, roundtrip with quality fields.
 2. `crates/worldwake-core/src/event_tag.rs` (test module extension) — variant-count assertion updated to 48; new variant exists.
 3. `crates/worldwake-systems/src/perception.rs` (test module extension) — quality observation at co-located site (water + non-water cases).
 4. `crates/worldwake-ai/src/source_composite.rs` (test module extension) — quality_factor tests; compose_factors with quality input; ordering tests.
 
-### Commands
+## Verification Result
 
-1. `cargo test -p worldwake-core experience observe_quality` — targeted.
-2. `cargo test -p worldwake-core event_tag` — variant-count assertion.
-3. `cargo test -p worldwake-systems perception_writes_quality` — targeted.
-4. `cargo test -p worldwake-ai source_composite quality` — targeted composite tests.
-5. `./scripts/verify.sh` — full workspace.
+### Commands Run
 
-See Merge-Order Constraints in Step 6 summary — SAVE_FORMAT_VERSION cascade includes this bump (113→114).
+1. Passed `cargo test -p worldwake-core observe_quality`.
+2. Passed `cargo test -p worldwake-core event_tag`.
+3. Passed `cargo test -p worldwake-systems perception_writes_quality`.
+4. Passed `cargo test -p worldwake-systems perception_does_not_write_quality`.
+5. Passed `cargo test -p worldwake-ai source_composite::tests::quality`.
+6. Passed `cargo test -p worldwake-ai composite_rank_orders_clean_above_muddy`.
+7. Passed `cargo test -p worldwake-sim save_format_version_is_114_after_source_quality_observation`.
+8. Passed `cargo test -p worldwake-sim save_to_bytes_roundtrip_preserves_full_nondefault_state`.
+9. Passed `cargo test -p worldwake-sim save_to_bytes_roundtrip_preserves_decision_event_payloads`.
+10. Passed `cargo test -p worldwake-ai`.
+11. Passed `cargo test --workspace`.
+12. Waived `./scripts/verify.sh` for per-ticket closeout because the harness final branch phase owns the full pre-PR gate before push; this ticket ran the required workspace test gate and focused checks.
+
+## Outcome
+
+Completed on 2026-05-31.
+
+- Added `ReliabilityRecord.last_observed_quality` and `last_observed_quality_tick`, plus `observe_quality`, serde defaults, fixture updates, and bincode coverage.
+- Added `EventTag::ResourceSourceQualityObserved` and `DecisionEventPayload::ResourceSourceQualityObserved`, with save-format version `114` and save/load payload roundtrip coverage.
+- Extended passive perception to write water-source quality observations and emit one hidden quality-observation event per observed water source. The reliability record stores that event id as provenance.
+- Added quality-aware source-composite ranking via `quality_factor_permille`, including default `WaterToleranceProfile` tolerance, stale-belief neutralization, non-water neutrality, trace/observer formatting fallout, and focused ordering tests.
+- Broad workspace verification passed after fixing exhaustive payload consumers in `soak_seed_perf`, `observer`, save/load payload inventories, and `SourceCompositeRank` constructor/formatter fallout.
+
+## Deviations
+
+- The drafted `cargo test -p worldwake-ai source_composite quality` command was invalid Cargo syntax, so proof used valid focused selectors instead.
+- The event emission landed as one payload event per observed source quality rather than one batched mutation event, because `DecisionEventPayload` is singular per event and multiple water sources can be observed in the same tick.

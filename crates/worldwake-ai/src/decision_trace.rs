@@ -2542,12 +2542,13 @@ fn format_source_reliability_discount_summary(discount: &SourceReliabilityDiscou
 
 fn format_source_composite_summary(rank: &SourceCompositeRank) -> String {
     format!(
-        ", source_composite=entity={} commodity={:?} trust={} wait={} cap={} composite={}",
+        ", source_composite=entity={} commodity={:?} trust={} wait={} cap={} quality={} composite={}",
         rank.source_entity,
         rank.commodity,
         rank.trust_factor_permille,
         rank.wait_factor_permille,
         rank.capacity_factor_permille,
+        rank.quality_factor_permille,
         rank.composite_permille,
     )
 }
@@ -3266,6 +3267,7 @@ mod tests {
             trust_factor_permille: 900,
             wait_factor_permille: 800,
             capacity_factor_permille: 1200,
+            quality_factor_permille: 1000,
             composite_permille: 864,
         }
     }
@@ -4848,6 +4850,7 @@ mod tests {
         assert!(summary.contains("trust=900"));
         assert!(summary.contains("wait=800"));
         assert!(summary.contains("cap=1200"));
+        assert!(summary.contains("quality=1000"));
         assert!(summary.contains("composite=864"));
     }
 
@@ -4860,6 +4863,7 @@ mod tests {
         assert!(summary.contains("trust=900"));
         assert!(summary.contains("wait=800"));
         assert!(summary.contains("cap=1200"));
+        assert!(summary.contains("quality=1000"));
         assert!(summary.contains("composite=864"));
     }
 

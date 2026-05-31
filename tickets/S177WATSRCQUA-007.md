@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai/survival_forensics` (new `SourceAcquisitionFailure` derived record + `SourceFailureCause`/`SourceFailureOutcome` enums; extension to `SurvivalForensicExtractor.observe()`)
-**Deps**: S177WATSRCQUA-004
+**Deps**: `archive/tickets/S177WATSRCQUA-004.md`
 
 ## Problem
 

@@ -229,6 +229,8 @@ fn record(
         wait_observation_count,
         last_observed_capacity,
         last_observed_capacity_tick,
+        last_observed_quality: None,
+        last_observed_quality_tick: Tick(0),
     }
 }
 
@@ -585,6 +587,7 @@ fn no_record_neutrality_falls_through_to_lower_tiebreakers() {
         assert_eq!(rank.trust_factor_permille, 1000);
         assert_eq!(rank.wait_factor_permille, 1000);
         assert_eq!(rank.capacity_factor_permille, 1000);
+        assert_eq!(rank.quality_factor_permille, 1000);
         assert_eq!(rank.composite_permille, 1000);
     }
     assert_ne!(

@@ -5638,6 +5638,7 @@ mod tests {
             trust_factor_permille: 900,
             wait_factor_permille: 800,
             capacity_factor_permille: 1200,
+            quality_factor_permille: 1000,
             composite_permille: 864,
         });
 

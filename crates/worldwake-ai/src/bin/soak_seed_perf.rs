@@ -74,6 +74,7 @@ fn decision_payload_tag(payload: &DecisionEventPayload) -> &'static str {
         DecisionEventPayload::RepairApplied(_) => "RepairApplied",
         DecisionEventPayload::ExpectationMismatch(_) => "ExpectationMismatch",
         DecisionEventPayload::SourceExpectationFailure(_) => "SourceExpectationFailure",
+        DecisionEventPayload::ResourceSourceQualityObserved(_) => "ResourceSourceQualityObserved",
         DecisionEventPayload::SleepEpisodeStarted(_) => "SleepEpisodeStarted",
         DecisionEventPayload::SleepEpisodeEnded(_) => "SleepEpisodeEnded",
         DecisionEventPayload::WashFacilityUsed(_) => "WashFacilityUsed",

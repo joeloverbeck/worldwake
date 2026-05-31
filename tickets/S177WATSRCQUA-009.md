@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: No — scenario authoring + golden harness only
-**Deps**: `archive/tickets/S177WATSRCQUA-001.md`, `archive/tickets/S177WATSRCQUA-002.md`, `archive/tickets/S177WATSRCQUA-003.md`, S177WATSRCQUA-004, S177WATSRCQUA-005, S177WATSRCQUA-006
+**Deps**: `archive/tickets/S177WATSRCQUA-001.md`, `archive/tickets/S177WATSRCQUA-002.md`, `archive/tickets/S177WATSRCQUA-003.md`, `archive/tickets/S177WATSRCQUA-004.md`, S177WATSRCQUA-005, S177WATSRCQUA-006
 
 ## Problem
 
