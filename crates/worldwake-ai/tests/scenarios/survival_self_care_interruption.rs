@@ -211,6 +211,7 @@ fn place_wash_basin(h: &mut GoldenHarness, place: EntityId) -> EntityId {
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(40),
             max_effective_dirtiness: pm(1000),
+            ..WashBasinState::default()
         },
     )
     .unwrap();

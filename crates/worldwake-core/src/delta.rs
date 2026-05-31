@@ -813,6 +813,7 @@ mod tests {
                 dirtiness_level: Permille::new(250).unwrap(),
                 dirtiness_per_use: Permille::new(50).unwrap(),
                 max_effective_dirtiness: Permille::new(900).unwrap(),
+                ..WashBasinState::default()
             }),
             ComponentValue::BanditFactionPolicy(BanditFactionPolicy {
                 min_regroup_count: 3,

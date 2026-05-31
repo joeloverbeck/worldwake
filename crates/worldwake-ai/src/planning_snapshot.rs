@@ -1124,7 +1124,7 @@ fn build_snapshot_entity(
         .and_then(|belief| belief.resource_source.clone())
         .or_else(|| view.resource_source(entity));
     let wash_basin_state = belief_backed
-        .and_then(|belief| belief.wash_basin_state)
+        .and_then(|belief| belief.wash_basin_state.clone())
         .or_else(|| worldwake_sim::FacilityBeliefView::wash_basin_state(view, entity));
     // S176: co-located/believed latrine fullness so the Relieve search can see
     // a full latrine (toilet blocked) and insert empty_latrine. `None` for a

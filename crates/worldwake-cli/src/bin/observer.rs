@@ -2138,7 +2138,7 @@ fn colocated_wash_basin_state(
         .find(|(entity, marker)| {
             world.effective_place(*entity) == Some(place) && marker.0 == WorkstationTag::WashBasin
         })
-        .and_then(|(entity, _)| world.get_component_wash_basin_state(entity).copied())
+        .and_then(|(entity, _)| world.get_component_wash_basin_state(entity).cloned())
 }
 
 fn yes_no(value: bool) -> &'static str {

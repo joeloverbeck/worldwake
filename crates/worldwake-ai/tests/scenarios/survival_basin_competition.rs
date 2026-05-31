@@ -82,7 +82,7 @@ fn run() -> CompetitionObservation {
     let basin_state = h
         .world
         .get_component_wash_basin_state(basin)
-        .copied()
+        .cloned()
         .expect("wash basin should carry WashBasinState");
     let basin_hard_block = basin_state.max_effective_dirtiness.value();
     // The default worthwhile-wash floor is 500‰; cleaning triggers once the

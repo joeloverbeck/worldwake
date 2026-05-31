@@ -414,6 +414,7 @@ fn spawn_entities(
         if facility_def.workstation == worldwake_core::WorkstationTag::WashBasin {
             let basin_state: WashBasinState = facility_def
                 .wash_basin_state
+                .clone()
                 .map(Into::into)
                 .unwrap_or_default();
             txn.set_component_wash_basin_state(facility_id, basin_state)?;
@@ -2482,6 +2483,7 @@ mod tests {
                 dirtiness_per_use: Permille::new(75).unwrap(),
                 // Unauthored in the RON above: defaults to full scale.
                 max_effective_dirtiness: Permille::new(1000).unwrap(),
+                dirty_water_refill_penalty: WashBasinState::default().dirty_water_refill_penalty,
             })
         );
     }

@@ -1,23 +1,23 @@
 # S177WATSRCQUA-006: Basin refill quality preference + `WashBasinState.dirty_water_refill_penalty`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Yes — `worldwake-core/place_dirtiness` (field addition to `WashBasinState`), `worldwake-systems/item_decay` (`first_colocated_water_source` rewritten from first-match to cleanest-preference; `next_wash_basin_refill` raises basin dirtiness on muddy refill), `worldwake-sim/save_load` (SAVE_FORMAT_VERSION bump)
+**Engine Changes**: Yes — `worldwake-core/place_dirtiness` (field addition to `WashBasinState`), `worldwake-systems/item_decay` (`first_colocated_water_source` rewritten from first-match to cleanest-preference; `next_wash_basin_refill` raises basin dirtiness on muddy/stale refill), `worldwake-sim/save_load` (SAVE_FORMAT_VERSION bump), downstream `WashBasinState` clone/fixture fallout across sim, AI, CLI, and systems
 **Deps**: `archive/tickets/S177WATSRCQUA-001.md`
 
 ## Problem
 
-The spec's D6 deliverable makes basin refill prefer cleanest available water and raises the basin's `dirtiness_level` when refilling from muddy/stale water — coupling to S176's wash-effectiveness gate so dirty-water refill creates real maintenance pressure. Today `first_colocated_water_source` at `crates/worldwake-systems/src/item_decay.rs:214-223` returns the first water source it finds via `query_resource_source().find(...)` with no quality preference. Without this ticket, basin refill is indifferent to water quality and the basin-side quality coupling (a key emergent loop in the spec's target patterns) does not materialize.
+Before this ticket, the spec's D6 deliverable required basin refill to prefer cleanest available water and raise the basin's `dirtiness_level` when refilling from muddy/stale water, coupling to S176's wash-effectiveness gate so dirty-water refill creates real maintenance pressure. The live `first_colocated_water_source` at intake returned the first water source it found via `query_resource_source().find(...)` with no quality preference. That left basin refill indifferent to water quality and prevented the basin-side quality coupling from materializing.
 
 ## Assumption Reassessment (2026-05-31)
 
-1. `first_colocated_water_source` at `crates/worldwake-systems/src/item_decay.rs:214-223` performs a first-match scan filtered by `state.commodity == CommodityKind::Water && state.available_quantity.0 > 0 && resource_place(...) == Some(place)`. The fn returns `Option<(EntityId, &ResourceSource)>`. The "cleanest-preference" rewrite iterates all matching sources, sorts by `quality` ascending (Clean < Stale < Muddy per `WaterQuality::Ord`), and tie-breaks by `EntityId` ascending for determinism.
+1. At intake, `first_colocated_water_source` in `crates/worldwake-systems/src/item_decay.rs` performed a first-match scan filtered by `state.commodity == CommodityKind::Water && state.available_quantity.0 > 0 && resource_place(...) == Some(place)`. The landed cleanest-preference rewrite iterates all matching sources, sorts by `quality` ascending (Clean < Stale < Muddy per `WaterQuality::Ord`), and tie-breaks by `EntityId` ascending for determinism.
 2. `WashBasinState` at `crates/worldwake-core/src/place_dirtiness.rs:45-55` carries `clean_water_units, max_clean_water, refill_per_tick, units_per_full_wash, dirtiness_level, dirtiness_per_use, max_effective_dirtiness`. Derives `Clone, Debug, Eq, PartialEq, Serialize, Deserialize` (per reassessment Agent 1 report). New `dirty_water_refill_penalty: BTreeMap<WaterQuality, Permille>` with `#[serde(default)]` is derive-compatible.
-3. `next_wash_basin_refill` at `crates/worldwake-systems/src/item_decay.rs:184-212` returns `Option<(WashBasinState, EntityId, ResourceSource)>`. Today it transfers water unconditionally; the new behavior reads the source's `quality` (now present after ticket 001), looks up the basin's `dirty_water_refill_penalty[quality]`, and raises `basin_state.dirtiness_level` by that amount (saturating).
+3. `next_wash_basin_refill` in `crates/worldwake-systems/src/item_decay.rs` returns `Option<(WashBasinState, EntityId, ResourceSource)>`. Before this ticket it transferred water unconditionally; the landed behavior reads the source's `quality`, looks up the basin's `dirty_water_refill_penalty[quality]`, and raises `basin_state.dirtiness_level` by that amount (saturating).
 4. Existing tests at `crates/worldwake-systems/src/item_decay.rs:838-934` exercise basin refill: `wash_basin_refills_from_colocated_water_source` (line 838), `wash_basin_refill_capped_at_max_clean_water` (line 884), `wash_basin_refill_capped_at_source_available_quantity` (line 930). These must be updated or sibling tests added to cover quality-aware behavior. The tests today use a `seed_water_source` helper at line 583 that produces a `ResourceSource { commodity: Water, available_quantity, ... }` with no quality — these will produce `quality: None` after ticket 001 lands.
 5. WashBasinState construction sites: relatively few (mainly in `place_dirtiness.rs` and test code). Spread-syntax usage should be checked during implementation; the field needs a sensible `Default` value (empty `BTreeMap` is meaningless — better to provide a per-quality default with Clean→0, Stale→small, Muddy→larger).
-6. Shared abstraction boundary: `WashBasinState`'s serialized shape + `first_colocated_water_source`'s contract. The contract change is observable (cleanest-preference selection vs. first-match), so the existing tests that assert "refills from this source" need to assert the specific source chosen — verify the existing test setup has only one water source at the place (which makes first-match and cleanest-preference equivalent for those tests).
+6. Shared abstraction boundary: `WashBasinState`'s serialized shape + `first_colocated_water_source`'s contract. The contract change is observable (cleanest-preference selection vs. first-match), so the existing tests that asserted "refills from this source" were kept equivalent where they had one water source, and new tests assert the specific source chosen when several qualities coexist.
 7. SAVE_FORMAT_VERSION cascade: this ticket bumps 114→115 (the final bump in the S177 cascade).
 8. Coupling to S176: S176 (archived) wires `WashBasinState.dirtiness_level` to wash effectiveness via `max_effective_dirtiness`. This ticket's dirty-water-refill writes to `dirtiness_level` flow through S176's gate naturally — no S176-side change needed.
 9. Adjacent contradictions: the `first_colocated_water_source` rewrite changes selection behavior for scenarios where multiple water sources of differing quality coexist at a place. Such scenarios don't exist today (no quality field), so no existing test regression — but document the behavioral expansion in the test plan.
@@ -29,7 +29,7 @@ The spec's D6 deliverable makes basin refill prefer cleanest available water and
 2. `dirty_water_refill_penalty` on `WashBasinState` (vs. on `ResourceSource` or as a global constant) is the FND-26 state-cohesion choice — the basin owns its own dirtying mechanics, since different basin types could plausibly have different sensitivity (a fine porcelain basin dirties faster than a stone trough). FND-22 also benefits: a scenario author could author per-basin diversity.
 3. `BTreeMap<WaterQuality, Permille>` (vs. paired fields per variant) follows the determinism invariant and matches the `WaterToleranceProfile` pattern from ticket 003 for ecosystem consistency.
 
-## Verification Layers
+## Verified Layers
 
 1. `first_colocated_water_source` cleanest-preference selection: focused unit test seeds 3 water sources at one place (Clean, Stale, Muddy), confirms the fn returns the Clean source.
 2. `first_colocated_water_source` tie-break by entity id: focused test seeds 2 Clean sources, confirms deterministic selection by `EntityId` ordering.
@@ -39,9 +39,9 @@ The spec's D6 deliverable makes basin refill prefer cleanest available water and
 6. S176 coupling: with raised `dirtiness_level`, the wash-effectiveness gate produces lower relief — this is owned by S176's tests, but a focused integration test here can confirm the chained behavior (refill from muddy, then attempt wash, observe lower relief).
 7. SAVE_FORMAT_VERSION migration test confirms 114→115.
 
-## What to Change
+## Landed Changes
 
-### 1. Add `dirty_water_refill_penalty` to `WashBasinState`
+### 1. Added `dirty_water_refill_penalty` to `WashBasinState`
 
 `crates/worldwake-core/src/place_dirtiness.rs:45-55`:
 
@@ -67,11 +67,11 @@ fn default_dirty_water_refill_penalty() -> BTreeMap<WaterQuality, Permille> {
 }
 ```
 
-Update the `Default` impl for `WashBasinState` (if one exists) and any explicit construction sites.
+The `Default` impl and explicit construction sites now include the default penalty map.
 
-### 2. Rewrite `first_colocated_water_source`
+### 2. Rewrote `first_colocated_water_source`
 
-`crates/worldwake-systems/src/item_decay.rs:214-223`:
+`crates/worldwake-systems/src/item_decay.rs`:
 
 ```rust
 fn first_colocated_water_source(
@@ -95,11 +95,11 @@ fn first_colocated_water_source(
 }
 ```
 
-Rename the function to reflect its new contract (e.g., `cleanest_colocated_water_source`) — verify the rename's blast radius via grep before deciding whether to rename or keep the old name. If renamed, update all call sites.
+The function name stayed unchanged because the call surface is internal and the behavior is covered by focused tests.
 
-### 3. Modify `next_wash_basin_refill` to raise dirtiness on muddy/stale refill
+### 3. Modified `next_wash_basin_refill` to raise dirtiness on muddy/stale refill
 
-`crates/worldwake-systems/src/item_decay.rs:184-212`: after the transfer amount is computed and before returning, raise `basin_state.dirtiness_level` by the per-quality penalty:
+`crates/worldwake-systems/src/item_decay.rs`: after the transfer amount is computed and before returning, `basin_state.dirtiness_level` is raised by the per-quality penalty:
 
 ```rust
 if let Some(quality) = source.quality {
@@ -112,25 +112,27 @@ if let Some(quality) = source.quality {
 }
 ```
 
-The penalty is applied once per refill operation (not per-unit transferred) — matching the existing per-tick semantics. If per-unit-scaled penalty is desired, document the rationale.
+The penalty is applied once per refill operation (not per-unit transferred), matching the existing per-tick semantics.
 
-### 4. Update existing tests + add new tests
+### 4. Updated existing tests + added new tests
 
-- Modify `wash_basin_refills_from_colocated_water_source` (line 838) to seed source with `quality: Some(Clean)` and assert no dirtiness change. Or split into a sibling test if the existing assertion can stand.
-- Add `basin_refill_prefers_clean_over_muddy_when_both_available`.
-- Add `basin_refill_raises_dirtiness_on_muddy_water`.
-- Add `basin_refill_preserves_dirtiness_on_clean_water`.
-- Add `basin_refill_falls_back_to_muddy_when_clean_depleted`.
+- Modified `wash_basin_refills_from_colocated_water_source` to seed source with `quality: Some(Clean)` and assert no dirtiness change.
+- Added `basin_refill_prefers_clean_over_muddy_when_both_available`.
+- Added `basin_refill_raises_dirtiness_on_muddy_water`.
+- Added `basin_refill_preserves_dirtiness_on_clean_water`.
+- Added `basin_refill_falls_back_to_muddy_when_clean_depleted`.
 
-### 5. Bump `SAVE_FORMAT_VERSION`
+### 5. Bumped `SAVE_FORMAT_VERSION`
 
-`crates/worldwake-sim/src/save_load.rs:7`: change `114` to `115`.
+`crates/worldwake-sim/src/save_load.rs` now stores `SAVE_FORMAT_VERSION` as `115`.
 
-## Files to Touch
+## Landed Files
 
-- `crates/worldwake-core/src/place_dirtiness.rs` (modify — add `dirty_water_refill_penalty` field to `WashBasinState`; default helper; test extension)
-- `crates/worldwake-systems/src/item_decay.rs` (modify — rewrite `first_colocated_water_source` to cleanest-preference; extend `next_wash_basin_refill` with quality penalty write; modify existing tests; add new tests)
-- `crates/worldwake-sim/src/save_load.rs` (modify — bump `SAVE_FORMAT_VERSION` 114→115)
+- `crates/worldwake-core/src/place_dirtiness.rs` (added `dirty_water_refill_penalty`; default helper; bincode/default/accessor tests)
+- `crates/worldwake-systems/src/item_decay.rs` (cleanest source selection; dirty-water basin penalty; focused refill tests)
+- `crates/worldwake-sim/src/save_load.rs` (SAVE_FORMAT_VERSION 114→115; save-version test updates)
+- `crates/worldwake-core/src/belief.rs`, `crates/worldwake-core/src/delta.rs`, `crates/worldwake-sim/src/affordance_query.rs`, `crates/worldwake-sim/src/belief_view.rs`, `crates/worldwake-sim/src/per_agent_belief_view.rs`, `crates/worldwake-ai/src/*`, `crates/worldwake-cli/src/*`, and scenario/golden fixtures (shared `WashBasinState` no-longer-`Copy` and constructor fallout)
+- `crates/worldwake-systems/src/needs_actions.rs` (clone/fixture fallout for the no-longer-`Copy` basin state)
 
 ## Out of Scope
 
@@ -139,9 +141,9 @@ The penalty is applied once per refill operation (not per-unit transferred) — 
 - Drink action reading basin quality — Drink does not interact with `WashBasinState` (that's a different action surface).
 - Renaming `first_colocated_water_source` workspace-wide — only rename if grep confirms ≤2 call sites; otherwise keep the name with documentation that selection is now cleanest-preference.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests Passed
 
 1. New: `basin_refill_prefers_clean_over_muddy_when_both_available` — assertion that selection picks Clean.
 2. New: `basin_refill_raises_dirtiness_on_muddy_water` — `dirtiness_level` rises by `dirty_water_refill_penalty[Muddy]`.
@@ -160,18 +162,45 @@ The penalty is applied once per refill operation (not per-unit transferred) — 
 3. `BTreeMap<WaterQuality, Permille>` iteration is deterministic.
 4. `SAVE_FORMAT_VERSION` is now 115.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
 1. `crates/worldwake-core/src/place_dirtiness.rs` (test module extension) — `WashBasinState` roundtrip with `dirty_water_refill_penalty`.
 2. `crates/worldwake-systems/src/item_decay.rs` (test module extension) — 5 new focused tests covering cleanest-preference + dirty-water penalty + fallback; 3 modified existing tests.
 
-### Commands
+### Verification Commands
 
-1. `cargo test -p worldwake-systems first_colocated_water_source` — targeted selection tests.
-2. `cargo test -p worldwake-systems basin_refill` — targeted refill tests.
-3. `cargo test -p worldwake-systems wash_basin_refill` — modified existing tests.
-4. `./scripts/verify.sh` — full workspace.
+1. Passed `cargo test -p worldwake-systems basin_refill` — targeted refill, cleanest-selection, dirty-water penalty, fallback, and tie-break tests.
+2. Passed `cargo test -p worldwake-core wash_basin` — core wash-basin state/belief/accessor focused coverage.
+3. Passed `cargo test -p worldwake-sim save` — save-version and full non-default save roundtrip coverage.
+4. Passed `cargo test --workspace --no-run` — shared constructor and all-target compile fallout sweep.
+5. Passed `cargo clippy --workspace --all-targets -- -D warnings` — CI-shaped all-target lint gate.
+6. Passed `cargo test --workspace` — full workspace tests after final source/lint adjustments.
+7. Waived `./scripts/verify.sh` for this per-ticket closeout because the harness final branch phase still owns the full pre-push gate; this ticket ran the live wrapper's substantive cargo test and CI-shaped clippy gates directly.
 
 See Merge-Order Constraints in Step 6 summary — final SAVE_FORMAT_VERSION bump in the S177 cascade (114→115).
+
+## Outcome
+
+Completed on 2026-05-31.
+
+- `WashBasinState` now stores a deterministic per-quality `dirty_water_refill_penalty` map with defaults of Clean 0‰, Stale 20‰, and Muddy 80‰.
+- Basin maintenance now chooses the cleanest available colocated water source, skips depleted cleaner sources, tie-breaks deterministically by `EntityId`, and raises basin `dirtiness_level` by the selected source quality's penalty.
+- `SAVE_FORMAT_VERSION` is now 115 for the persisted basin-state shape.
+- Because `WashBasinState` now owns a `BTreeMap`, it is no longer `Copy`; downstream belief views, AI fixtures, CLI fixtures, and systems tests were updated to clone or inherit defaults explicitly.
+
+## Deviations
+
+- The internal function name `first_colocated_water_source` was kept; the landed contract is enforced by focused tests rather than a rename.
+- No S176 wash-effectiveness code changed. The dirty-water refill writes to the existing `dirtiness_level` carrier, so S176's existing wash gate consumes the result through the established state path.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-systems basin_refill`
+- Passed `cargo test -p worldwake-core wash_basin`
+- Passed `cargo test -p worldwake-sim save`
+- Passed `cargo test --workspace --no-run`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo test --workspace`
+- Waived `./scripts/verify.sh` for this per-ticket closeout because the harness final branch phase still owns the full pre-push gate.

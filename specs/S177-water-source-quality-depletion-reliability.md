@@ -222,9 +222,9 @@ Add a `GoalBeliefView` accessor `water_tolerance_profile(agent: EntityId) -> Opt
 
 ### D6. Basin refill quality preference
 
-Extend `crates/worldwake-systems/src/item_decay.rs::first_colocated_water_source` (currently first-match at `:214-223`) to **prefer the cleanest** colocated water source: iterate all colocated water sources at the place and return the one whose `quality` is best (`Clean < Stale < Muddy` per `WaterQuality::Ord`), tie-breaking deterministically by entity id (BTreeMap iteration order).
+Implemented by `archive/tickets/S177WATSRCQUA-006.md`: `crates/worldwake-systems/src/item_decay.rs::first_colocated_water_source` now **prefers the cleanest** colocated water source by iterating all colocated water sources at the place and returning the one whose `quality` is best (`Clean < Stale < Muddy` per `WaterQuality::Ord`), tie-breaking deterministically by entity id (BTreeMap iteration order).
 
-Extend `next_wash_basin_refill` (`:184-212`): when transferring water from a `Some(Muddy)` or `Some(Stale)` source, add to the basin's `dirtiness_level` (a `Permille` per place_dirtiness.rs:50) by a fixed per-quality increment authored on the basin or read from a new field on `WashBasinState` (preferred: a per-basin `dirty_water_refill_penalty: BTreeMap<WaterQuality, Permille>` with a `#[serde(default)]` default; this stays on the basin to honor FND-26 state cohesion — the basin owns its dirtying mechanics, not the source).
+`next_wash_basin_refill` now adds to the basin's `dirtiness_level` when transferring water from a `Some(Muddy)` or `Some(Stale)` source. The per-quality increment is owned by `WashBasinState.dirty_water_refill_penalty: BTreeMap<WaterQuality, Permille>` with a `#[serde(default)]` default; this stays on the basin to honor FND-26 state cohesion — the basin owns its dirtying mechanics, not the source.
 
 This couples to S176 D2's wash-effectiveness gate: muddy-water refill raises basin dirtiness, which then reduces wash effectiveness via the `max_effective_dirtiness` boundary.
 

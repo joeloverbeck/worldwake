@@ -2471,10 +2471,10 @@ impl FacilityBeliefView for PlanningState<'_> {
 
     fn wash_basin_state(&self, entity: EntityId) -> Option<worldwake_core::WashBasinState> {
         if let Some(state) = self.wash_basin_state_overrides.get(&entity) {
-            return Some(*state);
+            return Some(state.clone());
         }
         let snapshot = self.snapshot.entities.get(&entity)?;
-        snapshot.facility.wash_basin_state
+        snapshot.facility.wash_basin_state.clone()
     }
 
     fn latrine_fullness(&self, entity: EntityId) -> Option<worldwake_core::LatrineFullness> {

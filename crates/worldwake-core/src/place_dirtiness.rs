@@ -1,7 +1,8 @@
 //! Place and facility hygiene state.
 
-use crate::{Component, Permille};
+use crate::{Component, Permille, WaterQuality};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PlaceDirtiness {
@@ -41,7 +42,7 @@ impl Default for LatrineFullness {
 
 impl Component for LatrineFullness {}
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WashBasinState {
     pub clean_water_units: u16,
     pub max_clean_water: u16,
@@ -52,6 +53,8 @@ pub struct WashBasinState {
     /// Wash relief scales down linearly as `dirtiness_level` rises toward this
     /// threshold; at or above it the Wash precondition fails. Scenario-authored.
     pub max_effective_dirtiness: Permille,
+    #[serde(default = "default_dirty_water_refill_penalty")]
+    pub dirty_water_refill_penalty: BTreeMap<WaterQuality, Permille>,
 }
 
 impl Default for WashBasinState {
@@ -67,20 +70,30 @@ impl Default for WashBasinState {
             // effective_fraction == 1 and never blocks the Wash precondition
             // until a scenario authors a lower threshold.
             max_effective_dirtiness: Permille::new_unchecked(1000),
+            dirty_water_refill_penalty: default_dirty_water_refill_penalty(),
         }
     }
 }
 
 impl Component for WashBasinState {}
 
+pub fn default_dirty_water_refill_penalty() -> BTreeMap<WaterQuality, Permille> {
+    BTreeMap::from([
+        (WaterQuality::Clean, Permille::ZERO),
+        (WaterQuality::Stale, Permille::new_unchecked(20)),
+        (WaterQuality::Muddy, Permille::new_unchecked(80)),
+    ])
+}
+
 #[cfg(test)]
 mod tests {
     use super::{LatrineFullness, PlaceDirtiness, WashBasinState};
     use crate::{Component, EntityKind, Permille, Tick, Topology, World, WorldError};
     use serde::{Serialize, de::DeserializeOwned};
+    use std::collections::BTreeMap;
     use std::fmt::Debug;
 
-    fn assert_component_bounds<T: Component + Copy + Eq + PartialEq>() {}
+    fn assert_component_bounds<T: Component + Clone + Eq + PartialEq>() {}
 
     fn assert_bincode_roundtrip<T>(value: &T)
     where
@@ -120,6 +133,7 @@ mod tests {
                 dirtiness_level: Permille::ZERO,
                 dirtiness_per_use: Permille::new_unchecked(50),
                 max_effective_dirtiness: Permille::new_unchecked(1000),
+                dirty_water_refill_penalty: super::default_dirty_water_refill_penalty(),
             }
         );
     }
@@ -151,6 +165,11 @@ mod tests {
             dirtiness_level: Permille::new_unchecked(250),
             dirtiness_per_use: Permille::new_unchecked(75),
             max_effective_dirtiness: Permille::new_unchecked(900),
+            dirty_water_refill_penalty: BTreeMap::from([
+                (crate::WaterQuality::Clean, Permille::ZERO),
+                (crate::WaterQuality::Stale, Permille::new_unchecked(30)),
+                (crate::WaterQuality::Muddy, Permille::new_unchecked(90)),
+            ]),
         });
     }
 
@@ -221,7 +240,7 @@ mod tests {
         };
 
         world
-            .insert_component_wash_basin_state(facility, component)
+            .insert_component_wash_basin_state(facility, component.clone())
             .unwrap();
 
         assert_eq!(

@@ -3421,7 +3421,7 @@ mod tests {
         ) -> BeliefValue<Option<EntityId>> {
             self.believed_target_locations
                 .get(&(agent, target))
-                .copied()
+                .cloned()
                 .unwrap_or_else(|| worldwake_sim::belief_view::stale_default_value(None))
         }
     }
@@ -3467,7 +3467,7 @@ mod tests {
         fn wash_basin_state(&self, _agent: EntityId, basin: EntityId) -> WashBasinState {
             self.wash_basin_states
                 .get(&basin)
-                .copied()
+                .cloned()
                 .unwrap_or_default()
         }
         fn exploration_profile(

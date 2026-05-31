@@ -780,6 +780,7 @@ fn golden_wash_action() {
             dirtiness_level: pm(0),
             dirtiness_per_use: pm(50),
             max_effective_dirtiness: pm(1000),
+            ..WashBasinState::default()
         },
     )
     .unwrap();

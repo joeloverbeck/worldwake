@@ -3,8 +3,8 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-/// S177WATSRCQUA-004 stores water-quality observations on source reliability.
-pub const SAVE_FORMAT_VERSION: u32 = 114;
+/// S177WATSRCQUA-006 stores basin dirty-water refill penalties.
+pub const SAVE_FORMAT_VERSION: u32 = 115;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -540,6 +540,7 @@ mod tests {
                     dirtiness_level: worldwake_core::Permille::new(250).unwrap(),
                     dirtiness_per_use: worldwake_core::Permille::new(60).unwrap(),
                     max_effective_dirtiness: worldwake_core::Permille::new(900).unwrap(),
+                    ..WashBasinState::default()
                 },
             )
             .unwrap();
@@ -1430,8 +1431,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_114_after_source_quality_observation() {
-        assert_eq!(SAVE_FORMAT_VERSION, 114);
+    fn save_format_version_is_115_after_basin_dirty_water_refill_penalty() {
+        assert_eq!(SAVE_FORMAT_VERSION, 115);
     }
 
     #[test]
@@ -1442,7 +1443,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 114);
+        assert_eq!(SAVE_FORMAT_VERSION, 115);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]

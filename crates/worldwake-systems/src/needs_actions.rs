@@ -1437,7 +1437,7 @@ fn apply_clean_wash_basin(
 ) -> Result<(), ActionError> {
     let mut basin_state = txn
         .get_component_wash_basin_state(basin)
-        .copied()
+        .cloned()
         .ok_or(ActionError::InvalidTarget(basin))?;
     if basin_state.clean_water_units == 0 {
         return Err(ActionError::PreconditionFailed(format!(
@@ -1680,6 +1680,7 @@ mod tests {
                 dirtiness_level: pm(0),
                 dirtiness_per_use: pm(50),
                 max_effective_dirtiness: pm(1000),
+                ..WashBasinState::default()
             },
         )
         .unwrap();
@@ -3178,6 +3179,7 @@ mod tests {
                 dirtiness_level: pm(50),
                 dirtiness_per_use: pm(50),
                 max_effective_dirtiness: pm(1000),
+                ..WashBasinState::default()
             }
         );
         assert_eq!(
@@ -3242,6 +3244,7 @@ mod tests {
                 dirtiness_level: pm(25),
                 dirtiness_per_use: pm(50),
                 max_effective_dirtiness: pm(1000),
+                ..WashBasinState::default()
             }
         );
         assert_eq!(
@@ -3273,7 +3276,7 @@ mod tests {
         dirtiness_level: Permille,
         max_effective_dirtiness: Permille,
     ) {
-        let mut state = *world.get_component_wash_basin_state(basin).unwrap();
+        let mut state = world.get_component_wash_basin_state(basin).unwrap().clone();
         state.dirtiness_level = dirtiness_level;
         state.max_effective_dirtiness = max_effective_dirtiness;
         let mut txn = new_txn(world, 2);
@@ -3646,7 +3649,7 @@ mod tests {
             .expect("wash affordance should exist before basin is drained");
 
         let mut txn = new_txn(&mut world, 2);
-        let mut basin_state = txn.get_component_wash_basin_state(basin).copied().unwrap();
+        let mut basin_state = txn.get_component_wash_basin_state(basin).cloned().unwrap();
         basin_state.clean_water_units = 0;
         txn.set_component_wash_basin_state(basin, basin_state)
             .unwrap();

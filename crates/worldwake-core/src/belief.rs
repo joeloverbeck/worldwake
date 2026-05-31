@@ -1108,7 +1108,7 @@ fn entity_claims_for_snapshot(
     {
         claims.push((
             EntityBeliefAspect::WashBasinState,
-            ClaimValue::WashBasinState(snapshot.wash_basin_state),
+            ClaimValue::WashBasinState(snapshot.wash_basin_state.clone()),
         ));
     }
     if snapshot.believed_artifact.is_some()
@@ -1667,7 +1667,7 @@ impl ObservedEntitySnapshot {
             last_known_inventory: self.last_known_inventory.clone(),
             workstation_tag: self.workstation_tag,
             resource_source: self.resource_source.clone(),
-            wash_basin_state: self.wash_basin_state,
+            wash_basin_state: self.wash_basin_state.clone(),
             alive: self.alive,
             wounds: self.wounds.clone(),
             last_known_courage: self.courage,
@@ -2243,7 +2243,7 @@ pub fn build_observed_entity_snapshot(
             .get_component_workstation_marker(entity)
             .map(|marker| marker.0),
         resource_source: world.get_component_resource_source(entity).cloned(),
-        wash_basin_state: world.get_component_wash_basin_state(entity).copied(),
+        wash_basin_state: world.get_component_wash_basin_state(entity).cloned(),
         alive: world.get_component_dead_at(entity).is_none(),
         wounds: world
             .get_component_wound_list(entity)
@@ -2428,7 +2428,7 @@ pub fn derive_entity_summary(
                 summary.believed_contention = *contention;
             }
             (EntityBeliefAspect::WashBasinState, ClaimValue::WashBasinState(state)) => {
-                summary.wash_basin_state = *state;
+                summary.wash_basin_state.clone_from(state);
             }
             (EntityBeliefAspect::Artifact, ClaimValue::Artifact(artifact)) => {
                 summary.believed_artifact.clone_from(artifact);
@@ -3628,7 +3628,7 @@ mod tests {
             believed_kind: Some(EntityKind::Facility),
             last_known_place: Some(entity(10)),
             workstation_tag: Some(WorkstationTag::WashBasin),
-            wash_basin_state: Some(basin_state),
+            wash_basin_state: Some(basin_state.clone()),
             ..BelievedEntityState::single_observation_defaults(
                 Tick(12),
                 PerceptionSource::DirectObservation,
@@ -3649,14 +3649,14 @@ mod tests {
         let summary = store
             .get_entity(&subject)
             .expect("claim-backed summary should exist");
-        assert_eq!(summary.wash_basin_state, Some(basin_state));
+        assert_eq!(summary.wash_basin_state, Some(basin_state.clone()));
         assert!(
             store
                 .get_entity_claims(&subject)
                 .expect("claims should exist")
                 .iter()
                 .any(|claim| claim.aspect == EntityBeliefAspect::WashBasinState
-                    && claim.value == ClaimValue::WashBasinState(Some(basin_state)))
+                    && claim.value == ClaimValue::WashBasinState(Some(basin_state.clone())))
         );
     }
 

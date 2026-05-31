@@ -540,7 +540,7 @@ impl From<LatrineFullnessDef> for LatrineFullness {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct WashBasinStateDef {
     pub clean_water_units: Option<u16>,
@@ -550,6 +550,7 @@ pub struct WashBasinStateDef {
     pub dirtiness_level: Option<Permille>,
     pub dirtiness_per_use: Option<Permille>,
     pub max_effective_dirtiness: Option<Permille>,
+    pub dirty_water_refill_penalty: Option<BTreeMap<WaterQuality, Permille>>,
 }
 
 impl From<WashBasinStateDef> for WashBasinState {
@@ -567,6 +568,9 @@ impl From<WashBasinStateDef> for WashBasinState {
             max_effective_dirtiness: def
                 .max_effective_dirtiness
                 .unwrap_or(defaults.max_effective_dirtiness),
+            dirty_water_refill_penalty: def
+                .dirty_water_refill_penalty
+                .unwrap_or(defaults.dirty_water_refill_penalty),
         }
     }
 }

@@ -840,7 +840,7 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
             return self
                 .world
                 .get_component_wash_basin_state(basin)
-                .copied()
+                .cloned()
                 .unwrap_or_default();
         }
         // FND-14A: physical state requires co-location to observe; off-place
@@ -848,7 +848,7 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
         // (`BelievedEntityState::wash_basin_state`) rather than reading
         // authoritative state for a non-co-located entity.
         self.believed_entity(basin)
-            .and_then(|state| state.wash_basin_state)
+            .and_then(|state| state.wash_basin_state.clone())
             .unwrap_or_default()
     }
 
@@ -2257,14 +2257,14 @@ impl FacilityBeliefView for PerAgentBeliefView<'_> {
 
     fn wash_basin_state(&self, entity: EntityId) -> Option<WashBasinState> {
         if entity == self.agent || self.has_authoritative_local_visibility(entity) {
-            return self.world.get_component_wash_basin_state(entity).copied();
+            return self.world.get_component_wash_basin_state(entity).cloned();
         }
         // FND-14A: off-place reads consult the most recent stored belief
         // about the basin's state. The authoritative wash precondition
         // re-validates live state at action time, so stale beliefs trigger
         // replan rather than commit-against-stale-state.
         self.believed_entity(entity)
-            .and_then(|state| state.wash_basin_state)
+            .and_then(|state| state.wash_basin_state.clone())
     }
 
     fn latrine_fullness(&self, place: EntityId) -> Option<LatrineFullness> {

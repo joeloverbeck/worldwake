@@ -340,6 +340,7 @@ fn build_belief_only_wash_harness() -> (GoldenHarness, EntityId, EntityId) {
             dirtiness_level: pm(700),
             dirtiness_per_use: pm(90),
             max_effective_dirtiness: pm(1000),
+            ..WashBasinState::default()
         },
     )
     .expect("belief-barrier harness should keep remote wash basin state writable");
@@ -441,10 +442,11 @@ struct RemoteWashBasinPovReads {
 
 fn remote_wash_basin_pov_reads() -> RemoteWashBasinPovReads {
     let (h, agent, remote_wash) = build_belief_only_wash_harness();
-    let authoritative_state = *h
+    let authoritative_state = h
         .world
         .get_component_wash_basin_state(remote_wash)
-        .expect("remote basin should carry authoritative non-default wash state");
+        .expect("remote basin should carry authoritative non-default wash state")
+        .clone();
     let authoritative_occupant = h
         .world
         .get_component_self_care_occupancy(remote_wash)
