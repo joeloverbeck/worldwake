@@ -1,13 +1,22 @@
-# S177: Water Source Quality, Depletion Observation, and Reliability Memory
+# S177: Water Source Quality and Quality-Belief Memory
 
 ## Summary
 
-`ResourceSource` (`crates/worldwake-core/src/production.rs`) already carries `available_quantity`, `max_quantity`, `regeneration_ticks_per_unit`, `extraction_slots`, and `extraction_duration_ticks`. Water extraction and basin refill from a colocated water source already consume `available_quantity` (`crates/worldwake-systems/src/item_decay.rs::next_wash_basin_refill`). So depletion **state** exists. What does **not** exist:
+The depletion half of canonical regression scenario D is **already proven for water**. Today:
 
-1. **The depletion-discovery loop.** An agent who believes a well has water travels to it, finds it dry, and must update belief and use a fallback. This is canonical regression scenario D in `docs/FOUNDATIONS.md` (Rumor → Travel → Empty Source → Belief Correction → Replan), but it is not proven for water as a survival need. Today the planner has no belief-gated notion of "this source is depleted/unreliable"; it re-emits the same candidate and only fails at extraction start.
-2. **Water quality.** `ResourceSource` has no quality field. Clean, muddy, and stale water are indistinguishable. Basin refill draws from *any* colocated water source regardless of quality, and there is no dirty-water-versus-travel tradeoff.
+- Perception writes `last_observed_capacity` + `last_observed_capacity_tick` into the agent's `SourceReliability` on co-located observation (`crates/worldwake-systems/src/perception.rs:174` via `ReliabilityRecord::observe_capacity`).
+- Candidate ranking discounts believed-depleted sources via `apply_source_reliability_discount` (`crates/worldwake-ai/src/ranking.rs:534`) and `source_composite_rank` (`crates/worldwake-ai/src/source_composite.rs`), whose `capacity_factor_permille` floors the rank of a freshly-observed empty source.
+- Failed extraction at start writes belief via `record_failed_source_attempt` (`crates/worldwake-systems/src/production_actions.rs:1228`) and emits `EventTag::SourceExpectationFailure` with `SourceExpectationFailurePayload` (`crates/worldwake-ai/src/agent_tick/mod.rs:1051-1052`) for source attribution.
+- Existing water-specific goldens prove the loop: `golden_local_depleted_source_regenerates_without_spurious_failure_memory` (`crates/worldwake-ai/tests/scenarios/ai_decisions.rs:455`), `empty_but_fresh_observation_demotes_depleted_source` (`crates/worldwake-ai/src/source_composite.rs:533`), and the source-failure consumption proven in `crates/worldwake-ai/tests/scenarios/survival_preferences.rs:110`.
+- The S38/S151 substrate is the live `SourceReliability` component (`crates/worldwake-core/src/experience.rs:173-210`), keyed by `SourceKey { entity, commodity }` and valued by `ReliabilityRecord { successful_acquisitions, failed_attempts, last_attempt_tick, last_observed_capacity, last_observed_capacity_tick, provenance_events, … }`, with `enforce_limits` decay over `PreferenceProfile.memory_retention_ticks`.
 
-This spec adds (a) a concrete `WaterQuality` field on water `ResourceSource`s with downstream wash/thirst consequences, and (b) belief-backed **source reliability memory** so agents learn "this source was dry/dirty at tick T" and prefer fallbacks — closing canonical scenario D for water. It is the second slice of the deferred Cluster 1 material-degradation wave (`specs/IMPLEMENTATION-ORDER.md`), deferred by the 2026-05-26 second-iteration triage and now ripe after S174.
+What is **missing** is the **quality axis**:
+
+1. **Water quality.** `ResourceSource` (`crates/worldwake-core/src/production.rs:75-83`) has no quality field. Clean, stale, and muddy water are indistinguishable. Basin refill draws from *any* colocated water source regardless of quality (`crates/worldwake-systems/src/item_decay.rs::first_colocated_water_source`). Drink relief is the commodity-intrinsic `CommodityConsumableProfile.thirst_relief_per_unit` (`crates/worldwake-core/src/items.rs:139`) with no per-quality scaling. There is no dirty-water-versus-travel tradeoff.
+2. **Quality-belief memory.** Even if water sources had quality, agents would have no concrete per-agent learned record of "this source was muddy at tick T" feeding ranking — `ReliabilityRecord` records capacity and success/failure ratios but not quality.
+3. **Quality consequences.** Drink does not raise dirtiness when the lot is muddy; basin refill does not prefer cleanest water; `ItemLot` (`crates/worldwake-core/src/items.rs:317`) does not carry the source's quality at extraction time.
+
+This spec adds (a) a concrete `WaterQuality` field on water `ResourceSource`s with downstream wash/thirst consequences, (b) item-lot quality propagation and quality-belief memory atop the existing `SourceReliability` substrate, and (c) a quality-aware emergent target: when a clean source is depleted and only a muddy backup is available, the planner chooses to drink muddy water (accepting reduced relief + raised dirtiness) versus traveling further to clean water, with the choice mediated by per-agent tolerance.
 
 **Deliberate scope discipline (critical reassessment of the source report):** the report proposes that "drinking unsafe water can reduce thirst but cause later consequence." This spec implements only the **immediate, concrete** consequences — reduced thirst relief, raised dirtiness, basin-refill quality preference. It **defers any "unsafe water → sickness/wound" path**: a disease/illness consequence is a new carrier (`FoodSickness`/`DigestiveDistress`) that FND-5 and the report's own MUST-NOT say should not be added until it is a proven concrete consequence carrier with source, trace, recovery, and proof. Water quality here is a *utility/effectiveness* axis, not a disease vector.
 
@@ -21,63 +30,68 @@ Phase 7: Consequence Carriers
 
 ## Crates
 
-- `worldwake-core` (add `WaterQuality` to `ResourceSource` or a sibling component on water sources)
-- `worldwake-sim` (event payloads for observed depletion / observed quality; reuse existing event-log substrate)
-- `worldwake-systems` (Drink relief and basin refill scale with `WaterQuality`; extraction emits depletion-observed evidence on empty)
-- `worldwake-ai` (source reliability memory extends the existing learned-source substrate; candidate generation discounts believed-unreliable sources and emits fallbacks; survival forensics record source-depletion/quality failures)
-- `worldwake-cli` (scenario contract for `WaterQuality`; player-POV gating for source quantity/quality observation)
+- `worldwake-core` (`WaterQuality` enum + field on `ResourceSource`; `quality` field on `ItemLot`; quality-observation extensions to `ReliabilityRecord`; new universal `WaterToleranceProfile` component; new `EventTag::ResourceSourceQualityObserved` variant)
+- `worldwake-sim` (belief-view accessor for source quality; widening of `SourceExpectationFailurePayload` is **not** required — existing event variant is reused for depletion, the new variant is for quality)
+- `worldwake-systems` (Drink relief and basin refill scale with `WaterQuality`; extraction commits the source quality onto the produced lot; perception writes `last_observed_quality` into `SourceReliability` on co-located source observation; dirty-water refill raises basin dirtiness)
+- `worldwake-ai` (source-rank composite reads per-source quality belief and `WaterToleranceProfile` to discount muddy/stale; survival forensics record `SourceAcquisitionFailure`)
+- `worldwake-cli` (scenario contract for `WaterQuality` on `ResourceSourceDef`; scenario contract for `WaterToleranceProfile` on `AgentDef`; player-POV gating for source quality observation)
 
 ## Dependencies
 
-- `archive/specs/S79-resource-source-consumption-affordances.md` — provides the `ResourceSource` extraction/consumption affordance substrate this spec extends.
-- `archive/specs/S38-learned-route-source-preferences.md` — provides the learned **source-preference** substrate this spec extends with reliability memory (rather than introducing a new memory component). *Reassessment must confirm the exact `LearnedSourcePreferences` shape before ticket decomposition.*
-- `archive/specs/S151-testimony-reliability-and-route-preferences.md` — provides the testimony/reliability precedent for how a believed source-reliability fact is acquired, decays, and is discounted.
-- `archive/specs/S129-place-dirtiness-facility-wear.md` + `archive/specs/S176-sanitation-facility-degradation-consequences.md` — basin refill quality preference and the `WashBasinState.dirtiness_level` consequence S177 feeds (dirty water dirties the basin).
-- `archive/specs/S120-survival-critical-window-forensics.md` — `SurvivalForensicExtractor` extended with source-failure records.
+- `archive/specs/S79-resource-source-consumption-affordances.md` — provides the `ResourceSource` extraction/consumption affordance substrate this spec extends; established the water-extraction-to-item-lot path.
+- `archive/specs/S38-learned-route-source-preferences.md` — landed `SourceReliability` (`crates/worldwake-core/src/experience.rs:173`), which this spec extends with quality observation fields rather than introducing a new component.
+- `archive/specs/S151-testimony-reliability-and-route-preferences.md` — landed `TestimonyReliability` and refined `RoutePreference`; informs the freshness/decay design here but is **not** the literal precedent for source-reliability decay (which is `SourceReliability::enforce_limits` over `PreferenceProfile.memory_retention_ticks`).
+- `archive/specs/S129-place-dirtiness-facility-wear.md` + `archive/specs/S176-sanitation-facility-degradation-consequences.md` — provide `WashBasinState.dirtiness_level` (`crates/worldwake-core/src/place_dirtiness.rs:50`) and the wash-effectiveness gate this spec couples to (dirty water dirties the basin; the basin's wash effectiveness then degrades per S176).
+- `archive/specs/S120-survival-critical-window-forensics.md` — provides `SurvivalForensicExtractor` and the `DegradedSelfCareOpportunity` record (`crates/worldwake-ai/src/survival_forensics.rs:75-81`) cited as the precedent for `SourceAcquisitionFailure`.
 
 ## Design Goals
 
 - Water sources carry concrete **quality** (`Clean`, `Stale`, `Muddy`) as authoritative state. Drinking lower-quality water gives **less thirst relief** and **raises dirtiness**; clean water is strictly preferable when known and reachable.
-- Depletion is **discovered locally**: an agent who reaches a dry source observes it (FND-14A), records a belief that it was dry at this tick, and the planner discounts it on subsequent ticks until belief decays or new evidence arrives.
-- **Source reliability memory** is belief-backed and fallible: agents may hold stale "the well is full" beliefs and waste a trip, then correct. This is canonical scenario D, not omniscient correction.
+- Quality is **observed locally** (FND-14A) when an agent is co-located with the source, and stored as a concrete observation field on the agent's `SourceReliability` record alongside the existing `last_observed_capacity` (no parallel reliability store).
+- **Per-agent tolerance** to lower-quality water lives on a new universal `WaterToleranceProfile` component — a hardy agent's relief factor for `Muddy` is higher than a fragile agent's, so two agents in the same situation can lawfully diverge (FND-22).
 - Basin refill (item-decay system) **prefers clean colocated water**; refilling from muddy water raises the basin's `dirtiness_level` (couples to S176's wash-effectiveness gate).
-- Player and AI share identical source legality; the CLI surfaces only source quantity/quality the controlled agent lawfully perceives.
+- Player and AI share identical source legality; the CLI surfaces only source quality the controlled agent lawfully perceives.
+- The **emergent target** is the scarcity ↔ quality tradeoff: a shared clean well depletes under multi-agent draw, the believed-good fallback turns out to be muddy on arrival, and different agents make different drink-vs-travel-further choices based on `WaterToleranceProfile` diversity.
 
 ## Non-Goals
 
 - **No water-borne disease / illness / sickness wound.** Explicitly deferred (see Summary). `Unsafe`/`Contaminated` quality tiers are **not** introduced in this spec; only `Clean`/`Stale`/`Muddy` as utility tiers. An illness carrier is a future spec triggered only if a concrete consequence-with-recovery is designed.
 - **No abstract "water scarcity level."** The *source* is scarce (depletes), per FND-3.
 - **No new global hydrology / weather / drought system.** Drought as a boundary process belongs to held `specs/S62`; this spec creates scarcity internally via depletion and quality only.
-- **No new contention queue.** Extraction-slot contention is the existing `ResourceSource.extraction_slots` substrate.
+- **No new contention queue.** Extraction-slot contention is the existing `ResourceSource.extraction_slots` substrate (`ResourceExtractionQueues`).
 - **No HTN method.** Fallback-source selection is flat GOAP candidate emission discounted by belief.
-- **No backward-compatibility shim.** Sources without an authored quality default to `Clean` (behaviorally neutral); the field is added, not aliased (FND-28).
+- **No new "depletion belief" memory or `EventTag::ResourceSourceDepletedObserved` variant.** The depletion half is already implemented via `SourceReliability.last_observed_capacity` + perception + ranking discount + `EventTag::SourceExpectationFailure`. Adding a parallel surface would violate FND-28. The new event tag introduced here is **`ResourceSourceQualityObserved`** for the quality axis only.
+- **No generalization of `ItemLot.quality` to non-water commodities.** The field is `Option<WaterQuality>`; food spoilage (S178) is a separate, future commodity-quality story and is not required to share this surface. Per YAGNI.
+- **No backward-compatibility shim.** Sources without an authored quality default to `Clean` via `#[serde(default)]`; the field is added, not aliased (FND-28). Same for `ItemLot.quality` (`None` for non-water commodities).
 
 ## FOUNDATIONS Alignment
 
 | Principle | Alignment |
 |-----------|-----------|
-| FND-1 (Emergence) | A shared well depletes under multi-agent draw → some travel to a muddy backup → drink worse water, get dirtier, queue, or trade → scarcity behavior emerges from a finite source, not a scarcity dial |
-| FND-3 (Concrete state over abstract scores) | Quality is a concrete per-source enum; reliability is belief about concrete prior observations; no `water_score` |
-| FND-4 (Source/sink) | Drinking and refill draw `available_quantity`; regeneration is the existing explicit source process |
-| FND-7 / FND-15 (Locality / knowledge travels) | Depletion/quality observed at the source (FND-14A); reliability beliefs travel by memory and (optionally) testimony with provenance/freshness |
-| FND-14 / FND-14A / FND-14B | Remote source quantity/quality is belief-backed; co-located is same-tick observation; the planner cannot read remote `available_quantity` as authoritative |
-| FND-16 (Ignorance/contradiction first-class) | Agents hold stale "well is full" beliefs; two agents can disagree about a source's reliability |
-| FND-17 (Surprise from violated expectation) | Reaching a believed-full well and finding it dry is the expectation violation that updates belief |
-| FND-19 (Agent symmetry) | Same extraction/drink legality and quality effects for human and AI |
-| FND-21 (Intentions revisable) | A planned Drink at a depleted source fails at start; the agent replans to a fallback |
-| FND-22A (Learning is concrete state) | Source reliability memory is concrete, owned per-agent, with accountable acquisition and decay — not hidden global adaptation |
+| FND-1 (Emergence) | A shared well depletes under multi-agent draw → some travel to a muddy backup → drink worse water (per their `WaterToleranceProfile`), get dirtier, queue, or trade → scarcity ↔ quality tradeoff emerges from a finite source + per-agent tolerance, not a scarcity dial |
+| FND-3 (Concrete state over abstract scores) | Quality is a concrete per-source enum; per-agent tolerance is a concrete profile; reliability is concrete observation history; no `water_score` |
+| FND-4 (Source/sink) | Drinking and refill draw `available_quantity`; regeneration is the existing explicit source process; quality is a property, not a conserved quantity |
+| FND-7 / FND-15 (Locality / knowledge travels) | Quality observed at the source (FND-14A); quality belief is per-agent, written by perception, decaying via `SourceReliability::enforce_limits` |
+| FND-14 / FND-14A / FND-14B | Remote source quality is belief-backed; co-located is same-tick observation; the planner cannot read remote `ResourceSource.quality` as authoritative |
+| FND-16 (Ignorance/contradiction first-class) | Agents hold stale "well is clean" beliefs; two agents can disagree about a source's quality after observing it at different ticks |
+| FND-17 (Surprise from violated expectation) | Reaching a believed-clean well and finding it muddy is the expectation violation that updates belief; emits `EventTag::ResourceSourceQualityObserved` |
+| FND-19 (Agent symmetry) | Same extraction/drink legality and quality effects for human and AI; CLI gating exposes only what the controlled agent lawfully perceives |
+| FND-21 (Intentions revisable) | A planned Drink at a now-believed-muddy source can be replaced by travel-to-clean-source on the next tick after the quality observation lands |
+| FND-22 (Agent diversity) | `WaterToleranceProfile` is per-agent — hardy vs. fragile agents lawfully diverge on the same situation |
+| FND-22A (Learning is concrete state) | Quality observation memory is concrete, owned per-agent on `SourceReliability`, with accountable acquisition (`observe_quality`) and decay (`enforce_limits`) — not hidden global adaptation |
 | FND-26 (Systems via state) | Drink/refill read source state and write it; planner reads belief; forensics reads log; no direct calls |
-| FND-28 (No backcompat) | Quality field added; no parallel old/new water path |
-| FND-29 / FND-29A | "Why did this agent drink muddy water?" answerable from belief that the clean well was dry + source quality at decision tick |
-| FND-31 (Validation) | Focused goldens + 1440-tick degrading-water collision scenario |
+| FND-28 (No backcompat) | `WaterQuality` field added; no parallel old/new water path; `ItemLot.quality` is the new authoritative path. Depletion belief surface is **reused** (`SourceReliability` + `SourceExpectationFailure`); no parallel surface is introduced |
+| FND-29 / FND-29A | "Why did this agent drink muddy water?" answerable from: per-agent `WaterToleranceProfile` + quality belief on `SourceReliability` + clean-well depletion history + decision trace |
+| FND-31 (Validation) | Focused goldens + 1440-tick quality-tradeoff collision scenario |
 
-This spec realizes **Canonical Regression Scenario D** (Rumor → Travel → Empty Source → Belief Correction → Replan) for the water survival need.
+This spec **extends** the proven canonical regression scenario D infrastructure (already realized for water at the depletion level) with the quality dimension: rumor of clean water → travel → muddy on arrival → belief correction → drink-or-travel-further replan.
 
 ## Deliverables
 
-### D1. `WaterQuality` on water sources
+### D1. `WaterQuality` enum, `ResourceSource.quality`, `ResourceSourceDef.quality`
 
 ```rust
+// crates/worldwake-core/src/production.rs (new sibling type)
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum WaterQuality {
     Clean,
@@ -86,114 +100,288 @@ pub enum WaterQuality {
 }
 ```
 
-Carried on water `ResourceSource`s. **Reassessment decision (pinned at reassess-spec time):** either a new optional field `quality: Option<WaterQuality>` on `ResourceSource` (defaulting to `Clean` for water commodities) or a sibling `WaterSourceQuality` component on the source entity. Preference: the field on `ResourceSource`, since quality is intrinsic to the source and every water consumer already reads `ResourceSource`. No magic numbers: quality maps to relief/dirtiness multipliers expressed in `Permille` profile parameters (D4).
+`Option<WaterQuality>` is compatible with `ResourceSource`'s existing derive set (`Clone, Debug, Eq, PartialEq, Serialize, Deserialize`).
 
-### D2. Quality- and depletion-aware Drink
+Add the field to `ResourceSource`:
 
-The Drink action (`needs_actions.rs`) currently consumes an item lot. Where water is drawn directly from a source (extraction → item lot → drink, per S79), the produced water lot carries the source's quality, and Drink relief scales by quality:
+```rust
+pub struct ResourceSource {
+    pub commodity: CommodityKind,
+    pub available_quantity: Quantity,
+    pub max_quantity: Quantity,
+    pub regeneration_ticks_per_unit: Option<NonZeroU32>,
+    pub last_regeneration_tick: Option<Tick>,
+    pub extraction_slots: NonZeroU8,
+    pub extraction_duration_ticks: NonZeroU32,
+    #[serde(default)]
+    pub quality: Option<WaterQuality>, // None on non-water commodities; Some(Clean) default for water
+}
+```
 
-- `Clean` → full `thirst_relief_per_unit`.
-- `Stale`/`Muddy` → reduced thirst relief and added dirtiness, by `Permille` factors from the consumable/quality profile (D4).
+`ResourceSource` is registered on `EntityKind::Facility || EntityKind::Place` at `crates/worldwake-core/src/component_schema.rs:1787`; no registration change needed.
 
-Depletion is already gated by `available_quantity`; D3 adds the *observation/belief* layer.
+Extend `ResourceSourceDef` (`crates/worldwake-cli/src/scenario/types.rs:820-831`) with `quality: Option<WaterQuality>` (defaulting to `Clean` for water commodities, `None` otherwise) and propagate through the `set_component_resource_source` construction in `crates/worldwake-cli/src/scenario/mod.rs:496-507`. Use `#[serde(default)]` so existing RON scenarios deserialize unchanged.
 
-### D3. Depletion + quality observation → reliability memory
+### D2. Quality-aware Drink (relief scaling + dirtiness penalty)
 
-- On reaching a water source, a co-located agent observes `available_quantity` and `quality` (FND-14A) and records a belief with provenance + claimed tick.
-- When extraction fails because the source is empty, emit `EventTag::ResourceSourceDepletedObserved` (the agent's local observation), and write/refresh the agent's **source reliability memory** (extends `LearnedSourcePreferences`, per S38): "source X dry at tick T."
-- Candidate generation discounts a believed-depleted or believed-muddy source in favor of a believed-better fallback, using only belief-backed state. The discount decays with belief freshness (per S151 reliability precedent) so a long-stale "it was dry" belief eventually permits a re-check.
+`commit_drink` (`crates/worldwake-systems/src/needs_actions.rs:1112-1121`) delegates to the consumable-effect path that reads `CommodityConsumableProfile.thirst_relief_per_unit` from the item lot's commodity (`crates/worldwake-core/src/items.rs:139`). After D3 lands, the consumed lot carries `Option<WaterQuality>`. Drink commit:
 
-### D4. Quality/relief profile parameters
+- Looks up the actor's `WaterToleranceProfile` (D5).
+- For `Some(quality)` on the lot: multiplies the commodity-intrinsic `thirst_relief_per_unit` by `tolerance.thirst_relief_factor(quality)` (a `Permille`); raises `dirtiness` by `tolerance.dirtiness_penalty(quality)` (a `Permille`).
+- For `None` (non-water commodity): preserves existing behavior (no quality scaling, no extra dirtiness).
+- `Clean` yields `thirst_relief_factor = 1000` and `dirtiness_penalty = 0` by default — behaviorally neutral.
 
-Quality→effect mapping lives in profile parameters (no inline constants):
+Depletion is already gated by `available_quantity`; no precondition change is needed (quality is a utility axis, not a gate). The Authoritative-to-AI Impact Analysis below enumerates the impact.
 
-- A `WaterQualityProfile` (or fields on the existing consumable/metabolism profile) giving, per quality tier, a `thirst_relief_factor: Permille` and `dirtiness_penalty: Permille`.
-- Reassessment pins whether this is per-agent (tolerance varies — a hardy agent suffers less from muddy water) or a world constant table. Preference: per-agent, to honor FND-22 agent diversity and the report's "profile-driven thresholds for willingness to use unsafe affordances."
+### D3. `ItemLot.quality` propagation at extraction commit
 
-### D5. Basin refill quality preference
+Extend `ItemLot` (`crates/worldwake-core/src/items.rs:317`) with `#[serde(default)] pub quality: Option<WaterQuality>` (None for non-water commodities). `Option<WaterQuality>` is compatible with `ItemLot`'s existing derives (`Clone, Debug, Eq, PartialEq, Serialize, Deserialize`).
 
-Extend `item_decay.rs::next_wash_basin_refill` (and `first_colocated_water_source`) to prefer the cleanest colocated water source. Refilling from `Muddy` water adds to the basin's `dirtiness_level` (couples to S176 D2's wash-effectiveness gate), making dirty-water refill a real tradeoff rather than free.
+At extraction commit (`apply_harvest_resource` in `crates/worldwake-systems/src/production_actions.rs:956-1067`), read the source's `quality` and write it onto the produced `ItemLot`. The water lot then carries its origin source's quality through the inventory until Drink consumes it (D2).
 
-### D6. Survival forensics for source failure
+Per FND-28, the field is added — no parallel "untyped water lot" path is preserved.
 
-Extend `SurvivalForensicExtractor` with a `SourceAcquisitionFailure` record (depleted / too-dirty / contested), analogous to S176's `DegradedSelfCareOpportunity`. Derived forensic state, never authoritative.
+### D4. Quality observation on `SourceReliability` + `EventTag::ResourceSourceQualityObserved`
+
+Extend `ReliabilityRecord` (`crates/worldwake-core/src/experience.rs:79-98`) with quality observation fields, mirroring the existing capacity-observation pattern:
+
+```rust
+pub struct ReliabilityRecord {
+    // existing fields …
+    pub last_observed_capacity: u16,
+    pub last_observed_capacity_tick: Tick,
+    // new:
+    #[serde(default)]
+    pub last_observed_quality: Option<WaterQuality>,
+    #[serde(default)]
+    pub last_observed_quality_tick: Tick,
+}
+
+impl ReliabilityRecord {
+    pub fn observe_quality(&mut self, quality: WaterQuality, tick: Tick) {
+        self.last_observed_quality = Some(quality);
+        self.last_observed_quality_tick = tick;
+    }
+}
+```
+
+Perception (`crates/worldwake-systems/src/perception.rs:174`, where `observe_capacity` is already called) extends the same co-located-observation path with `observe_quality` when the source is a water source with a `Some(quality)`. The write is gated on co-location (FND-14A); remote sources retain their stale quality belief until the agent observes them.
+
+Add `EventTag::ResourceSourceQualityObserved` to `crates/worldwake-core/src/event_tag.rs` and emit it at the same observation site, carrying source attribution analogous to `SourceExpectationFailurePayload`.
+
+`SourceReliability::enforce_limits` (already at `experience.rs:180-203`) decays both the capacity and quality observations together because they share the same parent `ReliabilityRecord` keyed by `SourceKey` and pruned by `last_attempt_tick` over `PreferenceProfile.memory_retention_ticks`.
+
+Candidate ranking (the existing `source_composite_rank` in `crates/worldwake-ai/src/source_composite.rs`) gains a new factor for quality belief, combined with the existing `trust_factor`, `wait_factor`, and `capacity_factor` via `compose_factors`. The new factor reads `last_observed_quality` + freshness + the agent's `WaterToleranceProfile` (D5) to discount muddy/stale sources by the agent's per-quality tolerance. The discount decays with belief freshness so a long-stale "it was muddy" belief eventually permits a re-check (same model as the existing capacity-observation freshness).
+
+### D5. `WaterToleranceProfile` universal per-agent component
+
+New universal profile component in `worldwake-core` (precedent: 35 existing profile components, including `MetabolismProfile`, `PerceptionProfile`, `CognitiveProfile`, `PreferenceProfile`, `MemoryCapacityProfile`):
+
+```rust
+// crates/worldwake-core/src/water_tolerance_profile.rs (new module)
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WaterToleranceProfile {
+    /// Per-quality relief multiplier applied to `CommodityConsumableProfile.thirst_relief_per_unit`.
+    /// Clean = 1000‰ (neutral); Stale, Muddy < 1000‰.
+    pub thirst_relief_factor: BTreeMap<WaterQuality, Permille>,
+    /// Per-quality dirtiness penalty added to `HomeostaticNeeds::dirtiness` on Drink commit.
+    /// Clean = 0‰; Stale, Muddy > 0‰.
+    pub dirtiness_penalty: BTreeMap<WaterQuality, Permille>,
+}
+
+impl Component for WaterToleranceProfile {}
+
+impl Default for WaterToleranceProfile {
+    fn default() -> Self {
+        // Default tolerance: Clean is neutral; Stale halves relief and adds a small dirtiness
+        // penalty; Muddy further reduces relief and adds a larger penalty. Hardy/fragile
+        // agents override via scenario authoring.
+        Self {
+            thirst_relief_factor: BTreeMap::from([
+                (WaterQuality::Clean, Permille::new(1000).unwrap()),
+                (WaterQuality::Stale, Permille::new(700).unwrap()),
+                (WaterQuality::Muddy, Permille::new(450).unwrap()),
+            ]),
+            dirtiness_penalty: BTreeMap::from([
+                (WaterQuality::Clean, Permille::new(0).unwrap()),
+                (WaterQuality::Stale, Permille::new(80).unwrap()),
+                (WaterQuality::Muddy, Permille::new(200).unwrap()),
+            ]),
+        }
+    }
+}
+```
+
+Universal-profile contract per `docs/spec-drafting-rules.md` Section 5:
+- Register on `EntityKind::Agent` in `crates/worldwake-core/src/component_schema.rs` with generated `set_component_water_tolerance_profile` / `get_component_water_tolerance_profile` accessors.
+- Add `water_tolerance_profile: Option<WaterToleranceProfile>` to `AgentDef` in `crates/worldwake-cli/src/scenario/types.rs`.
+- In `spawn_agent()` (`crates/worldwake-cli/src/scenario/mod.rs`), apply `let tolerance = agent_def.water_tolerance_profile.unwrap_or_default(); txn.set_component_water_tolerance_profile(agent_id, tolerance)?;` (universal pattern, always applied with default).
+- Runtime access on known agents uses `expect()` per the universal contract.
+
+Add a `GoalBeliefView` accessor `water_tolerance_profile(agent: EntityId) -> Option<WaterToleranceProfile>` in `crates/worldwake-sim/src/belief_view.rs` so the ranking layer can read the actor's tolerance (the agent is the planner's self-authoritative scope per FND-14B). Provide the `RuntimeBeliefView` backing impl in `crates/worldwake-sim/src/per_agent_belief_view.rs`, following the existing per-impl pattern (no `impl_goal_belief_view!` macro is used in the codebase; individual impl blocks are the convention).
+
+### D6. Basin refill quality preference
+
+Extend `crates/worldwake-systems/src/item_decay.rs::first_colocated_water_source` (currently first-match at `:214-223`) to **prefer the cleanest** colocated water source: iterate all colocated water sources at the place and return the one whose `quality` is best (`Clean < Stale < Muddy` per `WaterQuality::Ord`), tie-breaking deterministically by entity id (BTreeMap iteration order).
+
+Extend `next_wash_basin_refill` (`:184-212`): when transferring water from a `Some(Muddy)` or `Some(Stale)` source, add to the basin's `dirtiness_level` (a `Permille` per place_dirtiness.rs:50) by a fixed per-quality increment authored on the basin or read from a new field on `WashBasinState` (preferred: a per-basin `dirty_water_refill_penalty: BTreeMap<WaterQuality, Permille>` with a `#[serde(default)]` default; this stays on the basin to honor FND-26 state cohesion — the basin owns its dirtying mechanics, not the source).
+
+This couples to S176 D2's wash-effectiveness gate: muddy-water refill raises basin dirtiness, which then reduces wash effectiveness via the `max_effective_dirtiness` boundary.
+
+### D7. Survival forensics: `SourceAcquisitionFailure` record
+
+Extend `SurvivalForensicExtractor` (`crates/worldwake-ai/src/survival_forensics.rs:250-328`) with a `SourceAcquisitionFailure` derived forensic record, modeled on the existing `DegradedSelfCareOpportunity` record (`survival_forensics.rs:75-81`):
+
+```rust
+pub struct SourceAcquisitionFailure {
+    pub tick: Tick,
+    pub source: EntityId,
+    pub cause: SourceFailureCause,
+    pub outcome: SourceFailureOutcome,
+}
+
+pub enum SourceFailureCause {
+    Depleted,           // available_quantity == 0 at start
+    QualityRejected,    // tolerance discount drove the candidate below ranking floor
+}
+
+pub enum SourceFailureOutcome {
+    DrankAnyway,        // accepted muddy/stale water
+    TraveledToFallback, // selected a believed-better fallback
+    GaveUp,             // no fallback met threshold
+}
+```
+
+This is a **derived view** populated from action-trace events and the existing `EventTag::SourceExpectationFailure` (depletion) + new `EventTag::ResourceSourceQualityObserved` (quality) emissions; it is not authoritative state. Extraction populates the record from the action-trace snapshot during `observe()` (analogous to the `degraded_self_care_opportunities()` extraction at `survival_forensics.rs:423-488`).
+
+Note: the original spec proposed a "contested" cause for queue contention; that is dropped here because (a) `ResourceExtractionQueues` queue waits are already surfaced as `wait_factor_permille` in the source-rank composite and as `observe_wait` on `ReliabilityRecord`, and (b) widening the forensic record's cause set into contention duplicates the existing queue substrate. Re-add only if a future spec proves a missing forensic surface for queue-contention starvation specifically.
+
+### D8. CLI player-POV gating for source quality
+
+Today the observer surfaces only `available_quantity > 0` boolean presence (`crates/worldwake-cli/src/bin/observer.rs:2400-2404`). Add player-POV gating so that:
+
+- When the controlled agent is co-located with a water source, surface its `quality` (FND-14A direct read of authoritative state is lawful because perception would deliver the same fact same-tick).
+- When the controlled agent is *not* co-located, surface only what the agent's `SourceReliability.last_observed_quality` records, with freshness annotation (e.g., "Muddy (observed 200 ticks ago)").
+- Apply identical legality to AI agents — agent symmetry per FND-19.
+
+The CLI does not invent a new accessor; it reuses the same `GoalBeliefView` surface (`water_source_quality` flows through the existing `resource_source(entity)` accessor since quality is a field on `ResourceSource`).
+
+## Authoritative-to-AI Impact Analysis
+
+Per CLAUDE.md's Authoritative-to-AI Impact Rule, this spec adds an authoritative field on `ResourceSource` (`quality`) read by the AI ranking composite, and modifies basin refill source-selection. The 7-point checklist:
+
+1. **`get_affordances`** — pass. Quality is a property of an already-affordable source. No new precondition gates affordance enumeration.
+2. **`generate_candidates`** — pass. Candidate emission already reads source via the existing `resource_source(entity)` accessor and routes through `AcquireCommodity { commodity: Water, … }` (no new `GoalKind`). The quality field flows through transparently after D1.
+3. **`search_plan`** — pass. No new search-control change. Quality affects ranking via the source-rank composite (D4), not search.
+4. **`BestEffort` action start** — flag for ticket review: basin refill (`next_wash_basin_refill`) gains a quality-preference selection (D6); verify no new revalidation path is required. Drink and Extraction action starts are unchanged (quality is a utility consequence, not a precondition).
+5. **`handle_plan_failure`** — pass. No new failure class is added; quality is a utility axis, not a gate. Existing `SourceExpectationFailure` covers the depletion failure case; quality-rejected candidates simply rank below the floor.
+6. **Payload revalidation** — pass. No new payload-synthesized action. Quality is read at commit time through the existing `ItemLot.quality` field (D3) which is populated at extraction commit and remains static through the inventory.
+7. **Golden tests** — flag: new goldens (Scenario Validation below) must run alongside the existing `survival_preferences.rs`, `quantity_aware_acquisition.rs`, `ai_decisions.rs::golden_local_depleted_source_regenerates_without_spurious_failure_memory`, `source_composite.rs::empty_but_fresh_observation_demotes_depleted_source`, and `survival-basin-competition-1440.ron` to confirm no regressions on the depletion half.
 
 ## FND-01 Section H — Causal Hooks Declaration
 
-1. **Missing downstream consequence**: Water cannot run dry-and-be-discovered as a belief loop; quality cannot make one source worse than another; agents cannot learn a source is unreliable. Canonical scenario D is unproven for water.
-2. **New entities/relations/records**: `WaterQuality` enum + field/component on water sources; `WaterQualityProfile` (or quality fields on existing profile); `EventTag::ResourceSourceDepletedObserved` + `ResourceSourceQualityObserved`; source-reliability entries in `LearnedSourcePreferences`; `SourceAcquisitionFailure` forensic record.
-3. **Actions that mutate them**: Extraction/Drink read `available_quantity` + `quality`, draw quantity, scale relief, add dirtiness. Reaching/observing a source writes reliability beliefs. Basin refill reads quality, may raise basin dirtiness.
-4. **Information production and travel**: Quality/quantity observed locally (FND-14A); reliability beliefs travel by the agent's memory and optional testimony (FND-15) with provenance/freshness; depletion-observed events are append-only.
-5. **Conserved quantities**: Water `available_quantity` (already conserved, regenerating). Quality is a property, not a conserved quantity. No water created from nothing.
-6. **Scarce capacities and contention**: `extraction_slots` (existing). A *clean, non-depleted* source becomes the contested affordance.
-7. **Partial failures and aftermath**: Drink from muddy water → partial thirst relief + dirtiness (partial outcome). Extraction from empty source → failure + depletion-observed belief + `SourceAcquisitionFailure` record + fallback. Stale belief → wasted travel, corrected on arrival.
-8. **Positive feedback loops**: (a) Many drinkers → faster depletion → more fallback travel/contention. (b) Reliability memory → all agents avoid a believed-bad source → it regenerates unused while the good source over-drains.
-9. **Concrete dampeners** (physical, not numeric clamps): (a) `regeneration_ticks_per_unit` — sources refill over real time, so depletion is temporary. (b) Belief freshness decay (S151) — a stale "it was dry" belief eventually permits a re-check, so agents don't permanently abandon a recovered source. (c) Fallback sources exist with travel cost — distance dampens over-draw on any single source. (d) Muddy water is still drinkable (reduced relief), so thirst never deadlocks — the loop diverts into dirtiness aftermath, not collapse. (e) `extraction_slots` caps simultaneous draw.
-10. **Agent learning**: Source reliability memory — concrete, per-agent, acquired from a local depletion/quality observation, decaying via the S151 freshness model, revisable by new observation. Abstract-but-legal agent-local summary (FND-22A).
-11. **How agents can be wrong**: Believe a source is full/clean when it is dry/muddy (stale) → travel wasted → correct on arrival. Believe a recovered source is still dry (over-stale) → avoid it needlessly until belief decays.
-12. **Lifecycle states**: Source: `Replenished ↔ Drawn ↔ Depleted` (by quantity + regeneration). Quality: authored, optionally degradable in a future spec (static here). Reliability belief: `Fresh → Stale → Expired` per freshness model.
-13. **Temporal resolution**: Quantity/quality reads at extraction start; regeneration at the item-decay/regeneration tick; belief writes at observation tick. Concurrent draw on the last unit resolved by `extraction_slots` + existing tie-break.
+1. **Missing downstream consequence**: Water quality cannot make one source worse than another; agents cannot drink muddy water at a cost; basin refill cannot prefer clean water; the scarcity ↔ quality emergent tradeoff is absent. (Depletion-discovery is already proven; this spec does NOT re-introduce it.)
+2. **New entities/relations/records**: `WaterQuality` enum; `quality: Option<WaterQuality>` field on `ResourceSource`; `quality: Option<WaterQuality>` field on `ItemLot`; `last_observed_quality` + `last_observed_quality_tick` fields on `ReliabilityRecord`; new universal `WaterToleranceProfile` component; new `EventTag::ResourceSourceQualityObserved` variant + payload; new `SourceAcquisitionFailure` derived forensic record + cause/outcome enums; new `dirty_water_refill_penalty` map on `WashBasinState`.
+3. **Actions that mutate them**: Extraction commit (`apply_harvest_resource`) reads source `quality`, writes it onto the produced `ItemLot`. Drink commit reads `ItemLot.quality` + `WaterToleranceProfile`, scales relief, adds dirtiness. Perception (`observe_capacity` site) writes `observe_quality` into the agent's `SourceReliability` on co-located observation; emits `EventTag::ResourceSourceQualityObserved`. Basin refill (`next_wash_basin_refill` / `first_colocated_water_source`) reads source `quality`, transfers water, optionally raises `WashBasinState.dirtiness_level`.
+4. **Information production and travel**: Quality is observed locally (FND-14A). Quality belief travels by the agent's memory (`SourceReliability`) with freshness, decaying via `SourceReliability::enforce_limits` over `PreferenceProfile.memory_retention_ticks`. `ResourceSourceQualityObserved` events are append-only.
+5. **Conserved quantities**: Water `available_quantity` (already conserved, regenerating; unchanged by this spec). Quality is a *property*, not a conserved quantity. No water created from nothing.
+6. **Scarce capacities and contention**: `extraction_slots` (existing, unchanged). A *clean, non-depleted* source becomes the contested affordance — but contention is already mediated by `ResourceExtractionQueues`.
+7. **Partial failures and aftermath**: Drink from muddy water → partial thirst relief + raised dirtiness (partial outcome, not a failure). Reaching a believed-clean source and finding it muddy → quality-observation belief update + ranking re-evaluation on next tick + optional `SourceAcquisitionFailure` (QualityRejected) record. Stale clean-belief → arrival surprise, no failure path.
+8. **Positive feedback loops**: (a) Many drinkers → faster depletion of the clean source → more fallback travel to muddy → more agents accept the muddy tradeoff. (b) Quality belief → all agents avoid a believed-muddy source → it goes undrunk while the clean source over-drains.
+9. **Concrete dampeners** (physical, not numeric clamps): (a) `regeneration_ticks_per_unit` — sources refill over real time. (b) Quality observation freshness decay via `SourceReliability::enforce_limits` — a stale "it was muddy" belief eventually permits a re-check. (c) Fallback sources exist with travel cost — distance dampens over-draw on any single source. (d) Muddy water is still drinkable (reduced relief by tolerance factor), so thirst never deadlocks — the loop diverts into dirtiness aftermath, not collapse. (e) `extraction_slots` caps simultaneous draw. (f) Per-agent `WaterToleranceProfile` diversity — some agents drink muddy when others would travel further, so the system never collapses to a single coordinated choice (FND-22 → FND-11 dampener).
+10. **Agent learning**: Quality observation memory is concrete, per-agent, on `SourceReliability.last_observed_quality` — acquired by perception at co-located observation, decaying via `SourceReliability::enforce_limits` over `PreferenceProfile.memory_retention_ticks` (the actual project decay mechanism — *not* the S151 testimony observation-counter model), revisable by new observation. Abstract-but-legal agent-local summary (FND-22A).
+11. **How agents can be wrong**: Believe a source is clean when it is muddy (stale) → travel wasted → correct on arrival. Believe a recovered source is still muddy (over-stale) → avoid it needlessly until belief decays. Different agents disagree about a source's quality after observing it at different ticks.
+12. **Lifecycle states**: Source quality: authored, optionally degradable in a future spec (static here). Quality belief: `Fresh → Stale → Expired` per the same freshness mechanism as capacity belief. `ItemLot.quality`: set at extraction commit, static for the lot's lifetime.
+13. **Temporal resolution**: Quality reads at extraction start; quality write to lot at extraction commit; basin refill quality check at item-decay tick; quality belief writes at observation tick. Concurrent observation of the same source by multiple agents is each agent's per-agent `SourceReliability` write — no cross-agent contention.
 14. **Boundary conditions**: Internal sources only. Cross-boundary water import (drought relief, aqueducts) is held `specs/S62` territory — explicitly out of scope.
-15. **Derived views**: `SourceAcquisitionFailure` (forensic). Belief-view source quantity/quality accessors (per-actor derived). Reliability discount is a derived ranking input over belief state, not stored authority.
-16. **Causal records**: `ResourceSourceDepletedObserved` / `ResourceSourceQualityObserved` events; reliability-belief acquisition records; `SourceAcquisitionFailure` in the critical window. Reconstruct "why did this agent travel to the muddy backup?"
-17. **Target patterns**: Well depletes → agent observes → travels to muddy backup → drinks worse water, gets dirtier; recovered well re-checked after belief decays; two agents disagree about a source after observing it at different ticks.
-18. **Save/load and replay**: New enum + field/component, profile params, two event variants, reliability-belief entries, forensic record — all replay-deterministic standard state.
+15. **Derived views**: `SourceAcquisitionFailure` (forensic). Quality composite-rank factor (derived per-decision). The quality-belief read on `ResourceReliability.last_observed_quality` is per-actor derived from the agent's stored belief; not stored authority outside the agent's component.
+16. **Causal records**: `EventTag::ResourceSourceQualityObserved` events (new). Existing `EventTag::SourceExpectationFailure` for depletion (reused, not duplicated). `SourceAcquisitionFailure` records in the critical window. Reconstruct "why did this agent drink muddy water?" from: per-agent `WaterToleranceProfile` + clean-well depletion observation history + muddy-source quality observation + decision trace.
+17. **Target patterns**: Well depletes (already proven) → agent observes empty (already proven) → agent travels to backup → backup observed muddy on arrival (new) → drink muddy or travel further per tolerance (new). Recovered source re-checked after belief decays. Two agents disagree about a source's quality after observing it at different ticks.
+18. **Save/load and replay**: New enum + field on `ResourceSource` + field on `ItemLot` + two fields on `ReliabilityRecord` + new `WaterToleranceProfile` component + one event variant + payload + new forensic record + new field on `WashBasinState` — all replay-deterministic standard state, all using `#[serde(default)]` for save/RON compatibility.
 
 ## Stored State vs. Derived Read-Model List
 
 | Type | Classification | Authority |
 |------|----------------|-----------|
-| `ResourceSource` (incl. `WaterQuality`) | Stored authoritative | Component on source entity |
-| `WaterQualityProfile` / quality profile fields | Stored authoritative profile parameter | Per-agent (or world table — pinned at reassessment) |
-| Source-reliability entries in `LearnedSourcePreferences` | Stored authoritative agent-local belief/learning state | Per-agent; fallible, decaying (FND-22A) |
-| `EventTag::ResourceSourceDepletedObserved` / `…QualityObserved` | Stored event-payload | Authoritative on emission |
+| `ResourceSource.quality` | Stored authoritative | Field on existing component on source entity |
+| `ItemLot.quality` | Stored authoritative | Field on existing component on lot entity |
+| `ReliabilityRecord.last_observed_quality{,_tick}` | Stored authoritative agent-local belief | Per-agent; fallible, decaying (FND-22A) |
+| `WaterToleranceProfile` | Stored authoritative profile parameter | Per-agent; universal component |
+| `WashBasinState.dirty_water_refill_penalty` | Stored authoritative scenario parameter | Per-basin |
+| `EventTag::ResourceSourceQualityObserved` (and its payload) | Stored event-payload | Authoritative on emission |
 | `SourceAcquisitionFailure` records | Derived forensic state | View; not authoritative |
-| Belief-view source quantity/quality accessors | Derived per-actor view | View; not authoritative |
-| Reliability discount (ranking input) | Derived | Computed over belief state at emission |
+| Quality belief-view accessor reads | Derived per-actor view | View; not authoritative |
+| Quality composite-rank factor | Derived | Computed over belief state at emission |
 
 ## Planner-formalism analysis
 
-Plain GOAP. Fallback-source selection is candidate emission discounted by belief-backed reliability — not HTN decomposition. No multi-stage method, info-gathering stage, or budget-exhaustion need that flat search cannot handle (the "discover it is dry, then replan" loop is ordinary replanning on the next tick after the start-failure, not a method). Fallback: N/A. Information reads: source quantity/quality and reliability are all belief-backed or same-tick-local. Enforced declarations only: quality field, profile params, reliability beliefs, and events all have live consumers. Proof: scenarios below.
+Plain GOAP. Fallback-source selection is candidate emission discounted by the source-rank composite (existing) extended with a quality factor (D4) — not HTN decomposition. No multi-stage method, info-gathering stage, or budget-exhaustion need that flat search cannot handle. The "arrive at muddy, decide drink-or-travel-further" loop is ordinary replanning on the next tick after the quality observation lands, not a method. Fallback: N/A. Information reads: source quality and per-agent tolerance are belief-backed or actor-self per FND-14B. Enforced declarations only: quality field, tolerance profile, reliability quality fields, and event variant all have live consumers (D2, D4, D6, D7, D8). Proof: scenarios below.
 
 ## Belief-View Accessor Source-Class Declarations
 
 | Accessor | Source class | Stale/unknown behavior |
 |----------|--------------|------------------------|
-| `water_source_available(source) -> Option<Quantity>` | FND-14A co-located; belief-backed remote | `None` if no belief and remote |
-| `water_source_quality(source) -> Option<WaterQuality>` | FND-14A co-located; belief-backed remote | `None` if no belief and remote |
-| `source_reliability(source) -> Option<ReliabilityBelief>` | Belief-backed (memory/testimony) with freshness | `None` if never observed/heard |
+| `resource_source(entity) -> Option<ResourceSource>` (existing) | FND-14A co-located; belief-backed remote | Quality flows through this accessor after D1; `None` on remote without belief |
+| `water_tolerance_profile(agent) -> Option<WaterToleranceProfile>` (new) | Self (actor's own profile) | Universal-profile: `expect()` on known agents per the universal contract |
+| `source_reliability_record(agent, source_key) -> Option<ReliabilityRecord>` (new, sugar over the existing `source_reliability(agent)`) | Self (actor's own learned state) | `None` if source has not been observed |
 
-Accessors return `None` rather than reading remote authoritative state. Ownership/control of the source (whose well it is, who may draw) remains belief-gated per FND-14A — a separate axis from physical quantity/quality.
+The spec does **not** introduce a separate `water_source_available` or `water_source_quality` accessor — the existing `resource_source(entity)` accessor already returns the full struct including the new `quality` field after D1 lands. The spec does **not** introduce a source-scoped `source_reliability(source)` because it would collide with the existing agent-scoped `source_reliability(agent)` at `belief_view.rs:730`; reads of per-source quality belief go through the agent's `SourceReliability.sources` map keyed by `SourceKey { entity, commodity }`.
+
+Ownership/control of the source (whose well it is, who may draw) remains belief-gated per FND-14A — a separate axis from physical quality.
 
 ## Agent Profile Scenario Contract
 
-If quality→effect parameters are per-agent (preferred), they live on a universal profile (`MetabolismProfile` or a new universal `WaterToleranceProfile`) with a `Default` impl, scenario-overridable via `AgentDef`. If a new component on `EntityKind::Agent` is introduced, it follows the universal-profile contract (added to `AgentDef`, `set_component_*` in `spawn_agent()`, `expect()` runtime access). `WaterQuality` on the source is authored via the place/source scenario contract. Reassessment pins the per-agent-vs-world-table choice.
+`WaterToleranceProfile` is a **universal** component on `EntityKind::Agent` and follows the universal-profile contract:
+
+1. Defined in `worldwake-core` with `Default` impl (D5).
+2. Registered in `crates/worldwake-core/src/component_schema.rs` with kind filter `|kind| kind == EntityKind::Agent`.
+3. Added to `AgentDef` (`crates/worldwake-cli/src/scenario/types.rs`) as `water_tolerance_profile: Option<WaterToleranceProfile>` with `#[serde(default)]`.
+4. Applied in `spawn_agent()` (`crates/worldwake-cli/src/scenario/mod.rs`) via `unwrap_or_default()` — always inserted.
+5. Runtime access on known agents uses `expect()` (universal-profile contract).
+
+`WaterQuality` on the source is authored via `ResourceSourceDef.quality` (D1). `WashBasinState.dirty_water_refill_penalty` is authored via the existing place/basin scenario contract (D6).
 
 ## Component Registration
 
-`WaterQuality` field on `ResourceSource` requires no new registration (existing component, field addition) — *unless* reassessment chooses the sibling-component form, in which case `WaterSourceQuality` is registered on the source entity-kind in `component_schema.rs`. Source-reliability extends the existing `LearnedSourcePreferences` component (no new registration). Any new agent profile follows the contract above.
+| Component | Crate | Registration Kind Filter | Source |
+|-----------|-------|---------------------------|--------|
+| `ResourceSource` (extended with `quality`) | core | `EntityKind::Facility \|\| EntityKind::Place` | Existing registration; field addition only |
+| `ItemLot` (extended with `quality`) | core | `EntityKind::ItemLot` | Existing registration; field addition only |
+| `WashBasinState` (extended with `dirty_water_refill_penalty`) | core | (existing basin filter) | Existing registration; field addition only |
+| `ReliabilityRecord` fields (on `SourceReliability`) | core | `EntityKind::Agent` (via parent component) | Existing registration; field additions only |
+| `WaterToleranceProfile` | core | `EntityKind::Agent` | **NEW** — register in `component_schema.rs` with universal-profile insert/get accessors |
 
 ## Cross-System Interactions (FND-26)
 
 | System | Read | Write |
 |--------|------|-------|
-| Drink/extraction handler (`worldwake-systems`) | `ResourceSource` (quantity + quality), profile | `available_quantity`, water lot quality, `HomeostaticNeeds` (thirst, dirtiness) |
-| Item-decay basin refill (`worldwake-systems`) | colocated `ResourceSource` quality/quantity | `WashBasinState` (clean units + dirtiness from muddy water), source quantity |
-| Candidate emitter (`worldwake-ai`) | belief-view source quantity/quality + reliability | None (read-only emission) |
-| Learned-source substrate (`worldwake-ai`) | depletion/quality observation events | source-reliability beliefs |
+| Drink/extraction handler (`worldwake-systems`) | `ResourceSource` (quantity + quality), `ItemLot.quality`, `WaterToleranceProfile`, `CommodityConsumableProfile` | `available_quantity`, water lot `quality`, `HomeostaticNeeds` (thirst, dirtiness) |
+| Item-decay basin refill (`worldwake-systems`) | colocated `ResourceSource` quality/quantity, `WashBasinState.dirty_water_refill_penalty` | `WashBasinState` (clean units + dirtiness from muddy water), source quantity |
+| Perception (`worldwake-systems`) | colocated `ResourceSource.quality` | `ReliabilityRecord.last_observed_quality{,_tick}`, `EventTag::ResourceSourceQualityObserved` emission |
+| Source-rank composite (`worldwake-ai`) | belief-view source quality + reliability + `WaterToleranceProfile` | None (read-only emission) |
 | Survival forensics (`worldwake-ai`) | event/trace log | `SourceAcquisitionFailure` records |
+| Observer/CLI (`worldwake-cli`) | belief-view source quality, `SourceReliability.last_observed_quality` for controlled agent | None |
 
 No system commands another.
 
 ## Scenario Validation (FND-31)
 
-**Focused branch goldens:**
+**Focused branch goldens (new, in addition to the existing depletion-discovery goldens which must continue to pass):**
 
-- **`survival-water-source-depleted.ron`** — agent believes a well is full, travels to it, finds it dry (FND-14A observation), records a reliability belief, and uses a believed-good fallback. Asserts belief update, candidate discount, no omniscient correction (the belief is wrong until arrival), deterministic replay. *Direct canonical-scenario-D proof.*
-- **`survival-dirty-water-tradeoff.ron`** — clean well is depleted; only a muddy source remains; the agent drinks muddy water (reduced thirst relief + raised dirtiness) OR travels to a distant clean source depending on profile tolerance/pressure. Asserts quality-scaled relief, dirtiness penalty, and the profile-driven branch.
+- **`survival-water-quality-on-arrival.ron`** — agent believes a well is clean, travels to it, finds it `Muddy` on arrival (FND-14A observation), records a quality belief, and chooses between drinking muddy water (per `WaterToleranceProfile`) or traveling to a believed-clean fallback. Asserts: quality observation belief update with provenance, `EventTag::ResourceSourceQualityObserved` emission, `ItemLot.quality` propagation if drink commits, ranking discount on the muddy source after observation, deterministic replay. *Direct quality-axis proof for canonical scenario D extended.*
+- **`survival-dirty-water-tolerance-tradeoff.ron`** — clean well is depleted; only a muddy source remains; the agent drinks muddy water (reduced thirst relief + raised dirtiness) OR travels to a distant clean source depending on per-agent `WaterToleranceProfile` tolerance and current pressure. Two agents differ in `WaterToleranceProfile` to prove agent diversity (FND-22). Asserts quality-scaled relief, dirtiness penalty, and the profile-driven branch.
+- **`survival-muddy-basin-refill.ron`** — only colocated water source is muddy; basin refill draws from it, raises `WashBasinState.dirtiness_level`, and the subsequent wash effectiveness degrades per S176. Asserts basin-side quality coupling.
 
 **1440-tick CI-owned collision scenario:**
 
-- **`survival-degrading-water-1440.ron`** — several agents share a finite, regenerating clean source plus a muddy backup over 1440 ticks. Depletion drives fallback travel, contention (extraction slots), dirty-water drinking, and at least one critical-thirst window. Assertions prove: `available_quantity` changes and regenerates; reliability beliefs are acquired/decay; fallback selection has belief provenance (no omniscient target injection); replay equivalence.
+- **`survival-quality-degrading-1440.ron`** — several agents share a finite, regenerating clean source plus a muddy backup over 1440 ticks. Depletion drives fallback travel (proven path), the muddy backup is observed by each agent on arrival, agents with different `WaterToleranceProfile` make different choices (some drink muddy, some travel further), basin dirtiness rises from muddy-water refill, and at least one critical-thirst window forms. Assertions prove: `available_quantity` changes and regenerates; quality beliefs are acquired/decay; fallback selection has belief provenance (no omniscient target injection); per-agent tolerance produces emergent choice diversity; replay equivalence.
 
-**Illegal paths this spec must not produce:** a planner candidate for a remote source's quantity/quality with no belief carrier; instant omniscient belief correction before arrival; a global `water_scarcity` scalar; any sickness/wound from water (deferred); water appearing without a source/regeneration path.
+**Existing goldens that must continue to pass (regression coverage for the proven depletion half):**
+
+- `crates/worldwake-ai/tests/scenarios/ai_decisions.rs::golden_local_depleted_source_regenerates_without_spurious_failure_memory`
+- `crates/worldwake-ai/src/source_composite.rs::empty_but_fresh_observation_demotes_depleted_source` (unit test)
+- `crates/worldwake-ai/tests/scenarios/survival_preferences.rs` (consumes `EventTag::SourceExpectationFailure`)
+- `crates/worldwake-ai/tests/scenarios/quantity_aware_acquisition.rs` (mid-second-action depletion surface)
+- `scenarios/survival-basin-competition-1440.ron`
+
+**Illegal paths this spec must not produce:** a planner candidate for a remote source's quality with no belief carrier; instant omniscient quality-belief correction before arrival; a global `water_scarcity` scalar; any sickness/wound from water (deferred); water appearing without a source/regeneration path; a parallel "depletion belief" surface coexisting with `SourceReliability.last_observed_capacity` (FND-28).
