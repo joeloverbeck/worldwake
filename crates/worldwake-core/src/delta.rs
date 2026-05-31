@@ -26,7 +26,8 @@ use crate::{
     StockAssignment, StockStoragePolicy, SubstitutePreferences, SurveyMemory, TellProfile,
     TestimonyTrustProfile, TheftDispositionProfile, TradeDispositionProfile, UniqueItem,
     UtilityProfile, ViolationDispositionProfile, ViolationMemory, WashBasinState,
-    WorkstationMarker, WoundList, component_schema::with_component_schema_entries,
+    WaterToleranceProfile, WorkstationMarker, WoundList,
+    component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 
@@ -306,7 +307,7 @@ mod tests {
         StockStoragePolicy, SurveyMemory, SurveyRecord, TellProfile, TestimonyTrustProfile,
         TheftDispositionProfile, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind,
         ViolationDispositionProfile, ViolationMemory, WakeCondition, WashBasinState,
-        WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
+        WaterToleranceProfile, WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
         test_utils::{
             sample_blocker_memory, sample_commodity_valuation_profile,
             sample_contention_disposition_profile, sample_demand_memory, sample_discrepancy_memory,
@@ -729,6 +730,7 @@ mod tests {
                 dirtiness_critical_ticks: 5,
             }),
             ComponentValue::MetabolismProfile(MetabolismProfile::default()),
+            ComponentValue::WaterToleranceProfile(WaterToleranceProfile::default()),
             ComponentValue::CarryCapacity(CarryCapacity(LoadUnits(14))),
             ComponentValue::KnownRecipes(KnownRecipes::with([
                 crate::RecipeId(2),
@@ -1083,6 +1085,7 @@ mod tests {
                 ComponentKind::HomeostaticNeeds,
                 ComponentKind::DeprivationExposure,
                 ComponentKind::MetabolismProfile,
+                ComponentKind::WaterToleranceProfile,
                 ComponentKind::CarryCapacity,
                 ComponentKind::KnownRecipes,
                 ComponentKind::DemandMemory,

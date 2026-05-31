@@ -2135,7 +2135,7 @@ mod tests {
         PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource, PortfolioWeightsProfile,
         PreferenceProfile, RecordData, RecordEntryId, RecordKind, RiskWeightProfile,
         RoutePreferenceProfile, SubstitutePreferences, SuccessionLaw, SurveyMemory, TellProfile,
-        TestimonyTrustProfile, TradeDispositionProfile, UtilityProfile,
+        TestimonyTrustProfile, TradeDispositionProfile, UtilityProfile, WaterToleranceProfile,
         component_schema::with_component_schema_entries,
         test_utils::{
             sample_blocker_memory, sample_demand_memory, sample_merchandise_profile,
@@ -2692,6 +2692,12 @@ mod tests {
                 component_kind: ComponentKind::DriveEscalationProfile,
                 before: None,
                 after: ComponentValue::DriveEscalationProfile(DriveEscalationProfile::default()),
+            }),
+            StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::WaterToleranceProfile,
+                before: None,
+                after: ComponentValue::WaterToleranceProfile(WaterToleranceProfile::default()),
             }),
             StateDelta::Component(ComponentDelta::Set {
                 entity: agent,

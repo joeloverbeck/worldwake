@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-core/experience` (field additions to `ReliabilityRecord`), `worldwake-core/event_tag` + payload (new variant), `worldwake-systems/perception` (write `observe_quality` at co-located observation site), `worldwake-ai/source_composite` (new quality factor in composite rank), `worldwake-sim/save_load` (SAVE_FORMAT_VERSION bump)
-**Deps**: `archive/tickets/S177WATSRCQUA-001.md`, S177WATSRCQUA-003
+**Deps**: `archive/tickets/S177WATSRCQUA-001.md`, `archive/tickets/S177WATSRCQUA-003.md`
 
 ## Problem
 

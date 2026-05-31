@@ -28,6 +28,7 @@ Always applied to every agent with defaults. Scenario definitions may override i
 - [RoutePreferenceProfile](#routepreferenceprofile) — Per-agent parameters for deriving route preference from traversal history.
 - [TellProfile](#tellprofile) — Per-agent parameters controlling what information an agent relays and accepts.
 - [TestimonyTrustProfile](#testimonytrustprofile) — Per-agent parameters for deriving witness trust from testimony reliability.
+- [WaterToleranceProfile](#watertoleranceprofile) — Universal per-agent profile for water-quality consequences.
 
 ### Optional Profiles
 
@@ -284,6 +285,7 @@ Per-agent physiology parameters that drive metabolism and recovery.
 | `travel_thirst_multiplier` | `Permille` | Multiplier applied to thirst rate while traveling. (default: `pm(0)`) |
 | `travel_bladder_multiplier` | `Permille` | Multiplier applied to bladder rate while traveling. (default: `pm(0)`) |
 | `wilderness_relief_dirtiness_penalty` | `Permille` | Additional dirtiness incurred when relieving oneself in the wilderness rather than at a proper facility. (default: `pm(0)`) |
+| `wash_worthwhile_effectiveness_floor` | `Permille` | Minimum acceptable wash effectiveness (the effective relief fraction in permille) before the planner inserts proactive `clean_wash_basin` maintenance ahead of a wash. A basin's live effectiveness is `(max_effective_dirtiness - dirtiness_level) / max_effective_dirtiness`. When that falls below this floor — while the basin is still below its hard `max_effective_dirtiness` block — the agent cleans the basin first so the recovered wash delivers worthwhile relief. This is the FND-11 maintenance-labor dampener engaging before the basin becomes unusable. `0` disables proactive cleaning, leaving only the hard authoritative block (`TargetWashBasinNotTooDirty`). (default: `default_wash_worthwhile_effectiveness_floor()`) |
 
 ---
 
@@ -446,6 +448,21 @@ Per-agent parameters for deriving witness trust from testimony reliability.
 | `topic_weight_price_level` | `Permille` | Topic salience multiplier for price-level testimony. (default: `Permille::new_unchecked(500)`) |
 | `topic_weight_entity_whereabouts` | `Permille` | Topic salience multiplier for entity-whereabouts testimony. (default: `Permille::new_unchecked(500)`) |
 | `topic_weight_general_fact` | `Permille` | Topic salience multiplier for general-fact testimony. (default: `Permille::new_unchecked(500)`) |
+
+---
+
+## WaterToleranceProfile
+
+**Category**: Universal (always applied with defaults)
+
+**Source**: `crates/worldwake-core/src/water_tolerance_profile.rs:9`
+
+Universal per-agent profile for water-quality consequences.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `thirst_relief_factor` | `BTreeMap<WaterQuality, Permille>` | Per-quality relief multiplier applied to water's intrinsic thirst relief. (default: `BTreeMap::from([`) |
+| `dirtiness_penalty` | `BTreeMap<WaterQuality, Permille>` | Per-quality dirtiness penalty added when consuming water. (default: `BTreeMap::from([`) |
 
 ---
 

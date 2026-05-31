@@ -26,7 +26,8 @@ use crate::{
     StockStoragePolicy, SubstitutePreferences, SurveyMemory, TellProfile, TestimonyTrustProfile,
     TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
     UtilityProfile, ViolationDispositionProfile, ViolationMemory, WashBasinState,
-    WorkstationMarker, WorldError, WoundList, component_schema::with_component_schema_entries,
+    WaterToleranceProfile, WorkstationMarker, WorldError, WoundList,
+    component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -250,6 +251,10 @@ impl World {
             world.insert_component_drive_escalation_profile(
                 entity,
                 DriveEscalationProfile::default(),
+            )?;
+            world.insert_component_water_tolerance_profile(
+                entity,
+                WaterToleranceProfile::default(),
             )?;
             Ok(())
         })
@@ -719,8 +724,8 @@ mod tests {
         ReservationRecord, ResourceSource, RightKind, RiskWeightProfile, RoutePreferenceProfile,
         SubstitutePreferences, SuccessionLaw, SurveyMemory, TellProfile, TestimonyTrustProfile,
         TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId,
-        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound,
-        WoundCause, WoundList, build_prototype_world,
+        UniqueItem, UniqueItemKind, WaterToleranceProfile, WorkstationMarker, WorkstationTag,
+        WorldError, Wound, WoundCause, WoundList, build_prototype_world,
         test_utils::{
             sample_blocker_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
@@ -1403,6 +1408,10 @@ mod tests {
         assert_eq!(
             world.get_component_disposal_profile(id),
             Some(&DisposalProfile::default())
+        );
+        assert_eq!(
+            world.get_component_water_tolerance_profile(id),
+            Some(&WaterToleranceProfile::default())
         );
     }
 

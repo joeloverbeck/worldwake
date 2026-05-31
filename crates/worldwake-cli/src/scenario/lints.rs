@@ -275,6 +275,7 @@ mod tests {
             drive_thresholds: None,
             drive_escalation_profile: None,
             metabolism_profile: None,
+            water_tolerance_profile: None,
             disposal_profile: None,
             exploration_profile: None,
             diversification_profile: None,

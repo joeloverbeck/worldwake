@@ -1530,6 +1530,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                water_tolerance_profiles,
+                WaterToleranceProfile,
+                insert_water_tolerance_profile,
+                get_water_tolerance_profile,
+                get_water_tolerance_profile_mut,
+                remove_water_tolerance_profile,
+                has_water_tolerance_profile,
+                iter_water_tolerance_profiles,
+                insert_component_water_tolerance_profile,
+                get_component_water_tolerance_profile,
+                get_component_water_tolerance_profile_mut,
+                remove_component_water_tolerance_profile,
+                has_component_water_tolerance_profile,
+                entities_with_water_tolerance_profile,
+                query_water_tolerance_profile,
+                count_with_water_tolerance_profile,
+                "WaterToleranceProfile",
+                |kind| kind == EntityKind::Agent,
+                WaterToleranceProfile,
+                crate::WaterToleranceProfile,
+                set_component_water_tolerance_profile,
+                clear_component_water_tolerance_profile,
+                txn_simple_set
+            }
+            {
                 carry_capacities,
                 CarryCapacity,
                 insert_carry_capacity,

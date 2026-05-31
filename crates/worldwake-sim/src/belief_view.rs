@@ -26,7 +26,7 @@ use worldwake_core::{
     SocialObservation, SourceReliability, StockStoragePolicy, SubstitutePreferences, TellMemoryKey,
     TellProfile, TellTopic, TestimonyTrustProfile, Tick, TickRange, ToldBeliefMemory,
     TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationDispositionProfile,
-    WashBasinState, WorkstationTag, Wound, effective_claim_confidence,
+    WashBasinState, WaterToleranceProfile, WorkstationTag, Wound, effective_claim_confidence,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -538,6 +538,10 @@ pub trait GoalBeliefView: BelievedAuthorityView + LocalPhysicalObservationView {
         let _ = agent;
         None
     }
+    fn water_tolerance_profile(&self, agent: EntityId) -> Option<WaterToleranceProfile> {
+        let _ = agent;
+        None
+    }
     fn testimony_trust_profile(&self, agent: EntityId) -> Option<TestimonyTrustProfile> {
         let _ = agent;
         None
@@ -1040,6 +1044,10 @@ pub trait ProfileBeliefView {
         None
     }
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
+    fn water_tolerance_profile(&self, agent: EntityId) -> Option<WaterToleranceProfile> {
+        let _ = agent;
+        None
+    }
     fn testimony_trust_profile(&self, agent: EntityId) -> Option<TestimonyTrustProfile> {
         let _ = agent;
         None
@@ -2156,6 +2164,13 @@ where
         agent: worldwake_core::EntityId,
     ) -> Option<worldwake_core::MetabolismProfile> {
         ProfileBeliefView::metabolism_profile(self, agent)
+    }
+
+    fn water_tolerance_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::WaterToleranceProfile> {
+        ProfileBeliefView::water_tolerance_profile(self, agent)
     }
 
     fn testimony_trust_profile(

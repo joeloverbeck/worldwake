@@ -63,6 +63,7 @@ use crate::{
     utility_profile::UtilityProfile,
     valuation::CommodityValuationProfile,
     violation::{ViolationDispositionProfile, ViolationMemory},
+    water_tolerance_profile::WaterToleranceProfile,
     wounds::WoundList,
 };
 use serde::{Deserialize, Serialize};

@@ -22,9 +22,9 @@ use worldwake_core::{
     RiskWeightProfile, RoutePreferenceProfile, ShelterTag, SleepQualityProfile,
     SleepRecoveryModifier, SubstitutePreferences, SuccessionLaw, TellProfile,
     TestimonyTrustProfile, TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
-    ViolationDispositionProfile, WashBasinState, WaterQuality, WorkstationTag,
-    items::CommodityKind, social_artifact::SuspensionReason as ArtifactSuspensionReason,
-    topology::PlaceTag,
+    ViolationDispositionProfile, WashBasinState, WaterQuality, WaterToleranceProfile,
+    WorkstationTag, items::CommodityKind,
+    social_artifact::SuspensionReason as ArtifactSuspensionReason, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -639,6 +639,8 @@ pub struct AgentDef {
     pub drive_escalation_profile: Option<DriveEscalationProfile>,
     #[serde(default)]
     pub metabolism_profile: Option<MetabolismProfile>,
+    #[serde(default)]
+    pub water_tolerance_profile: Option<WaterToleranceProfile>,
     #[serde(default)]
     pub disposal_profile: Option<DisposalProfile>,
     #[serde(default)]

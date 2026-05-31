@@ -26,8 +26,8 @@ use worldwake_core::{
     RouteExperience, RoutePreferenceProfile, SleepQualityProfile, SocialObservation,
     SourceReliability, StockStoragePolicy, SubstitutePreferences, SurveyMemory, TellMemoryKey,
     TellProfile, TellTopic, TestimonyTrustProfile, Tick, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, UtilityProfile, WashBasinState, WorkstationTag, World,
-    Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
+    TradeDispositionProfile, UniqueItemKind, UtilityProfile, WashBasinState, WaterToleranceProfile,
+    WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -752,6 +752,16 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_metabolism_profile(agent).copied())
+            .flatten()
+    }
+
+    fn water_tolerance_profile(&self, agent: EntityId) -> Option<WaterToleranceProfile> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_water_tolerance_profile(agent)
+                    .cloned()
+            })
             .flatten()
     }
 
@@ -2407,8 +2417,9 @@ mod tests {
         RestCapacity, RestOccupancy, RightKind, RiskWeightProfile, RouteExperience,
         SelfCareOccupancy, SelfCareUseKind, StockStoragePolicy, SuccessionLaw, TellMemoryKey,
         TellTopic, Tick, TickRange, ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId,
-        UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-        WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state, build_prototype_world,
+        UtilityProfile, VisibilitySpec, WaterToleranceProfile, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state,
+        build_prototype_world,
         test_utils::{
             sample_blocker_memory, sample_commodity_valuation_profile, sample_discrepancy_memory,
             sample_learned_opportunity_memory, sample_preference_profile, sample_repair_memory,
@@ -4008,6 +4019,41 @@ mod tests {
 
         assert_eq!(ProfileBeliefView::disposal_profile(&view, other), None);
         assert_eq!(GoalBeliefView::disposal_profile(&view, other), None);
+    }
+
+    #[test]
+    fn water_tolerance_profile_belief_view_returns_self_authoritative() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let profile = WaterToleranceProfile::default();
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Briar", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            txn.set_component_water_tolerance_profile(agent, profile.clone())
+                .unwrap();
+            commit_txn(txn);
+            (agent, other)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            ProfileBeliefView::water_tolerance_profile(&view, agent),
+            Some(profile.clone())
+        );
+        assert_eq!(
+            GoalBeliefView::water_tolerance_profile(&view, agent),
+            Some(profile)
+        );
+        assert_eq!(
+            ProfileBeliefView::water_tolerance_profile(&view, other),
+            None
+        );
+        assert_eq!(GoalBeliefView::water_tolerance_profile(&view, other), None);
     }
 
     #[test]

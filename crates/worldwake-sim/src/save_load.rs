@@ -4,7 +4,7 @@ use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
 /// S177WATSRCQUA-002 stores water quality on item lots.
-pub const SAVE_FORMAT_VERSION: u32 = 112;
+pub const SAVE_FORMAT_VERSION: u32 = 113;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -226,8 +226,9 @@ mod tests {
         SleepEpisodeStartedPayload, SleepFailureCause, SleepQualityProfile, SleepRecoveryModifier,
         StateHash, SuspensionReason, TestimonyTrustProfile, TestimonyTrustSummary, Tick, TickRange,
         TopicScope, UniqueItemKind, UtilityProfile, VisibilitySpec, WakeCondition, WakeReason,
-        WashBasinState, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
+        WashBasinState, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WaterQuality,
+        WaterToleranceProfile, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -354,6 +355,19 @@ mod tests {
                     ..MetabolismProfile::default()
                 },
             )
+            .unwrap();
+        let water_tolerance = WaterToleranceProfile {
+            thirst_relief_factor: std::collections::BTreeMap::from([(
+                WaterQuality::Muddy,
+                worldwake_core::Permille::new_unchecked(325),
+            )]),
+            dirtiness_penalty: std::collections::BTreeMap::from([(
+                WaterQuality::Muddy,
+                worldwake_core::Permille::new_unchecked(275),
+            )]),
+        };
+        profile_txn
+            .set_component_water_tolerance_profile(actor, water_tolerance)
             .unwrap();
         profile_txn
             .set_component_risk_weight_profile(
@@ -1401,8 +1415,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_112_after_item_lot_quality() {
-        assert_eq!(SAVE_FORMAT_VERSION, 112);
+    fn save_format_version_is_113_after_water_tolerance_profile() {
+        assert_eq!(SAVE_FORMAT_VERSION, 113);
     }
 
     #[test]
@@ -1413,7 +1427,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 112);
+        assert_eq!(SAVE_FORMAT_VERSION, 113);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1590,6 +1604,18 @@ mod tests {
                 .unwrap()
                 .min_sleep_ticks,
             NonZeroU32::new(11).unwrap()
+        );
+        let restored_water_tolerance = restored
+            .world()
+            .get_component_water_tolerance_profile(actor)
+            .expect("water tolerance profile should roundtrip");
+        assert_eq!(
+            restored_water_tolerance.thirst_relief_factor(WaterQuality::Muddy),
+            worldwake_core::Permille::new_unchecked(325)
+        );
+        assert_eq!(
+            restored_water_tolerance.dirtiness_penalty(WaterQuality::Muddy),
+            worldwake_core::Permille::new_unchecked(275)
         );
         let restored_sleep_place = state.world().topology().place_ids().next().unwrap();
         assert_eq!(
