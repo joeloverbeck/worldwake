@@ -20,16 +20,20 @@ fn named_agent(h: &GoldenHarness, target_name: &str) -> EntityId {
     h.world
         .query_name_and_agent_data()
         .find(|(_, name, _)| name.0 == target_name)
-        .map(|(entity, _, _)| entity)
-        .unwrap_or_else(|| panic!("scenario should include named agent {target_name}"))
+        .map_or_else(
+            || panic!("scenario should include named agent {target_name}"),
+            |(entity, _, _)| entity,
+        )
 }
 
 fn named_entity(h: &GoldenHarness, target_name: &str) -> EntityId {
     h.world
         .query_name()
         .find(|(_, name)| name.0 == target_name)
-        .map(|(entity, _)| entity)
-        .unwrap_or_else(|| panic!("scenario should include named entity {target_name}"))
+        .map_or_else(
+            || panic!("scenario should include named entity {target_name}"),
+            |(entity, _)| entity,
+        )
 }
 
 fn load_harness() -> GoldenHarness {

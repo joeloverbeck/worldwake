@@ -37,8 +37,10 @@ fn named_entity(h: &GoldenHarness, target_name: &str) -> EntityId {
     h.world
         .query_name()
         .find(|(_, name)| name.0 == target_name)
-        .map(|(entity, _)| entity)
-        .unwrap_or_else(|| panic!("scenario should include named entity {target_name}"))
+        .map_or_else(
+            || panic!("scenario should include named entity {target_name}"),
+            |(entity, _)| entity,
+        )
 }
 
 fn seed_source_location_beliefs_without_quality(h: &mut GoldenHarness, agent: EntityId) {
