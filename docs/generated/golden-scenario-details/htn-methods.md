@@ -7,7 +7,7 @@ Scenarios: 8
 
 ### Scenario 431: S147 ProduceWithGather Method Selection
 
-- Source: `htn_methods.rs:820`
+- Source: `htn_methods.rs:821`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -23,7 +23,7 @@ Scenarios: 8
 
 ### Scenario 433: S147 Autonomous Produce Method Trace Propagation
 
-- Source: `htn_methods.rs:856`
+- Source: `htn_methods.rs:857`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -39,7 +39,7 @@ Scenarios: 8
 
 ### Scenario 434: S147 FulfillBountyInvestigation Method Selection
 
-- Source: `htn_methods.rs:938`
+- Source: `htn_methods.rs:939`
 - Systems: AI, Search, SocialArtifact
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Travel
@@ -55,7 +55,7 @@ Scenarios: 8
 
 ### Scenario 436: S147 FulfillBountyDirect Method Selection
 
-- Source: `htn_methods.rs:978`
+- Source: `htn_methods.rs:979`
 - Systems: AI, Search, SocialArtifact, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Combat, Travel
@@ -71,7 +71,7 @@ Scenarios: 8
 
 ### Scenario 437: S147 EscortToHome Method Selection
 
-- Source: `htn_methods.rs:1022`
+- Source: `htn_methods.rs:1023`
 - Systems: AI, Search, Care, Travel
 - GoalKinds: EscortToSafety
 - ActionDomains: Care, Travel
@@ -87,7 +87,7 @@ Scenarios: 8
 
 ### Scenario 438: S147 Method Failure Producer
 
-- Source: `htn_methods.rs:1069`
+- Source: `htn_methods.rs:1070`
 - Systems: AI, Search, Care, FailureHandling
 - GoalKinds: EscortToSafety
 - ActionDomains: Care
@@ -103,7 +103,7 @@ Scenarios: 8
 
 ### Scenario 435: S147 Autonomous FulfillBountyInvestigation Method Trace
 
-- Source: `htn_methods.rs:1112`
+- Source: `htn_methods.rs:1113`
 - Systems: AI, Search, SocialArtifact, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Combat, Travel
@@ -119,7 +119,7 @@ Scenarios: 8
 
 ### Scenario 432: S147 Disabled Methods Fall Back To Flat Strategic Search
 
-- Source: `htn_methods.rs:1162`
+- Source: `htn_methods.rs:1163`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel

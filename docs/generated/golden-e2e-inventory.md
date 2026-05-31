@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden scenario source files: 70
-- Files contributing `golden_*` tests: 70
-- Total `golden_*` tests: 322
+- Golden scenario source files: 73
+- Files contributing `golden_*` tests: 73
+- Total `golden_*` tests: 330
 
 ## Per-Scenario-File Inventory
 
@@ -60,6 +60,7 @@ Do not hand-edit it.
 | `survival_basin_dirty_dirty.rs` | 2 |
 | `survival_combat.rs` | 2 |
 | `survival_contested.rs` | 9 |
+| `survival_dirty_water_tolerance_tradeoff.rs` | 3 |
 | `survival_drive_escalation.rs` | 4 |
 | `survival_escort.rs` | 2 |
 | `survival_exhaustion_collapse.rs` | 2 |
@@ -68,6 +69,7 @@ Do not hand-edit it.
 | `survival_items_decay.rs` | 2 |
 | `survival_justice.rs` | 5 |
 | `survival_latrine_full.rs` | 2 |
+| `survival_muddy_basin_refill.rs` | 2 |
 | `survival_offices.rs` | 2 |
 | `survival_patrol.rs` | 2 |
 | `survival_preferences.rs` | 3 |
@@ -81,6 +83,7 @@ Do not hand-edit it.
 | `survival_tell.rs` | 2 |
 | `survival_theft.rs` | 2 |
 | `survival_trade.rs` | 2 |
+| `survival_water_quality_on_arrival.rs` | 3 |
 | `testimony_reliability.rs` | 5 |
 | `travel_physiology.rs` | 12 |
 
@@ -473,6 +476,12 @@ Do not hand-edit it.
 - `per_need_critical_run_limit_override_beats_default_for_dirtiness_only`
 - `no_wash_plan_for_unseen_remote_basin_under_contested_topology`
 
+### `survival_dirty_water_tolerance_tradeoff.rs`
+
+- `golden_dirty_water_tolerance_tradeoff_hardy_agent_drinks_muddy`
+- `golden_dirty_water_tolerance_tradeoff_fragile_agent_travels_to_fallback`
+- `golden_dirty_water_tolerance_tradeoff_replays_deterministically`
+
 ### `survival_drive_escalation.rs`
 
 - `survival_drive_escalation_lands_row_four`
@@ -517,6 +526,11 @@ Do not hand-edit it.
 
 - `full_latrine_forces_empty_then_relieve_recovery`
 - `latrine_fullness_run_is_replay_deterministic`
+
+### `survival_muddy_basin_refill.rs`
+
+- `golden_muddy_basin_refill_raises_dirtiness_level`
+- `golden_muddy_basin_refill_degrades_wash_effectiveness`
 
 ### `survival_offices.rs`
 
@@ -592,6 +606,12 @@ Do not hand-edit it.
 
 - `survival_trade_proves_substitute_market_branch`
 - `survival_trade_replays_deterministically`
+
+### `survival_water_quality_on_arrival.rs`
+
+- `golden_survival_water_quality_on_arrival_records_belief_correction`
+- `golden_survival_water_quality_on_arrival_emits_no_omniscient_belief_correction`
+- `golden_survival_water_quality_on_arrival_replays_deterministically`
 
 ### `testimony_reliability.rs`
 

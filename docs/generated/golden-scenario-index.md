@@ -9,13 +9,13 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 238
-- Contributing golden scenario source files: 61
-- Associated tests: 295
+- Scenario blocks: 246
+- Contributing golden scenario source files: 64
+- Associated tests: 303
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
-- Source: `activation_decay.rs:323`
+- Source: `activation_decay.rs:326`
 - Systems: Perception
 - ActionDomains: N/A
 - Places: VillageSquare, OrchardFarm
@@ -29,7 +29,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 146: Need Salience Extends Concrete Opportunity Retention
 
-- Source: `activation_decay.rs:361`
+- Source: `activation_decay.rs:364`
 - Systems: Perception
 - ActionDomains: N/A
 - Places: VillageSquare, OrchardFarm
@@ -43,7 +43,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 147: Claim Confidence Threshold Prunes Stale Reports Before Fresh Reports
 
-- Source: `activation_decay.rs:399`
+- Source: `activation_decay.rs:402`
 - Systems: Perception, Social Information
 - ActionDomains: N/A
 - Places: VillageSquare, OrchardFarm
@@ -71,7 +71,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 1b: Unrelated Commodity Change Preserves Frontier Exhaustion
 
-- Source: `ai_decisions.rs:129`
+- Source: `ai_decisions.rs:130`
 - Systems: Needs, AI, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Needs, Production, Travel
@@ -86,7 +86,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 2: Priority-Based Interrupt
 
-- Source: `ai_decisions.rs:322`
+- Source: `ai_decisions.rs:324`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep
 - ActionDomains: Needs
@@ -101,7 +101,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 5: Local Depleted Source Regenerates Without Spurious Failure Memory
 
-- Source: `ai_decisions.rs:436`
+- Source: `ai_decisions.rs:438`
 - Systems: Production, AI
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -115,7 +115,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 7: Deprivation Cascade
 
-- Source: `ai_decisions.rs:570`
+- Source: `ai_decisions.rs:573`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -129,7 +129,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `ai_decisions.rs:1394`
+- Source: `ai_decisions.rs:1400`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -331,7 +331,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 447: S152 Seeded Assignment Is Deterministic
 
-- Source: `cognitive_archetypes.rs:129`
+- Source: `cognitive_archetypes.rs:130`
 - Systems: Scenario, AI
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -343,7 +343,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 448: S152 Cautious Backoff Exceeds Bold Backoff
 
-- Source: `cognitive_archetypes.rs:180`
+- Source: `cognitive_archetypes.rs:181`
 - Systems: Scenario, AI
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -355,7 +355,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 449: S152 Sociable Reasks Sooner Than Skeptical
 
-- Source: `cognitive_archetypes.rs:214`
+- Source: `cognitive_archetypes.rs:215`
 - Systems: Scenario, AI
 - GoalKinds: AskWitness
 - ActionDomains: Social
@@ -367,7 +367,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 450: S152 Greedy Boosts Economic Portfolio Weight
 
-- Source: `cognitive_archetypes.rs:245`
+- Source: `cognitive_archetypes.rs:246`
 - Systems: Scenario, AI
 - GoalKinds: ProduceCommodity, Trade
 - ActionDomains: Portfolio
@@ -379,7 +379,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 451: S152 PersonalityAssigned Event Per Agent
 
-- Source: `cognitive_archetypes.rs:287`
+- Source: `cognitive_archetypes.rs:288`
 - Systems: Scenario, EventLog
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -391,7 +391,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 452: S152 Explicit Override Pins Archetype
 
-- Source: `cognitive_archetypes.rs:329`
+- Source: `cognitive_archetypes.rs:330`
 - Systems: Scenario, AI
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -403,7 +403,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 453: S152 Save Load Preserves Archetype State
 
-- Source: `cognitive_archetypes.rs:369`
+- Source: `cognitive_archetypes.rs:370`
 - Systems: Scenario, SaveLoad
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -439,7 +439,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 393: Single-Slot Orchard Emits Arrival-Time Contention Payload
 
-- Source: `contention_inspectability.rs:332`
+- Source: `contention_inspectability.rs:335`
 
 **Setup**: Three human-controlled agents are co-located at a single-slot orchard with a pre-seeded waiting queue before the head actor makes a real harvest request.
 
@@ -449,7 +449,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 394: Survival Contested Emits Resource And Facility Contention
 
-- Source: `contention_inspectability.rs:397`
+- Source: `contention_inspectability.rs:400`
 
 **Setup**: Run authored survival-contested.ron long enough for resource-extraction and facility-queue contention substrates to emit.
 
@@ -459,7 +459,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 395: Well Facility Queue Admission Emits Contention Payload
 
-- Source: `contention_inspectability.rs:447`
+- Source: `contention_inspectability.rs:450`
 
 **Setup**: Two thirsty human-controlled agents queue for one auto-promoting contention-managed well with a pre-seeded facility queue.
 
@@ -469,7 +469,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 396: Reservation Conflict Backreference Resolves To Event Payload
 
-- Source: `contention_inspectability.rs:514`
+- Source: `contention_inspectability.rs:517`
 
 **Setup**: A real harvest grant emits ContentionResolved, then BlockerMemory stores that event id in ReservationConflict.contention_event.
 
@@ -479,7 +479,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 397: Survival Contested Contention Events Replay Deterministically
 
-- Source: `contention_inspectability.rs:561`
+- Source: `contention_inspectability.rs:564`
 
 **Setup**: Run survival-contested.ron twice from its authored seed for the full 1440-tick window and capture ContentionResolved payloads.
 
@@ -597,7 +597,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
 
-- Source: `experience_preferences.rs:548`
+- Source: `experience_preferences.rs:549`
 - Systems: Travel, learned route experience, belief view, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -609,7 +609,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 92: Combat-Aborted Travel Still Creates Hostile Route Memory
 
-- Source: `experience_preferences.rs:572`
+- Source: `experience_preferences.rs:573`
 - Systems: Travel, interrupt/abort, learned route experience, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -621,7 +621,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 93: Preference Profiles Create Route Diversity From the Same Memory
 
-- Source: `experience_preferences.rs:593`
+- Source: `experience_preferences.rs:594`
 - Systems: learned route experience, belief view, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -738,7 +738,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 135: Consecutive Exploration Cap Suppresses Re-Emission
 
-- Source: `exploration.rs:1380`
+- Source: `exploration.rs:1381`
 - Systems: AI, Needs, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: N/A
@@ -753,7 +753,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 136: Arrival Perception Unlocks Concrete Relief
 
-- Source: `exploration.rs:1427`
+- Source: `exploration.rs:1428`
 - Systems: AI, Needs, Travel, Perception, Production
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -768,7 +768,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 337: Budget Exhaustion Unlocks Frontier Exploration
 
-- Source: `exploration.rs:1558`
+- Source: `exploration.rs:1560`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ExploreLocation
 - ActionDomains: Travel, Production
@@ -783,7 +783,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 338: Multi-Hop Frontier Discovery Composes Across Rounds
 
-- Source: `exploration.rs:1731`
+- Source: `exploration.rs:1734`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -798,7 +798,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 339: Arrival Boost Preserves The Exploration Chain
 
-- Source: `exploration.rs:1945`
+- Source: `exploration.rs:1949`
 - Systems: AI, Travel, Perception, Needs, Production
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel, Perception
@@ -813,7 +813,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 340: Need Satisfaction Lazily Resets Exhaustion State
 
-- Source: `exploration.rs:1994`
+- Source: `exploration.rs:1998`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ExploreLocation
 - ActionDomains: Travel, Production, Needs
@@ -828,7 +828,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 343: Diversification Profile Unlocks Proactive Discovery
 
-- Source: `exploration.rs:2193`
+- Source: `exploration.rs:2198`
 - Systems: AI, Travel, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel
@@ -843,7 +843,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 344: Need Pressure Vetoes Proactive Motivation
 
-- Source: `exploration.rs:2232`
+- Source: `exploration.rs:2237`
 - Systems: AI, Needs, Travel, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel
@@ -858,7 +858,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 345: Proactive Cooldown Spaces Repeated Exploration
 
-- Source: `exploration.rs:2302`
+- Source: `exploration.rs:2307`
 - Systems: AI, Travel, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel
@@ -877,7 +877,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 431: S147 ProduceWithGather Method Selection
 
-- Source: `htn_methods.rs:820`
+- Source: `htn_methods.rs:821`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -890,7 +890,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 433: S147 Autonomous Produce Method Trace Propagation
 
-- Source: `htn_methods.rs:856`
+- Source: `htn_methods.rs:857`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -903,7 +903,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 434: S147 FulfillBountyInvestigation Method Selection
 
-- Source: `htn_methods.rs:938`
+- Source: `htn_methods.rs:939`
 - Systems: AI, Search, SocialArtifact
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Travel
@@ -916,7 +916,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 436: S147 FulfillBountyDirect Method Selection
 
-- Source: `htn_methods.rs:978`
+- Source: `htn_methods.rs:979`
 - Systems: AI, Search, SocialArtifact, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Combat, Travel
@@ -929,7 +929,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 437: S147 EscortToHome Method Selection
 
-- Source: `htn_methods.rs:1022`
+- Source: `htn_methods.rs:1023`
 - Systems: AI, Search, Care, Travel
 - GoalKinds: EscortToSafety
 - ActionDomains: Care, Travel
@@ -942,7 +942,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 438: S147 Method Failure Producer
 
-- Source: `htn_methods.rs:1069`
+- Source: `htn_methods.rs:1070`
 - Systems: AI, Search, Care, FailureHandling
 - GoalKinds: EscortToSafety
 - ActionDomains: Care
@@ -955,7 +955,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 435: S147 Autonomous FulfillBountyInvestigation Method Trace
 
-- Source: `htn_methods.rs:1112`
+- Source: `htn_methods.rs:1113`
 - Systems: AI, Search, SocialArtifact, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Combat, Travel
@@ -968,7 +968,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 432: S147 Disabled Methods Fall Back To Flat Strategic Search
 
-- Source: `htn_methods.rs:1162`
+- Source: `htn_methods.rs:1163`
 - Systems: AI, Search, Production
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -1529,7 +1529,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 116: Concealment Reduces Witnessed-Event Fidelity
 
-- Source: `perception_exposure.rs:421`
+- Source: `perception_exposure.rs:425`
 - Systems: Needs, Perception
 - ActionDomains: Needs
 - Places: ForestPath
@@ -1543,7 +1543,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 117: Fatigue Reduces Witnessed-Event Fidelity
 
-- Source: `perception_exposure.rs:462`
+- Source: `perception_exposure.rs:466`
 - Systems: Needs, Perception
 - ActionDomains: Needs
 - Places: ForestPath
@@ -1557,7 +1557,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 118: Attention Cost Reduces Witnessed-Event Fidelity
 
-- Source: `perception_exposure.rs:503`
+- Source: `perception_exposure.rs:507`
 - Systems: Combat, Needs, Perception
 - ActionDomains: Combat, Needs
 - Places: ForestPath
@@ -1571,7 +1571,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 119: Multiplicative Stacking
 
-- Source: `perception_exposure.rs:529`
+- Source: `perception_exposure.rs:533`
 - Systems: Combat, Needs, Perception
 - ActionDomains: Combat, Needs
 - Places: ForestPath
@@ -1585,7 +1585,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 128: Perception Forms Beliefs About Resource Sources
 
-- Source: `perception_exposure.rs:555`
+- Source: `perception_exposure.rs:559`
 - Systems: Perception
 - ActionDomains: N/A
 - Places: OrchardFarm
@@ -1599,7 +1599,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 341: Observation Budget Prioritizes Agents And Facilities Over Waste
 
-- Source: `perception_exposure.rs:593`
+- Source: `perception_exposure.rs:597`
 - Systems: Perception
 - ActionDomains: N/A
 - Places: OrchardFarm
@@ -1685,7 +1685,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 365: Latrine Overflow Creates Waste And Place Dirtiness
 
-- Source: `place_dirtiness.rs:369`
+- Source: `place_dirtiness.rs:371`
 
 **Setup**: A human-controlled agent uses an already-critical latrine.
 
@@ -1695,7 +1695,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 366: Basin Natural Refill Draws From Co-Located Water
 
-- Source: `place_dirtiness.rs:440`
+- Source: `place_dirtiness.rs:442`
 
 **Setup**: An empty basin shares a place with a finite water ResourceSource and no agent actions.
 
@@ -1705,7 +1705,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 367: AI Selects Non-Empty Basin After Empty Basin Is Unusable
 
-- Source: `place_dirtiness.rs:497`
+- Source: `place_dirtiness.rs:501`
 
 **Setup**: A dirty AI agent knows two local basins; one is empty and the other has water.
 
@@ -1715,7 +1715,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 367A: Wash Re-emerges After First Cycle Relief
 
-- Source: `place_dirtiness.rs:589`
+- Source: `place_dirtiness.rs:595`
 
 **Setup**: A dirty AI agent washes at a stocked local basin, then its dirtiness
 
@@ -1725,7 +1725,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 368: Place Dirtiness Saturates With Zero Decay
 
-- Source: `place_dirtiness.rs:688`
+- Source: `place_dirtiness.rs:695`
 
 **Setup**: Repeated wilderness relief occurs at a zero-decay outdoor place.
 
@@ -1735,7 +1735,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 369: Wash Basin Plateaus At Zero With Zero Refill
 
-- Source: `place_dirtiness.rs:733`
+- Source: `place_dirtiness.rs:740`
 
 **Setup**: One partial wash drains a zero-refill basin, then maintenance advances.
 
@@ -1886,7 +1886,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 351: Single-Slot Queue Forms With Concrete Wait Projection
 
-- Source: `quantity_aware_acquisition.rs:216`
+- Source: `quantity_aware_acquisition.rs:218`
 - Systems: AI, Needs, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Needs
@@ -1901,7 +1901,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 352: Multi-Slot Source Grants Three Concurrent Harvesters
 
-- Source: `quantity_aware_acquisition.rs:346`
+- Source: `quantity_aware_acquisition.rs:348`
 - Systems: AI, Needs, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Needs
@@ -1916,7 +1916,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 353: Partial-Success Harvest Surfaces Partial Quantity
 
-- Source: `quantity_aware_acquisition.rs:426`
+- Source: `quantity_aware_acquisition.rs:428`
 - Systems: AI, Needs, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Needs
@@ -1931,7 +1931,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 354: Quantity-Aware Acquisition Lands Through The AI Pipeline
 
-- Source: `quantity_aware_acquisition.rs:545`
+- Source: `quantity_aware_acquisition.rs:547`
 - Systems: AI, Needs, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Needs
@@ -1946,7 +1946,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 355: Queue Abandonment Promotes The Next Actor
 
-- Source: `quantity_aware_acquisition.rs:687`
+- Source: `quantity_aware_acquisition.rs:689`
 - Systems: AI, Needs, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Needs
@@ -2009,7 +2009,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 445: S153 Scaled Contention Route Blocker Composition
 
-- Source: `scaled_contention.rs:295`
+- Source: `scaled_contention.rs:296`
 - Systems: AI, Needs, Travel, Production, Contention
 - GoalKinds: ConsumeOwnedCommodity, AcquireCommodity, Wash
 - ActionDomains: Production, Travel, Needs
@@ -2041,7 +2041,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 126: Remote Travel To Resource Under Local Scarcity
 
-- Source: `simulation_gaps.rs:378`
+- Source: `simulation_gaps.rs:380`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Travel, Needs, Production
@@ -2056,7 +2056,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 127: Idle Cap Under Remote Resource Scarcity
 
-- Source: `simulation_gaps.rs:405`
+- Source: `simulation_gaps.rs:407`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: Sleep, Relieve, AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Travel, Needs, Production
@@ -2071,7 +2071,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 130: Multi-Agent Convergence Under Remote Resource Scarcity
 
-- Source: `simulation_gaps.rs:653`
+- Source: `simulation_gaps.rs:657`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity, Sleep, Relieve
 - ActionDomains: Travel, Production, Needs
@@ -2086,7 +2086,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 131: Death Traceability Under Unmet Needs
 
-- Source: `simulation_gaps.rs:1024`
+- Source: `simulation_gaps.rs:1030`
 - Systems: Needs, Wounds, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep, Relieve
 - ActionDomains: Needs
@@ -2101,7 +2101,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 132: Harvest-To-Consume Chain At Resource Source Locations
 
-- Source: `simulation_gaps.rs:1052`
+- Source: `simulation_gaps.rs:1058`
 - Systems: Production, Needs, AI
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Production, Needs
@@ -2176,7 +2176,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 375: Source Composite Wait Reranks Same-Commodity Siblings
 
-- Source: `source_composite.rs:347`
+- Source: `source_composite.rs:351`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2189,7 +2189,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 376: Source Composite Does Not Cross Goal Categories
 
-- Source: `source_composite.rs:391`
+- Source: `source_composite.rs:395`
 - Systems: AI, SourceReliability, Dirtiness
 - GoalKinds: Wash, AcquireCommodity(SelfConsume)
 - ActionDomains: Needs, Production
@@ -2202,7 +2202,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 377: Fresh Capacity Bonus Reranks Same-Commodity Siblings
 
-- Source: `source_composite.rs:432`
+- Source: `source_composite.rs:436`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2215,7 +2215,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 378: Stale Capacity Observation Is Neutral
 
-- Source: `source_composite.rs:481`
+- Source: `source_composite.rs:485`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2228,7 +2228,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 379: Empty Fresh Capacity Demotes Source
 
-- Source: `source_composite.rs:523`
+- Source: `source_composite.rs:527`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2241,7 +2241,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 380: Missing Source Records Are Neutral
 
-- Source: `source_composite.rs:560`
+- Source: `source_composite.rs:564`
 - Systems: AI, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2254,7 +2254,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 137: Resource Extraction Grant Writes Wait Memory
 
-- Source: `source_reliability.rs:100`
+- Source: `source_reliability.rs:101`
 - Systems: AI, Production, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -2269,7 +2269,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 138: Perception Writes Capacity Memory
 
-- Source: `source_reliability.rs:187`
+- Source: `source_reliability.rs:188`
 - Systems: Perception, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -2509,6 +2509,41 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: authored contested topology -> local-only belief seed -> rising
 
+### Scenario 491: Dirty-Water Tolerance Tradeoff Hardy Agent Chooses Muddy
+
+- Source: `survival_dirty_water_tolerance_tradeoff.rs:145`
+- Systems: AI, SourceReliability, WaterToleranceProfile
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Production, Travel
+- Places: Dust Camp, Clear Spring
+- Principles: 3, 15, 22, 31
+
+**Setup**: two agents have the same beliefs and world state; the hardy agent's profile makes Muddy water neutral, so local/source tiebreakers may pick it.
+
+**Proves**: the hardy agent's decision trace selects the local muddy source.
+
+### Scenario 492: Dirty-Water Tolerance Tradeoff Fragile Agent Travels To Fallback
+
+- Source: `survival_dirty_water_tolerance_tradeoff.rs:163`
+- Systems: AI, SourceReliability, WaterToleranceProfile
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Production, Travel
+- Places: Dust Camp, Clear Spring
+- Principles: 3, 15, 22, 31
+
+**Setup**: same world and beliefs as Scenario 491; the fragile agent's profile heavily discounts Muddy water.
+
+**Proves**: the fragile agent's decision trace selects the farther clean source.
+
+### Scenario 493: Dirty-Water Tolerance Tradeoff Replay Is Deterministic
+
+- Source: `survival_dirty_water_tolerance_tradeoff.rs:187`
+- Systems: AI, SourceReliability, WaterToleranceProfile
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Production, Travel
+- Places: Dust Camp, Clear Spring
+- Principles: 2, 9, 31
+
 ### Scenario 348: Survival Escort Lands Coordinated Care Travel
 
 - Source: `survival_escort.rs:265`
@@ -2602,6 +2637,32 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: the same survival run keeps Merchant Sera inside the authored survival-health envelope, ranks and selects a funded institutional `PostBounty` branch after the accusation exists, commits `post_bounty` with `RewardSource::InstitutionalTreasury { treasury_entity: Market Warden }`, materializes the bounty artifact, and records a matching office `RewardEncumbrance` at the commit boundary.
 
 **Cross-system chain**: office-authored treasury -> theft accusation in crime register -> funded `PostBounty` candidate -> `post_bounty` commit -> bounty artifact plus office reward reservation.
+
+### Scenario 494: Muddy Basin Refill Raises Dirtiness Level
+
+- Source: `survival_muddy_basin_refill.rs:116`
+- Systems: ItemDecay, Dirtiness
+- GoalKinds: Wash
+- ActionDomains: Needs
+- Places: Muddy Wash Camp
+- Principles: 3, 4, 26, 31
+
+**Setup**: an empty basin is colocated with only a muddy water source.
+
+**Proves**: the item-decay refill transfers water and raises the basin's concrete dirtiness level by the authored muddy-water penalty.
+
+### Scenario 495: Muddy Basin Refill Degrades Wash Effectiveness
+
+- Source: `survival_muddy_basin_refill.rs:135`
+- Systems: ItemDecay, Needs
+- GoalKinds: Wash
+- ActionDomains: Needs
+- Places: Muddy Wash Camp
+- Principles: 3, 10, 26, 31
+
+**Setup**: after muddy-water refill raises basin dirtiness, the agent washes from that now-degraded basin.
+
+**Proves**: wash commits and reduces dirtiness by less than a full clean-basin reset would have from the sampled pre-wash need.
 
 ### Scenario 175: Survival Offices Proves Force-Law Uptake Under Survival
 
@@ -2794,7 +2855,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 478: S173 Self-Care Abort Traces Cover Every Family
 
-- Source: `survival_self_care_interruption.rs:456`
+- Source: `survival_self_care_interruption.rs:457`
 
 **Setup**: Human-controlled agents start each self-care action family and cancel before commit.
 
@@ -2802,7 +2863,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 479: S173 Contested Wash Basin Promotes One Occupant
 
-- Source: `survival_self_care_interruption.rs:672`
+- Source: `survival_self_care_interruption.rs:673`
 
 **Setup**: Two dirty agents wait in the same wash-basin facility queue; the queue system grants the head claimant, and that claimant starts a real wash action.
 
@@ -2810,7 +2871,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 480: S173 Interrupted Wash Releases Basin And Promotes Waiter
 
-- Source: `survival_self_care_interruption.rs:761`
+- Source: `survival_self_care_interruption.rs:762`
 
 **Setup**: Agent A starts wash and writes occupancy; Agent B waits in the same basin queue. Cancelling A's wash releases occupancy, then the same tick's post-action system pass promotes B.
 
@@ -2818,7 +2879,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 481: S173 Repeated Self-Care Interruption Can End In Deprivation Death
 
-- Source: `survival_self_care_interruption.rs:841`
+- Source: `survival_self_care_interruption.rs:842`
 
 **Setup**: An AI-controlled dirty agent repeatedly selects a local wash action. The harness applies repeated external local cancellations before commit, while hunger rises under the normal needs system and no food source is available.
 
@@ -2879,6 +2940,43 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: no listed bread market branch -> committed stage_stock_for_sale ->
 
+### Scenario 488: Water Quality On Arrival Records Belief Correction
+
+- Source: `survival_water_quality_on_arrival.rs:135`
+- Systems: AI, Perception, SourceReliability
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Production, Travel
+- Places: Trailhead, Muddy Spring, Clear Spring
+- Principles: 7, 14A, 15, 16, 31
+
+**Setup**: the agent knows a remote water source, has a fresh reliability record claiming it is Clean, and the authoritative source is Muddy.
+
+**Proves**: the normal co-located perception path overwrites the quality belief with Muddy and emits `ResourceSourceQualityObserved` at/after arrival.
+
+**Cross-system chain**: reported clean-source belief -> travel to source -> local observation -> SourceReliability quality correction + attribution event.
+
+### Scenario 489: Water Quality On Arrival Has No Omniscient Pre-Arrival Update
+
+- Source: `survival_water_quality_on_arrival.rs:177`
+- Systems: AI, Perception, SourceReliability
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Travel
+- Places: Trailhead, Muddy Spring
+- Principles: 7, 14, 14A, 15, 31
+
+**Setup**: same as Scenario 488.
+
+**Proves**: no quality-observation event for the muddy source is emitted before the actor reaches the source place.
+
+### Scenario 490: Water Quality On Arrival Replay Is Deterministic
+
+- Source: `survival_water_quality_on_arrival.rs:198`
+- Systems: AI, Perception, SourceReliability
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Production, Travel
+- Places: Trailhead, Muddy Spring, Clear Spring
+- Principles: 2, 9, 31
+
 ### Scenario 424: S151 Stale Route-Hazard Refutation Records Trust Context
 
 - Source: `testimony_reliability.rs:115`
@@ -2929,7 +3027,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 58: Travel Need Escalation
 
-- Source: `travel_physiology.rs:51`
+- Source: `travel_physiology.rs:52`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production, Needs
@@ -2944,7 +3042,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 59: Critical Bladder Local Relief
 
-- Source: `travel_physiology.rs:201`
+- Source: `travel_physiology.rs:202`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -2959,7 +3057,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 60: Agent Diversity in Travel Escalation
 
-- Source: `travel_physiology.rs:343`
+- Source: `travel_physiology.rs:344`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -2974,7 +3072,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 61: Travel Bladder Escalation Switches To Relief Between Legs
 
-- Source: `travel_physiology.rs:522`
+- Source: `travel_physiology.rs:523`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: Relieve, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs, Production
@@ -2989,7 +3087,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 62: Latrine Preferred — toilet at Latrine place
 
-- Source: `travel_physiology.rs:740`
+- Source: `travel_physiology.rs:741`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -3004,7 +3102,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 63: Wilderness Fallback — relieve_wilderness at outdoor place
 
-- Source: `travel_physiology.rs:918`
+- Source: `travel_physiology.rs:919`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -3019,7 +3117,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 64: Deprivation Accident — no relief option available
 
-- Source: `travel_physiology.rs:1095`
+- Source: `travel_physiology.rs:1096`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -3034,7 +3132,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 65: Witness Observation — co-located agent perceives wilderness relief
 
-- Source: `travel_physiology.rs:1255`
+- Source: `travel_physiology.rs:1256`
 - Systems: Needs, AI, Perception
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -3049,7 +3147,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 66: No Witness — isolated agent produces no social consequences
 
-- Source: `travel_physiology.rs:1467`
+- Source: `travel_physiology.rs:1468`
 - Systems: Needs, AI, Perception
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -3064,7 +3162,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 67: Need Continuity — cross-path bladder and dirtiness invariants
 
-- Source: `travel_physiology.rs:1661`
+- Source: `travel_physiology.rs:1662`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs

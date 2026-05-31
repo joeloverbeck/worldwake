@@ -366,10 +366,10 @@ No system commands another.
 
 ## Scenario Validation (FND-31)
 
-**Focused branch goldens (new, in addition to the existing depletion-discovery goldens which must continue to pass):**
+**Focused branch goldens (implemented by `archive/tickets/S177WATSRCQUA-009.md`, in addition to the existing depletion-discovery goldens which must continue to pass):**
 
-- **`survival-water-quality-on-arrival.ron`** — agent believes a well is clean, travels to it, finds it `Muddy` on arrival (FND-14A observation), records a quality belief, and chooses between drinking muddy water (per `WaterToleranceProfile`) or traveling to a believed-clean fallback. Asserts: quality observation belief update with provenance, `EventTag::ResourceSourceQualityObserved` emission, `ItemLot.quality` propagation if drink commits, ranking discount on the muddy source after observation, deterministic replay. *Direct quality-axis proof for canonical scenario D extended.*
-- **`survival-dirty-water-tolerance-tradeoff.ron`** — clean well is depleted; only a muddy source remains; the agent drinks muddy water (reduced thirst relief + raised dirtiness) OR travels to a distant clean source depending on per-agent `WaterToleranceProfile` tolerance and current pressure. Two agents differ in `WaterToleranceProfile` to prove agent diversity (FND-22). Asserts quality-scaled relief, dirtiness penalty, and the profile-driven branch.
+- **`survival-water-quality-on-arrival.ron`** — agent has a seeded recent belief that a remote well is clean, travels to it, finds it `Muddy` on arrival (FND-14A observation), records a quality belief, and emits `EventTag::ResourceSourceQualityObserved` without pre-arrival omniscient correction. The focused golden also covers deterministic replay. *Direct quality-axis proof for canonical scenario D extended.*
+- **`survival-dirty-water-tolerance-tradeoff.ron`** — two agents share identical source beliefs and world state but differ in `WaterToleranceProfile`: a hardy neutral-tolerance agent selects the local Muddy source, while a fragile agent selects the clean fallback through the quality-aware `SourceComposite` decision-trace boundary. This proves FND-22 diversity at the strongest stable planner-facing layer.
 - **`survival-muddy-basin-refill.ron`** — only colocated water source is muddy; basin refill draws from it, raises `WashBasinState.dirtiness_level`, and the subsequent wash effectiveness degrades per S176. Asserts basin-side quality coupling.
 
 **1440-tick CI-owned collision scenario:**
