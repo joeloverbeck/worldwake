@@ -42,7 +42,7 @@ Phase 7: Consequence Carriers
 - `archive/specs/S38-learned-route-source-preferences.md` — landed `SourceReliability` (`crates/worldwake-core/src/experience.rs:173`), which this spec extends with quality observation fields rather than introducing a new component.
 - `archive/specs/S151-testimony-reliability-and-route-preferences.md` — landed `TestimonyReliability` and refined `RoutePreference`; informs the freshness/decay design here but is **not** the literal precedent for source-reliability decay (which is `SourceReliability::enforce_limits` over `PreferenceProfile.memory_retention_ticks`).
 - `archive/specs/S129-place-dirtiness-facility-wear.md` + `archive/specs/S176-sanitation-facility-degradation-consequences.md` — provide `WashBasinState.dirtiness_level` (`crates/worldwake-core/src/place_dirtiness.rs:50`) and the wash-effectiveness gate this spec couples to (dirty water dirties the basin; the basin's wash effectiveness then degrades per S176).
-- `archive/specs/S120-survival-critical-window-forensics.md` — provides `SurvivalForensicExtractor` and the `DegradedSelfCareOpportunity` record (`crates/worldwake-ai/src/survival_forensics.rs:75-81`) cited as the precedent for `SourceAcquisitionFailure`.
+- `archive/specs/S120-survival-critical-window-forensics.md` — provides `SurvivalForensicExtractor` and the `DegradedSelfCareOpportunity` record in `crates/worldwake-ai/src/survival_forensics.rs`, cited as the precedent for `SourceAcquisitionFailure`.
 
 ## Design Goals
 
@@ -230,7 +230,7 @@ This couples to S176 D2's wash-effectiveness gate: muddy-water refill raises bas
 
 ### D7. Survival forensics: `SourceAcquisitionFailure` record
 
-Extend `SurvivalForensicExtractor` (`crates/worldwake-ai/src/survival_forensics.rs:250-328`) with a `SourceAcquisitionFailure` derived forensic record, modeled on the existing `DegradedSelfCareOpportunity` record (`survival_forensics.rs:75-81`):
+Extend `SurvivalForensicExtractor` in `crates/worldwake-ai/src/survival_forensics.rs` with a `SourceAcquisitionFailure` derived forensic record, modeled on the existing `DegradedSelfCareOpportunity` record:
 
 ```rust
 pub struct SourceAcquisitionFailure {
@@ -252,7 +252,7 @@ pub enum SourceFailureOutcome {
 }
 ```
 
-This is a **derived view** populated from action-trace events and the existing `EventTag::SourceExpectationFailure` (depletion) + new `EventTag::ResourceSourceQualityObserved` (quality) emissions; it is not authoritative state. Extraction populates the record from the action-trace snapshot during `observe()` (analogous to the `degraded_self_care_opportunities()` extraction at `survival_forensics.rs:423-488`).
+Implemented by `archive/tickets/S177WATSRCQUA-007.md`: this is a **derived view** populated from the event log and action-trace events. Causes come from existing `EventTag::SourceExpectationFailure` (depletion) and new `EventTag::ResourceSourceQualityObserved` (quality) emissions; outcomes come from same-window action trace response (`drink`, `travel`, or no response). It is not authoritative state. The extractor receives the append-only event log as a read-only input during `observe()` and stores records on `CriticalWindowFrame.source_acquisition_failures`.
 
 Note: the original spec proposed a "contested" cause for queue contention; that is dropped here because (a) `ResourceExtractionQueues` queue waits are already surfaced as `wait_factor_permille` in the source-rank composite and as `observe_wait` on `ReliabilityRecord`, and (b) widening the forensic record's cause set into contention duplicates the existing queue substrate. Re-add only if a future spec proves a missing forensic surface for queue-contention starvation specifically.
 

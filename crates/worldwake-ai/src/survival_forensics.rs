@@ -5,9 +5,10 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
-    BlockerScope, CommodityKind, DeathCause, DeprivationKind, DriveThresholds, EntityId, GoalKey,
+    BlockerScope, CommodityKind, DeathCause, DecisionEventPayload, DeprivationKind,
+    DriveThresholds, EntityId, EventLog, EventView, ExpectationFailureCauseTag, GoalKey,
     HomeostaticNeedId, HomeostaticNeeds, Permille, PlaceTag, Quantity, SleepFailureCause, Tick,
-    WorkstationTag, World, WoundCause,
+    WaterQuality, WorkstationTag, World, WoundCause,
 };
 use worldwake_sim::{
     ActionInstance, ActionInstanceId, ActionTraceDetail, ActionTraceEvent, ActionTraceKind,
@@ -50,6 +51,8 @@ pub struct CriticalWindowFrame {
     pub failed_rest_opportunities: Vec<FailedRestOpportunity>,
     #[serde(default)]
     pub degraded_self_care_opportunities: Vec<DegradedSelfCareOpportunity>,
+    #[serde(default)]
+    pub source_acquisition_failures: Vec<SourceAcquisitionFailure>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,6 +96,30 @@ pub enum DegradedSelfCareOutcome {
     Cleaned,
     Queued,
     DidNothing,
+}
+
+/// S177 D7: derived evidence that an agent's critical thirst window included
+/// a failed or rejected source acquisition input. Derived from event history
+/// and action trace; never authoritative.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceAcquisitionFailure {
+    pub tick: Tick,
+    pub source: EntityId,
+    pub cause: SourceFailureCause,
+    pub outcome: SourceFailureOutcome,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum SourceFailureCause {
+    Depleted,
+    QualityRejected,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum SourceFailureOutcome {
+    DrankAnyway,
+    TraveledToFallback,
+    GaveUp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -272,6 +299,7 @@ impl SurvivalForensicExtractor {
         thresholds: &DriveThresholds,
         decision_trace: Option<&AgentDecisionTrace>,
         action_trace_snapshot: &ActionTraceSnapshot<'_>,
+        event_log: &EventLog,
         local_state: &LocalSurvivalStateSummary,
         exhaustion_collapse_signal: bool,
     ) {
@@ -280,17 +308,22 @@ impl SurvivalForensicExtractor {
             let threshold = thresholds.critical(need);
             if need_value >= threshold {
                 let frame = build_frame(
+                    self.agent,
                     tick,
                     need,
                     need_value,
                     decision_trace,
                     action_trace_snapshot,
+                    event_log,
                     *local_state,
                 );
-                self.active_windows
+                let builder = self
+                    .active_windows
                     .entry(need)
-                    .or_insert_with(|| WindowBuilder::new(tick, threshold))
-                    .observe(frame);
+                    .or_insert_with(|| WindowBuilder::new(tick, threshold));
+                builder
+                    .update_pending_source_outcomes(source_failure_outcome(action_trace_snapshot));
+                builder.observe(frame);
                 continue;
             }
 
@@ -352,6 +385,19 @@ impl WindowBuilder {
         self.frames.push(frame);
     }
 
+    fn update_pending_source_outcomes(&mut self, outcome: SourceFailureOutcome) {
+        if outcome == SourceFailureOutcome::GaveUp {
+            return;
+        }
+        for frame in &mut self.frames {
+            for failure in &mut frame.source_acquisition_failures {
+                if failure.outcome == SourceFailureOutcome::GaveUp {
+                    failure.outcome = outcome;
+                }
+            }
+        }
+    }
+
     fn flush(self, agent: EntityId, need: HomeostaticNeedId) -> CriticalWindowReport {
         let end_tick = self
             .frames
@@ -371,11 +417,13 @@ impl WindowBuilder {
 }
 
 fn build_frame(
+    agent: EntityId,
     tick: Tick,
     need: HomeostaticNeedId,
     need_value: Permille,
     decision_trace: Option<&AgentDecisionTrace>,
     action_trace_snapshot: &ActionTraceSnapshot<'_>,
+    event_log: &EventLog,
     local_state: LocalSurvivalStateSummary,
 ) -> CriticalWindowFrame {
     let selected_goal = decision_trace.and_then(selected_goal_from_trace);
@@ -411,7 +459,75 @@ fn build_frame(
             action_trace_snapshot,
             local_state,
         ),
+        source_acquisition_failures: source_acquisition_failures(
+            tick,
+            need,
+            agent,
+            event_log,
+            action_trace_snapshot,
+        ),
     }
+}
+
+fn source_acquisition_failures(
+    tick: Tick,
+    active_need: HomeostaticNeedId,
+    agent: EntityId,
+    event_log: &EventLog,
+    action_trace_snapshot: &ActionTraceSnapshot<'_>,
+) -> Vec<SourceAcquisitionFailure> {
+    if active_need != HomeostaticNeedId::Thirst {
+        return Vec::new();
+    }
+
+    let outcome = source_failure_outcome(action_trace_snapshot);
+    event_log
+        .events_at_tick(tick)
+        .iter()
+        .filter_map(|event_id| event_log.get(*event_id))
+        .filter_map(|event| match event.decision_payload()? {
+            DecisionEventPayload::SourceExpectationFailure(payload)
+                if payload.agent == agent
+                    && payload.cause == ExpectationFailureCauseTag::SourceDepletedLocally =>
+            {
+                Some(SourceAcquisitionFailure {
+                    tick,
+                    source: payload.source.entity,
+                    cause: SourceFailureCause::Depleted,
+                    outcome,
+                })
+            }
+            DecisionEventPayload::ResourceSourceQualityObserved(payload)
+                if payload.observer == agent && payload.quality != WaterQuality::Clean =>
+            {
+                Some(SourceAcquisitionFailure {
+                    tick,
+                    source: payload.source.entity,
+                    cause: SourceFailureCause::QualityRejected,
+                    outcome,
+                })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn source_failure_outcome(action_trace_snapshot: &ActionTraceSnapshot<'_>) -> SourceFailureOutcome {
+    if action_trace_snapshot.tick_events.iter().any(|event| {
+        event.action_name == "drink" && matches!(event.kind, ActionTraceKind::Committed { .. })
+    }) {
+        return SourceFailureOutcome::DrankAnyway;
+    }
+    if action_trace_snapshot.tick_events.iter().any(|event| {
+        event.action_name == "travel"
+            && matches!(
+                event.kind,
+                ActionTraceKind::Started { .. } | ActionTraceKind::Committed { .. }
+            )
+    }) {
+        return SourceFailureOutcome::TraveledToFallback;
+    }
+    SourceFailureOutcome::GaveUp
 }
 
 /// S176 D8: derive degraded/blocked self-care evidence for the active window.
@@ -690,6 +806,7 @@ fn frame_change_detected(previous: &CriticalWindowFrame, current: &CriticalWindo
         || previous.blocker_summary != current.blocker_summary
         || previous.failed_rest_opportunities != current.failed_rest_opportunities
         || previous.degraded_self_care_opportunities != current.degraded_self_care_opportunities
+        || previous.source_acquisition_failures != current.source_acquisition_failures
 }
 
 fn selected_goal_from_trace(trace: &AgentDecisionTrace) -> Option<GoalKey> {
@@ -840,8 +957,11 @@ mod tests {
         PlanningPipelineTrace, SelectedPlanTrace, SelectionTrace, decision_trace::DiscrepancyTrace,
     };
     use worldwake_core::{
-        AcquisitionQuantity, ActionDefId, CauseRef, ControlSource, DriveThresholds, GoalKind,
-        OpportunityAnchor, PrototypePlace, Quantity, ResourceSource, SleepFailureCause,
+        AcquisitionQuantity, ActionDefId, CauseRef, CommodityPurpose, ControlSource,
+        DriveThresholds, EventPayload, EventTag, ExpectationFailurePhaseTag, GoalKind,
+        OpportunityAnchor, OpportunityExpectationKindTag, PendingEvent, PrototypePlace, Quantity,
+        ResourceSource, ResourceSourceQualityObservedPayload, SleepFailureCause,
+        SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKeyPayload,
         VisibilitySpec, WitnessData, WorkstationMarker, WorldTxn, build_prototype_world,
         prototype_place_entity,
     };
@@ -862,6 +982,7 @@ mod tests {
                 &thresholds,
                 None,
                 &ActionTraceSnapshot::empty(),
+                &EventLog::new(),
                 &local,
                 false,
             );
@@ -889,6 +1010,7 @@ mod tests {
                 &thresholds,
                 None,
                 &ActionTraceSnapshot::empty(),
+                &EventLog::new(),
                 &local,
                 false,
             );
@@ -929,6 +1051,7 @@ mod tests {
                 &thresholds,
                 Some(&planning_trace(agent, Tick(tick), goal)),
                 &ActionTraceSnapshot::empty(),
+                &EventLog::new(),
                 &local,
                 false,
             );
@@ -968,6 +1091,7 @@ mod tests {
             &thresholds,
             Some(&trace),
             &action_snapshot,
+            &EventLog::new(),
             &sample_local_summary(),
             false,
         );
@@ -1134,13 +1258,272 @@ mod tests {
     }
 
     #[test]
+    fn source_acquisition_failure_serialization_roundtrip() {
+        let samples = [
+            SourceAcquisitionFailure {
+                tick: Tick(1),
+                source: entity(10),
+                cause: SourceFailureCause::Depleted,
+                outcome: SourceFailureOutcome::GaveUp,
+            },
+            SourceAcquisitionFailure {
+                tick: Tick(2),
+                source: entity(11),
+                cause: SourceFailureCause::QualityRejected,
+                outcome: SourceFailureOutcome::DrankAnyway,
+            },
+            SourceAcquisitionFailure {
+                tick: Tick(3),
+                source: entity(12),
+                cause: SourceFailureCause::QualityRejected,
+                outcome: SourceFailureOutcome::TraveledToFallback,
+            },
+        ];
+
+        for sample in samples {
+            let encoded = bincode::serialize(&sample).unwrap();
+            let decoded: SourceAcquisitionFailure = bincode::deserialize(&encoded).unwrap();
+            assert_eq!(decoded, sample);
+        }
+    }
+
+    #[test]
+    fn source_acquisition_failure_depleted_cause_from_expectation_failure_event() {
+        let agent = entity(1);
+        let source = entity(80);
+        let event_log = event_log_with_decision_payload(
+            Tick(5),
+            agent,
+            EventTag::SourceExpectationFailure,
+            DecisionEventPayload::SourceExpectationFailure(source_expectation_failure_payload(
+                agent, source,
+            )),
+        );
+        let mut extractor = SurvivalForensicExtractor::new(agent);
+
+        extractor.observe(
+            Tick(5),
+            &HomeostaticNeeds::new(pm(0), pm(930), pm(0), pm(0), pm(0)),
+            &DriveThresholds::default(),
+            None,
+            &ActionTraceSnapshot::empty(),
+            &event_log,
+            &sample_local_summary(),
+            false,
+        );
+
+        let reports = extractor.finalize();
+        assert_eq!(
+            reports[0].frames[0].source_acquisition_failures,
+            vec![SourceAcquisitionFailure {
+                tick: Tick(5),
+                source,
+                cause: SourceFailureCause::Depleted,
+                outcome: SourceFailureOutcome::GaveUp,
+            }]
+        );
+    }
+
+    #[test]
+    fn source_acquisition_failure_quality_rejected_cause_from_quality_observed_event() {
+        let agent = entity(1);
+        let source = entity(81);
+        let event_log = event_log_with_decision_payload(
+            Tick(6),
+            agent,
+            EventTag::ResourceSourceQualityObserved,
+            DecisionEventPayload::ResourceSourceQualityObserved(
+                ResourceSourceQualityObservedPayload {
+                    observer: agent,
+                    source: SourceKeyPayload {
+                        entity: source,
+                        commodity: CommodityKind::Water,
+                    },
+                    quality: WaterQuality::Muddy,
+                    observed_at_tick: Tick(6),
+                },
+            ),
+        );
+        let drink_event = committed_event("drink");
+        let snapshot = ActionTraceSnapshot {
+            active_action: None,
+            tick_events: vec![&drink_event],
+        };
+        let mut extractor = SurvivalForensicExtractor::new(agent);
+
+        extractor.observe(
+            Tick(6),
+            &HomeostaticNeeds::new(pm(0), pm(930), pm(0), pm(0), pm(0)),
+            &DriveThresholds::default(),
+            None,
+            &snapshot,
+            &event_log,
+            &sample_local_summary(),
+            false,
+        );
+
+        let reports = extractor.finalize();
+        assert_eq!(
+            reports[0].frames[0].source_acquisition_failures,
+            vec![SourceAcquisitionFailure {
+                tick: Tick(6),
+                source,
+                cause: SourceFailureCause::QualityRejected,
+                outcome: SourceFailureOutcome::DrankAnyway,
+            }]
+        );
+    }
+
+    #[test]
+    fn source_acquisition_failure_travel_and_clean_negative_cases() {
+        let agent = entity(1);
+        let muddy_source = entity(82);
+        let clean_source = entity(83);
+        let mut event_log = EventLog::new();
+        emit_decision_payload(
+            &mut event_log,
+            Tick(7),
+            agent,
+            EventTag::ResourceSourceQualityObserved,
+            DecisionEventPayload::ResourceSourceQualityObserved(
+                ResourceSourceQualityObservedPayload {
+                    observer: agent,
+                    source: SourceKeyPayload {
+                        entity: muddy_source,
+                        commodity: CommodityKind::Water,
+                    },
+                    quality: WaterQuality::Stale,
+                    observed_at_tick: Tick(7),
+                },
+            ),
+        );
+        emit_decision_payload(
+            &mut event_log,
+            Tick(7),
+            agent,
+            EventTag::ResourceSourceQualityObserved,
+            DecisionEventPayload::ResourceSourceQualityObserved(
+                ResourceSourceQualityObservedPayload {
+                    observer: agent,
+                    source: SourceKeyPayload {
+                        entity: clean_source,
+                        commodity: CommodityKind::Water,
+                    },
+                    quality: WaterQuality::Clean,
+                    observed_at_tick: Tick(7),
+                },
+            ),
+        );
+        let travel_event = ActionTraceEvent::new(
+            Tick(7),
+            agent,
+            ActionDefId(6),
+            "travel".to_string(),
+            ActionTraceKind::Started {
+                targets: vec![entity(90)],
+            },
+        );
+        let snapshot = ActionTraceSnapshot {
+            active_action: None,
+            tick_events: vec![&travel_event],
+        };
+        let mut extractor = SurvivalForensicExtractor::new(agent);
+
+        extractor.observe(
+            Tick(7),
+            &HomeostaticNeeds::new(pm(0), pm(930), pm(0), pm(0), pm(0)),
+            &DriveThresholds::default(),
+            None,
+            &snapshot,
+            &event_log,
+            &sample_local_summary(),
+            false,
+        );
+
+        let reports = extractor.finalize();
+        assert_eq!(
+            reports[0].frames[0].source_acquisition_failures,
+            vec![SourceAcquisitionFailure {
+                tick: Tick(7),
+                source: muddy_source,
+                cause: SourceFailureCause::QualityRejected,
+                outcome: SourceFailureOutcome::TraveledToFallback,
+            }]
+        );
+    }
+
+    #[test]
+    fn source_acquisition_failure_updates_prior_gave_up_when_window_later_travels() {
+        let agent = entity(1);
+        let source = entity(84);
+        let failure_log = event_log_with_decision_payload(
+            Tick(5),
+            agent,
+            EventTag::SourceExpectationFailure,
+            DecisionEventPayload::SourceExpectationFailure(source_expectation_failure_payload(
+                agent, source,
+            )),
+        );
+        let travel_log = EventLog::new();
+        let travel_event = ActionTraceEvent::new(
+            Tick(6),
+            agent,
+            ActionDefId(6),
+            "travel".to_string(),
+            ActionTraceKind::Started {
+                targets: vec![entity(91)],
+            },
+        );
+        let travel_snapshot = ActionTraceSnapshot {
+            active_action: None,
+            tick_events: vec![&travel_event],
+        };
+        let mut extractor = SurvivalForensicExtractor::new(agent);
+        let critical_thirst = HomeostaticNeeds::new(pm(0), pm(930), pm(0), pm(0), pm(0));
+
+        extractor.observe(
+            Tick(5),
+            &critical_thirst,
+            &DriveThresholds::default(),
+            None,
+            &ActionTraceSnapshot::empty(),
+            &failure_log,
+            &sample_local_summary(),
+            false,
+        );
+        extractor.observe(
+            Tick(6),
+            &critical_thirst,
+            &DriveThresholds::default(),
+            None,
+            &travel_snapshot,
+            &travel_log,
+            &sample_local_summary(),
+            false,
+        );
+
+        let reports = extractor.finalize();
+        assert_eq!(
+            reports[0].frames[0].source_acquisition_failures,
+            vec![SourceAcquisitionFailure {
+                tick: Tick(5),
+                source,
+                cause: SourceFailureCause::Depleted,
+                outcome: SourceFailureOutcome::TraveledToFallback,
+            }]
+        );
+    }
+
+    #[test]
     fn critical_window_frame_deserializes_missing_failed_rest_as_empty() {
         let mut frame_value = serde_json::to_value(build_frame(
+            entity(1),
             Tick(3),
             HomeostaticNeedId::Fatigue,
             pm(930),
             None,
             &ActionTraceSnapshot::empty(),
+            &EventLog::new(),
             sample_local_summary(),
         ))
         .unwrap();
@@ -1180,6 +1563,7 @@ mod tests {
             &thresholds,
             None,
             &ActionTraceSnapshot::empty(),
+            &EventLog::new(),
             &sample_local_summary(),
             false,
         );
@@ -1190,6 +1574,7 @@ mod tests {
             &thresholds,
             None,
             &ActionTraceSnapshot::empty(),
+            &EventLog::new(),
             &sample_local_summary(),
             true,
         );
@@ -1221,6 +1606,7 @@ mod tests {
             &thresholds,
             None,
             &ActionTraceSnapshot::empty(),
+            &EventLog::new(),
             &sample_local_summary(),
             false,
         );
@@ -1230,6 +1616,7 @@ mod tests {
             &thresholds,
             None,
             &ActionTraceSnapshot::empty(),
+            &EventLog::new(),
             &sample_local_summary(),
             false,
         );
@@ -1239,6 +1626,7 @@ mod tests {
             &thresholds,
             None,
             &ActionTraceSnapshot::empty(),
+            &EventLog::new(),
             &sample_local_summary(),
             false,
         );
@@ -1402,6 +1790,7 @@ mod tests {
             &thresholds,
             None,
             &snapshot,
+            &EventLog::new(),
             &sample_local_summary(),
             false,
         );
@@ -1454,6 +1843,7 @@ mod tests {
             &thresholds,
             None,
             &snapshot,
+            &EventLog::new(),
             &local,
             false,
         );
@@ -1502,6 +1892,7 @@ mod tests {
             &thresholds,
             Some(&trace),
             &ActionTraceSnapshot::empty(),
+            &EventLog::new(),
             &sample_local_summary(),
             false,
         );
@@ -1537,6 +1928,7 @@ mod tests {
             &thresholds,
             Some(&trace),
             &ActionTraceSnapshot::empty(),
+            &EventLog::new(),
             &local,
             false,
         );
@@ -1590,6 +1982,7 @@ mod tests {
             &DriveThresholds::default(),
             None,
             &snapshot,
+            &EventLog::new(),
             &sample_local_summary(),
             false,
         );
@@ -1845,6 +2238,74 @@ mod tests {
             frames: Vec::new(),
             exhaustion_collapse_observed: false,
         }
+    }
+
+    fn source_expectation_failure_payload(
+        agent: EntityId,
+        source: EntityId,
+    ) -> SourceExpectationFailurePayload {
+        let goal_key = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Water,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        });
+        SourceExpectationFailurePayload {
+            agent,
+            opportunity: OpportunityKey {
+                goal_key,
+                anchor: OpportunityAnchor::Entity(source),
+            },
+            source: SourceKeyPayload {
+                entity: source,
+                commodity: CommodityKind::Water,
+            },
+            expectation_kind: OpportunityExpectationKindTag::AcquireCommodityFromConcreteSource,
+            phase: ExpectationFailurePhaseTag::Observation,
+            cause: ExpectationFailureCauseTag::SourceDepletedLocally,
+            detected_at_tick: Tick(5),
+            attribution_outcome: SourceAttributionOutcomeTag::SourceReliabilityDecremented,
+            decisive_beliefs: Vec::new(),
+            decisive_records: Vec::new(),
+            decisive_world_observations: Vec::new(),
+        }
+    }
+
+    fn event_log_with_decision_payload(
+        tick: Tick,
+        actor: EntityId,
+        tag: EventTag,
+        decision_payload: DecisionEventPayload,
+    ) -> EventLog {
+        let mut event_log = EventLog::new();
+        emit_decision_payload(&mut event_log, tick, actor, tag, decision_payload);
+        event_log
+    }
+
+    fn emit_decision_payload(
+        event_log: &mut EventLog,
+        tick: Tick,
+        actor: EntityId,
+        tag: EventTag,
+        decision_payload: DecisionEventPayload,
+    ) {
+        event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick,
+            cause: CauseRef::SystemTick(tick),
+            actor_id: Some(actor),
+            action_name: None,
+            target_ids: Vec::new(),
+            evidence: Vec::new(),
+            place_id: None,
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::Hidden,
+            witness_data: WitnessData::default(),
+            tags: std::collections::BTreeSet::from([tag]),
+            contention_event_payload: None,
+            decision_payload: Some(decision_payload),
+            artifact_transition_payload: None,
+            personality_assigned_payload: None,
+        }));
     }
 
     fn sample_local_summary() -> LocalSurvivalStateSummary {

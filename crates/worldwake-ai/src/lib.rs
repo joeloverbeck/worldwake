@@ -182,7 +182,7 @@ pub use survival_forensics::{
     ActionTraceSnapshot, ActiveActionSummary, AgendaEntrySnapshot, BlockerSummary,
     CriticalWindowFrame, CriticalWindowReport, DegradedSelfCareCause, DegradedSelfCareOpportunity,
     DegradedSelfCareOutcome, ExhaustionSummary, LocalSurvivalStateSummary,
-    SurvivalForensicExtractor,
+    SourceAcquisitionFailure, SourceFailureCause, SourceFailureOutcome, SurvivalForensicExtractor,
 };
 pub use verification_provider::VerificationRejection;
 pub use worldwake_core::GoalDispatchKey;

@@ -5923,6 +5923,7 @@ fn main() {
                     &thresholds,
                     decision_trace,
                     &action_snapshot,
+                    event_log,
                     &local_state,
                     exhaustion_collapse_signal,
                 );

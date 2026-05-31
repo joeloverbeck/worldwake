@@ -47,6 +47,7 @@ pub fn observe_critical_windows(
         thresholds,
         decision_trace,
         &action_snapshot,
+        &harness.event_log,
         &local_state,
         exhaustion_collapse_signal,
     );

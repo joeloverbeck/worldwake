@@ -3,7 +3,7 @@ use worldwake_ai::{
     ActionTraceSnapshot, GoalKind, GoalPriorityClass, PlanSearchOutcome, SelectedPlanSource,
     SurvivalForensicExtractor,
 };
-use worldwake_core::{DriveThresholds, EntityId, GoalKey, HomeostaticNeeds, Tick};
+use worldwake_core::{DriveThresholds, EntityId, EventLog, GoalKey, HomeostaticNeeds, Tick};
 
 #[test]
 fn forensic_sleep_progress_barrier() {
@@ -37,6 +37,7 @@ fn forensic_sleep_progress_barrier() {
             &thresholds,
             Some(&trace),
             &ActionTraceSnapshot::empty(),
+            &EventLog::new(),
             &local_state,
             false,
         );
