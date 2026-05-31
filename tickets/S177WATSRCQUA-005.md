@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-systems/needs_actions` (`apply_consumable_effects` reads `ItemLot.quality` + `WaterToleranceProfile`; scales relief; raises dirtiness)
-**Deps**: S177WATSRCQUA-002, S177WATSRCQUA-003
+**Deps**: `archive/tickets/S177WATSRCQUA-002.md`, S177WATSRCQUA-003
 
 ## Problem
 

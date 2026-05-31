@@ -464,6 +464,19 @@ impl<'w> WorldTxn<'w> {
         Ok(entity)
     }
 
+    pub fn create_item_lot_with_quality(
+        &mut self,
+        commodity: CommodityKind,
+        quantity: Quantity,
+        quality: Option<crate::WaterQuality>,
+    ) -> Result<EntityId, WorldError> {
+        let entity = self
+            .staged_world
+            .create_item_lot_with_quality(commodity, quantity, self.tick, quality)?;
+        self.record_created_entity(entity, EntityKind::ItemLot);
+        Ok(entity)
+    }
+
     pub fn create_unique_item(
         &mut self,
         kind: UniqueItemKind,
@@ -837,7 +850,18 @@ impl<'w> WorldTxn<'w> {
         place: EntityId,
         owner: Option<EntityId>,
     ) -> Result<EntityId, WorldError> {
-        let lot = self.create_item_lot(commodity, quantity)?;
+        self.create_item_lot_with_owner_and_quality(commodity, quantity, place, owner, None)
+    }
+
+    pub fn create_item_lot_with_owner_and_quality(
+        &mut self,
+        commodity: CommodityKind,
+        quantity: Quantity,
+        place: EntityId,
+        owner: Option<EntityId>,
+        quality: Option<crate::WaterQuality>,
+    ) -> Result<EntityId, WorldError> {
+        let lot = self.create_item_lot_with_quality(commodity, quantity, quality)?;
         self.set_ground_location(lot, place)?;
         if let Some(owner_id) = owner {
             self.set_owner(lot, owner_id)?;

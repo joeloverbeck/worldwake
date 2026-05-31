@@ -459,6 +459,7 @@ mod tests {
                     related_lot: None,
                     amount: Quantity(6),
                 }],
+                quality: None,
             },
         );
         tables.insert_unique_item(
@@ -1273,6 +1274,7 @@ mod tests {
                     related_lot: None,
                     amount: Quantity(2),
                 }],
+                quality: None,
             },
         );
         tables.insert_unique_item(
@@ -1361,6 +1363,7 @@ mod tests {
                 related_lot: None,
                 amount: Quantity(4),
             }],
+            quality: None,
         };
 
         assert_eq!(tables.insert_item_lot(id, lot.clone()), None);

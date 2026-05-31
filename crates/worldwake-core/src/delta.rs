@@ -907,6 +907,7 @@ mod tests {
                     related_lot: Some(entity(9)),
                     amount: Quantity(4),
                 }],
+                quality: None,
             }),
             ComponentValue::UniqueItem(UniqueItem {
                 kind: UniqueItemKind::Artifact,

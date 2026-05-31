@@ -194,11 +194,13 @@ mod tests {
             commodity: CommodityKind::Apple,
             quantity: Quantity(10),
             provenance: Vec::new(),
+            quality: None,
         };
         let water = crate::ItemLot {
             commodity: CommodityKind::Water,
             quantity: Quantity(5),
             provenance: Vec::new(),
+            quality: None,
         };
 
         assert_eq!(load_of_lot(&apples), LoadUnits(10));

@@ -3,8 +3,8 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-/// S177WATSRCQUA-001 stores water quality on resource sources.
-pub const SAVE_FORMAT_VERSION: u32 = 111;
+/// S177WATSRCQUA-002 stores water quality on item lots.
+pub const SAVE_FORMAT_VERSION: u32 = 112;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -1401,8 +1401,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_111_after_resource_source_quality() {
-        assert_eq!(SAVE_FORMAT_VERSION, 111);
+    fn save_format_version_is_112_after_item_lot_quality() {
+        assert_eq!(SAVE_FORMAT_VERSION, 112);
     }
 
     #[test]
@@ -1413,7 +1413,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 111);
+        assert_eq!(SAVE_FORMAT_VERSION, 112);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]

@@ -1,6 +1,6 @@
 //! Item-domain taxonomy types for stackable commodities, lots, and trade grouping.
 
-use crate::{Component, EntityId, EventId, LoadUnits, Permille, Quantity, Tick};
+use crate::{Component, EntityId, EventId, LoadUnits, Permille, Quantity, Tick, WaterQuality};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -318,6 +318,8 @@ pub struct ItemLot {
     pub commodity: CommodityKind,
     pub quantity: Quantity,
     pub provenance: Vec<ProvenanceEntry>,
+    #[serde(default)]
+    pub quality: Option<WaterQuality>,
 }
 
 impl Component for ItemLot {}
@@ -377,7 +379,8 @@ mod tests {
         CombatWeaponProfile, CommodityConsumableProfile, CommodityDecayMap, CommodityKind,
         CommodityKindSpec, CommodityPhysicalProfile, CommodityTreatmentProfile, Container,
         GroundSince, ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem,
-        UniqueItemKind, UniqueItemKindSpec, UniqueItemPhysicalProfile, default_commodity_decay_map,
+        UniqueItemKind, UniqueItemKindSpec, UniqueItemPhysicalProfile, WaterQuality,
+        default_commodity_decay_map,
     };
     use crate::{EntityId, EventId, LoadUnits, Permille, Quantity, Tick, traits::Component};
     use serde::{Serialize, de::DeserializeOwned};
@@ -600,12 +603,36 @@ mod tests {
                     amount: Quantity(4),
                 },
             ],
+            quality: None,
         };
 
         let bytes = bincode::serialize(&lot).unwrap();
         let roundtrip: ItemLot = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, lot);
+    }
+
+    #[test]
+    fn item_lot_with_quality_roundtrips_through_bincode() {
+        for quality in [Some(WaterQuality::Stale), None] {
+            let lot = ItemLot {
+                commodity: CommodityKind::Water,
+                quantity: Quantity(8),
+                provenance: vec![ProvenanceEntry {
+                    tick: Tick(7),
+                    event_id: None,
+                    operation: LotOperation::Produced,
+                    related_lot: None,
+                    amount: Quantity(8),
+                }],
+                quality,
+            };
+
+            let bytes = bincode::serialize(&lot).unwrap();
+            let roundtrip: ItemLot = bincode::deserialize(&bytes).unwrap();
+
+            assert_eq!(roundtrip, lot);
+        }
     }
 
     #[test]

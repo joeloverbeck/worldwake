@@ -285,6 +285,16 @@ impl World {
         quantity: Quantity,
         tick: Tick,
     ) -> Result<EntityId, WorldError> {
+        self.create_item_lot_with_quality(commodity, quantity, tick, None)
+    }
+
+    pub(crate) fn create_item_lot_with_quality(
+        &mut self,
+        commodity: CommodityKind,
+        quantity: Quantity,
+        tick: Tick,
+        quality: Option<crate::WaterQuality>,
+    ) -> Result<EntityId, WorldError> {
         self.create_item_lot_with_provenance(
             commodity,
             quantity,
@@ -296,6 +306,7 @@ impl World {
                 related_lot: None,
                 amount: quantity,
             }],
+            quality,
         )
     }
 
@@ -312,9 +323,9 @@ impl World {
             ));
         }
 
-        let (commodity, available) = {
+        let (commodity, available, quality) = {
             let lot = self.require_item_lot(lot_id)?;
-            (lot.commodity, lot.quantity)
+            (lot.commodity, lot.quantity, lot.quality)
         };
         let remaining = available
             .checked_sub(amount)
@@ -351,6 +362,7 @@ impl World {
                     amount,
                 },
             ],
+            quality,
         )?;
 
         {
@@ -615,6 +627,7 @@ impl World {
         quantity: Quantity,
         tick: Tick,
         provenance: Vec<ProvenanceEntry>,
+        quality: Option<crate::WaterQuality>,
     ) -> Result<EntityId, WorldError> {
         if quantity == Quantity(0) {
             return Err(WorldError::InvalidOperation(
@@ -629,6 +642,7 @@ impl World {
                     commodity,
                     quantity,
                     provenance,
+                    quality,
                 },
             )
         })
@@ -1209,6 +1223,7 @@ mod tests {
                     related_lot: None,
                     amount: Quantity(6),
                 }],
+                quality: None,
             })
         );
         assert_eq!(
@@ -1458,6 +1473,7 @@ mod tests {
                     related_lot: None,
                     amount: Quantity(10),
                 }],
+                quality: None,
             })
         );
     }
@@ -4888,6 +4904,7 @@ mod tests {
                         related_lot: None,
                         amount: Quantity(2),
                     }],
+                    quality: None,
                 },
             )
             .unwrap_err();
@@ -5839,6 +5856,7 @@ mod tests {
                         related_lot: None,
                         amount: Quantity(5),
                     }],
+                    quality: None,
                 },
             )
             .unwrap_err();
