@@ -22,7 +22,7 @@ D3 replaces the archive-at-duration path for perishable food with condition adva
 ## Architecture Check
 
 1. The condition-advancement loop is gated on `query_with::<PerishableState>` (sparse iteration), not on every lot. Non-perishable lots (Waste, Bread, Grain) are untouched by the new code path. The archive-at-duration path persists for non-perishable commodities via the unchanged `CommodityDecayMap` flow, preserving Waste decay (S82) without parallel-path risk. The skip-filter on `has_component_perishable_state` in `collect_decay_targets` makes the FND-28 single-live-path contract structural — perishable lots cannot enter the archive branch even if they remain map-listed.
-2. Storage-context lookup is a pure read against the lot's parent entity. No new component on places, no new tag — preserving-place context is explicitly deferred per spec Non-Goals. Three contexts (ground/container/possessed) cover the headline scenario without speculation.
+2. Storage-context lookup is a pure read against live placement/possession relations (`world.possessor_of(lot)` and `world.direct_container(lot)`). No new component on places, no new tag — preserving-place context is explicitly deferred per spec Non-Goals. Three contexts (ground/container/possessed) cover the headline scenario without speculation.
 
 ## Verified Layers
 

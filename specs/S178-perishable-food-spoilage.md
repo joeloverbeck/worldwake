@@ -2,13 +2,13 @@
 
 ## Summary
 
-`LotOperation::Spoiled` exists in the item-lot lineage enum (`crates/worldwake-core/src/items.rs:230-256`) but is **never constructed anywhere** — it is a schema variant with no emitter. This is a strong, deliberate hint left by `archive/specs/S82-waste-disposal-inventory-management.md` / the item-lot lineage design: spoilage was always intended to be richer than the current behavior. Today:
+Before this spec began implementation, `LotOperation::Spoiled` existed in the item-lot lineage enum (`crates/worldwake-core/src/items.rs:230-256`) but was **never constructed anywhere** — it was a schema variant with no emitter. Ticket `archive/tickets/S178PERFOOSPO-003.md` lands the first emitter in `item_decay_system`. The original unused variant was a strong, deliberate hint left by `archive/specs/S82-waste-disposal-inventory-management.md` / the item-lot lineage design: spoilage was always intended to be richer than the prior behavior. Before S178:
 
-- `CommodityDecayMap` (`crates/worldwake-core/src/items.rs:337-346`) maps a commodity to a single decay duration (`Apple → nz(720)` ticks, `Waste → nz(200)`), and `item_decay_system` (`crates/worldwake-systems/src/item_decay.rs`) **archives ground item lots** once that duration elapses.
-- Decay is therefore binary and location-limited: a lot exists at full value until it is removed (archived) — there is no per-lot freshness, no reduced relief from aging food, and stored/cached food (not on the ground) does not perish at all.
+- `CommodityDecayMap` (`crates/worldwake-core/src/items.rs:337-346`) mapped a commodity to a single decay duration (`Apple → nz(720)` ticks, `Waste → nz(200)`), and `item_decay_system` (`crates/worldwake-systems/src/item_decay.rs`) **archived ground item lots** once that duration elapsed.
+- Decay was therefore binary and location-limited: a lot existed at full value until it was removed (archived) — there was no per-lot freshness, no reduced relief from aging food, and stored/cached food (not on the ground) did not perish at all.
 - `ItemLot` (`crates/worldwake-core/src/items.rs:315-325`) carries `commodity`, `quantity`, `provenance`, and the S177-added `quality: Option<WaterQuality>` field. There is no condition/freshness field for food perishability.
 
-The result: food is a binary timer (fresh until it vanishes), which is exactly the "stored resources disappear as invisible timer failure" anti-pattern the source report identifies. This spec adds **per-lot `PerishableState`** as a separate ECS component on item lots so perishable food degrades through `Fresh → Stale → Spoiled` with concrete consequences — reduced relief from stale food, a spoiled-but-still-existing lot (finally emitting `LotOperation::Spoiled`), and a profile-driven desperation choice to eat spoiled food. It is the third slice of the deferred Cluster 1 material-degradation wave (`specs/IMPLEMENTATION-ORDER.md`).
+The pre-S178 result was food as a binary timer (fresh until it vanished), exactly the "stored resources disappear as invisible timer failure" anti-pattern the source report identifies. This spec adds **per-lot `PerishableState`** as a separate ECS component on item lots so perishable food degrades through `Fresh → Stale → Spoiled` with concrete consequences — reduced relief from stale food, a spoiled-but-still-existing lot (ticket 003 now emits `LotOperation::Spoiled`), and a profile-driven desperation choice to eat spoiled food. It is the third slice of the deferred Cluster 1 material-degradation wave (`specs/IMPLEMENTATION-ORDER.md`).
 
 **Critical reassessment of the source report:** the report floats a later `FoodSickness`/`DigestiveDistress` consequence for eating spoiled food. This spec **defers that disease consequence** (FND-5 / the report's own MUST-NOT — no disease ecology until it is a proven concrete carrier with recovery and proof). Spoilage here changes *affordance value and lineage*, not health. Spoiled food gives minimal relief; it does not (yet) wound.
 
@@ -30,7 +30,7 @@ Phase 7: Consequence Carriers
 
 ## Dependencies
 
-- `archive/specs/S82-waste-disposal-inventory-management.md` — provides `ItemLot`, `CommodityKind::Waste`, the lineage `LotOperation` enum (incl. the unused `Spoiled` variant), and the `CommodityDecayMap` substrate this spec extends.
+- `archive/specs/S82-waste-disposal-inventory-management.md` — provides `ItemLot`, `CommodityKind::Waste`, the lineage `LotOperation` enum (including the historically unused `Spoiled` variant that ticket `archive/tickets/S178PERFOOSPO-003.md` now emits), and the `CommodityDecayMap` substrate this spec extends.
 - `archive/specs/S79-resource-source-consumption-affordances.md` — provides the consumable-profile / Eat-Drink action substrate this spec scales by condition.
 - `archive/specs/S129-place-dirtiness-facility-wear.md` — precedent for a per-entity degradation component advanced by the item-decay system.
 - `archive/specs/S120-survival-critical-window-forensics.md` — `SurvivalForensicExtractor` extended with spoiled-cache-discovery records.
@@ -49,7 +49,7 @@ Phase 7: Consequence Carriers
 
 - **No food-borne sickness, disease, digestive distress, or wound from spoiled food.** Deferred (see Summary; FND-5). Spoilage is a value/lineage axis only.
 - **No cooking, preservation crafting, recipes, or nutrition model.** A "preserve food" or "cook" action is a future-spec trigger if scenarios prove storage context alone is insufficient.
-- **No preserving-place tag or place component.** Storage context in this spec covers only three concrete cases: ground (via `GroundSince`), container (via parent `EntityKind::Container`), and possessed (via possession). Preserving places (cellars, larders, cold storage) are deferred to a future Cold Storage spec that lands when scenarios prove ground/container/possessed differentiation is insufficient (YAGNI per FND-28). Until then, food in a container slows but does not stop spoilage.
+- **No preserving-place tag or place component.** Storage context in this spec covers only three concrete cases: ground/default, container (via `world.direct_container(lot)` with `EntityKind::Container`), and possessed (via `world.possessor_of(lot)` with an agent holder). Preserving places (cellars, larders, cold storage) are deferred to a future Cold Storage spec that lands when scenarios prove ground/container/possessed differentiation is insufficient (YAGNI per FND-28). Until then, food in a container slows but does not stop spoilage.
 - **No perishability for `Grain` or `Bread`.** This spec's default `CommodityPerishProfile` covers `Apple` only. `Grain` and `Bread` (and any later food commodities) remain non-perishable in this spec. A sibling spec extends the profile map once `survival-food-spoilage-cache-1440` proves the pattern works for `Apple`.
 - **No new global food-supply score.** Per-lot concrete state only (FND-3).
 - **No replacement of `CommodityDecayMap`'s Waste handling.** Waste continues to decay/archive as today; this spec governs *perishable food* lots specifically.
@@ -155,7 +155,7 @@ Extend `item_decay_system` (`crates/worldwake-systems/src/item_decay.rs`): for l
 
 1. **Possessed**: `world.possessor_of(lot)` is an agent → `storage_rates.possessed`.
 2. **Container**: `world.direct_container(lot)` has `EntityKind::Container` → `storage_rates.container`.
-3. **Ground**: lot has the `GroundSince` component (the existing ground-tracking precedent at `crates/worldwake-core/src/component_schema.rs:2469-2493`) → `storage_rates.ground`.
+3. **Ground**: neither possession nor direct-container storage applies → `storage_rates.ground`.
 
 If none of the three matches, the spoil rate defaults to ground baseline (defensive — should not occur for well-spawned lots). No preserving-place option exists in this spec (deferred per Non-Goals).
 
@@ -299,7 +299,7 @@ Accessors return `None` rather than reading a remote lot's authoritative conditi
 
 | System | Read | Write |
 |--------|------|-------|
-| Item-decay system (`worldwake-systems`) | `PerishableState`, lot's parent entity (for storage context), `GroundSince`, `CommodityPerishProfile` | `PerishableState.condition`, `LotOperation::Spoiled` lineage, `EventTag::ItemSpoiled` |
+| Item-decay system (`worldwake-systems`) | `PerishableState`, `world.possessor_of(lot)`, `world.direct_container(lot)`, `CommodityPerishProfile` | `PerishableState.condition`, `PerishableState.last_advanced_tick`, `PerishableState.decay_remainder`, `LotOperation::Spoiled` lineage, `EventTag::ItemSpoiled` |
 | Eat handler (`worldwake-systems`) | `PerishableState` (co-located/possessed), consumable profile | `HomeostaticNeeds.hunger`, lot quantity |
 | Belief view (`worldwake-sim`) | `PerishableState` (FND-14A co-located/possessed), agent belief store `last_observed_condition` | None (read-only accessor) |
 | Perception (`worldwake-systems`) | `PerishableState` (co-located/possessed) | belief store `last_observed_condition` |
@@ -319,4 +319,4 @@ No system commands another.
 
 - **`survival-food-spoilage-cache-1440.ron`** — multiple agents draw from perishable stock over 1440 ticks under hunger pressure; food ages, spoils, is eaten fresh/stale/spoiled, hoarded-and-wasted, or composted. Assertions prove: exact per-lot condition lineage (`Spoiled` provenance), spoilage-as-hoarding-dampener (over-acquired stock degrades), desperation-eat only above threshold, container vs. ground vs. possessed rate differentiation, and replay equivalence.
 
-**Illegal paths this spec must not produce:** food relief unaffected by condition; a spoiled lot vanishing instead of transforming; eating spoiled food producing a wound/sickness (deferred); a planner candidate for a remote lot's freshness with no belief carrier; a global `food_freshness` aggregate; `LotOperation::Spoiled` still unused; candidate-generation reading `world.get_component_perishable_state` directly for a remote lot (must route through `GoalBeliefView`).
+**Illegal paths this spec must not produce:** food relief unaffected by condition; a spoiled lot vanishing instead of transforming; eating spoiled food producing a wound/sickness (deferred); a planner candidate for a remote lot's freshness with no belief carrier; a global `food_freshness` aggregate; candidate-generation reading `world.get_component_perishable_state` directly for a remote lot (must route through `GoalBeliefView`).
