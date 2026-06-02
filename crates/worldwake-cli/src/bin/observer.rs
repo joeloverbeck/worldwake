@@ -426,6 +426,7 @@ fn decision_payload_agent(payload: &DecisionEventPayload) -> EntityId {
         DecisionEventPayload::PlanAdopted(inner) => inner.agent,
         DecisionEventPayload::PlanInvalidated(inner) => inner.agent,
         DecisionEventPayload::ExpectationMismatch(inner) => inner.agent,
+        DecisionEventPayload::LotConditionExpectationMismatch(inner) => inner.observer,
         DecisionEventPayload::SourceExpectationFailure(inner) => inner.agent,
         DecisionEventPayload::ResourceSourceQualityObserved(inner) => inner.observer,
         DecisionEventPayload::RepairApplied(inner) => inner.agent,
@@ -449,6 +450,9 @@ fn decision_event_name(payload: &DecisionEventPayload) -> &'static str {
         DecisionEventPayload::PlanAdopted(_) => "PlanAdopted",
         DecisionEventPayload::PlanInvalidated(_) => "PlanInvalidated",
         DecisionEventPayload::ExpectationMismatch(_) => "ExpectationMismatch",
+        DecisionEventPayload::LotConditionExpectationMismatch(_) => {
+            "LotConditionExpectationMismatch"
+        }
         DecisionEventPayload::SourceExpectationFailure(_) => "SourceExpectationFailure",
         DecisionEventPayload::ResourceSourceQualityObserved(_) => "ResourceSourceQualityObserved",
         DecisionEventPayload::RepairApplied(_) => "RepairApplied",
@@ -634,6 +638,13 @@ fn decision_payload_summary(
             append_assumption_count(&mut summary, inner.assumptions.len());
             summary
         }
+        DecisionEventPayload::LotConditionExpectationMismatch(inner) => format!(
+            "lot={} commodity={:?} condition={}->{}",
+            inner.lot,
+            inner.commodity,
+            inner.believed_condition.value(),
+            inner.observed_condition.value()
+        ),
         DecisionEventPayload::SourceExpectationFailure(inner) => {
             let mut summary = format!(
                 "opportunity={:?} source={:?}:{:?} phase={:?} cause={:?} outcome={:?}",

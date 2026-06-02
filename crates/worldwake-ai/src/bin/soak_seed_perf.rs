@@ -73,6 +73,9 @@ fn decision_payload_tag(payload: &DecisionEventPayload) -> &'static str {
         DecisionEventPayload::PlanInvalidated(_) => "PlanInvalidated",
         DecisionEventPayload::RepairApplied(_) => "RepairApplied",
         DecisionEventPayload::ExpectationMismatch(_) => "ExpectationMismatch",
+        DecisionEventPayload::LotConditionExpectationMismatch(_) => {
+            "LotConditionExpectationMismatch"
+        }
         DecisionEventPayload::SourceExpectationFailure(_) => "SourceExpectationFailure",
         DecisionEventPayload::ResourceSourceQualityObserved(_) => "ResourceSourceQualityObserved",
         DecisionEventPayload::SleepEpisodeStarted(_) => "SleepEpisodeStarted",

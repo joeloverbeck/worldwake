@@ -198,7 +198,7 @@ pub struct SpoiledFoodDiscovery {
 }
 ```
 
-The agent reached a believed-edible food lot and found it spoiled. Derived forensic state, never authoritative. Added to `LocalSurvivalStateSummary.spoiled_food_discoveries: Vec<SpoiledFoodDiscovery>` following the `source_acquisition_failures` precedent at `survival_forensics.rs:55`. Feeds the same belief-correction story as S177's `SourceAcquisitionFailure`.
+The agent reached a believed-edible food lot and found it spoiled. Derived forensic state, never authoritative. Added to `CriticalWindowFrame.spoiled_food_discoveries: Vec<SpoiledFoodDiscovery>` following the `source_acquisition_failures` precedent on the same critical-window frame. Feeds the same belief-correction story as S177's `SourceAcquisitionFailure`.
 
 ### D7. Profile field
 

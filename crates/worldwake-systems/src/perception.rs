@@ -12,8 +12,8 @@ use worldwake_core::{
     VisibilitySpec, WitnessData, World, WorldTxn, build_believed_entity_state,
 };
 use worldwake_core::{
-    DecisionEventPayload, ResourceSourceQualityObservedPayload, SourceKeyPayload,
-    SurveyRecordedPayload,
+    DecisionEventPayload, LotConditionExpectationMismatchPayload,
+    ResourceSourceQualityObservedPayload, SourceKeyPayload, SurveyRecordedPayload,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionInstance, ActionInstanceId, PerceptionTraceEvent, SystemError,
@@ -1035,6 +1035,10 @@ fn record_observed_snapshot(
         for mismatch in detect_observation_mismatches(prior, snapshot, include_place_change) {
             emit_discovery_event(event_log, context, subject, mismatch);
         }
+        if let Some(payload) = lot_condition_expectation_mismatch(context, subject, prior, snapshot)
+        {
+            emit_lot_condition_expectation_mismatch(event_log, context, payload);
+        }
     }
     internalize_notice_beliefs(
         store,
@@ -1053,6 +1057,62 @@ fn record_observed_snapshot(
         notice_context.profile.observation_buffer_capacity,
         &notice_context.profile.confidence_policy,
     );
+}
+
+fn lot_condition_expectation_mismatch(
+    context: DiscoveryContext,
+    subject: EntityId,
+    prior: &worldwake_core::BelievedEntityState,
+    observed: &worldwake_core::BelievedEntityState,
+) -> Option<LotConditionExpectationMismatchPayload> {
+    let believed_condition = prior.last_observed_condition?;
+    let observed_condition = observed.last_observed_condition?;
+    if believed_condition == observed_condition {
+        return None;
+    }
+    let commodity = observed
+        .last_known_inventory
+        .keys()
+        .chain(prior.last_known_inventory.keys())
+        .next()
+        .copied()?;
+    Some(LotConditionExpectationMismatchPayload {
+        observer: context.observer,
+        lot: subject,
+        commodity,
+        believed_condition,
+        observed_condition,
+    })
+}
+
+fn emit_lot_condition_expectation_mismatch(
+    event_log: &mut EventLog,
+    context: DiscoveryContext,
+    payload: LotConditionExpectationMismatchPayload,
+) {
+    let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+        tick: context.tick,
+        cause: CauseRef::SystemTick(context.tick),
+        actor_id: Some(context.observer),
+        action_name: None,
+        target_ids: vec![payload.lot],
+        evidence: Vec::new(),
+        place_id: context.place,
+        state_deltas: Vec::new(),
+        observed_entities: BTreeMap::new(),
+        visibility: VisibilitySpec::ParticipantsOnly,
+        witness_data: WitnessData {
+            direct_witnesses: BTreeSet::from([context.observer]),
+            potential_witnesses: BTreeSet::from([context.observer]),
+        },
+        tags: BTreeSet::from([EventTag::ExpectationMismatch]),
+        contention_event_payload: None,
+        decision_payload: Some(DecisionEventPayload::LotConditionExpectationMismatch(
+            payload,
+        )),
+        artifact_transition_payload: None,
+        personality_assigned_payload: None,
+    }));
 }
 
 fn internalize_notice_beliefs(
@@ -1666,6 +1726,7 @@ mod tests {
     use crate::dispatch_table;
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::{NonZeroU8, NonZeroU32};
+    use worldwake_core::LotConditionExpectationMismatchPayload;
     use worldwake_core::{
         ActionDefId, ActionDomain, AgentBeliefStore, ArtifactActionability, ArtifactHeader,
         ArtifactKind, ArtifactLegalEffect, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
@@ -5404,6 +5465,77 @@ mod tests {
             .expect("perception should record the observed perishable lot");
         assert_eq!(belief.last_observed_condition, Some(condition));
         assert_eq!(belief.last_observed_tick(), Some(Tick(100)));
+    }
+
+    #[test]
+    fn perception_emits_lot_condition_expectation_mismatch_when_known_lot_condition_changes() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let believed_condition = Permille::new_unchecked(900);
+        let observed_condition = Permille::new_unchecked(100);
+        let (observer, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(CommodityKind::Apple, Quantity(2), place, None)
+                .unwrap();
+            txn.set_component_perishable_state(
+                lot,
+                PerishableState {
+                    condition: believed_condition,
+                    last_advanced_tick: Tick(1),
+                    decay_remainder: 0,
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, lot)
+        };
+        let mut event_log = EventLog::new();
+
+        run_perception(&mut world, &mut event_log, 100);
+        {
+            let mut txn = new_txn(&mut world, 101);
+            txn.set_component_perishable_state(
+                lot,
+                PerishableState {
+                    condition: observed_condition,
+                    last_advanced_tick: Tick(101),
+                    decay_remainder: 0,
+                },
+            )
+            .unwrap();
+            let _ = txn.commit(&mut event_log);
+        }
+        run_perception(&mut world, &mut event_log, 102);
+
+        let payload = event_log
+            .events_by_tag(EventTag::ExpectationMismatch)
+            .iter()
+            .filter_map(|event_id| event_log.get(*event_id))
+            .find_map(|event| match event.decision_payload() {
+                Some(DecisionEventPayload::LotConditionExpectationMismatch(payload)) => {
+                    Some(payload)
+                }
+                _ => None,
+            })
+            .expect("perception should emit lot condition mismatch payload");
+        assert_eq!(
+            payload,
+            &LotConditionExpectationMismatchPayload {
+                observer,
+                lot,
+                commodity: CommodityKind::Apple,
+                believed_condition,
+                observed_condition,
+            }
+        );
     }
 
     #[test]

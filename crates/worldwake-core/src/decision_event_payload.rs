@@ -21,6 +21,7 @@ pub enum DecisionEventPayload {
     PlanAdopted(PlanAdoptedPayload),
     PlanInvalidated(PlanInvalidatedPayload),
     ExpectationMismatch(ExpectationMismatchPayload),
+    LotConditionExpectationMismatch(LotConditionExpectationMismatchPayload),
     SourceExpectationFailure(SourceExpectationFailurePayload),
     ResourceSourceQualityObserved(ResourceSourceQualityObservedPayload),
     RepairApplied(RepairAppliedPayload),
@@ -399,6 +400,15 @@ pub struct ExpectationMismatchPayload {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LotConditionExpectationMismatchPayload {
+    pub observer: EntityId,
+    pub lot: EntityId,
+    pub commodity: CommodityKind,
+    pub believed_condition: Permille,
+    pub observed_condition: Permille,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceExpectationFailurePayload {
     pub agent: EntityId,
     pub opportunity: OpportunityKey,
@@ -560,14 +570,15 @@ mod tests {
         ExpectationFailureCauseTag, ExpectationFailurePhaseTag, ExpectationMismatchPayload,
         GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalOfferedPayload,
         GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
-        ObservationRef, OpportunityExpectationKindTag, PlanAdoptedPayload, PlanAssumptionRef,
-        PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag,
-        RankedGoalComparisonDimensionTag, RecordRef, RejectedAlternativeSummary,
-        RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload,
-        RoutePreferenceSummary, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
-        SleepFailureCause, SourceAttributionOutcomeTag, SourceExpectationFailurePayload,
-        SourceKeyPayload, SurveyRecordedPayload, TestimonyTrustSummary, VerificationProviderKind,
-        WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
+        LotConditionExpectationMismatchPayload, ObservationRef, OpportunityExpectationKindTag,
+        PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
+        PursuitInvalidationReasonTag, RankedGoalComparisonDimensionTag, RecordRef,
+        RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
+        ReplanTriggeredPayload, RoutePreferenceSummary, SleepEpisodeEndedPayload,
+        SleepEpisodeStartedPayload, SleepFailureCause, SourceAttributionOutcomeTag,
+        SourceExpectationFailurePayload, SourceKeyPayload, SurveyRecordedPayload,
+        TestimonyTrustSummary, VerificationProviderKind, WakeReason, WashFacilityUsedPayload,
+        WasteCreatedPayload, WasteSource,
     };
     use crate::{
         ActionDefId, BeliefClaimKey, BlockingFact, CommodityKind, Discrepancy, EntityBeliefAspect,
@@ -772,6 +783,15 @@ mod tests {
                 decisive_world_observations: Vec::new(),
                 assumptions: Vec::new(),
             }),
+            DecisionEventPayload::LotConditionExpectationMismatch(
+                LotConditionExpectationMismatchPayload {
+                    observer: entity_id(9, 2),
+                    lot: entity_id(9, 3),
+                    commodity: CommodityKind::Apple,
+                    believed_condition: crate::Permille::new(900).unwrap(),
+                    observed_condition: crate::Permille::new(200).unwrap(),
+                },
+            ),
             DecisionEventPayload::SourceExpectationFailure(
                 sample_source_expectation_failure_payload(),
             ),

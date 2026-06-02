@@ -4,7 +4,7 @@ use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
 /// S178PERFOOSPO-005 stores perishable lot condition in agent beliefs.
-pub const SAVE_FORMAT_VERSION: u32 = 119;
+pub const SAVE_FORMAT_VERSION: u32 = 120;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -1364,6 +1364,18 @@ mod tests {
                 }),
             ),
             (
+                EventTag::ExpectationMismatch,
+                DecisionEventPayload::LotConditionExpectationMismatch(
+                    worldwake_core::LotConditionExpectationMismatchPayload {
+                        observer: actor,
+                        lot: decision_test_entity(305),
+                        commodity: CommodityKind::Apple,
+                        believed_condition: worldwake_core::Permille::new(900).unwrap(),
+                        observed_condition: worldwake_core::Permille::new(200).unwrap(),
+                    },
+                ),
+            ),
+            (
                 EventTag::RepairApplied,
                 DecisionEventPayload::RepairApplied(RepairAppliedPayload {
                     agent: actor,
@@ -1458,8 +1470,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_119_after_perishable_lot_condition_belief() {
-        assert_eq!(SAVE_FORMAT_VERSION, 119);
+    fn save_format_version_is_120_after_lot_condition_mismatch_payload() {
+        assert_eq!(SAVE_FORMAT_VERSION, 120);
     }
 
     #[test]
@@ -1470,7 +1482,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 119);
+        assert_eq!(SAVE_FORMAT_VERSION, 120);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
