@@ -7,7 +7,7 @@ Scenarios: 2
 
 ### Scenario 494: Muddy Basin Refill Raises Dirtiness Level
 
-- Source: `survival_muddy_basin_refill.rs:116`
+- Source: `survival_muddy_basin_refill.rs:120`
 - Systems: ItemDecay, Dirtiness
 - GoalKinds: Wash
 - ActionDomains: Needs
@@ -23,7 +23,7 @@ Scenarios: 2
 
 ### Scenario 495: Muddy Basin Refill Degrades Wash Effectiveness
 
-- Source: `survival_muddy_basin_refill.rs:135`
+- Source: `survival_muddy_basin_refill.rs:139`
 - Systems: ItemDecay, Needs
 - GoalKinds: Wash
 - ActionDomains: Needs

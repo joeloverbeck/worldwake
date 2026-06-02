@@ -1,0 +1,41 @@
+// S178 focused golden: an agent travels to a believed-fresh Apple cache and
+// corrects that belief when local perception finds the cache spoiled.
+(
+    seed: 1780082,
+    compaction_interval: 0,
+    commodity_perish_profile: {
+        Apple: (
+            fresh_to_spoiled_ticks: 720,
+            stale_threshold: 667,
+            spoiled_threshold: 333,
+            storage_rates: (
+                ground: 1000,
+                container: 500,
+                possessed: 750,
+            ),
+        ),
+    },
+    places: [
+        (name: "Trail Camp", tags: [Camp]),
+        (name: "Remembered Cache", tags: [Forest]),
+        (name: "Fallback Grove", tags: [Forest]),
+    ],
+    edges: [
+        (from: "Trail Camp", to: "Remembered Cache", travel_ticks: 2, bidirectional: true),
+        (from: "Remembered Cache", to: "Fallback Grove", travel_ticks: 2, bidirectional: true),
+        (from: "Trail Camp", to: "Fallback Grove", travel_ticks: 4, bidirectional: true),
+    ],
+    agents: [
+        (
+            name: "Cache Scout",
+            location: "Trail Camp",
+            control: Ai,
+            known_recipes: ["Harvest Apples"],
+            needs: (hunger: 900, thirst: 0, fatigue: 0, bladder: 0, dirtiness: 0),
+        ),
+    ],
+    items: [
+        (commodity: Apple, quantity: 1, location: "Remembered Cache", container: false),
+        (commodity: Apple, quantity: 2, location: "Fallback Grove", container: false),
+    ],
+)

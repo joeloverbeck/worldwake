@@ -84,7 +84,7 @@ The extractor reads the event log and action traces, matching the `SourceAcquisi
 - `crates/worldwake-ai/src/bin/soak_seed_perf.rs` (modify — payload tag handling)
 - `crates/worldwake-cli/src/bin/observer.rs` (modify — payload owner/name/summary handling)
 - `crates/worldwake-sim/src/save_load.rs` (modify — save-format version 120 and payload roundtrip coverage)
-- `specs/S178-perishable-food-spoilage.md` (modify — D6 forensic surface wording)
+- `archive/specs/S178-perishable-food-spoilage.md` (modify — D6 forensic surface wording)
 
 ## Out of Scope
 

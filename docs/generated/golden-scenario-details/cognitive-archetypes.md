@@ -7,7 +7,7 @@ Scenarios: 7
 
 ### Scenario 447: S152 Seeded Assignment Is Deterministic
 
-- Source: `cognitive_archetypes.rs:130`
+- Source: `cognitive_archetypes.rs:131`
 - Systems: Scenario, AI
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -22,7 +22,7 @@ Scenarios: 7
 
 ### Scenario 448: S152 Cautious Backoff Exceeds Bold Backoff
 
-- Source: `cognitive_archetypes.rs:181`
+- Source: `cognitive_archetypes.rs:182`
 - Systems: Scenario, AI
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -37,7 +37,7 @@ Scenarios: 7
 
 ### Scenario 449: S152 Sociable Reasks Sooner Than Skeptical
 
-- Source: `cognitive_archetypes.rs:215`
+- Source: `cognitive_archetypes.rs:216`
 - Systems: Scenario, AI
 - GoalKinds: AskWitness
 - ActionDomains: Social
@@ -52,7 +52,7 @@ Scenarios: 7
 
 ### Scenario 450: S152 Greedy Boosts Economic Portfolio Weight
 
-- Source: `cognitive_archetypes.rs:246`
+- Source: `cognitive_archetypes.rs:247`
 - Systems: Scenario, AI
 - GoalKinds: ProduceCommodity, Trade
 - ActionDomains: Portfolio
@@ -67,7 +67,7 @@ Scenarios: 7
 
 ### Scenario 451: S152 PersonalityAssigned Event Per Agent
 
-- Source: `cognitive_archetypes.rs:288`
+- Source: `cognitive_archetypes.rs:289`
 - Systems: Scenario, EventLog
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -82,7 +82,7 @@ Scenarios: 7
 
 ### Scenario 452: S152 Explicit Override Pins Archetype
 
-- Source: `cognitive_archetypes.rs:330`
+- Source: `cognitive_archetypes.rs:331`
 - Systems: Scenario, AI
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -97,7 +97,7 @@ Scenarios: 7
 
 ### Scenario 453: S152 Save Load Preserves Archetype State
 
-- Source: `cognitive_archetypes.rs:370`
+- Source: `cognitive_archetypes.rs:371`
 - Systems: Scenario, SaveLoad
 - GoalKinds: None
 - ActionDomains: Scenario

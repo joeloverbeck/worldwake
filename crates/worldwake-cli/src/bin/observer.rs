@@ -7461,6 +7461,7 @@ mod tests {
                 failed_rest_opportunities: Vec::new(),
                 degraded_self_care_opportunities: Vec::new(),
                 source_acquisition_failures: Vec::new(),
+                spoiled_food_discoveries: Vec::new(),
             }],
             exhaustion_collapse_observed: false,
         }

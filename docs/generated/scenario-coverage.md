@@ -50,48 +50,48 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 
 ## Feature x Scenario Matrix
 
-| Feature | cli-evaluation | cognitive-archetypes-divergence | final-integration | survival-ask-consult | survival-baseline | survival-basin-competition-1440 | survival-basin-dirty-dirty | survival-combat | survival-contested | survival-dirty-water-tolerance-tradeoff | survival-drive-escalation | survival-escort | survival-exhaustion-collapse | survival-exhaustion-recovery | survival-failed-rest-cascade | survival-items-decay | survival-justice | survival-latrine-full | survival-muddy-basin-refill | survival-need-projection | survival-offices | survival-patrol | survival-preferences | survival-production | survival-quality-degrading-1440 | survival-rest-cli | survival-rest-interrupted-by-danger | survival-safe-rest | survival-sanitation-breakdown-1440 | survival-scattered | survival-sleep-contention | survival-tell | survival-theft | survival-trade | survival-water-quality-on-arrival |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| Basic needs (Eat) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | ⚠ | — | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ | ⚠ |
-| Basic needs (Drink) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ | ⚠ |
-| Basic needs (Sleep) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | ⚠ | — | ✅ | ⚠ | ✅ | ✅ | ⚠ | ✅ | ✅ | ✅ | ⚠ |
-| Rest-site contention / safe rest | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | ✅ | — | — | ✅ | — | — | — | — |
-| Basic needs (Relieve) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | ⚠ | — | ✅ | ⚠ | ✅ | ✅ | ⚠ | ✅ | ✅ | ✅ | ⚠ |
-| Basic needs (Wash) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ | ⚠ |
-| Travel physiology | ⚠ | ✅ | ✅ | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | — | ⚠ | — | ✅ | ✅ | — | ✅ | ⚠ | ⚠ | ⚠ |
-| Drive escalation | — | — | ✅ | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — |
-| Need-driven exploration | ✅ | — | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | — | ✅ | ✅ | — | — | — | ✅ | ⚠ | — | — | ⚠ | ✅ | ✅ | ✅ | ⚠ | — | — | — | — | — | ✅ | — | ✅ | ✅ | ✅ | — |
-| Activation-decay perception | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | — | — | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — | — | ✅ | — | — | ✅ | ✅ | — |
-| Place concealment | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — |
-| Tell / peer info transfer | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | — | — | ⚠ | — | — | — | ⚠ | ⚠ | — | — | — | — | ⚠ | ⚠ | ⚠ | ⚠ | — | — | — | — | ⚠ | — | ✅ | ⚠ | ⚠ | — |
-| Ask-about-person | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ⚠ | ⚠ |
-| Consult-record | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ⚠ | ⚠ |
-| Obligation satiation | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| Diversification / curiosity | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
-| Experience preferences | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
-| Production (facility-backed craft) | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | — | — | ⚠ | — | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | — | — | — | — | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ |
-| Merchant selling | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | — |
-| Trade negotiation | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | — |
-| Commodity valuation | ✅ | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — |
-| Substitute preferences | ✅ | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | — |
-| Item decay | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| Disposal | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| Facility-queue contention | ⚠ | — | ⚠ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ⚠ | — | — | ✅ | — |
-| Offices / succession / force-claim | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| Bounty posting | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Notice posting | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Theft | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — |
-| Justice / accusation | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| Violation investigation | ✅ | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — |
-| Patrol | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| Pursuit | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| Combat | ✅ | — | ✅ | — | — | — | — | ✅ | — | — | — | ✅ | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | — | — | — | — | ✅ | — | — | — | — | — | — | — | — |
-| Escort | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Bandit camps | — | — | ✅ | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| Report / witness | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | — | — | ⚠ | — | — | — | ⚠ | ⚠ | — | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | — | — | — | ⚠ | — | ⚠ | ⚠ | ⚠ | — |
-| Search | ✅ | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — |
-| Stock / transport | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | — |
-| Cognitive archetypes | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — |
+| Feature | cli-evaluation | cognitive-archetypes-divergence | final-integration | survival-ask-consult | survival-baseline | survival-basin-competition-1440 | survival-basin-dirty-dirty | survival-combat | survival-contested | survival-dirty-water-tolerance-tradeoff | survival-drive-escalation | survival-escort | survival-exhaustion-collapse | survival-exhaustion-recovery | survival-failed-rest-cascade | survival-food-spoilage-cache-1440 | survival-food-spoilage-cache | survival-food-spoilage-lifecycle | survival-items-decay | survival-justice | survival-latrine-full | survival-muddy-basin-refill | survival-need-projection | survival-offices | survival-patrol | survival-preferences | survival-production | survival-quality-degrading-1440 | survival-rest-cli | survival-rest-interrupted-by-danger | survival-safe-rest | survival-sanitation-breakdown-1440 | survival-scattered | survival-sleep-contention | survival-tell | survival-theft | survival-trade | survival-water-quality-on-arrival |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Basic needs (Eat) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | — | — | — | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | ⚠ | — | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ | ⚠ |
+| Basic needs (Drink) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | — | — | — | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ | ⚠ |
+| Basic needs (Sleep) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | ⚠ | — | ✅ | ⚠ | ✅ | ✅ | ⚠ | ✅ | ✅ | ✅ | ⚠ |
+| Rest-site contention / safe rest | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | ✅ | — | — | ✅ | — | — | — | — |
+| Basic needs (Relieve) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | — | — | — | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | ⚠ | — | ✅ | ⚠ | ✅ | ✅ | ⚠ | ✅ | ✅ | ✅ | ⚠ |
+| Basic needs (Wash) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | — | — | — | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ | ⚠ |
+| Travel physiology | ⚠ | ✅ | ✅ | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | — | — | — | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | — | ⚠ | — | ✅ | ✅ | — | ✅ | ⚠ | ⚠ | ⚠ |
+| Drive escalation | — | — | ✅ | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — |
+| Need-driven exploration | ✅ | — | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | — | ✅ | ✅ | — | — | — | — | — | — | ✅ | ⚠ | — | — | ⚠ | ✅ | ✅ | ✅ | ⚠ | — | — | — | — | — | ✅ | — | ✅ | ✅ | ✅ | — |
+| Activation-decay perception | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — | — | ✅ | — | — | ✅ | ✅ | — |
+| Place concealment | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — |
+| Tell / peer info transfer | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | — | — | ⚠ | — | — | — | — | — | — | ⚠ | ⚠ | — | — | — | — | ⚠ | ⚠ | ⚠ | ⚠ | — | — | — | — | ⚠ | — | ✅ | ⚠ | ⚠ | — |
+| Ask-about-person | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | — | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ⚠ | ⚠ |
+| Consult-record | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | — | — | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ⚠ | ⚠ |
+| Obligation satiation | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| Diversification / curiosity | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
+| Experience preferences | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
+| Production (facility-backed craft) | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | — | — | ⚠ | ⚠ | ⚠ | ⚠ | — | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | — | — | — | — | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ |
+| Merchant selling | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | — |
+| Trade negotiation | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | — |
+| Commodity valuation | ✅ | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — |
+| Substitute preferences | ✅ | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | — |
+| Item decay | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| Disposal | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| Facility-queue contention | ⚠ | — | ⚠ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ⚠ | — | — | ✅ | — |
+| Offices / succession / force-claim | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| Bounty posting | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | — | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
+| Notice posting | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | — | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
+| Theft | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — |
+| Justice / accusation | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| Violation investigation | ✅ | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — |
+| Patrol | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| Pursuit | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| Combat | ✅ | — | ✅ | — | — | — | — | ✅ | — | — | — | ✅ | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | ✅ | — | — | — | — | — | — | — | — |
+| Escort | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | — | — | — | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
+| Bandit camps | — | — | ✅ | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| Report / witness | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | — | — | ⚠ | — | — | — | — | — | — | ⚠ | ⚠ | — | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | — | — | — | ⚠ | — | ⚠ | ⚠ | ⚠ | — |
+| Search | ✅ | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — |
+| Stock / transport | ✅ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | ✅ | — |
+| Cognitive archetypes | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — |
 
 Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absent.
 
@@ -1013,6 +1013,192 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - facilities: 0
 - resource sources: 0
 - known_recipes union: none
+
+### scenarios/survival-food-spoilage-cache-1440.ron
+
+- Seed: 1780083
+- Agents: 3 Ai
+- Places: 3
+- Survival contract: absent
+
+**Active features**
+- none
+
+**Present-but-inactive features**
+- Production (facility-backed craft)
+
+**Absent features**
+- Basic needs (Eat)
+- Basic needs (Drink)
+- Basic needs (Sleep)
+- Rest-site contention / safe rest
+- Basic needs (Relieve)
+- Basic needs (Wash)
+- Travel physiology
+- Drive escalation
+- Need-driven exploration
+- Activation-decay perception
+- Place concealment
+- Tell / peer info transfer
+- Ask-about-person
+- Consult-record
+- Obligation satiation
+- Diversification / curiosity
+- Experience preferences
+- Merchant selling
+- Trade negotiation
+- Commodity valuation
+- Substitute preferences
+- Item decay
+- Disposal
+- Facility-queue contention
+- Offices / succession / force-claim
+- Bounty posting
+- Notice posting
+- Theft
+- Justice / accusation
+- Violation investigation
+- Patrol
+- Pursuit
+- Combat
+- Escort
+- Bandit camps
+- Report / witness
+- Search
+- Stock / transport
+- Cognitive archetypes
+
+**World features**
+- commodity_decay: disabled
+- visibility_profile places: none
+- sleep_quality places: none
+- facilities: 0
+- resource sources: 0
+- known_recipes union: Harvest Apples
+
+### scenarios/survival-food-spoilage-cache.ron
+
+- Seed: 1780082
+- Agents: 1 Ai
+- Places: 3
+- Survival contract: absent
+
+**Active features**
+- none
+
+**Present-but-inactive features**
+- Production (facility-backed craft)
+
+**Absent features**
+- Basic needs (Eat)
+- Basic needs (Drink)
+- Basic needs (Sleep)
+- Rest-site contention / safe rest
+- Basic needs (Relieve)
+- Basic needs (Wash)
+- Travel physiology
+- Drive escalation
+- Need-driven exploration
+- Activation-decay perception
+- Place concealment
+- Tell / peer info transfer
+- Ask-about-person
+- Consult-record
+- Obligation satiation
+- Diversification / curiosity
+- Experience preferences
+- Merchant selling
+- Trade negotiation
+- Commodity valuation
+- Substitute preferences
+- Item decay
+- Disposal
+- Facility-queue contention
+- Offices / succession / force-claim
+- Bounty posting
+- Notice posting
+- Theft
+- Justice / accusation
+- Violation investigation
+- Patrol
+- Pursuit
+- Combat
+- Escort
+- Bandit camps
+- Report / witness
+- Search
+- Stock / transport
+- Cognitive archetypes
+
+**World features**
+- commodity_decay: disabled
+- visibility_profile places: none
+- sleep_quality places: none
+- facilities: 0
+- resource sources: 0
+- known_recipes union: Harvest Apples
+
+### scenarios/survival-food-spoilage-lifecycle.ron
+
+- Seed: 1780081
+- Agents: 1 None
+- Places: 1
+- Survival contract: absent
+
+**Active features**
+- none
+
+**Present-but-inactive features**
+- Production (facility-backed craft)
+
+**Absent features**
+- Basic needs (Eat)
+- Basic needs (Drink)
+- Basic needs (Sleep)
+- Rest-site contention / safe rest
+- Basic needs (Relieve)
+- Basic needs (Wash)
+- Travel physiology
+- Drive escalation
+- Need-driven exploration
+- Activation-decay perception
+- Place concealment
+- Tell / peer info transfer
+- Ask-about-person
+- Consult-record
+- Obligation satiation
+- Diversification / curiosity
+- Experience preferences
+- Merchant selling
+- Trade negotiation
+- Commodity valuation
+- Substitute preferences
+- Item decay
+- Disposal
+- Facility-queue contention
+- Offices / succession / force-claim
+- Bounty posting
+- Notice posting
+- Theft
+- Justice / accusation
+- Violation investigation
+- Patrol
+- Pursuit
+- Combat
+- Escort
+- Bandit camps
+- Report / witness
+- Search
+- Stock / transport
+- Cognitive archetypes
+
+**World features**
+- commodity_decay: disabled
+- visibility_profile places: none
+- sleep_quality places: none
+- facilities: 0
+- resource sources: 0
+- known_recipes union: Harvest Apples
 
 ### scenarios/survival-items-decay.ron
 

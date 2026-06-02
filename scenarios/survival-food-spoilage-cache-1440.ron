@@ -1,0 +1,60 @@
+// S178 CI-owned golden: surplus perishable food remains in the world long
+// enough to spoil under the normal item-decay system over a 1440-tick run.
+(
+    seed: 1780083,
+    compaction_interval: 0,
+    scenario_lint_overrides: {
+        ProfileHomogeneity: "S178 food-spoilage 1440 fixture isolates shared stockpile spoilage and replay determinism; per-agent diversity is covered by focused profile-gated candidate and forensic tests.",
+    },
+    commodity_perish_profile: {
+        Apple: (
+            fresh_to_spoiled_ticks: 720,
+            stale_threshold: 667,
+            spoiled_threshold: 333,
+            storage_rates: (
+                ground: 1000,
+                container: 500,
+                possessed: 750,
+            ),
+        ),
+    },
+    places: [
+        (name: "Shared Camp", tags: [Camp]),
+        (name: "North Orchard", tags: [Forest]),
+        (name: "South Orchard", tags: [Forest]),
+    ],
+    edges: [
+        (from: "Shared Camp", to: "North Orchard", travel_ticks: 3, bidirectional: true),
+        (from: "Shared Camp", to: "South Orchard", travel_ticks: 4, bidirectional: true),
+    ],
+    agents: [
+        (
+            name: "Low Threshold Forager",
+            location: "Shared Camp",
+            control: Ai,
+            known_recipes: ["Harvest Apples"],
+            needs: (hunger: 150, thirst: 0, fatigue: 0, bladder: 0, dirtiness: 0),
+        ),
+        (
+            name: "High Threshold Forager",
+            location: "Shared Camp",
+            control: Ai,
+            known_recipes: ["Harvest Apples"],
+            needs: (hunger: 150, thirst: 0, fatigue: 0, bladder: 0, dirtiness: 0),
+        ),
+        (
+            name: "Stockpile Watcher",
+            location: "Shared Camp",
+            control: Ai,
+            known_recipes: ["Harvest Apples"],
+            needs: (hunger: 150, thirst: 0, fatigue: 0, bladder: 0, dirtiness: 0),
+        ),
+    ],
+    items: [
+        (commodity: Apple, quantity: 20, location: "Shared Camp", container: false),
+        (commodity: Apple, quantity: 21, location: "North Orchard", container: false),
+        (commodity: Apple, quantity: 22, location: "South Orchard", container: false),
+        (commodity: Apple, quantity: 23, location: "Low Threshold Forager", container: false),
+        (commodity: Apple, quantity: 24, location: "High Threshold Forager", container: false),
+    ],
+)

@@ -81,7 +81,7 @@ recorded as a watchlist scenario-authoring item.
   §13 degrading-water scenario) — adds `WaterQuality` to water sources +
   belief-backed source-reliability memory; realizes canonical regression scenario D
   for water. Disease consequence deferred (see reassessment).
-- **`specs/S178-perishable-food-spoilage.md`** (report §10 food spoilage) — adds
+- **`archive/specs/S178-perishable-food-spoilage.md`** (report §10 food spoilage) — adds
   per-lot `PerishableState`, first emission of `LotOperation::Spoiled`,
   condition-scaled Eat, profile-gated desperation eating, cache spoilage. Disease
   consequence deferred (see reassessment).

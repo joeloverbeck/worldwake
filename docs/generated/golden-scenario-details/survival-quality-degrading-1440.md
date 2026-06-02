@@ -7,7 +7,7 @@ Scenarios: 6
 
 ### Scenario 496: Quality-Degrading Water Collision Completes 1440 Ticks
 
-- Source: `survival_quality_degrading_1440.rs:232`
+- Source: `survival_quality_degrading_1440.rs:234`
 - Systems: AI, Needs, Production, SourceReliability, WaterToleranceProfile
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Needs, Travel
@@ -23,7 +23,7 @@ Scenarios: 6
 
 ### Scenario 497: Quality-Degrading Water Collision Records Muddy Beliefs
 
-- Source: `survival_quality_degrading_1440.rs:254`
+- Source: `survival_quality_degrading_1440.rs:256`
 - Systems: Perception, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -39,7 +39,7 @@ Scenarios: 6
 
 ### Scenario 498: Quality-Degrading Water Collision Diverges By Tolerance
 
-- Source: `survival_quality_degrading_1440.rs:281`
+- Source: `survival_quality_degrading_1440.rs:283`
 - Systems: AI, SourceReliability, WaterToleranceProfile
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Needs, Travel
@@ -55,7 +55,7 @@ Scenarios: 6
 
 ### Scenario 499: Quality-Degrading Water Collision Produces Critical Window
 
-- Source: `survival_quality_degrading_1440.rs:307`
+- Source: `survival_quality_degrading_1440.rs:309`
 - Systems: Needs, SurvivalForensicExtractor
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Needs, Travel
@@ -71,7 +71,7 @@ Scenarios: 6
 
 ### Scenario 500: Quality-Degrading Water Collision Dirties Backup Basin
 
-- Source: `survival_quality_degrading_1440.rs:337`
+- Source: `survival_quality_degrading_1440.rs:339`
 - Systems: ItemDecay, Dirtiness
 - GoalKinds: Wash
 - ActionDomains: Needs
@@ -87,7 +87,7 @@ Scenarios: 6
 
 ### Scenario 501: Quality-Degrading Water Collision Replay Is Deterministic
 
-- Source: `survival_quality_degrading_1440.rs:359`
+- Source: `survival_quality_degrading_1440.rs:361`
 - Systems: AI, Needs, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Needs, Travel

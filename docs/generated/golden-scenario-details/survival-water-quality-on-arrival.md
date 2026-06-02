@@ -7,7 +7,7 @@ Scenarios: 3
 
 ### Scenario 488: Water Quality On Arrival Records Belief Correction
 
-- Source: `survival_water_quality_on_arrival.rs:135`
+- Source: `survival_water_quality_on_arrival.rs:139`
 - Systems: AI, Perception, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -25,7 +25,7 @@ Scenarios: 3
 
 ### Scenario 489: Water Quality On Arrival Has No Omniscient Pre-Arrival Update
 
-- Source: `survival_water_quality_on_arrival.rs:177`
+- Source: `survival_water_quality_on_arrival.rs:181`
 - Systems: AI, Perception, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel
@@ -41,7 +41,7 @@ Scenarios: 3
 
 ### Scenario 490: Water Quality On Arrival Replay Is Deterministic
 
-- Source: `survival_water_quality_on_arrival.rs:198`
+- Source: `survival_water_quality_on_arrival.rs:202`
 - Systems: AI, Perception, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
