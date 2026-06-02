@@ -2,13 +2,13 @@ use crate::inventory::consume_one_unit;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDefId, CommodityKind, DecisionEventPayload, Discrepancy, EntityId, EventTag,
-    FrameAssumption, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, ItemLot,
-    MetabolismProfile, OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, SelfCareOccupancy,
-    SelfCareUseKind, SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
-    SleepFailureCause, SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition, WakeReason,
-    WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WorkstationTag, WorldTxn,
-    scale_permille,
+    ActionDefId, CommodityKind, CommodityPerishProfile, DecisionEventPayload, Discrepancy,
+    EntityId, EventTag, FrameAssumption, Freshness, GoalKey, GoalKind, HomeostaticNeedId,
+    HomeostaticNeeds, ItemLot, MetabolismProfile, OUTDOOR_RELIEF_TAGS, PerishableState, Permille,
+    PlaceTag, Quantity, SelfCareOccupancy, SelfCareUseKind, SleepEpisode, SleepEpisodeEndedPayload,
+    SleepEpisodeStartedPayload, SleepFailureCause, SleepRecoveryModifier, Tick, VisibilitySpec,
+    WakeCondition, WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
+    WorkstationTag, WorldTxn, scale_permille,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -1155,8 +1155,14 @@ fn apply_consumable_effects(
     } else {
         (profile.thirst_relief_per_unit, Permille::ZERO)
     };
+    let hunger_relief = scale_hunger_relief_by_condition(
+        profile.hunger_relief_per_unit,
+        txn.get_component_perishable_state(target),
+        txn.commodity_perish_profiles().get(&lot.commodity),
+        Permille::new_unchecked(150),
+    );
     let next = HomeostaticNeeds::new(
-        needs.hunger.saturating_sub(profile.hunger_relief_per_unit),
+        needs.hunger.saturating_sub(hunger_relief),
         needs.thirst.saturating_sub(thirst_relief),
         needs.fatigue,
         needs.bladder.saturating_add(profile.bladder_fill_per_unit),
@@ -1164,6 +1170,40 @@ fn apply_consumable_effects(
     );
     consume_one_unit(txn, target)?;
     set_actor_needs(txn, actor, next)
+}
+
+fn scale_hunger_relief_by_condition(
+    base_relief: Permille,
+    perishable: Option<&PerishableState>,
+    profile: Option<&CommodityPerishProfile>,
+    spoiled_floor: Permille,
+) -> Permille {
+    let (Some(state), Some(profile)) = (perishable, profile) else {
+        return base_relief;
+    };
+
+    match Freshness::derive_from(state.condition, profile) {
+        Freshness::Fresh => base_relief,
+        Freshness::Stale => {
+            let range = profile
+                .stale_threshold
+                .value()
+                .saturating_sub(profile.spoiled_threshold.value());
+            if range == 0 {
+                return base_relief;
+            }
+            let above_spoiled = state
+                .condition
+                .value()
+                .saturating_sub(profile.spoiled_threshold.value());
+            let scaled =
+                u32::from(base_relief.value()) * u32::from(above_spoiled) / u32::from(range);
+            Permille::new_unchecked(
+                u16::try_from(scaled).expect("scaled stale relief is bounded by base relief"),
+            )
+        }
+        Freshness::Spoiled => scale_permille(base_relief, spoiled_floor),
+    }
 }
 
 fn commit_toilet(
@@ -1536,6 +1576,7 @@ const fn pm(value: u16) -> Permille {
 mod tests {
     use super::{
         abort_emit_self_care_interrupted, apply_consumable_effects, register_needs_actions,
+        scale_hunger_relief_by_condition,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -1544,13 +1585,14 @@ mod tests {
         DecisionEventPayload, DeprivationExposure, DisturbanceKind, DriveThresholds, EntityId,
         EntityKind, EventLog, EventTag, EventView, EvidenceKind, FrameAssumption, FrameState,
         GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, IntentionDomain, IntentionFrame,
-        LatrineFullness, MetabolismProfile, PerceptionSource, Permille, PlaceDirtiness,
-        PrototypePlace, Quantity, ResourceSource, RestCapacity, RestOccupancy, Seed,
-        SelfCareOccupancy, SelfCareUseKind, SleepEpisode, SleepFailureCause, SleepQualityProfile,
-        SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition, WakeReason, WashBasinState,
-        WasteSource, WaterQuality, WaterToleranceProfile, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, build_believed_entity_state, build_prototype_world,
-        prototype_place_entity, scale_permille,
+        LatrineFullness, MetabolismProfile, PerceptionSource, PerishableState, Permille,
+        PlaceDirtiness, PrototypePlace, Quantity, ResourceSource, RestCapacity, RestOccupancy,
+        Seed, SelfCareOccupancy, SelfCareUseKind, SleepEpisode, SleepFailureCause,
+        SleepQualityProfile, SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition,
+        WakeReason, WashBasinState, WasteSource, WaterQuality, WaterToleranceProfile, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, build_believed_entity_state,
+        build_prototype_world, default_commodity_perish_profile_map, prototype_place_entity,
+        scale_permille,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionHandlerRegistry,
@@ -1949,15 +1991,15 @@ mod tests {
     fn eat_consumes_one_unit_and_applies_consumable_effects() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let (actor, place) = setup_actor(&mut world);
-        let bread = {
+        let apple = {
             let mut txn = new_txn(&mut world, 2);
-            let bread = txn
-                .create_item_lot(CommodityKind::Bread, Quantity(2))
+            let apple = txn
+                .create_item_lot(CommodityKind::Apple, Quantity(2))
                 .unwrap();
-            txn.set_ground_location(bread, place).unwrap();
-            txn.set_possessor(bread, actor).unwrap();
+            txn.set_ground_location(apple, place).unwrap();
+            txn.set_possessor(apple, actor).unwrap();
             commit_txn(txn);
-            bread
+            apple
         };
         let (defs, handlers) = setup_registries();
         let mut log = EventLog::new();
@@ -1965,8 +2007,8 @@ mod tests {
         run_action_to_completion(actor, 0, &mut world, &mut log, &defs, &handlers);
 
         let needs = world.get_component_homeostatic_needs(actor).unwrap();
-        let lot = world.get_component_item_lot(bread).unwrap();
-        let profile = CommodityKind::Bread.spec().consumable_profile.unwrap();
+        let lot = world.get_component_item_lot(apple).unwrap();
+        let profile = CommodityKind::Apple.spec().consumable_profile.unwrap();
         assert_eq!(lot.quantity, Quantity(1));
         assert_eq!(
             needs.hunger,
@@ -1979,6 +2021,68 @@ mod tests {
         assert_eq!(
             needs.bladder,
             pm(200).saturating_add(profile.bladder_fill_per_unit)
+        );
+    }
+
+    #[test]
+    fn eat_fresh_food_gives_full_relief() {
+        let profile = default_commodity_perish_profile_map()
+            .get(&CommodityKind::Apple)
+            .copied()
+            .unwrap();
+        let state = PerishableState {
+            condition: pm(1000),
+            last_advanced_tick: Tick(0),
+            decay_remainder: 0,
+        };
+
+        assert_eq!(
+            scale_hunger_relief_by_condition(pm(600), Some(&state), Some(&profile), pm(150)),
+            pm(600)
+        );
+    }
+
+    #[test]
+    fn eat_stale_food_gives_linearly_scaled_relief() {
+        let profile = default_commodity_perish_profile_map()
+            .get(&CommodityKind::Apple)
+            .copied()
+            .unwrap();
+        let state = PerishableState {
+            condition: pm(500),
+            last_advanced_tick: Tick(0),
+            decay_remainder: 0,
+        };
+
+        assert_eq!(
+            scale_hunger_relief_by_condition(pm(600), Some(&state), Some(&profile), pm(150)),
+            pm(300)
+        );
+    }
+
+    #[test]
+    fn eat_spoiled_food_gives_floor_relief() {
+        let profile = default_commodity_perish_profile_map()
+            .get(&CommodityKind::Apple)
+            .copied()
+            .unwrap();
+        let state = PerishableState {
+            condition: pm(100),
+            last_advanced_tick: Tick(0),
+            decay_remainder: 0,
+        };
+
+        assert_eq!(
+            scale_hunger_relief_by_condition(pm(600), Some(&state), Some(&profile), pm(150)),
+            pm(90)
+        );
+    }
+
+    #[test]
+    fn eat_non_perishable_food_unaffected_by_helper() {
+        assert_eq!(
+            scale_hunger_relief_by_condition(pm(600), None, None, pm(150)),
+            pm(600)
         );
     }
 

@@ -1,10 +1,10 @@
 # S178PERFOOSPO-004: Condition-scaled Eat hunger relief
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — Eat handler hunger-relief computation scales by the lot's `PerishableState.condition` band.
-**Deps**: `archive/tickets/S178PERFOOSPO-001.md`
+**Deps**: `archive/tickets/S178PERFOOSPO-001.md`, `archive/tickets/S178PERFOOSPO-003.md`
 
 ## Problem
 
@@ -24,13 +24,13 @@ D4 makes hunger relief from Eat depend on the consumed lot's freshness band. Fre
 1. Reading `PerishableState` directly from the lot at action commit is FND-14A-compliant because Eat preconditions enforce co-location/possession. No belief-view indirection needed at action commit — the planner's belief-mediated read (ticket 005) is for goal emission, not for the consumed-relief computation.
 2. Linear scaling between `stale_threshold` and `spoiled_threshold` keeps the relief curve continuous (no cliff at the band boundary), preserving granular aftermath (FND-10). Integer arithmetic per AGENTS.md Determinism invariant.
 
-## Verification Layers
+## Verified Layers
 
 1. Relief scales correctly per condition band → focused unit test on the relief-computation helper (3 tests: Fresh, Stale, Spoiled).
 2. Existing Eat behavior unchanged for lots without `PerishableState` → regression assertion (the helper returns base relief unchanged when the lot has no perishable component).
 3. Existing `eat_consumes_one_unit_and_applies_consumable_effects` (line 1949) extended (not rewritten) to assert relief amount when Eat consumes a Fresh perishable lot.
 
-## What to Change
+## Landed Changes
 
 ### 1. Relief-scaling helper
 
@@ -83,7 +83,7 @@ needs.hunger = needs.hunger.saturating_sub(scaled_relief);
 
 The spoiled-floor `Permille::new_unchecked(150)` is a per-call constant. Per-commodity tuning is a future-scope addition if scenarios warrant.
 
-## Files to Touch
+## Landed Files
 
 - `crates/worldwake-systems/src/needs_actions.rs` (modify — add `scale_hunger_relief_by_condition` helper; wire into `apply_consumable_effects` at line 1159)
 
@@ -96,7 +96,7 @@ The spoiled-floor `Permille::new_unchecked(150)` is a per-call constant. Per-com
 
 ## Acceptance Criteria
 
-### Tests That Must Pass
+### Acceptance Tests
 
 1. `eat_fresh_food_gives_full_relief` — Apple lot with `condition=1000` gives full `hunger_relief_per_unit`.
 2. `eat_stale_food_gives_linearly_scaled_relief` — Apple lot with `condition` midway between thresholds (e.g., 500) gives roughly `base × (500 - 333) / (667 - 333) ≈ base × 0.5`.
@@ -111,15 +111,33 @@ The spoiled-floor `Permille::new_unchecked(150)` is a per-call constant. Per-com
 2. Relief computation is deterministic per `(condition, profile)` pair — integer arithmetic only (AGENTS.md Determinism invariant).
 3. Spoiled-floor is non-zero — hunger never deadlocks purely from spoilage (FND-11 dampener per Section H #9c).
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Landed Tests
 
 1. `crates/worldwake-systems/src/needs_actions.rs` `#[cfg(test)]` — add 4 new unit tests (Fresh, Stale, Spoiled, non-perishable).
 2. Existing `eat_consumes_one_unit_and_applies_consumable_effects` at line 1949 — extend to assert relief amount under Fresh condition (regression guard).
 
-### Commands
+### Verification Commands
 
 1. `cargo test -p worldwake-systems needs_actions::tests::eat_`
 2. `cargo test --workspace`
 3. `./scripts/verify.sh`
+
+## Outcome
+
+Implemented condition-scaled Eat hunger relief in `apply_consumable_effects`. Fresh perishable food now gives full base hunger relief, Stale food scales linearly between the stale and spoiled thresholds, and Spoiled food gives the non-zero `Permille(150)` floor. Non-perishable food keeps the previous full-relief path. Drink behavior remains unchanged.
+
+The action path reads `PerishableState` and `CommodityPerishProfile` from the authoritative transaction at Eat commit time, which is lawful under FND-14A because the consumed lot is co-located or possessed at action commit. Eat preconditions were not tightened; planner-time spoiled-food gating remains owned by ticket 006.
+
+## Deviations
+
+The only scope correction was the dependency list: live Eat scaling depends on ticket 003 because perishable lot creation and condition advancement now land there. No production scope was widened beyond the ticket's Eat relief computation.
+
+## Verification Result
+
+- Passed `python3 .codex/skills/implement-ticket/scripts/check_closeout.py archive/tickets/S178PERFOOSPO-004.md`.
+- Passed `cargo test -p worldwake-systems needs_actions::tests::eat_`.
+- Passed `cargo test -p worldwake-systems`.
+- Passed `cargo test --workspace`.
+- Waived `./scripts/verify.sh` for this per-ticket closeout; the full queued spec closeout will own the pre-PR verification gate.
