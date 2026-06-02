@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: No — scenario authoring + golden test bindings only.
-**Deps**: `archive/tickets/S178PERFOOSPO-001.md`, `archive/tickets/S178PERFOOSPO-002.md`, `archive/tickets/S178PERFOOSPO-003.md`, `archive/tickets/S178PERFOOSPO-004.md`, `tickets/S178PERFOOSPO-005.md`, `tickets/S178PERFOOSPO-006.md`, `tickets/S178PERFOOSPO-007.md`
+**Deps**: `archive/tickets/S178PERFOOSPO-001.md`, `archive/tickets/S178PERFOOSPO-002.md`, `archive/tickets/S178PERFOOSPO-003.md`, `archive/tickets/S178PERFOOSPO-004.md`, `archive/tickets/S178PERFOOSPO-005.md`, `tickets/S178PERFOOSPO-006.md`, `tickets/S178PERFOOSPO-007.md`
 
 ## Problem
 

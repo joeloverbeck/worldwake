@@ -23,7 +23,7 @@ Phase 7: Consequence Carriers
 ## Crates
 
 - `worldwake-core` (`PerishableState` component on item lots; per-commodity `CommodityPerishProfile` + `StorageRateMultipliers`; new `EventTag::ItemSpoiled` variant added to enum + `ALL` array; first emission of `LotOperation::Spoiled`)
-- `worldwake-sim` (belief-view accessors `lot_condition` and `lot_freshness_band` on `GoalBeliefView`; per-agent perception of co-located lot condition under FND-14A via `PerAgentBeliefView`)
+- `worldwake-sim` (belief-view accessors `lot_condition`, `lot_freshness_band`, and `commodity_perish_profile` on `GoalBeliefView`; per-agent perception of co-located lot condition under FND-14A via `PerAgentBeliefView`)
 - `worldwake-systems` (item-decay system advances `PerishableState` over time by storage context, instead of only archiving; Eat relief scales by condition)
 - `worldwake-ai` (candidate generation prefers fresher lots; eats spoiled food only under profile-permitted desperation; survival forensics record spoiled-cache discovery)
 - `worldwake-cli` (scenario contract for `CommodityPerishProfile` and `MetabolismProfile.spoiled_food_hunger_threshold`; player-POV gating for lot condition observation)
@@ -210,10 +210,11 @@ Agents differ in willingness to eat spoiled food (FND-22). No new component, no 
 
 Per the "New Component Read by AI Crate" pattern, expose lot condition to the AI crate through `GoalBeliefView`, not through direct authoritative reads.
 
-**New trait methods on `GoalBeliefView` (`crates/worldwake-sim/src/belief_view.rs:481-482`):**
+**New trait methods on `GoalBeliefView` (`crates/worldwake-sim/src/belief_view.rs`):**
 
 ```rust
 fn lot_condition(&self, lot: EntityId) -> Option<Permille>;
+fn commodity_perish_profile(&self, commodity: CommodityKind) -> Option<CommodityPerishProfile>;
 fn lot_freshness_band(&self, lot: EntityId) -> Option<Freshness>;
 ```
 

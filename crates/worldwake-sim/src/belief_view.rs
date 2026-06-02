@@ -10,13 +10,13 @@ use worldwake_core::{
     ActionDomain, AgentBeliefStore, AgentSchemaContextProfile, ArtifactPostingProfile,
     BeliefConfidencePolicy, BelievedActivity, BelievedEntityState, BelievedInstitutionalClaim,
     ClaimValue, CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    CommodityTreatmentProfile, CommodityValuationProfile, ContentionGrant, DemandObservation,
-    DeprivationExposure, DisposalProfile, DiversificationProfile, DriveEscalationProfile,
-    DriveThresholds, EffectiveRight, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind,
-    ExpectationStore, ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LastHarvestTrace, LastSeenMemory, LatrineFullness,
-    LawAbidingProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    CommodityPerishProfile, CommodityTreatmentProfile, CommodityValuationProfile, ContentionGrant,
+    DemandObservation, DeprivationExposure, DisposalProfile, DiversificationProfile,
+    DriveEscalationProfile, DriveThresholds, EffectiveRight, EntityBeliefAspect, EntityBeliefClaim,
+    EntityId, EntityKind, ExpectationStore, ExplorationProfile, Freshness, HomeostaticNeedId,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    IntentionDispositionProfile, JusticeDispositionProfile, LastHarvestTrace, LastSeenMemory,
+    LatrineFullness, LawAbidingProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
     ObligationExecutionTracker, ObligationSatiationProfile, ObservationOmissionLog, OfficeData,
     OfficePatrolDuty, PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource, Permille,
     PlaceDirtiness, PlaceTag, PlaceTagSet, PortfolioWeightsProfile, PreferenceProfile, Quantity,
@@ -480,6 +480,20 @@ pub trait GoalBeliefView: BelievedAuthorityView + LocalPhysicalObservationView {
     }
     fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind>;
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile>;
+    fn lot_condition(&self, entity: EntityId) -> Option<Permille> {
+        let _ = entity;
+        None
+    }
+    fn commodity_perish_profile(&self, commodity: CommodityKind) -> Option<CommodityPerishProfile> {
+        let _ = commodity;
+        None
+    }
+    fn lot_freshness_band(&self, entity: EntityId) -> Option<Freshness> {
+        let condition = self.lot_condition(entity)?;
+        let commodity = self.item_lot_commodity(entity)?;
+        let profile = self.commodity_perish_profile(commodity)?;
+        Some(Freshness::derive_from(condition, &profile))
+    }
     fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
     fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
@@ -884,6 +898,15 @@ pub trait LocalPhysicalObservationView {
         }
     }
 
+    fn observed_lot_condition(&self, lot: EntityId) -> ObservedRead<Option<Permille>> {
+        let _ = lot;
+        ObservedRead {
+            value: None,
+            observed_tick: Tick(0),
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+
     fn observed_workstation_tag(&self, entity: EntityId) -> ObservedRead<Option<WorkstationTag>> {
         let _ = entity;
         ObservedRead {
@@ -1274,6 +1297,20 @@ pub trait InventoryBeliefView {
     }
     fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind>;
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile>;
+    fn lot_condition(&self, entity: EntityId) -> Option<Permille> {
+        let _ = entity;
+        None
+    }
+    fn commodity_perish_profile(&self, commodity: CommodityKind) -> Option<CommodityPerishProfile> {
+        let _ = commodity;
+        None
+    }
+    fn lot_freshness_band(&self, entity: EntityId) -> Option<Freshness> {
+        let condition = self.lot_condition(entity)?;
+        let commodity = self.item_lot_commodity(entity)?;
+        let profile = self.commodity_perish_profile(commodity)?;
+        Some(Freshness::derive_from(condition, &profile))
+    }
     fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
     fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits>;
@@ -2002,6 +2039,24 @@ where
         entity: worldwake_core::EntityId,
     ) -> Option<worldwake_core::CommodityConsumableProfile> {
         InventoryBeliefView::item_lot_consumable_profile(self, entity)
+    }
+
+    fn lot_condition(&self, entity: worldwake_core::EntityId) -> Option<worldwake_core::Permille> {
+        InventoryBeliefView::lot_condition(self, entity)
+    }
+
+    fn commodity_perish_profile(
+        &self,
+        commodity: worldwake_core::CommodityKind,
+    ) -> Option<worldwake_core::CommodityPerishProfile> {
+        InventoryBeliefView::commodity_perish_profile(self, commodity)
+    }
+
+    fn lot_freshness_band(
+        &self,
+        entity: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::Freshness> {
+        InventoryBeliefView::lot_freshness_band(self, entity)
     }
 
     fn direct_container(

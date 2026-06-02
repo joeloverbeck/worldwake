@@ -1679,7 +1679,7 @@ mod tests {
         InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalSnapshotSource,
         IntentionDomain, IntentionFrame, LoadUnits, MismatchKind, NoticeContent, NoticeTopic,
         ObservedEntitySnapshot, OfficeData, OfficeForceState, OmissionReason, PendingEvent,
-        PerceptionProfile, PerceptionSource, Permille, PlaceVisibilityProfile,
+        PerceptionProfile, PerceptionSource, PerishableState, Permille, PlaceVisibilityProfile,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProofRequirement, PrototypePlace,
         Quantity, RecordData, RecordKind, RelationDelta, RelationKind, RelationValue,
         ReliabilityRecord, ResourceSource, ResourceSourceQualityObservedPayload, RewardSource,
@@ -1761,6 +1761,7 @@ mod tests {
             last_known_inventory: inventory,
             workstation_tag: None,
             resource_source: None,
+            last_observed_condition: None,
             wash_basin_state: None,
             alive: true,
             wounds: Vec::new(),
@@ -5362,6 +5363,47 @@ mod tests {
                 }
             ))
         );
+    }
+
+    #[test]
+    fn perception_writes_last_observed_condition_when_co_located_with_perishable_lot() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let condition = Permille::new_unchecked(520);
+        let (observer, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(CommodityKind::Apple, Quantity(2), place, None)
+                .unwrap();
+            txn.set_component_perishable_state(
+                lot,
+                PerishableState {
+                    condition,
+                    last_advanced_tick: Tick(1),
+                    decay_remainder: 0,
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, lot)
+        };
+        let mut event_log = EventLog::new();
+
+        run_perception(&mut world, &mut event_log, 100);
+
+        let belief = world
+            .get_component_agent_belief_store(observer)
+            .and_then(|store| store.get_entity(&lot))
+            .expect("perception should record the observed perishable lot");
+        assert_eq!(belief.last_observed_condition, Some(condition));
+        assert_eq!(belief.last_observed_tick(), Some(Tick(100)));
     }
 
     #[test]
