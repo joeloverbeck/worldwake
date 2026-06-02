@@ -33,72 +33,44 @@ Before this ticket, D7's per-agent desperation threshold for spoiled-food Eat ca
 
 ## Landed Changes
 
-### 1. Add field to `MetabolismProfile`
+### 1. `MetabolismProfile` threshold field
 
-In `crates/worldwake-core/src/needs.rs:142`:
+In `crates/worldwake-core/src/needs.rs`, `MetabolismProfile` now carries:
 
 ```rust
-pub struct MetabolismProfile {
-    // ... 21 existing fields ...
-    #[serde(default)]
-    pub spoiled_food_hunger_threshold: Permille,
-}
+#[serde(default = "default_spoiled_food_hunger_threshold")]
+pub spoiled_food_hunger_threshold: Permille,
 ```
 
-Extend the `Default` impl at lines 283-309 to add `spoiled_food_hunger_threshold: Permille::new_unchecked(800)`.
+`Default` and `MetabolismProfile::new()` both seed the field from
+`default_spoiled_food_hunger_threshold()` (`Permille::new_unchecked(800)`).
 
-### 2. Update 18 construction sites
+### 2. Constructor fallout
 
-Production code:
-- `crates/worldwake-sim/src/save_load.rs:354` — load path constructor.
-- `crates/worldwake-systems/src/needs.rs:1861, 1913, 2003` — test fixtures (confirm `#[cfg(test)]` boundary during implementation; treat as production if outside cfg(test)).
+`cargo test --workspace --no-run` found one exhaustive struct literal that required an explicit default threshold:
 
-Test code (all in `crates/worldwake-ai/tests/`):
-- `golden_harness/soak_world.rs:146, 278`
-- `planner_pathology_harness/mod.rs:321`
-- `golden_harness/mod.rs:353`
-- `scenarios/place_dirtiness.rs:29`
-- `scenarios/survival_drive_escalation.rs:495`
-- `scenarios/exploration.rs:355`
-- `scenarios/ai_decisions.rs:2139`
-- `scenarios/offices.rs:1279`
-- `scenarios/simulation_gaps.rs:685`
-- `scenarios/sleep_episode.rs:100`
-- `scenarios/scaled_contention.rs:109`
-- `scenarios/survival_self_care_interruption.rs:43, 330`
+- `crates/worldwake-ai/tests/planner_pathology_harness/mod.rs`
 
-At each site, add the new field with the Default value `Permille::new_unchecked(800)`. Scenario-tuned overrides (testing the candidate-gate behavior with specific thresholds) belong in ticket 006's and 008's test additions, not here.
+Other planned construction sites compiled because they use struct update syntax or helper constructors.
 
-### 3. `world_txn.rs::create_agent` delta assertion
+### 3. Save/load version and witness
 
-In `crates/worldwake-core/src/world_txn.rs`, locate `create_agent_records_entity_component_and_in_transit_deltas_and_supports_read_through` at line 2515. If the test field-enumerates `MetabolismProfile`'s shape (asserting specific field values in the delta), extend with the new field. If the test only asserts component presence/type, no update needed. The decision is verifiable mid-implementation.
+`crates/worldwake-sim/src/save_load.rs` now uses `SAVE_FORMAT_VERSION = 117`. The full non-default save/load fixture sets `spoiled_food_hunger_threshold` to a non-default value and asserts it round-trips.
 
-### 4. Regenerate `docs/profiles/all-profiles.md`
+### 4. Scenario default path
 
-Run `python3 scripts/profile_docs.py` (the canonical regen command for profile documentation). Commit the regenerated `docs/profiles/all-profiles.md` alongside the code changes.
+`crates/worldwake-cli/src/scenario/mod.rs::test_spawn_minimal_scenario` now asserts an omitted `AgentDef.metabolism_profile` receives the default spoiled-food threshold through the existing `unwrap_or_default()` path.
 
-### 5. `SAVE_FORMAT_VERSION` bump 116→117
+### 5. Generated profile docs
 
-In `crates/worldwake-sim/src/save_load.rs`, bump `SAVE_FORMAT_VERSION` from 116 (set by ticket 001) to 117 to cover the `MetabolismProfile` field addition.
+`docs/profiles/all-profiles.md` was regenerated with `python3 scripts/profile_docs.py --write`, adding the new `MetabolismProfile` field.
 
 ## Landed Files
 
 - `crates/worldwake-core/src/needs.rs` (modify — add field + Default extension)
-- `crates/worldwake-core/src/world_txn.rs` (modify — extend `create_agent` delta test at line 2515 if field-enumerated)
-- `crates/worldwake-sim/src/save_load.rs` (modify — `SAVE_FORMAT_VERSION` 116→117; construction site at line 354)
-- `crates/worldwake-systems/src/needs.rs` (modify — 3 construction sites at lines 1861, 1913, 2003)
-- `crates/worldwake-ai/tests/golden_harness/soak_world.rs` (modify — 2 sites)
+- `crates/worldwake-sim/src/save_load.rs` (modify — `SAVE_FORMAT_VERSION` 116→117 and save/load witness)
 - `crates/worldwake-ai/tests/planner_pathology_harness/mod.rs` (modify — 1 site)
-- `crates/worldwake-ai/tests/golden_harness/mod.rs` (modify — 1 site)
-- `crates/worldwake-ai/tests/scenarios/place_dirtiness.rs` (modify — 1 site)
-- `crates/worldwake-ai/tests/scenarios/survival_drive_escalation.rs` (modify — 1 site)
-- `crates/worldwake-ai/tests/scenarios/exploration.rs` (modify — 1 site)
-- `crates/worldwake-ai/tests/scenarios/ai_decisions.rs` (modify — 1 site)
-- `crates/worldwake-ai/tests/scenarios/offices.rs` (modify — 1 site)
-- `crates/worldwake-ai/tests/scenarios/simulation_gaps.rs` (modify — 1 site)
-- `crates/worldwake-ai/tests/scenarios/sleep_episode.rs` (modify — 1 site)
-- `crates/worldwake-ai/tests/scenarios/scaled_contention.rs` (modify — 1 site)
-- `crates/worldwake-ai/tests/scenarios/survival_self_care_interruption.rs` (modify — 2 sites)
+- `crates/worldwake-cli/src/scenario/mod.rs` (modify — default spawn-path assertion)
 - `docs/profiles/all-profiles.md` (modify — regenerated via `python3 scripts/profile_docs.py`)
 
 ## Out of Scope
