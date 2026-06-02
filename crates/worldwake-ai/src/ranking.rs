@@ -48,7 +48,7 @@ use worldwake_core::{
     ActionDomain, BelievedEntityState, BountyTarget, CommodityKind, CommodityPurpose,
     CommunicationClass, DeprivationExposure, DiversificationProfile, DriveEscalationProfile,
     DriveThresholds, EntityId, ExpectationBasis, ExpectationOutcome, ExpectationRecord,
-    ExpectationState, ExplorationMotivation, ExplorationProfile, GoalKey, GoalKind,
+    ExpectationState, ExplorationMotivation, ExplorationProfile, Freshness, GoalKey, GoalKind,
     GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InstitutionalClaim,
     InstitutionalKnowledgeSource, LearnedOpportunityMemory, MotiveSource, MotiveSourceRef,
     MultiplierPermille, NoticeTopic, ObligationExecutionTracker, ObligationSatiationProfile,
@@ -362,12 +362,20 @@ fn ranked_motive_score_with_memory(
             RankedGoalProvenance::Danger(_) => {
                 score_product(context.utility.danger_weight, context.danger_pressure)
             }
-            RankedGoalProvenance::Drive(provenance) => provenance
-                .motive_inputs
-                .iter()
-                .map(|input| input.score)
-                .max()
-                .unwrap_or(0),
+            RankedGoalProvenance::Drive(provenance) => {
+                let base = provenance
+                    .motive_inputs
+                    .iter()
+                    .map(|input| input.score)
+                    .max()
+                    .unwrap_or(0);
+                self_consume_commodity(candidate.key.kind).map_or(base, |commodity| {
+                    scale_by_freshness(
+                        base,
+                        self_consume_freshness_factor(candidate, context, commodity),
+                    )
+                })
+            }
         },
     );
     let base = apply_hygiene_motive_modifiers(candidate, context, base);
@@ -1241,12 +1249,18 @@ fn need_pressure_motive_score(
             commodity,
             purpose: CommodityPurpose::SelfConsume,
             ..
-        } => relevant_self_consume_factors(commodity, context)
-            .into_iter()
-            .filter(|factor| homeostatic_need_id_for_drive(factor.drive) == need)
-            .map(effective_drive_factor_score)
-            .max()
-            .unwrap_or(0),
+        } => {
+            let base_score = relevant_self_consume_factors(commodity, context)
+                .into_iter()
+                .filter(|factor| homeostatic_need_id_for_drive(factor.drive) == need)
+                .map(effective_drive_factor_score)
+                .max()
+                .unwrap_or(0);
+            scale_by_freshness(
+                base_score,
+                self_consume_freshness_factor(candidate, context, commodity),
+            )
+        }
         GoalKind::Sleep if need == HomeostaticNeedId::Fatigue => drive_score(
             context,
             HomeostaticNeedId::Fatigue,
@@ -1273,6 +1287,45 @@ fn need_pressure_motive_score(
         }
         _ => 0,
     }
+}
+
+fn self_consume_freshness_factor(
+    candidate: &GoalOffer,
+    context: &RankingContext<'_>,
+    commodity: CommodityKind,
+) -> u32 {
+    candidate
+        .evidence_entities
+        .iter()
+        .filter(|entity| context.view.item_lot_commodity(**entity) == Some(commodity))
+        .filter_map(|entity| context.view.lot_freshness_band(*entity))
+        .map(freshness_motive_factor)
+        .max()
+        .unwrap_or(1000)
+}
+
+fn self_consume_commodity(goal: GoalKind) -> Option<CommodityKind> {
+    match goal {
+        GoalKind::ConsumeOwnedCommodity { commodity }
+        | GoalKind::AcquireCommodity {
+            commodity,
+            purpose: CommodityPurpose::SelfConsume,
+            ..
+        } => Some(commodity),
+        _ => None,
+    }
+}
+
+const fn freshness_motive_factor(freshness: Freshness) -> u32 {
+    match freshness {
+        Freshness::Fresh => 1000,
+        Freshness::Stale => 500,
+        Freshness::Spoiled => 150,
+    }
+}
+
+fn scale_by_freshness(score: u32, factor: u32) -> u32 {
+    score.saturating_mul(factor) / 1000
 }
 
 fn pain_motive_score(candidate: &GoalOffer, context: &RankingContext<'_>) -> u32 {
@@ -3269,7 +3322,7 @@ mod tests {
         DemandObservationReason, DeprivationExposure, DeprivationKind, DiversificationProfile,
         DriveEscalationParams, DriveEscalationProfile, DriveThresholds, EffectiveRight, EntityId,
         EntityKind, EpistemicDispositionProfile, EventId, ExpectationBasis, ExpectationId,
-        ExpectationRecord, ExpectationState, ExpectationStore, GoalRejectionReason,
+        ExpectationRecord, ExpectationState, ExpectationStore, Freshness, GoalRejectionReason,
         GroundComfortTag, HomeostaticNeedId, HomeostaticNeeds, HypothesisKind, InTransitOnEdge,
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
         JusticeDispositionProfile, LastSeenMemory, LatrineFullness, LoadUnits, MerchandiseProfile,
@@ -3338,6 +3391,7 @@ mod tests {
         direct_possessions: BTreeMap<EntityId, Vec<EntityId>>,
         direct_possessors: BTreeMap<EntityId, EntityId>,
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
+        lot_freshness: BTreeMap<EntityId, Freshness>,
         listed_sale_lots: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
         sale_lot_sellers: BTreeMap<EntityId, EntityId>,
         matching_workstations: BTreeMap<(EntityId, WorkstationTag), Vec<EntityId>>,
@@ -3833,6 +3887,9 @@ mod tests {
             _entity: EntityId,
         ) -> Option<CommodityConsumableProfile> {
             None
+        }
+        fn lot_freshness_band(&self, entity: EntityId) -> Option<Freshness> {
+            self.lot_freshness.get(&entity).copied()
         }
         fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
             None
@@ -5867,6 +5924,71 @@ mod tests {
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
         assert!(ranked[0].motive_score > 0);
+    }
+
+    #[test]
+    fn fresh_food_lot_ranks_above_stale_lot_for_self_consumption() {
+        let agent = entity(1);
+        let fresh_place = entity(10);
+        let stale_place = entity(11);
+        let fresh_lot = entity(20);
+        let stale_lot = entity(21);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(900), pm(100), pm(100), pm(100), pm(100)),
+        );
+        view.entity_kinds.insert(fresh_lot, EntityKind::ItemLot);
+        view.entity_kinds.insert(stale_lot, EntityKind::ItemLot);
+        view.item_lot_commodities
+            .insert(fresh_lot, CommodityKind::Apple);
+        view.item_lot_commodities
+            .insert(stale_lot, CommodityKind::Apple);
+        view.lot_freshness.insert(fresh_lot, Freshness::Fresh);
+        view.lot_freshness.insert(stale_lot, Freshness::Stale);
+
+        let mut fresh_goal = goal_at_place(
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
+            },
+            fresh_place,
+        );
+        fresh_goal.evidence_entities.insert(fresh_lot);
+        let mut stale_goal = goal_at_place(
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
+            },
+            stale_place,
+        );
+        stale_goal.evidence_entities.insert(stale_lot);
+
+        let ranked = rank(
+            &[stale_goal, fresh_goal],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        let fresh_entry = ranked
+            .iter()
+            .find(|entry| entry.offer.anchor == OpportunityAnchor::Place(fresh_place))
+            .expect("fresh lot candidate should be ranked");
+        let stale_entry = ranked
+            .iter()
+            .find(|entry| entry.offer.anchor == OpportunityAnchor::Place(stale_place))
+            .expect("stale lot candidate should be ranked");
+        assert!(
+            fresh_entry.motive_score > stale_entry.motive_score,
+            "fresh motive {} should exceed stale motive {}",
+            fresh_entry.motive_score,
+            stale_entry.motive_score
+        );
     }
 
     #[test]

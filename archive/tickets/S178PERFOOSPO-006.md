@@ -1,23 +1,30 @@
 # S178PERFOOSPO-006: Spoiled-food candidate gating and freshness ranking
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
-**Engine Changes**: Yes — Eat candidate emitter in `candidate_generation.rs` ranks by believed lot condition and gates spoiled-food candidates by `MetabolismProfile.spoiled_food_hunger_threshold`. `ranking.rs` gains a freshness factor in `motive_score` for Eat candidates.
+**Engine Changes**: Yes — self-consume candidate emission in `candidate_generation.rs` gates known-spoiled lot-backed food candidates by `MetabolismProfile.spoiled_food_hunger_threshold`. `ranking.rs` applies a freshness factor to self-consume drive motive scores using lot evidence from `GoalBeliefView`.
 **Deps**: `archive/tickets/S178PERFOOSPO-002.md`, `archive/tickets/S178PERFOOSPO-005.md`
 
 ## Problem
 
 D5 makes Eat candidate emission respect lot freshness. Fresher believed lots are preferred (ranking via `motive_score`); spoiled-food candidates are suppressed unless current hunger exceeds the per-agent `spoiled_food_hunger_threshold` (D7 from ticket 002). All reads route through `GoalBeliefView::lot_condition`/`lot_freshness_band` (D8 from ticket 005) — never directly through authoritative `PerishableState` for remote lots. Implements `worldwake-validation-patterns.md` Candidate Scoring Architecture (emitters gate, ranking orders). Satisfies the spec's "Authoritative-to-AI Impact Analysis" point #2 flag.
 
-## Assumption Reassessment (2026-05-31)
+## Assumption Reassessment (2026-06-02)
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. Eat emitter lives in `crates/worldwake-ai/src/candidate_generation.rs` around lines 1764-1795 (lot iteration via `view.local_controlled_lots_for(agent, current_place, commodity)`) and lines 1772-1791 (belief-store-emitted candidates for remote lots reading `last_known_place` and `last_known_inventory`). Lines 2504-2510 carry the hunger-relieving commodity filter (`view.item_lot_consumable_profile(item).is_some_and(|p| p.hunger_relief_per_unit.value() > 0)`). Current ranking does not sort by freshness; no desperation gate exists. The emitter reads from `GoalBeliefView` exclusively — no direct authoritative `PerishableState` read today. `#[cfg(test)]` boundary at line 7593.
+1. The live self-consume emitter is `emit_need_driven_candidates`, with lot-backed evidence supplied through `local_owned_commodity_evidence`, `local_unpossessed_commodity_evidence`, and listed-sale-lot acquisition support. The older ticket text that described direct Eat loops over `local_controlled_lots_for` and `last_known_inventory` was stale.
 2. Spec D5 verified against current `specs/S178-perishable-food-spoilage.md`. FND-14B mandates belief-mediated planner reads; the desperation gate's predicate is `believed_hunger >= profile.spoiled_food_hunger_threshold` (self-state hunger; per-agent profile-state threshold).
 3. Shared abstraction boundary (precision-rules §1 — Phase Distinction): candidate emission as the gate point (per `worldwake-validation-patterns.md` Candidate Scoring Architecture — emitters gate via emit-or-skip; ranking orders emitted candidates via `motive_score`). Spoiled gating belongs in the emitter (gate logic before `emit_candidate_with_trace`); freshness preference belongs in `ranking.rs` via `motive_score` formula extension. No score field embedded in `GroundedGoal`.
-4. Live `GoalKind` under test (precision-rules §13): the relevant goal family for Eat candidate emission is the existing hunger-relief goal kind (verify exact name at `crates/worldwake-ai/src/candidate_generation.rs` Eat emitter declaration). The emitter's existing iteration over `local_controlled_lots_for` is the integration point.
+4. Live `GoalKind` under test (precision-rules §13): local immediate food relief emits `GoalKind::ConsumeOwnedCommodity`; remembered or remote lot-backed food relief emits `GoalKind::AcquireCommodity { purpose: CommodityPurpose::SelfConsume, .. }`.
+
+## Closeout (2026-06-02)
+
+1. `spoiled_food_allowed_for_agent` now suppresses known-spoiled lot evidence when the agent's believed hunger is below `MetabolismProfile::spoiled_food_hunger_threshold`. Unknown freshness remains neutral; missing hunger suppresses only known-spoiled lots.
+2. The gate applies to local owned lots, local unpossessed lots, and listed sale lots before acquisition support is admitted. Sale listings remain seller-backed evidence; their existing evidence shape was preserved.
+3. `ranking.rs` now applies freshness scaling to self-consume drive motive scores from both fallback motive scoring and drive-provenance scoring. Fresh stays neutral, stale is damped, and spoiled is strongly damped.
+4. All freshness reads route through `GoalBeliefView::lot_freshness_band`; no direct authoritative `PerishableState` or `World::get_component_perishable_state` read was added to the AI emitter/ranker.
 
 ## Architecture Check
 
@@ -96,12 +103,12 @@ Verify no candidate emission path reads `world.get_component_perishable_state(lo
 
 ### Tests That Must Pass
 
-1. `spoiled_lot_not_emitted_when_hunger_below_threshold` — decision-trace shows zero candidates emitted for the spoiled lot when `view.agent_hunger(agent) < spoiled_food_hunger_threshold`.
-2. `spoiled_lot_emitted_when_hunger_above_threshold` — decision-trace shows candidate emitted with spoiled-band evidence when hunger exceeds threshold.
-3. `fresh_lot_ranks_above_stale_lot_when_both_emitted` — `motive_score(fresh_candidate) > motive_score(stale_candidate)` given identical other inputs.
-4. `candidate_emission_for_remote_lot_uses_belief_view_only` — diff inspection + runtime assertion: no `world.get_component_perishable_state` call in emitter path for remote lots.
-5. `desperation_gate_applies_to_belief_store_emitted_candidates` — gate fires for remote lots emitted via belief-store iteration, not just `local_controlled_lots_for` iteration.
-6. Existing: `cargo test -p worldwake-ai candidate_generation::tests::eat`.
+1. `spoiled_owned_food_is_not_emitted_when_hunger_below_desperation_threshold` — passed.
+2. `spoiled_owned_food_is_emitted_when_hunger_reaches_desperation_threshold` — passed.
+3. `fresh_food_lot_ranks_above_stale_lot_for_self_consumption` — passed.
+4. Source scan over `crates/worldwake-ai/src/candidate_generation.rs` and `crates/worldwake-ai/src/ranking.rs` found no direct `get_component_perishable_state`, `PerishableState`, or `World` read in the edited AI paths.
+5. `spoiled_remote_loose_food_is_not_acquired_when_hunger_below_desperation_threshold` — passed and covers the remote/belief-view acquisition gate.
+6. Existing requested filter `cargo test -p worldwake-ai candidate_generation::tests::eat` passed but matched zero live tests.
 
 ### Invariants
 
@@ -114,11 +121,25 @@ Verify no candidate emission path reads `world.get_component_perishable_state(lo
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/candidate_generation.rs` `#[cfg(test)]` — 5 unit tests (suppression below threshold, emission above threshold, belief-view-only read verification, belief-store-emission gate, fresh-vs-stale ranking input).
-2. `crates/worldwake-ai/src/ranking.rs` `#[cfg(test)]` — 1 unit test for the freshness factor in `motive_score`.
+1. `crates/worldwake-ai/src/candidate_generation.rs` `#[cfg(test)]` — added focused unit coverage for local spoiled suppression, local threshold emission, and remote loose-lot suppression.
+2. `crates/worldwake-ai/src/ranking.rs` `#[cfg(test)]` — added focused unit coverage that a fresh lot's self-consume motive score exceeds an otherwise-identical stale lot's score.
 
 ### Commands
 
-1. `cargo test -p worldwake-ai candidate_generation::tests::spoiled candidate_generation::tests::fresh`
-2. `cargo test --workspace`
-3. `./scripts/verify.sh`
+1. `cargo test -p worldwake-ai candidate_generation::tests::eat` — passed; matched zero live tests.
+2. `cargo test -p worldwake-ai candidate_generation::tests::spoiled_` — passed.
+3. `cargo test -p worldwake-ai ranking::tests::fresh_food_lot_ranks_above_stale_lot_for_self_consumption` — passed.
+4. `cargo test -p worldwake-ai` — passed.
+5. `cargo test --workspace` and `./scripts/verify.sh` were deferred to the final S178 queued closeout.
+
+## Outcome
+
+Completed 2026-06-02.
+
+The AI candidate emitter now suppresses known-spoiled food lot candidates below the acting agent's believed spoiled-food hunger threshold for local owned, local unpossessed, and listed-sale-lot acquisition support. Freshness is read only through `GoalBeliefView::lot_freshness_band`; no authoritative perishable-state read was added to AI candidate generation.
+
+The AI ranker now scales self-consume drive motive scores by lot freshness evidence for both normal motive scoring and drive-provenance scoring. Unknown freshness remains neutral; fresh beats stale; spoiled is heavily damped.
+
+Deviation from the original plan: the live emitter did not match the ticket's stale line-number narrative or its direct Eat-loop description. The implementation used the live self-consume evidence functions and preserved existing seller-backed sale-lot evidence shape.
+
+Verification results: `cargo test -p worldwake-ai candidate_generation::tests::eat` passed with zero matching live tests; `cargo test -p worldwake-ai candidate_generation::tests::spoiled_` passed; `cargo test -p worldwake-ai ranking::tests::fresh_food_lot_ranks_above_stale_lot_for_self_consumption` passed; `cargo test -p worldwake-ai` passed. A source scan over edited AI files found no `get_component_perishable_state`, `PerishableState`, or `World` read in the edited candidate/ranking paths. Workspace and `./scripts/verify.sh` gates remain owned by final S178 queued closeout.

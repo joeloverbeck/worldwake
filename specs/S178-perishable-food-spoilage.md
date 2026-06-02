@@ -180,7 +180,7 @@ The Eat precondition still **allows** eating spoiled food (it is not blocked) �
 
 ### D5. Candidate generation: prefer fresh, desperation-gate spoiled
 
-Candidate generation (`crates/worldwake-ai/src/candidate_generation.rs`, Eat emitter around lines 1764-1795) ranks Eat candidates by **believed** lot condition (fresher preferred) and **suppresses spoiled-food Eat candidates unless** hunger pressure exceeds a per-agent profile threshold (`MetabolismProfile.spoiled_food_hunger_threshold` from D7) — the desperation gate.
+Candidate generation (`crates/worldwake-ai/src/candidate_generation.rs`, `emit_need_driven_candidates` plus its self-consume evidence helpers) ranks lot-backed self-consume candidates by **believed** lot condition (fresher preferred) and **suppresses spoiled-food food candidates unless** hunger pressure reaches a per-agent profile threshold (`MetabolismProfile.spoiled_food_hunger_threshold` from D7) — the desperation gate.
 
 All reads are belief-view-mediated: candidate generation calls `GoalBeliefView::lot_condition` and `GoalBeliefView::lot_freshness_band` (D8), never directly reads `PerishableState` from authoritative world state. A remembered cache believed fresh may be emitted; on arrival, if observed spoiled, the agent re-ranks (eat spoiled if desperate, else seek fallback).
 
