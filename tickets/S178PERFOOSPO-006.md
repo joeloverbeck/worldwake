@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — Eat candidate emitter in `candidate_generation.rs` ranks by believed lot condition and gates spoiled-food candidates by `MetabolismProfile.spoiled_food_hunger_threshold`. `ranking.rs` gains a freshness factor in `motive_score` for Eat candidates.
-**Deps**: 002, 005
+**Deps**: `archive/tickets/S178PERFOOSPO-002.md`, `tickets/S178PERFOOSPO-005.md`
 
 ## Problem
 

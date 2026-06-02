@@ -34,7 +34,7 @@ D4 makes hunger relief from Eat depend on the consumed lot's freshness band. Fre
 
 ### 1. Relief-scaling helper
 
-In `crates/worldwake-systems/src/needs_actions.rs`, add a pure helper function:
+In `crates/worldwake-systems/src/needs_actions.rs`, added a pure helper function:
 
 ```rust
 fn scale_hunger_relief_by_condition(
@@ -69,13 +69,13 @@ fn scale_hunger_relief_by_condition(
 
 ### 2. Wire into `apply_consumable_effects`
 
-At line 1159 of `apply_consumable_effects`, replace the bare `profile.hunger_relief_per_unit` with the scaled value:
+In `apply_consumable_effects`, replaced the bare `profile.hunger_relief_per_unit` with the scaled value:
 
 ```rust
 let scaled_relief = scale_hunger_relief_by_condition(
     profile.hunger_relief_per_unit,
-    world.get_component_perishable_state(lot),
-    world.commodity_perish_profiles().get(&lot_commodity),
+    txn.get_component_perishable_state(target),
+    txn.commodity_perish_profiles().get(&lot.commodity),
     Permille::new_unchecked(150),
 );
 needs.hunger = needs.hunger.saturating_sub(scaled_relief);
@@ -115,8 +115,8 @@ The spoiled-floor `Permille::new_unchecked(150)` is a per-call constant. Per-com
 
 ### Landed Tests
 
-1. `crates/worldwake-systems/src/needs_actions.rs` `#[cfg(test)]` — add 4 new unit tests (Fresh, Stale, Spoiled, non-perishable).
-2. Existing `eat_consumes_one_unit_and_applies_consumable_effects` at line 1949 — extend to assert relief amount under Fresh condition (regression guard).
+1. `crates/worldwake-systems/src/needs_actions.rs` `#[cfg(test)]` — added 4 new unit tests (Fresh, Stale, Spoiled, non-perishable).
+2. Existing `eat_consumes_one_unit_and_applies_consumable_effects` — extended to assert relief amount under Fresh condition (regression guard).
 
 ### Verification Commands
 

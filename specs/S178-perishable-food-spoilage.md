@@ -168,11 +168,11 @@ Archival/disposal is a separate downstream choice (eat, compost into `Waste`, or
 
 ### D4. Condition-scaled Eat
 
-In the Eat path (`crates/worldwake-systems/src/needs_actions.rs`, current relief at line ~1159), hunger relief scales by the lot's `condition` band, following the precedent set by S177 for `WaterToleranceProfile.thirst_relief_factor(quality)` in the Drink path:
+Ticket `archive/tickets/S178PERFOOSPO-004.md` lands condition-scaled hunger relief in the Eat path (`crates/worldwake-systems/src/needs_actions.rs`). Hunger relief scales by the lot's `condition` band, following the precedent set by S177 for `WaterToleranceProfile.thirst_relief_factor(quality)` in the Drink path:
 
 - `Fresh` → full `hunger_relief_per_unit`.
 - `Stale` → reduced relief (scaled linearly by `condition` between `stale_threshold` and `spoiled_threshold`).
-- `Spoiled` → minimal relief (a small `Permille` floor read from the consumable profile or set per-commodity).
+- `Spoiled` → minimal relief (current implementation pins a `Permille(150)` floor; per-commodity tuning is future scope if scenarios warrant it).
 
 The Eat handler reads `PerishableState` directly from the lot at action commit — this is a same-tick co-located read (Eat preconditions require possession or co-location), so authoritative-component access is lawful per FND-14A.
 
@@ -229,7 +229,7 @@ Remote-belief reads return `None` rather than reading authoritative remote `Peri
 
 ## FND-01 Section H — Causal Hooks Declaration
 
-1. **Missing downstream consequence**: Food is a binary timer; it cannot age into reduced relief, cannot become spoiled-but-edible, and stored caches never perish. A remembered cache cannot disappoint. `LotOperation::Spoiled` has no emitter.
+1. **Original missing downstream consequence**: Before S178 landed its first slices, food was a binary timer; it could not age into reduced relief, could not become spoiled-but-edible, and stored caches never perished. A remembered cache could not disappoint. `LotOperation::Spoiled` had no emitter. Tickets `archive/tickets/S178PERFOOSPO-003.md` and `archive/tickets/S178PERFOOSPO-004.md` now cover the decay emitter and condition-scaled Eat relief; belief/cache/candidate/forensic consequences remain in later tickets.
 2. **New entities/relations/records**: `PerishableState` component on item lots; `CommodityPerishProfile` + `StorageRateMultipliers`; new `EventTag::ItemSpoiled` variant; first emission of `LotOperation::Spoiled`; `MetabolismProfile.spoiled_food_hunger_threshold`; `SpoiledFoodDiscovery` forensic record; new belief-store field `last_observed_condition` on lot-belief entries.
 3. **Actions that mutate them**: Item-decay system advances `condition` and emits `Spoiled` lineage + event. Eat reads `condition`, scales relief. Harvest/production/spawn initialize `PerishableState` at full condition. Disposal/compost transforms a spoiled lot into `Waste` (explicit sink).
 4. **Information production and travel**: Lot condition observed when co-located/possessed (FND-14A) via D8 accessors; remote/cache condition belief-backed (FND-14B) — beliefs go stale as the cache spoils unobserved. `ItemSpoiled` append-only in event log.
