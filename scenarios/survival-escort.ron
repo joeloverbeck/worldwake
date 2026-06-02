@@ -14,12 +14,6 @@
 //   survival pressure rather than starvation pathfinding
 (
     seed: 940216,
-    // S178: this scenario proves coordinated care travel, not food spoilage. Its
-    // agents rely on durable starting food stock (they do not replenish under
-    // hunger pressure here — see tickets/AGEFOOREP-001.md), so it opts out of the
-    // default Apple perish profile to preserve its pre-S178 survival contract. An
-    // empty map means no commodity perishes.
-    commodity_perish_profile: {},
     survival_health_contract: (
         max_authored_critical_run_ticks: 190,
         max_idle_window_ticks_with_elevated_need: 80,

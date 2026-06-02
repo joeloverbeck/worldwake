@@ -7,11 +7,11 @@
 // direct bread-market branch.
 (
     seed: 609009,
-    // S178: this scenario proves the substitute market branch, not food spoilage.
-    // Its agents rely on durable starting food stock (they do not replenish under
-    // hunger pressure here — see tickets/AGEFOOREP-001.md), so it opts out of the
-    // default Apple perish profile to preserve its pre-S178 survival contract. An
-    // empty map means no commodity perishes.
+    // S178: this scenario proves the substitute market branch, not food
+    // spoilage. Its market branch relies on merchant-side supply remaining
+    // viable, so durable displayed stock remains a scoped opt-out until
+    // tickets/AGEFOOREP-002.md defines founded restock/restage behavior.
+    // An empty map means no commodity perishes.
     commodity_perish_profile: {},
     survival_health_contract: (
         max_authored_critical_run_ticks: 220,
