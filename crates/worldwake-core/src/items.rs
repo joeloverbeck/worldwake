@@ -329,6 +329,11 @@ impl Component for ItemLot {}
 pub struct PerishableState {
     pub condition: Permille,
     pub last_advanced_tick: Tick,
+    /// Fractional decay numerator carried between item-decay ticks.
+    ///
+    /// The denominator is the commodity's `fresh_to_spoiled_ticks`. This keeps
+    /// integer-only condition advancement cadence-independent.
+    pub decay_remainder: u32,
 }
 
 impl Component for PerishableState {}
@@ -835,6 +840,7 @@ mod tests {
         let state = PerishableState {
             condition: Permille::new_unchecked(742),
             last_advanced_tick: Tick(37),
+            decay_remainder: 19,
         };
 
         let bytes = bincode::serialize(&state).unwrap();

@@ -748,6 +748,24 @@ impl<'w> WorldTxn<'w> {
         )
     }
 
+    pub fn append_spoilage_provenance(
+        &mut self,
+        lot_id: EntityId,
+        amount: Quantity,
+    ) -> Result<(), WorldError> {
+        self.append_lot_provenance_internal(
+            lot_id,
+            ProvenanceEntry {
+                tick: self.tick,
+                event_id: None,
+                operation: LotOperation::Spoiled,
+                related_lot: None,
+                amount,
+            },
+            true,
+        )
+    }
+
     fn append_lot_provenance_internal(
         &mut self,
         lot_id: EntityId,

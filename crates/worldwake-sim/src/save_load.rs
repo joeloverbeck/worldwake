@@ -3,8 +3,8 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-/// S178PERFOOSPO-002 stores the spoiled-food hunger threshold on metabolism profiles.
-pub const SAVE_FORMAT_VERSION: u32 = 117;
+/// S178PERFOOSPO-003 stores fractional perishable decay remainder.
+pub const SAVE_FORMAT_VERSION: u32 = 118;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -580,6 +580,7 @@ mod tests {
                 PerishableState {
                     condition: worldwake_core::Permille::new_unchecked(641),
                     last_advanced_tick: Tick(3),
+                    decay_remainder: 17,
                 },
             )
             .unwrap();
@@ -1457,8 +1458,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_117_after_spoiled_food_threshold_profile_field() {
-        assert_eq!(SAVE_FORMAT_VERSION, 117);
+    fn save_format_version_is_118_after_perishable_decay_remainder() {
+        assert_eq!(SAVE_FORMAT_VERSION, 118);
     }
 
     #[test]
@@ -1469,7 +1470,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 117);
+        assert_eq!(SAVE_FORMAT_VERSION, 118);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1651,6 +1652,13 @@ mod tests {
                 .world()
                 .get_component_perishable_state(reserved_item),
             state.world().get_component_perishable_state(reserved_item)
+        );
+        assert_eq!(
+            restored
+                .world()
+                .get_component_perishable_state(reserved_item)
+                .map(|state| state.decay_remainder),
+            Some(17)
         );
         assert_eq!(
             restored.world().get_component_sleep_episode(actor),

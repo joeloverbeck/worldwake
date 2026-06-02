@@ -43,12 +43,14 @@ In `crates/worldwake-core/src/items.rs`, define:
 pub struct PerishableState {
     pub condition: Permille,
     pub last_advanced_tick: Tick,
+    /// Added by ticket 003 to carry integer-only fractional decay across ticks.
+    pub decay_remainder: u32,
 }
 
 impl Component for PerishableState {}
 ```
 
-No `Default` impl — the component is always constructed with the explicit creation tick. Ticket 003 attaches it at perishable-commodity lot spawn (`PerishableState { condition: Permille::new_unchecked(1000), last_advanced_tick: creation_tick }`).
+No `Default` impl — the component is always constructed with the explicit creation tick. Ticket 003 attaches it at perishable-commodity lot spawn (`PerishableState { condition: Permille::new_unchecked(1000), last_advanced_tick: creation_tick, decay_remainder: 0 }`) and copies the state when lots split.
 
 ### 2. `CommodityPerishProfile`, `StorageRateMultipliers`, `Freshness` enum, default map
 
@@ -127,7 +129,7 @@ In `crates/worldwake-core/src/world.rs`, alongside the existing `commodity_decay
 
 ### 6. `SAVE_FORMAT_VERSION` bump 115→116
 
-In `crates/worldwake-sim/src/save_load.rs`, bump `SAVE_FORMAT_VERSION` from 115 to 116 to cover (a) the new `PerishableState` ECS component in `SimulationState`, (b) the new `EventTag::ItemSpoiled` variant in serialized event payloads, (c) the new `CommodityPerishProfileMap` in world substrate. Add load/store handling for the new component. Tickets 002, 003, 004, 005, 006, 007, 008 ride this bump via `#[serde(default)]` on any incrementally added fields where appropriate.
+In `crates/worldwake-sim/src/save_load.rs`, bump `SAVE_FORMAT_VERSION` from 115 to 116 to cover (a) the new `PerishableState` ECS component in `SimulationState`, (b) the new `EventTag::ItemSpoiled` variant in serialized event payloads, (c) the new `CommodityPerishProfileMap` in world substrate. Add load/store handling for the new component. Ticket 003 later extends `PerishableState` with `decay_remainder` and bumps the version again to 118; later tickets must reassess their own persisted-shape changes against that live baseline.
 
 ## Landed Files
 
@@ -159,7 +161,7 @@ In `crates/worldwake-sim/src/save_load.rs`, bump `SAVE_FORMAT_VERSION` from 115 
 
 1. `default_commodity_perish_profile_map_contains_pinned_apple_entry` — asserts the Apple entry has `fresh_to_spoiled_ticks=nz(720)`, `stale_threshold=Permille(667)`, `spoiled_threshold=Permille(333)`, and the three storage multipliers (1000/500/750).
 2. `freshness_derive_from_matches_band_thresholds` — asserts `condition >= stale_threshold → Fresh`, between thresholds → `Stale`, below `spoiled_threshold → Spoiled`, including the inclusive-equality boundary cases.
-3. `save_load::tests::save_to_bytes_roundtrip_preserves_full_nondefault_state` — asserts a `SimulationState` carrying an item lot with `PerishableState` and a non-default `CommodityPerishProfileMap` serializes at `SAVE_FORMAT_VERSION=116` and deserializes equivalently.
+3. `save_load::tests::save_to_bytes_roundtrip_preserves_full_nondefault_state` — asserted a `SimulationState` carrying an item lot with `PerishableState` and a non-default `CommodityPerishProfileMap` serialized at `SAVE_FORMAT_VERSION=116` and deserialized equivalently for this ticket; ticket 003 updates this witness to version 118 and explicitly asserts `decay_remainder` roundtrip.
 4. `event_tag::tests::event_tag_includes_all_required_variants` — asserts `EventTag::ItemSpoiled` is present and the array length grew by one.
 5. Existing suites: `cargo test -p worldwake-core`, `cargo test -p worldwake-sim`, and `cargo test -p worldwake-cli --lib`.
 

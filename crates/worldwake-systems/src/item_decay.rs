@@ -1,7 +1,7 @@
 use worldwake_core::{
-    CauseRef, CommodityKind, EntityId, EventLog, EventTag, LastHarvestTrace, Permille,
-    PlaceDirtiness, Quantity, ResourceSource, Tick, VisibilitySpec, WashBasinState, WaterQuality,
-    WitnessData, World, WorldTxn,
+    CauseRef, CommodityKind, EntityId, EntityKind, EventLog, EventTag, LastHarvestTrace,
+    PerishableState, Permille, PlaceDirtiness, Quantity, ResourceSource, Tick, VisibilitySpec,
+    WashBasinState, WaterQuality, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -17,6 +17,11 @@ pub fn item_decay_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         tick,
         system_id: _system_id,
     } = ctx;
+
+    let perishable_updates = collect_perishable_condition_updates(world, tick);
+    for update in perishable_updates {
+        apply_perishable_condition_update(world, event_log, tick, update);
+    }
 
     let to_archive = collect_decay_targets(world, tick);
     for entity in to_archive {
@@ -45,12 +50,141 @@ fn collect_decay_targets(world: &World, tick: Tick) -> Vec<worldwake_core::Entit
     world
         .query_ground_since()
         .filter_map(|(entity, ground_since)| {
+            if world.has_component_perishable_state(entity) {
+                return None;
+            }
             let item_lot = world.get_component_item_lot(entity)?;
             let decay_ticks = world.commodity_decay().get(&item_lot.commodity)?;
             let elapsed = tick.0.saturating_sub(ground_since.0.0);
             (elapsed >= u64::from(decay_ticks.get())).then_some(entity)
         })
         .collect()
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StorageContext {
+    Ground,
+    Container,
+    Possessed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PerishableConditionUpdate {
+    lot: EntityId,
+    state: PerishableState,
+    crossed_spoiled: bool,
+    amount: Quantity,
+}
+
+fn collect_perishable_condition_updates(
+    world: &World,
+    tick: Tick,
+) -> Vec<PerishableConditionUpdate> {
+    world
+        .query_perishable_state()
+        .filter_map(|(lot, state)| {
+            if tick.0 <= state.last_advanced_tick.0 {
+                return None;
+            }
+
+            let item_lot = world.get_component_item_lot(lot)?;
+            let profile = world
+                .commodity_perish_profiles()
+                .get(&item_lot.commodity)
+                .copied()?;
+            let multiplier = match storage_context(world, lot) {
+                StorageContext::Ground => profile.storage_rates.ground,
+                StorageContext::Container => profile.storage_rates.container,
+                StorageContext::Possessed => profile.storage_rates.possessed,
+            };
+            let elapsed = tick.0.saturating_sub(state.last_advanced_tick.0);
+            let numerator = u64::from(state.decay_remainder)
+                .saturating_add(elapsed.saturating_mul(u64::from(multiplier.value())));
+            let divisor = u64::from(profile.fresh_to_spoiled_ticks.get());
+            let delta = numerator / divisor;
+            let next_remainder = numerator % divisor;
+            let next_condition = u64::from(state.condition.value()).saturating_sub(delta);
+            let condition = Permille::new_unchecked(
+                u16::try_from(next_condition.min(1000)).expect("condition is capped to Permille"),
+            );
+            let crossed_spoiled = state.condition.value() >= profile.spoiled_threshold.value()
+                && condition.value() < profile.spoiled_threshold.value();
+            let next_state = PerishableState {
+                condition,
+                last_advanced_tick: tick,
+                decay_remainder: if condition == Permille::ZERO {
+                    0
+                } else {
+                    u32::try_from(next_remainder)
+                        .expect("remainder is less than fresh_to_spoiled_ticks")
+                },
+            };
+
+            (next_state != *state).then_some(PerishableConditionUpdate {
+                lot,
+                state: next_state,
+                crossed_spoiled,
+                amount: item_lot.quantity,
+            })
+        })
+        .collect()
+}
+
+fn storage_context(world: &World, lot: EntityId) -> StorageContext {
+    if world
+        .possessor_of(lot)
+        .is_some_and(|holder| world.entity_kind(holder) == Some(EntityKind::Agent))
+    {
+        return StorageContext::Possessed;
+    }
+
+    if world
+        .direct_container(lot)
+        .is_some_and(|container| world.entity_kind(container) == Some(EntityKind::Container))
+    {
+        return StorageContext::Container;
+    }
+
+    StorageContext::Ground
+}
+
+fn apply_perishable_condition_update(
+    world: &mut World,
+    event_log: &mut EventLog,
+    tick: Tick,
+    update: PerishableConditionUpdate,
+) {
+    let mut txn = WorldTxn::new(
+        world,
+        tick,
+        CauseRef::SystemTick(tick),
+        None,
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    txn.add_tag(EventTag::ItemDecay)
+        .add_tag(EventTag::WorldMutation)
+        .add_target(update.lot);
+    if update.crossed_spoiled {
+        txn.add_tag(EventTag::ItemSpoiled);
+    }
+
+    if txn
+        .set_component_perishable_state(update.lot, update.state)
+        .is_err()
+    {
+        return;
+    }
+    if update.crossed_spoiled
+        && txn
+            .append_spoilage_provenance(update.lot, update.amount)
+            .is_err()
+    {
+        return;
+    }
+
+    let _ = txn.commit(event_log);
 }
 
 fn collect_place_dirtiness_decay(world: &World) -> Vec<(EntityId, PlaceDirtiness)> {
@@ -293,11 +427,12 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        CauseRef, CommodityKind, EntityId, EntityKind, EventLog, EventTag, EventView,
-        HARVEST_TRACE_RETENTION_TICKS, HarvestTraceEntry, LastHarvestTrace, Permille,
-        PlaceDirtiness, PrototypePlace, Quantity, ResourceSource, Seed, Tick, VisibilitySpec,
-        WashBasinState, WaterQuality, WitnessData, WorkstationMarker, WorkstationTag, World,
-        WorldTxn, build_prototype_world, prototype_place_entity,
+        CauseRef, CommodityKind, Container, EntityId, EntityKind, EventLog, EventTag, EventView,
+        HARVEST_TRACE_RETENTION_TICKS, HarvestTraceEntry, LastHarvestTrace, LoadUnits,
+        LotOperation, PerishableState, Permille, PlaceDirtiness, PrototypePlace, Quantity,
+        ResourceSource, Seed, Tick, VisibilitySpec, WashBasinState, WaterQuality, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
+        prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionInstance, ActionInstanceId, DeterministicRng,
@@ -351,6 +486,28 @@ mod tests {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
         item
+    }
+
+    fn run_item_decay(world: &mut World, event_log: &mut EventLog, tick: u64) {
+        let mut rng = DeterministicRng::new(Seed([9; 32]));
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+
+        item_decay_system(system_context(
+            world,
+            event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+            tick,
+        ))
+        .unwrap();
+    }
+
+    fn perishable_state(world: &World, lot: EntityId) -> PerishableState {
+        *world
+            .get_component_perishable_state(lot)
+            .expect("perishable lot should have state")
     }
 
     #[test]
@@ -452,8 +609,119 @@ mod tests {
             .map(|(entity, _)| entity)
             .collect::<BTreeSet<_>>();
         assert!(!after_second.contains(&waste));
-        assert!(!after_second.contains(&apple));
+        assert!(after_second.contains(&apple));
         assert!(after_second.contains(&sword));
+    }
+
+    #[test]
+    fn perishable_ground_lot_advances_condition_with_fractional_remainder() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let apple = seed_ground_item(&mut world, 0, CommodityKind::Apple, 1);
+        let mut event_log = EventLog::new();
+
+        run_item_decay(&mut world, &mut event_log, 240);
+
+        assert_eq!(
+            perishable_state(&world, apple),
+            PerishableState {
+                condition: Permille::new_unchecked(667),
+                last_advanced_tick: Tick(240),
+                decay_remainder: 240,
+            }
+        );
+        assert!(event_log.events_by_tag(EventTag::ItemSpoiled).is_empty());
+        assert!(world.is_alive(apple));
+    }
+
+    #[test]
+    fn perishable_container_lot_uses_container_storage_rate() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let mut txn = new_txn(&mut world, 0);
+        let container = txn
+            .create_container(Container {
+                capacity: LoadUnits(10),
+                allowed_commodities: None,
+                allows_unique_items: true,
+                allows_nested_containers: true,
+            })
+            .unwrap();
+        txn.set_ground_location(container, place).unwrap();
+        let apple = txn
+            .create_item_lot_with_owner(CommodityKind::Apple, Quantity(1), place, None)
+            .unwrap();
+        txn.put_into_container(apple, container).unwrap();
+        let mut bootstrap_log = EventLog::new();
+        let _ = txn.commit(&mut bootstrap_log);
+        let mut event_log = EventLog::new();
+
+        run_item_decay(&mut world, &mut event_log, 480);
+
+        assert_eq!(
+            perishable_state(&world, apple),
+            PerishableState {
+                condition: Permille::new_unchecked(667),
+                last_advanced_tick: Tick(480),
+                decay_remainder: 240,
+            }
+        );
+        assert!(world.is_alive(apple));
+    }
+
+    #[test]
+    fn perishable_possessed_lot_uses_possessed_storage_rate() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let mut txn = new_txn(&mut world, 0);
+        let actor = txn
+            .create_agent("Forager", worldwake_core::ControlSource::Ai)
+            .unwrap();
+        txn.set_ground_location(actor, place).unwrap();
+        let apple = txn
+            .create_item_lot_with_owner(CommodityKind::Apple, Quantity(1), place, None)
+            .unwrap();
+        txn.set_possessor(apple, actor).unwrap();
+        let mut bootstrap_log = EventLog::new();
+        let _ = txn.commit(&mut bootstrap_log);
+        let mut event_log = EventLog::new();
+
+        run_item_decay(&mut world, &mut event_log, 320);
+
+        assert_eq!(
+            perishable_state(&world, apple),
+            PerishableState {
+                condition: Permille::new_unchecked(667),
+                last_advanced_tick: Tick(320),
+                decay_remainder: 240,
+            }
+        );
+        assert!(world.is_alive(apple));
+    }
+
+    #[test]
+    fn perishable_lot_emits_spoilage_once_and_persists() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let apple = seed_ground_item(&mut world, 0, CommodityKind::Apple, 3);
+        let mut event_log = EventLog::new();
+
+        run_item_decay(&mut world, &mut event_log, 481);
+        run_item_decay(&mut world, &mut event_log, 1000);
+
+        assert!(world.is_alive(apple));
+        assert!(world.get_component_item_lot(apple).is_some());
+        let spoiled_events = event_log.events_by_tag(EventTag::ItemSpoiled);
+        assert_eq!(spoiled_events.len(), 1);
+        let record = event_log.get(spoiled_events[0]).unwrap();
+        assert!(record.tags().contains(&EventTag::ItemDecay));
+        assert!(record.tags().contains(&EventTag::WorldMutation));
+        assert_eq!(record.target_ids(), vec![apple]);
+        let lot = world.get_component_item_lot(apple).unwrap();
+        assert!(lot.provenance.iter().any(|entry| {
+            entry.operation == LotOperation::Spoiled
+                && entry.tick == Tick(481)
+                && entry.event_id == Some(spoiled_events[0])
+                && entry.amount == Quantity(3)
+        }));
     }
 
     #[test]

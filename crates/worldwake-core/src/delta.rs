@@ -922,6 +922,7 @@ mod tests {
             ComponentValue::PerishableState(PerishableState {
                 condition: Permille::new(740).unwrap(),
                 last_advanced_tick: Tick(23),
+                decay_remainder: 19,
             }),
             ComponentValue::Container(Container {
                 capacity: LoadUnits(25),

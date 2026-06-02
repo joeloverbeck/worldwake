@@ -101,7 +101,7 @@ Locate the lot-belief entry type in `crates/worldwake-core/src/belief.rs` (the c
 pub last_observed_condition: Option<Permille>,
 ```
 
-`Option<Permille>` because lot-belief entries for non-perishable commodities never get a condition write; `None` is the lawful unknown signal. The `#[serde(default)]` annotation lets ticket 001's `SAVE_FORMAT_VERSION=116` bump cover this field without a separate bump.
+`Option<Permille>` because lot-belief entries for non-perishable commodities never get a condition write; `None` is the lawful unknown signal. Ticket 003 moves the live save-format baseline to 118; implementation of this persisted belief-store field must reassess whether it needs the next version bump rather than assuming ticket 001's earlier 116 bump still covers it.
 
 ### 5. Perception write of `last_observed_condition`
 
@@ -124,7 +124,7 @@ Extend the `impl_goal_belief_view!` macro (or equivalent blanket-impl helper in 
 - Candidate generation reads (ticket 006).
 - Forensic record (ticket 007).
 - Eat handler (ticket 004 — uses direct authoritative read at action commit, not belief view).
-- `SAVE_FORMAT_VERSION` bump (rides ticket 001's 115→116 via `#[serde(default)]` on the new belief-store field).
+- `SAVE_FORMAT_VERSION` bump/reassessment from the live baseline (ticket 003 leaves the baseline at 118).
 
 ## Acceptance Criteria
 

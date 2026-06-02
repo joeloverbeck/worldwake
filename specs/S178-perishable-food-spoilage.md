@@ -89,6 +89,11 @@ Phase 7: Consequence Carriers
 pub struct PerishableState {
     pub condition: Permille,
     pub last_advanced_tick: Tick,
+    /// Fractional decay numerator carried between item-decay ticks.
+    ///
+    /// The denominator is the commodity's `fresh_to_spoiled_ticks`; carrying
+    /// this remainder keeps integer-only advancement cadence-independent.
+    pub decay_remainder: u32,
 }
 
 impl Component for PerishableState {}
@@ -96,7 +101,7 @@ impl Component for PerishableState {}
 
 Attached to item lots of perishable commodities at creation (harvest/production/spawn). Non-perishable commodities carry no `PerishableState` at all — sparse-component fit, and the item-decay system's iteration is `query_with(PerishableState)`, not "every lot".
 
-**Construction at lot creation**: `PerishableState { condition: Permille::new_unchecked(1000), last_advanced_tick: creation_tick }`. No `Default` impl — the component is always constructed with the explicit creation tick so advancement is deterministic from tick zero of the lot's lifetime.
+**Construction at lot creation**: `PerishableState { condition: Permille::new_unchecked(1000), last_advanced_tick: creation_tick, decay_remainder: 0 }`. No `Default` impl — the component is always constructed with the explicit creation tick so advancement is deterministic from tick zero of the lot's lifetime.
 
 **Why a separate component, not a field on `ItemLot`**: `ItemLot.quality: Option<WaterQuality>` (added by S177) is an immutable perception axis set at extraction time. `PerishableState.condition` is mutable system-driven state advanced each item-decay tick; the item-decay system iterates only perishable lots (sparse population); and lots without `PerishableState` simply do not perish. This mirrors the `GroundSince` precedent (per-lot mutable tick state as a separate component) rather than the `quality` precedent (per-lot immutable enum on the lot struct).
 
@@ -144,12 +149,12 @@ pub fn default_commodity_perish_profile_map() -> BTreeMap<CommodityKind, Commodi
 
 ### D3. Item-decay system advances condition (instead of archive-only for food)
 
-Extend `item_decay_system` (`crates/worldwake-systems/src/item_decay.rs`): for lots with `PerishableState`, advance `condition` down by the per-commodity baseline rate (`1000 / fresh_to_spoiled_ticks` Permille per tick) × storage-context multiplier each elapsed interval (tracked by `last_advanced_tick`), instead of waiting to archive at a single duration.
+Extend `item_decay_system` (`crates/worldwake-systems/src/item_decay.rs`): for lots with `PerishableState`, advance `condition` down by the per-commodity elapsed interval × storage-context multiplier divided by `fresh_to_spoiled_ticks`, carrying the division remainder in `decay_remainder`. This preserves deterministic integer arithmetic without quantizing Apple ground spoilage from 720 ticks to 1000 ticks. `last_advanced_tick` tracks the elapsed interval, and perishable lots advance instead of waiting to archive at a single duration.
 
 **Storage-context determination per tick:**
 
-1. **Possessed**: lot's parent entity is an agent (possession) → `storage_rates.possessed`.
-2. **Container**: lot's parent entity has `EntityKind::Container` → `storage_rates.container`.
+1. **Possessed**: `world.possessor_of(lot)` is an agent → `storage_rates.possessed`.
+2. **Container**: `world.direct_container(lot)` has `EntityKind::Container` → `storage_rates.container`.
 3. **Ground**: lot has the `GroundSince` component (the existing ground-tracking precedent at `crates/worldwake-core/src/component_schema.rs:2469-2493`) → `storage_rates.ground`.
 
 If none of the three matches, the spoil rate defaults to ground baseline (defensive — should not occur for well-spawned lots). No preserving-place option exists in this spec (deferred per Non-Goals).
@@ -236,12 +241,12 @@ Remote-belief reads return `None` rather than reading authoritative remote `Peri
 10. **Agent learning**: None new beyond belief invalidation of a spoiled cache (handled by ordinary belief update — `last_observed_condition` is updated on perception). Per-agent `spoiled_food_hunger_threshold` is a static profile parameter (diversity), not learned state.
 11. **How agents can be wrong**: Believe a cache is fresh when it has spoiled (stale belief) → travel wasted, corrected on arrival. Believe own stored food is fresh longer than it is → discover spoilage when next eating.
 12. **Lifecycle states**: Lot condition: `Fresh → Stale → Spoiled` (monotonic under decay; no un-spoiling). Lot existence: `Present(condition) → Spoiled(present) → Disposed/Composted(Waste)` or `Consumed`. Visibility/edibility/value are distinct axes (a spoiled lot is visible and edible but low-value).
-13. **Temporal resolution**: Condition advanced at the item-decay system tick by elapsed-interval × baseline-rate × storage-context-multiplier. Eat reads condition at action commit. `last_advanced_tick` makes advancement deterministic and idempotent across variable system cadence and across storage-context transitions (carry → drop on ground → pick up again is handled by re-reading the lot's parent at each advancement).
+13. **Temporal resolution**: Condition advanced at the item-decay system tick by `(elapsed_ticks × storage_multiplier + decay_remainder) / fresh_to_spoiled_ticks`, with the modulus stored back into `decay_remainder`. Eat reads condition at action commit. `last_advanced_tick` plus `decay_remainder` make advancement deterministic and idempotent across variable system cadence and across storage-context transitions (carry → drop on ground → pick up again is handled by re-reading possession/container state at each advancement).
 14. **Boundary conditions**: Imported food via boundary processes is held by `specs/S62-boundary-processes-remote-shocks.md`; off-map food arrives already carrying a `PerishableState` (initialized at the boundary materialization tick) if perishable.
 15. **Derived views**: `Fresh`/`Stale`/`Spoiled` band (`Freshness` enum) is derived from `condition` (the `Permille` is authoritative). `SpoiledFoodDiscovery` forensic (derived). `GoalBeliefView::lot_condition` / `lot_freshness_band` accessors (per-actor derived view, D8).
 16. **Causal records**: `LotOperation::Spoiled` in lot provenance; `EventTag::ItemSpoiled` (new variant — added to enum + `ALL` array); `SpoiledFoodDiscovery` in the critical window. Reconstruct "why did this agent eat spoiled food / travel past the spoiled cache?"
 17. **Target patterns**: Apple harvested fresh → ages to stale (reduced relief) → spoils (minimal relief, still present); hungry agent eats spoiled only when desperate; cache spoils before a believed-fresh trip; food in a container lasts longer than food on the ground.
-18. **Save/load and replay**: New component (`condition` + `last_advanced_tick` makes advancement replay-deterministic), perish profile + storage-rate multipliers, one event-tag variant, first use of an existing lineage variant, one profile field, one forensic record, one belief-store field — all standard replay-deterministic state. `BTreeMap` keys throughout the profile map preserve iteration determinism (AGENTS.md invariant).
+18. **Save/load and replay**: New component (`condition` + `last_advanced_tick` + `decay_remainder` makes advancement replay-deterministic), perish profile + storage-rate multipliers, one event-tag variant, first use of an existing lineage variant, one profile field, one forensic record, one belief-store field — all standard replay-deterministic state. `BTreeMap` keys throughout the profile map preserve iteration determinism (AGENTS.md invariant).
 
 ## Authoritative-to-AI Impact Analysis
 
@@ -259,7 +264,7 @@ D5 modifies candidate emission (suppresses spoiled-Eat candidates by hunger thre
 
 | Type | Classification | Authority |
 |------|----------------|-----------|
-| `PerishableState` (condition + last_advanced_tick) | Stored authoritative | Component on item lot |
+| `PerishableState` (condition + last_advanced_tick + decay_remainder) | Stored authoritative | Component on item lot |
 | `CommodityPerishProfile` + `StorageRateMultipliers` | Stored authoritative | World-authored profile (parallel to `CommodityDecayMap`) |
 | `LotOperation::Spoiled` lineage entry | Stored authoritative | Lot provenance (append) |
 | `EventTag::ItemSpoiled` | Stored event-payload | Authoritative on emission; added to `EventTag` enum + `ALL` array |

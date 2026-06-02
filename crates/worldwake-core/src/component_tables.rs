@@ -468,6 +468,7 @@ mod tests {
             PerishableState {
                 condition: Permille::new(740).unwrap(),
                 last_advanced_tick: Tick(23),
+                decay_remainder: 19,
             },
         );
         tables.insert_unique_item(
