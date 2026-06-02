@@ -5,14 +5,13 @@
   "starting_branch": "main",
   "current_branch": "implement-S178-perishable-food-spoilage",
   "base_head": "02016e76f8ea2e7d09915cc260fd3556090ec925",
-  "last_ticket": "archive/tickets/S178PERFOOSPO-004.md",
+  "last_ticket": "archive/tickets/S178PERFOOSPO-005.md",
   "last_result": "completed_archived",
-  "last_work_commit": "5bec26dcf63b052309d3e870e5f1843144c9a4de",
+  "last_work_commit": "84adc4f632e07b5e55ec20a1d24f583a833b4e57",
   "last_state_commit": "containing_commit",
   "last_state_commit_kind": "separate",
-  "next_target": "tickets/S178PERFOOSPO-005.md",
+  "next_target": "tickets/S178PERFOOSPO-006.md",
   "queue": [
-    "tickets/S178PERFOOSPO-005.md",
     "tickets/S178PERFOOSPO-006.md",
     "tickets/S178PERFOOSPO-007.md",
     "tickets/S178PERFOOSPO-008.md"
