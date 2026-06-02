@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `GoalBeliefView` gains `lot_condition`/`lot_freshness_band`/`commodity_perish_profile` accessors; `RuntimeBeliefView` + `PerAgentBeliefView` implement co-located authoritative gating; `AgentBeliefStore` lot-belief gains `last_observed_condition: Option<Permille>`; perception writes the new field when the agent is co-located with a perishable lot.
-**Deps**: 001
+**Deps**: `archive/tickets/S178PERFOOSPO-001.md`
 
 ## Problem
 

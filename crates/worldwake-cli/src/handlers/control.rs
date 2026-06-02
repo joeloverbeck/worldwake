@@ -278,6 +278,7 @@ mod tests {
             hostilities: vec![],
 
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: std::collections::BTreeMap::new(),
@@ -585,6 +586,7 @@ mod tests {
             hostilities: vec![],
 
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: std::collections::BTreeMap::new(),

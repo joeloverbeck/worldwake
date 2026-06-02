@@ -3,8 +3,8 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-/// S177WATSRCQUA-006 stores basin dirty-water refill penalties.
-pub const SAVE_FORMAT_VERSION: u32 = 115;
+/// S178PERFOOSPO-001 stores perishable lot state and perish profiles.
+pub const SAVE_FORMAT_VERSION: u32 = 116;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -204,27 +204,28 @@ mod tests {
         BlockerClearingCondition, BlockerKey, BlockerMemory, BlockerRecordedPayload, BlockerScope,
         BlockingFact, BodyCostPerTick, CandidateExtractorId, CauseRef, ClaimId, ClaimValue,
         ClaimantOutcome, CloseCause, CognitiveArchetype, CognitiveArchetypeComponent,
-        CommodityKind, CommodityPurpose, ContentionClaimant, ContentionEventPayload,
-        ContentionResolutionRule, ControlSource, DecisionEventPayload, Discrepancy,
-        DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DiscrepancySource, EmitterTag,
-        EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EpistemicDispositionProfile,
-        EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary,
-        ExpectationBasis, ExpectationId, ExpectationMismatchPayload, ExpectationRecord,
-        ExpectationState, ExpectationStore, GoalAbandonReason, GoalAbandonedPayload,
-        GoalCommittedPayload, GoalDispatchKey, GoalKey, GoalKind, GoalOfferedPayload,
-        GoalPlanningBudget, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
-        GoalSwitchReason, GroundComfortTag, HomeostaticNeedId, LastSeenMemory, LastSeenProvenance,
-        LastSeenRecord, LatrineFullness, LawAbidingProfile, MaterializationTag, MetabolismProfile,
-        MotiveSource, MotiveSourceRef, ObservationOmission, ObservationRef, OmissionReason,
-        PendingEvent, PerceptionSource, PersonalityAssignedPayload, PlaceDirtiness,
-        PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
-        PursuitInvalidationReasonTag, Quantity, RankedGoalComparisonDimensionTag, RecordRef,
-        RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
-        ReplanTriggeredPayload, ReservationId, ResourceSourceQualityObservedPayload, RestCapacity,
-        RestOccupancy, RewardEncumbrance, RiskWeightProfile, RoutePreferenceProfile,
-        RoutePreferenceSummary, RouteSegment, Seed, SelfCareOccupancy, SelfCareUseKind, ShelterTag,
-        SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepFailureCause,
-        SleepQualityProfile, SleepRecoveryModifier, SourceKeyPayload, StateHash, SuspensionReason,
+        CommodityKind, CommodityPerishProfile, CommodityPurpose, ContentionClaimant,
+        ContentionEventPayload, ContentionResolutionRule, ControlSource, DecisionEventPayload,
+        Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DiscrepancySource,
+        EmitterTag, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind,
+        EpistemicDispositionProfile, EventLog, EventPayload, EventTag, EventView, EvidenceKindTag,
+        EvidenceSummary, ExpectationBasis, ExpectationId, ExpectationMismatchPayload,
+        ExpectationRecord, ExpectationState, ExpectationStore, GoalAbandonReason,
+        GoalAbandonedPayload, GoalCommittedPayload, GoalDispatchKey, GoalKey, GoalKind,
+        GoalOfferedPayload, GoalPlanningBudget, GoalRejectionReason, GoalSuppressedPayload,
+        GoalSuspendedPayload, GoalSwitchReason, GroundComfortTag, HomeostaticNeedId,
+        LastSeenMemory, LastSeenProvenance, LastSeenRecord, LatrineFullness, LawAbidingProfile,
+        MaterializationTag, MetabolismProfile, MotiveSource, MotiveSourceRef, ObservationOmission,
+        ObservationRef, OmissionReason, PendingEvent, PerceptionSource, PerishableState,
+        PersonalityAssignedPayload, PlaceDirtiness, PlanAdoptedPayload, PlanAssumptionRef,
+        PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
+        RankedGoalComparisonDimensionTag, RecordRef, RejectedAlternativeSummary,
+        RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
+        ResourceSourceQualityObservedPayload, RestCapacity, RestOccupancy, RewardEncumbrance,
+        RiskWeightProfile, RoutePreferenceProfile, RoutePreferenceSummary, RouteSegment, Seed,
+        SelfCareOccupancy, SelfCareUseKind, ShelterTag, SleepEpisode, SleepEpisodeEndedPayload,
+        SleepEpisodeStartedPayload, SleepFailureCause, SleepQualityProfile, SleepRecoveryModifier,
+        SourceKeyPayload, StateHash, StorageRateMultipliers, SuspensionReason,
         TestimonyTrustProfile, TestimonyTrustSummary, Tick, TickRange, TopicScope, UniqueItemKind,
         UtilityProfile, VisibilitySpec, WakeCondition, WakeReason, WashBasinState,
         WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WaterQuality,
@@ -332,6 +333,19 @@ mod tests {
         world.set_commodity_decay(std::collections::BTreeMap::from([(
             CommodityKind::Waste,
             std::num::NonZeroU32::new(17).unwrap(),
+        )]));
+        world.set_commodity_perish_profiles(std::collections::BTreeMap::from([(
+            CommodityKind::Apple,
+            CommodityPerishProfile {
+                fresh_to_spoiled_ticks: std::num::NonZeroU32::new(41).unwrap(),
+                stale_threshold: worldwake_core::Permille::new_unchecked(620),
+                spoiled_threshold: worldwake_core::Permille::new_unchecked(210),
+                storage_rates: StorageRateMultipliers {
+                    ground: worldwake_core::Permille::new_unchecked(900),
+                    container: worldwake_core::Permille::new_unchecked(450),
+                    possessed: worldwake_core::Permille::new_unchecked(700),
+                },
+            },
         )]));
         let mut event_log = EventLog::new();
         let actor = spawn_agent(&mut world, &mut event_log, Tick(0), "save-actor");
@@ -558,6 +572,17 @@ mod tests {
         let _ = sleep_txn.commit(&mut event_log);
         let (reserved_item, reservation) =
             spawn_item_with_reservation(&mut world, &mut event_log, actor);
+        let mut perish_txn = new_txn(&mut world, Tick(3), CauseRef::Bootstrap);
+        perish_txn
+            .set_component_perishable_state(
+                reserved_item,
+                PerishableState {
+                    condition: worldwake_core::Permille::new_unchecked(641),
+                    last_advanced_tick: Tick(3),
+                },
+            )
+            .unwrap();
+        let _ = perish_txn.commit(&mut event_log);
         let mut beliefs = AgentBeliefStore::new();
         beliefs.update_entity(
             target,
@@ -1431,8 +1456,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_115_after_basin_dirty_water_refill_penalty() {
-        assert_eq!(SAVE_FORMAT_VERSION, 115);
+    fn save_format_version_is_116_after_perishable_foundation_substrate() {
+        assert_eq!(SAVE_FORMAT_VERSION, 116);
     }
 
     #[test]
@@ -1443,7 +1468,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 115);
+        assert_eq!(SAVE_FORMAT_VERSION, 116);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1608,6 +1633,16 @@ mod tests {
         assert_eq!(
             restored.world().commodity_decay(),
             state.world().commodity_decay()
+        );
+        assert_eq!(
+            restored.world().commodity_perish_profiles(),
+            state.world().commodity_perish_profiles()
+        );
+        assert_eq!(
+            restored
+                .world()
+                .get_component_perishable_state(reserved_item),
+            state.world().get_component_perishable_state(reserved_item)
         );
         assert_eq!(
             restored.world().get_component_sleep_episode(actor),

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `MetabolismProfile` gains `spoiled_food_hunger_threshold: Permille`; 18 construction sites updated; `SAVE_FORMAT_VERSION` 116→117.
-**Deps**: 001
+**Deps**: `archive/tickets/S178PERFOOSPO-001.md`
 
 ## Problem
 

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — Eat handler hunger-relief computation scales by the lot's `PerishableState.condition` band.
-**Deps**: 001
+**Deps**: `archive/tickets/S178PERFOOSPO-001.md`
 
 ## Problem
 
@@ -22,7 +22,7 @@ D4 makes hunger relief from Eat depend on the consumed lot's freshness band. Fre
 ## Architecture Check
 
 1. Reading `PerishableState` directly from the lot at action commit is FND-14A-compliant because Eat preconditions enforce co-location/possession. No belief-view indirection needed at action commit — the planner's belief-mediated read (ticket 005) is for goal emission, not for the consumed-relief computation.
-2. Linear scaling between `stale_threshold` and `spoiled_threshold` keeps the relief curve continuous (no cliff at the band boundary), preserving granular aftermath (FND-10). Integer arithmetic per CLAUDE.md Determinism invariant.
+2. Linear scaling between `stale_threshold` and `spoiled_threshold` keeps the relief curve continuous (no cliff at the band boundary), preserving granular aftermath (FND-10). Integer arithmetic per AGENTS.md Determinism invariant.
 
 ## Verification Layers
 
@@ -108,7 +108,7 @@ The spoiled-floor `Permille::new_unchecked(150)` is a per-call constant. Per-com
 ### Invariants
 
 1. Eat precondition continues to allow spoiled food — gating moves to candidate generation, not precondition (FND-14A scope; FND-20 reasoning-over-scripts).
-2. Relief computation is deterministic per `(condition, profile)` pair — integer arithmetic only (CLAUDE.md Determinism invariant).
+2. Relief computation is deterministic per `(condition, profile)` pair — integer arithmetic only (AGENTS.md Determinism invariant).
 3. Spoiled-floor is non-zero — hunger never deadlocks purely from spoilage (FND-11 dampener per Section H #9c).
 
 ## Test Plan

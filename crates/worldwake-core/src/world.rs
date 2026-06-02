@@ -6,18 +6,19 @@ use crate::{
     AgentSchemaContextProfile, ArtifactHeader, ArtifactPostingProfile, BanditCamp,
     BanditFactionPolicy, BlockerMemory, BountyTerms, CarryCapacity, CognitiveArchetypeComponent,
     CognitiveProfile, CombatProfile, CombatStance, CommodityDecayMap, CommodityKind,
-    CommodityValuationProfile, CommunicationProfile, ComponentTables, ComponentValue, Container,
-    ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt,
-    DemandMemory, DeprivationExposure, DiscrepancyMemory, DisposalProfile, DiversificationProfile,
-    DriveEscalationProfile, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
-    EpistemicDispositionProfile, EventId, ExecutionBudget, ExpectationStore, ExplorationProfile,
-    FactionData, GroundSince, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile,
-    IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes, LastHarvestTrace,
-    LastProactiveExplorationTick, LastSeenMemory, LawAbidingProfile, LearnedOpportunityMemory,
-    LoadUnits, LotOperation, MemoryCapacityProfile, MerchandiseProfile, MetabolismProfile, Name,
-    NoticeContent, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
-    OfficeForceProfile, OfficeForceState, OfficePatrolDuty, PatrolProfile, PatrolRoute,
-    PerceptionProfile, PlaceDirtiness, PlaceTag, PlaceTagSet, PlaceVisibilityProfile,
+    CommodityPerishProfileMap, CommodityValuationProfile, CommunicationProfile, ComponentTables,
+    ComponentValue, Container, ContentionDispositionProfile, ContentionIntents, ContentionPolicy,
+    ContentionQueue, DeadAt, DemandMemory, DeprivationExposure, DiscrepancyMemory, DisposalProfile,
+    DiversificationProfile, DriveEscalationProfile, DriveThresholds, EntityAllocator, EntityId,
+    EntityKind, EntityMeta, EpistemicDispositionProfile, EventId, ExecutionBudget,
+    ExpectationStore, ExplorationProfile, FactionData, GroundSince, HomeostaticNeeds,
+    InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
+    JusticeDispositionProfile, KnownRecipes, LastHarvestTrace, LastProactiveExplorationTick,
+    LastSeenMemory, LawAbidingProfile, LearnedOpportunityMemory, LoadUnits, LotOperation,
+    MemoryCapacityProfile, MerchandiseProfile, MetabolismProfile, Name, NoticeContent,
+    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, OfficeForceProfile,
+    OfficeForceState, OfficePatrolDuty, PatrolProfile, PatrolRoute, PerceptionProfile,
+    PerishableState, PlaceDirtiness, PlaceTag, PlaceTagSet, PlaceVisibilityProfile,
     PortfolioWeightsProfile, PreferenceProfile, ProductionJob, ProductionOutputOwnershipPolicy,
     ProvenanceEntry, PursuitProfile, Quantity, RecordData, RelationTables, RepairMemory,
     ResourceExtractionQueues, ResourceSource, RestCapacity, RestOccupancy, RewardEncumbrance,
@@ -133,6 +134,7 @@ pub struct World {
     relations: RelationTables,
     topology: Topology,
     commodity_decay: CommodityDecayMap,
+    commodity_perish_profiles: CommodityPerishProfileMap,
     harvest_trace_retention_ticks: u32,
 }
 
@@ -149,6 +151,7 @@ impl World {
             relations: RelationTables::default(),
             topology,
             commodity_decay: CommodityDecayMap::default(),
+            commodity_perish_profiles: crate::default_commodity_perish_profile_map(),
             harvest_trace_retention_ticks: crate::HARVEST_TRACE_RETENTION_TICKS,
         })
     }
@@ -160,6 +163,18 @@ impl World {
 
     pub fn set_commodity_decay(&mut self, commodity_decay: CommodityDecayMap) {
         self.commodity_decay = commodity_decay;
+    }
+
+    #[must_use]
+    pub const fn commodity_perish_profiles(&self) -> &CommodityPerishProfileMap {
+        &self.commodity_perish_profiles
+    }
+
+    pub fn set_commodity_perish_profiles(
+        &mut self,
+        commodity_perish_profiles: CommodityPerishProfileMap,
+    ) {
+        self.commodity_perish_profiles = commodity_perish_profiles;
     }
 
     /// Retention window (ticks) for [`LastHarvestTrace`] entries during the
@@ -719,13 +734,14 @@ mod tests {
         JusticeDispositionProfile, KnownRecipes, LawAbidingProfile, LoadUnits, LotOperation,
         MerchandiseProfile, MetabolismProfile, Name, OfficeData, OfficeForceProfile,
         OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource,
-        Permille, Place, PlaceTag, PlaceVisitRecord, ProductionJob, ProvenanceEntry,
-        PursuitProfile, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
-        ReservationRecord, ResourceSource, RightKind, RiskWeightProfile, RoutePreferenceProfile,
-        SubstitutePreferences, SuccessionLaw, SurveyMemory, TellProfile, TestimonyTrustProfile,
-        TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId,
-        UniqueItem, UniqueItemKind, WaterToleranceProfile, WorkstationMarker, WorkstationTag,
-        WorldError, Wound, WoundCause, WoundList, build_prototype_world,
+        PerishableState, Permille, Place, PlaceTag, PlaceVisitRecord, ProductionJob,
+        ProvenanceEntry, PursuitProfile, Quantity, RecordData, RecordEntryId, RecordKind,
+        ReservationId, ReservationRecord, ResourceSource, RightKind, RiskWeightProfile,
+        RoutePreferenceProfile, SubstitutePreferences, SuccessionLaw, SurveyMemory, TellProfile,
+        TestimonyTrustProfile, TheftDispositionProfile, Tick, TickRange, Topology,
+        TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind, WaterToleranceProfile,
+        WorkstationMarker, WorkstationTag, WorldError, Wound, WoundCause, WoundList,
+        build_prototype_world,
         test_utils::{
             sample_blocker_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
@@ -1485,6 +1501,30 @@ mod tests {
                 quality: None,
             })
         );
+    }
+
+    #[test]
+    fn perishable_state_is_registered_only_for_item_lots() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let lot = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(1))
+            .unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let state = PerishableState {
+            condition: Permille::new(740).unwrap(),
+            last_advanced_tick: Tick(3),
+        };
+
+        world.insert_component_perishable_state(lot, state).unwrap();
+        let err = world
+            .insert_component_perishable_state(agent, state)
+            .unwrap_err();
+
+        assert_eq!(world.get_component_perishable_state(lot), Some(&state));
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+        assert!(!world.has_component_perishable_state(agent));
     }
 
     #[test]

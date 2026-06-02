@@ -97,7 +97,7 @@ The detection logic reads the event log (perception updates) and belief snapshot
 
 ### Invariants
 
-1. `SpoiledFoodDiscovery` is derived forensic state, never authoritative (CLAUDE.md FND-29A invariant; FND-27 caches-never-truth).
+1. `SpoiledFoodDiscovery` is derived forensic state, never authoritative (AGENTS.md FND-29A invariant; FND-27 caches-never-truth).
 2. `SpoiledFoodOutcome` enum is exhaustive — every lawful response branch is named; no `Unknown` catch-all.
 3. Record only fires when belief-vs-observed mismatch holds — never on direct observation of an authoritative-Spoiled lot without prior expectation (FND-17 violated-expectation precondition).
 

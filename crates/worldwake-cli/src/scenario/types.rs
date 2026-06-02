@@ -11,16 +11,16 @@ use worldwake_core::{
     AgendaProfile, AgentSchemaContextProfile, ArchetypeAssignmentPolicy, ArtifactCredibility,
     ArtifactExistence, ArtifactLegalEffect, ArtifactPostingProfile, BlockerReason, CarryCapacity,
     CloseCause, CognitiveArchetype, CognitiveProfile, CombatProfile, CommodityDecayMap,
-    CommodityValuationProfile, CommunicationProfile, Container, ContentionDispositionProfile,
-    ContentionPolicy, ControlSource, DestructionCause, DisposalProfile, DiversificationProfile,
-    DriveEscalationProfile, DriveThresholds, EntityKind, EpistemicDispositionProfile,
-    ExecutionBudget, ExplorationProfile, GroundComfortTag, HomeostaticNeeds,
-    IntentionDispositionProfile, JusticeDispositionProfile, LatrineFullness, LawAbidingProfile,
-    LoadUnits, MetabolismProfile, ObligationSatiationProfile, PatrolProfile, PerceptionProfile,
-    PerceptionSource, Permille, PlaceDirtiness, PlaceVisibilityProfile, PortfolioWeightsProfile,
-    PreferenceProfile, ProofKind, ProofRequirement, PursuitProfile, Quantity, RevocationReason,
-    RiskWeightProfile, RoutePreferenceProfile, ShelterTag, SleepQualityProfile,
-    SleepRecoveryModifier, SubstitutePreferences, SuccessionLaw, TellProfile,
+    CommodityPerishProfileMap, CommodityValuationProfile, CommunicationProfile, Container,
+    ContentionDispositionProfile, ContentionPolicy, ControlSource, DestructionCause,
+    DisposalProfile, DiversificationProfile, DriveEscalationProfile, DriveThresholds, EntityKind,
+    EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile, GroundComfortTag,
+    HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LatrineFullness,
+    LawAbidingProfile, LoadUnits, MetabolismProfile, ObligationSatiationProfile, PatrolProfile,
+    PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness, PlaceVisibilityProfile,
+    PortfolioWeightsProfile, PreferenceProfile, ProofKind, ProofRequirement, PursuitProfile,
+    Quantity, RevocationReason, RiskWeightProfile, RoutePreferenceProfile, ShelterTag,
+    SleepQualityProfile, SleepRecoveryModifier, SubstitutePreferences, SuccessionLaw, TellProfile,
     TestimonyTrustProfile, TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
     ViolationDispositionProfile, WashBasinState, WaterQuality, WaterToleranceProfile,
     WorkstationTag, items::CommodityKind,
@@ -52,6 +52,8 @@ pub struct ScenarioDef {
     pub hostilities: Vec<HostilityDef>,
     #[serde(default)]
     pub commodity_decay: Option<CommodityDecayMap>,
+    #[serde(default)]
+    pub commodity_perish_profile: Option<CommodityPerishProfileMap>,
     #[serde(default)]
     pub survival_health_contract: Option<SurvivalHealthContractDef>,
     /// Ticks between checkpoint snapshots for event log compaction.
@@ -898,6 +900,7 @@ mod tests {
         assert!(def.artifacts.is_empty());
         assert!(def.resource_sources.is_empty());
         assert_eq!(def.commodity_decay, None);
+        assert_eq!(def.commodity_perish_profile, None);
     }
 
     #[test]
@@ -1595,6 +1598,55 @@ mod tests {
         let def: ScenarioDef = from_ron_str(ron_str);
 
         assert_eq!(def.commodity_decay, None);
+    }
+
+    #[test]
+    fn test_scenario_def_commodity_perish_profile_omitted_field_stays_none() {
+        let ron_str = r#"(
+            seed: 42,
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (name: "Alice", location: "Village", control: Human),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+
+        assert_eq!(def.commodity_perish_profile, None);
+    }
+
+    #[test]
+    fn test_scenario_def_commodity_perish_profile_deserializes_when_present() {
+        let ron_str = r#"(
+            seed: 42,
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (name: "Alice", location: "Village", control: Human),
+            ],
+            commodity_perish_profile: {
+                Apple: (
+                    fresh_to_spoiled_ticks: 720,
+                    stale_threshold: 667,
+                    spoiled_threshold: 333,
+                    storage_rates: (
+                        ground: 1000,
+                        container: 500,
+                        possessed: 750,
+                    ),
+                ),
+            },
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+
+        assert_eq!(
+            def.commodity_perish_profile,
+            Some(worldwake_core::default_commodity_perish_profile_map())
+        );
     }
 
     #[test]

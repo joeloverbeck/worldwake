@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: No — scenario authoring + golden test bindings only.
-**Deps**: 001, 002, 003, 004, 005, 006, 007
+**Deps**: `archive/tickets/S178PERFOOSPO-001.md`, 002, 003, 004, 005, 006, 007
 
 ## Problem
 
@@ -45,7 +45,7 @@ The spec's FND-31 validation requires three goldens covering: (a) lifecycle Fres
    - Storage-context rate differentiation (container lots spoil at ~2× ground time per `storage_rates.container=500`) → per-storage-context lineage tick count assertion.
    - Hoarding-waste dampener: total spoiled-lot count correlates with over-acquisition above a numeric threshold → aggregate assertion (Section H #9a dampener).
    - Desperation-eat fires only above per-agent threshold (per-agent FND-22 differentiation via per-agent `spoiled_food_hunger_threshold`) → forensic-record outcomes split between `AteAnyway` and `TraveledToFallback` per profile.
-   - Replay equivalence → deterministic state hash matches across replays (CLAUDE.md Determinism invariant).
+   - Replay equivalence → deterministic state hash matches across replays (AGENTS.md Determinism invariant).
 4. Auth-to-AI Impact points covered:
    - #3 `search_plan` — terminal ordering unchanged; emerges from passing goldens.
    - #4 `BestEffort` action start — Eat starts lawfully on spoiled lots when candidate is selected; verified by cache golden's AteAnyway branch.
@@ -115,7 +115,7 @@ Add a new test module `crates/worldwake-ai/tests/scenarios/food_spoilage.rs` wit
 ### Invariants
 
 1. Each illegal-path listed in the spec's "Illegal paths" section (lines 212-213) has at least one negative assertion in the goldens (none-fire assertion).
-2. Replay equivalence holds across all three scenarios: deterministic state hash matches across replays (CLAUDE.md Determinism invariant).
+2. Replay equivalence holds across all three scenarios: deterministic state hash matches across replays (AGENTS.md Determinism invariant).
 3. Per-storage-context rate differentiation is asserted concretely (not narratively): container Stale-threshold-crossing tick = 2 × ground Stale-threshold-crossing tick within tolerance.
 4. The 1440-tick scenario's hoarding-dampener assertion uses a concrete numeric threshold tied to the scenario's authored stockpile vs. consumption rate, not a narrative "lots spoiled because of hoarding" claim.
 

@@ -241,11 +241,11 @@ Remote-belief reads return `None` rather than reading authoritative remote `Peri
 15. **Derived views**: `Fresh`/`Stale`/`Spoiled` band (`Freshness` enum) is derived from `condition` (the `Permille` is authoritative). `SpoiledFoodDiscovery` forensic (derived). `GoalBeliefView::lot_condition` / `lot_freshness_band` accessors (per-actor derived view, D8).
 16. **Causal records**: `LotOperation::Spoiled` in lot provenance; `EventTag::ItemSpoiled` (new variant — added to enum + `ALL` array); `SpoiledFoodDiscovery` in the critical window. Reconstruct "why did this agent eat spoiled food / travel past the spoiled cache?"
 17. **Target patterns**: Apple harvested fresh → ages to stale (reduced relief) → spoils (minimal relief, still present); hungry agent eats spoiled only when desperate; cache spoils before a believed-fresh trip; food in a container lasts longer than food on the ground.
-18. **Save/load and replay**: New component (`condition` + `last_advanced_tick` makes advancement replay-deterministic), perish profile + storage-rate multipliers, one event-tag variant, first use of an existing lineage variant, one profile field, one forensic record, one belief-store field — all standard replay-deterministic state. `BTreeMap` keys throughout the profile map preserve iteration determinism (CLAUDE.md invariant).
+18. **Save/load and replay**: New component (`condition` + `last_advanced_tick` makes advancement replay-deterministic), perish profile + storage-rate multipliers, one event-tag variant, first use of an existing lineage variant, one profile field, one forensic record, one belief-store field — all standard replay-deterministic state. `BTreeMap` keys throughout the profile map preserve iteration determinism (AGENTS.md invariant).
 
 ## Authoritative-to-AI Impact Analysis
 
-D5 modifies candidate emission (suppresses spoiled-Eat candidates by hunger threshold), triggering CLAUDE.md's Authoritative-to-AI Impact Rule. The 7-point checklist:
+D5 modifies candidate emission (suppresses spoiled-Eat candidates by hunger threshold), triggering AGENTS.md's Authoritative-to-AI Impact Rule. The 7-point checklist:
 
 1. **`get_affordances`** — PASS. Eat affordance still produced for any reachable food lot; precondition still allows spoiled food per D4 (the gate is at candidate emission, not at affordance generation).
 2. **`generate_candidates`** — **flag** for implementation. D5 introduces condition-ranked emission and the desperation gate. All reads must route through `GoalBeliefView::lot_condition` / `lot_freshness_band` (D8) — never directly read authoritative `PerishableState` from world state for a remote lot. Verify under golden trace that no candidate-generation call site reads `world.get_component_perishable_state` directly.

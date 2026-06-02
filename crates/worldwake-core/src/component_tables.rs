@@ -31,7 +31,7 @@ use crate::{
     institutional::RecordData,
     intention_disposition::IntentionDispositionProfile,
     intention_frame::IntentionFrame,
-    items::{Container, GroundSince, ItemLot, UniqueItem},
+    items::{Container, GroundSince, ItemLot, PerishableState, UniqueItem},
     law_abiding_profile::LawAbidingProfile,
     learned_opportunity_memory::LearnedOpportunityMemory,
     memory_capacity_profile::MemoryCapacityProfile,
@@ -164,7 +164,7 @@ mod tests {
         DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, GoalKey, GoalKind,
         HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
         MetabolismProfile, OfficePatrolDuty, OfficePatrolDutyLifecycle, OfficePatrolDutyProvenance,
-        PatrolProfile, PatrolRoute, Permille, PlaceVisitRecord, ProductionJob,
+        PatrolProfile, PatrolRoute, PerishableState, Permille, PlaceVisitRecord, ProductionJob,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity,
         ResourceSource, RewardEncumbrance, Tick, TravelEdgeId, UniqueItem, UniqueItemKind,
         WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
@@ -463,6 +463,13 @@ mod tests {
                 quality: None,
             },
         );
+        tables.insert_perishable_state(
+            entity(11),
+            PerishableState {
+                condition: Permille::new(740).unwrap(),
+                last_advanced_tick: Tick(23),
+            },
+        );
         tables.insert_unique_item(
             entity(12),
             UniqueItem {
@@ -555,6 +562,7 @@ mod tests {
         assert_eq!(tables.iter_production_jobs().count(), 0);
         assert_eq!(tables.iter_in_transit_on_edges().count(), 0);
         assert_eq!(tables.iter_item_lots().count(), 0);
+        assert_eq!(tables.iter_perishable_states().count(), 0);
         assert_eq!(tables.iter_unique_items().count(), 0);
         assert_eq!(tables.iter_containers().count(), 0);
     }

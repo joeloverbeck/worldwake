@@ -267,9 +267,11 @@ pub use intention_frame::{
 };
 pub use items::{
     CombatWeaponProfile, CommodityConsumableProfile, CommodityDecayMap, CommodityKind,
-    CommodityKindSpec, CommodityPhysicalProfile, CommodityTreatmentProfile, Container, GroundSince,
-    ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind,
-    UniqueItemKindSpec, UniqueItemPhysicalProfile, default_commodity_decay_map,
+    CommodityKindSpec, CommodityPerishProfile, CommodityPerishProfileMap, CommodityPhysicalProfile,
+    CommodityTreatmentProfile, Container, Freshness, GroundSince, ItemLot, LotOperation,
+    PerishableState, ProvenanceEntry, StorageRateMultipliers, TradeCategory, UniqueItem,
+    UniqueItemKind, UniqueItemKindSpec, UniqueItemPhysicalProfile, default_commodity_decay_map,
+    default_commodity_perish_profile_map,
 };
 pub use law_abiding_profile::LawAbidingProfile;
 pub use learned_opportunity_memory::{

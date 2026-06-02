@@ -324,6 +324,15 @@ pub struct ItemLot {
 
 impl Component for ItemLot {}
 
+/// Per-lot freshness state for perishable commodity lots.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PerishableState {
+    pub condition: Permille,
+    pub last_advanced_tick: Tick,
+}
+
+impl Component for PerishableState {}
+
 /// Singular item state stored on `UniqueItem` entities.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct UniqueItem {
@@ -343,6 +352,60 @@ pub fn default_commodity_decay_map() -> CommodityDecayMap {
         (CommodityKind::Waste, nz(200)),
         (CommodityKind::Apple, nz(720)),
     ])
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StorageRateMultipliers {
+    pub ground: Permille,
+    pub container: Permille,
+    pub possessed: Permille,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CommodityPerishProfile {
+    pub fresh_to_spoiled_ticks: NonZeroU32,
+    pub stale_threshold: Permille,
+    pub spoiled_threshold: Permille,
+    pub storage_rates: StorageRateMultipliers,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Freshness {
+    Fresh,
+    Stale,
+    Spoiled,
+}
+
+impl Freshness {
+    #[must_use]
+    pub const fn derive_from(condition: Permille, profile: &CommodityPerishProfile) -> Self {
+        if condition.value() >= profile.stale_threshold.value() {
+            Self::Fresh
+        } else if condition.value() >= profile.spoiled_threshold.value() {
+            Self::Stale
+        } else {
+            Self::Spoiled
+        }
+    }
+}
+
+pub type CommodityPerishProfileMap = BTreeMap<CommodityKind, CommodityPerishProfile>;
+
+#[must_use]
+pub fn default_commodity_perish_profile_map() -> CommodityPerishProfileMap {
+    BTreeMap::from([(
+        CommodityKind::Apple,
+        CommodityPerishProfile {
+            fresh_to_spoiled_ticks: nz(720),
+            stale_threshold: pm(667),
+            spoiled_threshold: pm(333),
+            storage_rates: StorageRateMultipliers {
+                ground: pm(1000),
+                container: pm(500),
+                possessed: pm(750),
+            },
+        },
+    )])
 }
 
 /// Tick when an item most recently became a loose ground item.
@@ -377,10 +440,11 @@ const fn nz(value: u32) -> NonZeroU32 {
 mod tests {
     use super::{
         CombatWeaponProfile, CommodityConsumableProfile, CommodityDecayMap, CommodityKind,
-        CommodityKindSpec, CommodityPhysicalProfile, CommodityTreatmentProfile, Container,
-        GroundSince, ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem,
+        CommodityKindSpec, CommodityPerishProfileMap, CommodityPhysicalProfile,
+        CommodityTreatmentProfile, Container, Freshness, GroundSince, ItemLot, LotOperation,
+        PerishableState, ProvenanceEntry, StorageRateMultipliers, TradeCategory, UniqueItem,
         UniqueItemKind, UniqueItemKindSpec, UniqueItemPhysicalProfile, WaterQuality,
-        default_commodity_decay_map,
+        default_commodity_decay_map, default_commodity_perish_profile_map,
     };
     use crate::{EntityId, EventId, LoadUnits, Permille, Quantity, Tick, traits::Component};
     use serde::{Serialize, de::DeserializeOwned};
@@ -438,8 +502,19 @@ mod tests {
     }
 
     #[test]
+    fn perishable_state_component_bounds() {
+        fn assert_component_bounds<T: Component + Eq + PartialEq>() {}
+        assert_component_bounds::<PerishableState>();
+    }
+
+    #[test]
     fn commodity_decay_map_trait_bounds() {
         assert_struct_bounds::<CommodityDecayMap>();
+    }
+
+    #[test]
+    fn commodity_perish_profile_map_trait_bounds() {
+        assert_struct_bounds::<CommodityPerishProfileMap>();
     }
 
     #[test]
@@ -688,12 +763,84 @@ mod tests {
     }
 
     #[test]
+    fn default_commodity_perish_profile_map_contains_pinned_apple_entry() {
+        let map = default_commodity_perish_profile_map();
+        let profile = map.get(&CommodityKind::Apple).unwrap();
+
+        assert_eq!(map.len(), 1);
+        assert_eq!(
+            profile.fresh_to_spoiled_ticks,
+            NonZeroU32::new(720).unwrap()
+        );
+        assert_eq!(profile.stale_threshold, Permille::new_unchecked(667));
+        assert_eq!(profile.spoiled_threshold, Permille::new_unchecked(333));
+        assert_eq!(
+            profile.storage_rates,
+            StorageRateMultipliers {
+                ground: Permille::new_unchecked(1000),
+                container: Permille::new_unchecked(500),
+                possessed: Permille::new_unchecked(750),
+            }
+        );
+    }
+
+    #[test]
+    fn freshness_derive_from_matches_band_thresholds() {
+        let profile = default_commodity_perish_profile_map()
+            .remove(&CommodityKind::Apple)
+            .unwrap();
+
+        assert_eq!(
+            Freshness::derive_from(Permille::new_unchecked(1000), &profile),
+            Freshness::Fresh
+        );
+        assert_eq!(
+            Freshness::derive_from(profile.stale_threshold, &profile),
+            Freshness::Fresh
+        );
+        assert_eq!(
+            Freshness::derive_from(Permille::new_unchecked(666), &profile),
+            Freshness::Stale
+        );
+        assert_eq!(
+            Freshness::derive_from(profile.spoiled_threshold, &profile),
+            Freshness::Stale
+        );
+        assert_eq!(
+            Freshness::derive_from(Permille::new_unchecked(332), &profile),
+            Freshness::Spoiled
+        );
+    }
+
+    #[test]
     fn commodity_decay_map_roundtrips_through_bincode() {
         let map = default_commodity_decay_map();
         let bytes = bincode::serialize(&map).unwrap();
         let roundtrip: CommodityDecayMap = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, map);
+    }
+
+    #[test]
+    fn commodity_perish_profile_map_roundtrips_through_bincode() {
+        let map = default_commodity_perish_profile_map();
+        let bytes = bincode::serialize(&map).unwrap();
+        let roundtrip: CommodityPerishProfileMap = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, map);
+    }
+
+    #[test]
+    fn perishable_state_roundtrips_through_bincode() {
+        let state = PerishableState {
+            condition: Permille::new_unchecked(742),
+            last_advanced_tick: Tick(37),
+        };
+
+        let bytes = bincode::serialize(&state).unwrap();
+        let roundtrip: PerishableState = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, state);
     }
 
     #[test]

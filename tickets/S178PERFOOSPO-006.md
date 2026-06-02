@@ -73,7 +73,7 @@ let freshness_factor = match view.lot_freshness_band(lot) {
 let scaled = (base_score as u32 * freshness_factor.value() as u32 / 1000) as u16;
 ```
 
-Integer arithmetic only (CLAUDE.md Determinism invariant). The factor multiplies the existing hunger-pressure-derived base score; relative ordering Fresh > Stale > Spoiled is preserved.
+Integer arithmetic only (AGENTS.md Determinism invariant). The factor multiplies the existing hunger-pressure-derived base score; relative ordering Fresh > Stale > Spoiled is preserved.
 
 ### 4. Auth-to-AI Impact #2 verification
 
@@ -108,7 +108,7 @@ Verify no candidate emission path reads `world.get_component_perishable_state(lo
 1. Spoiled-food candidate emission is gated by `believed_hunger >= profile.spoiled_food_hunger_threshold`, never by authoritative remote read (FND-14B compliance).
 2. Ranking respects freshness band ordering (`Fresh > Stale > Spoiled`) consistently across decision ticks.
 3. No `GroundedGoal` carries a score field — scoring stays in `ranking.rs::motive_score` per `worldwake-validation-patterns.md` Candidate Scoring Architecture.
-4. Integer arithmetic only — no floats in freshness factor (CLAUDE.md Determinism invariant).
+4. Integer arithmetic only — no floats in freshness factor (AGENTS.md Determinism invariant).
 
 ## Test Plan
 

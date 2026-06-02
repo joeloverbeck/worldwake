@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `item_decay_system` gains condition-advancement loop, storage-context lookup, `LotOperation::Spoiled` emission, `EventTag::ItemSpoiled` emission. Perishable lots no longer archive at duration; they persist post-spoilage. Spawn sites for perishable commodities attach `PerishableState` at creation.
-**Deps**: 001
+**Deps**: `archive/tickets/S178PERFOOSPO-001.md`
 
 ## Problem
 
@@ -17,7 +17,7 @@ D3 replaces the archive-at-duration path for perishable food with condition adva
 1. `item_decay_system` at `crates/worldwake-systems/src/item_decay.rs:8-42` currently iterates ground items via `query_ground_since()`, filters by `CommodityDecayMap` membership, archives matched lots once `elapsed >= decay_ticks` via `apply_decay` (line 263-287). Storage-context distinction does not exist — only ground lots decay. Reads `world.commodity_decay()` at line 49 for the rate map; ticket 001 adds the parallel `world.commodity_perish_profiles()` accessor. `#[cfg(test)]` boundary at line 289. 19 existing `#[test]` functions across lines 290-1300 — ground-archive tests around lines 68-238 are the primary regression surface. Tests for non-perishable `Waste` archival continue to apply unchanged because Waste has no `CommodityPerishProfile` entry per ticket 001's default map (verified by spec's Non-Goal "No replacement of `CommodityDecayMap`'s Waste handling").
 2. Spec D3 verified against current `specs/S178-perishable-food-spoilage.md`. FND-26 (systems via state) — the system reads `PerishableState`, lot parent, `CommodityPerishProfile`; writes `PerishableState.condition`, lineage, event. FND-28 — the archive-only path for Apple is replaced via a `world.has_component_perishable_state(lot)` skip-filter in `collect_decay_targets`, ensuring no parallel execution on perishable lots. FND-29A — `last_advanced_tick` makes advancement replay-deterministic.
 3. Shared abstraction boundary: the `SystemExecutionContext` surface (`world`, `event_log`, `tick`); the `GroundSince` component as the storage-context discriminator for ground; the parent-entity lookup (`world.parent_of(lot)` / `world.entity_kind(parent)`) as the discriminator for possessed/container. Lot-spawn sites for perishable commodities are an additional integration point — `set_component_item_lot` workspace-wide grep enumerates them at implementation time.
-4. Authoritative arithmetic for Apple at ground: baseline rate = `1000 / 720 ≈ 1.39 permille/tick`. After 240 ticks ground exposure, condition crosses `stale_threshold` (667). After 480 ticks, crosses `spoiled_threshold` (333). After 720 ticks, condition reaches 0 (lot still present as a Spoiled affordance). Storage multipliers: `container=500` halves rate (480 ticks to Stale, 960 to Spoiled); `possessed=750` slows to 75% (320 ticks to Stale). Integer arithmetic per CLAUDE.md Determinism invariant — no floats.
+4. Authoritative arithmetic for Apple at ground: baseline rate = `1000 / 720 ≈ 1.39 permille/tick`. After 240 ticks ground exposure, condition crosses `stale_threshold` (667). After 480 ticks, crosses `spoiled_threshold` (333). After 720 ticks, condition reaches 0 (lot still present as a Spoiled affordance). Storage multipliers: `container=500` halves rate (480 ticks to Stale, 960 to Spoiled); `possessed=750` slows to 75% (320 ticks to Stale). Integer arithmetic per AGENTS.md Determinism invariant — no floats.
 
 ## Architecture Check
 
@@ -165,7 +165,7 @@ When a new item lot is spawned with a commodity that has a `CommodityPerishProfi
 1. Perishable lots are never archived via `collect_decay_targets` — the skip-filter excludes them (FND-28 single-live-path).
 2. `PerishableState.last_advanced_tick` is updated atomically with `condition` so replay determinism holds across variable system cadence (FND-29A).
 3. `EventTag::ItemSpoiled` emission is idempotent — only the threshold-crossing tick emits, not subsequent advances.
-4. Integer arithmetic only — no floats in condition advancement (CLAUDE.md Determinism invariant).
+4. Integer arithmetic only — no floats in condition advancement (AGENTS.md Determinism invariant).
 
 ## Test Plan
 
