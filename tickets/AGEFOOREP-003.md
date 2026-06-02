@@ -52,7 +52,7 @@ Implement the narrow founded behavior or revise the scenario/golden contract so 
 
 ## Out of Scope
 
-- Merchant substitute-market restock/restage; owned by `tickets/AGEFOOREP-002.md`.
+- Merchant substitute-market restock/restage; completed by `archive/tickets/AGEFOOREP-002.md`.
 - Direct anonymous harvest-source workstation tagging; owned by `archive/tickets/AGEFOOREP-001.md`.
 
 ## Acceptance Criteria

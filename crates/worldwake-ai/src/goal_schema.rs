@@ -281,6 +281,7 @@ const SEARCH_PLACE_BARRIER: &[PlannerOpKind] =
     &[PlannerOpKind::SearchPlace, PlannerOpKind::AskAboutPerson];
 const REPORT_MISSING_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::ReportMissing];
 const REPORT_FOUND_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::ReportFound];
+const CONSUME_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Consume];
 const PATROL_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Patrol];
 const ESCORT_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::EscortToSafety];
 const CLAIM_BOUNTY_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::ClaimBounty];
@@ -309,7 +310,7 @@ static DECL_CONSUME_OWNED_COMMODITY: GoalSchema = GoalSchema {
     feasibility_strategy: FeasibilityStrategy::OwnedCommodityCheck,
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SELF_CARE_POLICY,
-    progress_barrier_ops: NO_BARRIER,
+    progress_barrier_ops: CONSUME_BARRIER,
     candidate_extractors: &[CandidateExtractorId::Need],
     planning_budget: GoalPlanningBudget::SELF_CARE,
 };

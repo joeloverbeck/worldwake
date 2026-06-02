@@ -15,9 +15,9 @@ use std::collections::BTreeSet;
 use worldwake_core::{
     AcquisitionQuantity, ArtifactActionability, ArtifactKind, BountyTarget, CommodityKind,
     CommodityPurpose, EntityId, EpistemicDispositionProfile, EpistemicSubject, ExecutionBudget,
-    GoalKey, GoalKind, InstitutionalBeliefRead, LoadUnits, MultiplierPermille, OUTDOOR_RELIEF_TAGS,
-    PerceptionSource, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw, TellTopic, Tick,
-    WorkstationTag, belief_confidence,
+    Freshness, GoalKey, GoalKind, InstitutionalBeliefRead, LoadUnits, MultiplierPermille,
+    OUTDOOR_RELIEF_TAGS, PerceptionSource, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw,
+    TellTopic, Tick, WorkstationTag, belief_confidence,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload,
@@ -735,7 +735,17 @@ impl GoalKindPlannerExt for GoalKind {
         }
 
         let actor = state.snapshot().actor();
-        if let Some(payload) = payload_override_from_affordance(self, affordance_payload)? {
+        let should_synthesize_trade_payload = semantics.op_kind == PlannerOpKind::Trade
+            && matches!(
+                self,
+                GoalKind::AcquireCommodity { quantity, .. }
+                    if quantity.desired_target > std::num::NonZeroU16::MIN
+            );
+        if let Some(payload) = (!should_synthesize_trade_payload)
+            .then(|| payload_override_from_affordance(self, affordance_payload))
+            .transpose()?
+            .flatten()
+        {
             if semantics.op_kind == PlannerOpKind::ConsultRecord {
                 let Some(record) = payload.as_consult_record().map(|consult| consult.record) else {
                     return Err(GoalPayloadOverrideError::UnsupportedGoal);
@@ -799,11 +809,15 @@ impl GoalKindPlannerExt for GoalKind {
                 let Some(counterparty) = targets.first().copied() else {
                     return Err(GoalPayloadOverrideError::MissingTarget);
                 };
-                let requested_commodity = match self {
-                    GoalKind::AcquireCommodity { commodity, .. }
-                    | GoalKind::RestockCommodity { commodity }
-                    | GoalKind::ConsumeOwnedCommodity { commodity } => *commodity,
-                    GoalKind::TreatWounds { .. } => CommodityKind::Medicine,
+                let (requested_commodity, target_quantity) = match self {
+                    GoalKind::AcquireCommodity {
+                        commodity,
+                        quantity,
+                        ..
+                    } => (*commodity, u32::from(quantity.desired_target.get())),
+                    GoalKind::RestockCommodity { commodity }
+                    | GoalKind::ConsumeOwnedCommodity { commodity } => (*commodity, 1),
+                    GoalKind::TreatWounds { .. } => (CommodityKind::Medicine, 1),
                     _ => return Err(GoalPayloadOverrideError::UnsupportedGoal),
                 };
                 let Some(actor_place) = state.effective_place(actor) else {
@@ -823,7 +837,7 @@ impl GoalKindPlannerExt for GoalKind {
                 if state.commodity_quantity(actor, CommodityKind::Coin) == Quantity(0) {
                     return Err(GoalPayloadOverrideError::ActorCannotPay);
                 }
-                let Some(offered_quantity) = buyer_trade_opening_offer_for_view(
+                let Some(unit_offer) = buyer_trade_opening_offer_for_view(
                     state,
                     actor,
                     counterparty,
@@ -832,12 +846,25 @@ impl GoalKindPlannerExt for GoalKind {
                 ) else {
                     return Err(GoalPayloadOverrideError::UnsupportedGoal);
                 };
+                let sale_lot_quantity = state.commodity_quantity(sale_lot, requested_commodity).0;
+                let coin_quantity = state.commodity_quantity(actor, CommodityKind::Coin).0;
+                let affordable_units = if unit_offer.0 == 0 {
+                    0
+                } else {
+                    coin_quantity / unit_offer.0
+                };
+                let requested_quantity = Quantity(
+                    target_quantity
+                        .min(sale_lot_quantity)
+                        .min(affordable_units)
+                        .max(1),
+                );
                 Ok(Some(ActionPayload::Trade(TradeActionPayload {
                     counterparty,
                     sale_lot,
                     offered_commodity: CommodityKind::Coin,
-                    offered_quantity,
-                    requested_quantity: Quantity(1),
+                    offered_quantity: Quantity(unit_offer.0.saturating_mul(requested_quantity.0)),
+                    requested_quantity,
                 })))
             }
             PlannerOpKind::Harvest => {
@@ -1306,11 +1333,26 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::SellCommodity { commodity } => {
                 let home_place = merchant_home_place(state, actor, None);
                 let at_market = home_place.is_some() && state.effective_place(actor) == home_place;
-                at_market
-                    && !state
-                        .listed_sale_lots_at(home_place.unwrap(), *commodity)
-                        .is_empty()
+                if !at_market {
+                    return false;
+                }
+                let home_place = home_place.unwrap();
+                let has_listed_stock =
+                    !state.listed_sale_lots_at(home_place, *commodity).is_empty();
+                let has_saleable_local_stock = state
+                    .local_controlled_lots_for(actor, home_place, *commodity)
+                    .into_iter()
+                    .any(|lot| {
+                        matches!(state.lot_freshness_band(lot), None | Some(Freshness::Fresh))
+                    });
+                has_listed_stock || !has_saleable_local_stock
             }
+            GoalKind::RestockCommodity { commodity } => state
+                .merchandise_profile(actor)
+                .and_then(|profile| profile.home_facility)
+                .is_some_and(|home_facility| {
+                    restock_gap_at_destination(state, actor, home_facility, *commodity).is_none()
+                }),
             GoalKind::EscortToSafety {
                 subject,
                 destination,
@@ -1350,7 +1392,6 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::ReportMissing { .. }
             | GoalKind::ReportFound { .. }
             | GoalKind::ShareBelief { .. }
-            | GoalKind::RestockCommodity { .. }
             | GoalKind::PostBounty { .. }
             | GoalKind::PostNotice { .. }
             | GoalKind::InvestigateViolation { .. }
@@ -2551,7 +2592,7 @@ mod tests {
     use serde::{Serialize, de::DeserializeOwned};
     use std::collections::{BTreeMap, BTreeSet};
     use std::fmt::Debug;
-    use std::num::NonZeroU32;
+    use std::num::{NonZeroU16, NonZeroU32};
     use worldwake_core::ActionDomain;
     use worldwake_core::{
         AcquisitionQuantity, ActionDefId, AgentBeliefStore, ArtifactActionability,
@@ -4231,6 +4272,8 @@ mod tests {
             .push(seller_lot);
         view.lot_commodities
             .insert(seller_lot, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((seller_lot, CommodityKind::Bread), Quantity(2));
         view.listed_lots
             .insert((town, CommodityKind::Bread), vec![seller_lot]);
         view.lot_sellers.insert(seller_lot, seller);
@@ -4312,8 +4355,139 @@ mod tests {
                 counterparty: seller,
                 sale_lot: entity(30),
                 offered_commodity: CommodityKind::Coin,
-                offered_quantity: Quantity(3),
+                offered_quantity: Quantity(1),
                 requested_quantity: Quantity(1),
+            }))
+        );
+    }
+
+    #[test]
+    fn acquire_goal_trade_payload_scales_to_desired_target() {
+        let (view, actor, seller) = base_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity {
+                desired_min: NonZeroU16::new(1).unwrap(),
+                desired_target: NonZeroU16::new(2).unwrap(),
+                horizon_ticks: NonZeroU32::new(40).unwrap(),
+            },
+        };
+        let def = ActionDef {
+            id: ActionDefId(9),
+            name: "trade".to_string(),
+            domain: ActionDomain::Trade,
+            actor_constraints: Vec::new(),
+            targets: Vec::new(),
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::Hidden,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Trade,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            synthetic_cargo: PlannerSyntheticCargo::None,
+        };
+
+        let payload = goal
+            .build_payload_override(None, &state, &[seller], &def, &semantics)
+            .unwrap();
+
+        assert_eq!(
+            payload,
+            Some(ActionPayload::Trade(TradeActionPayload {
+                counterparty: seller,
+                sale_lot: entity(30),
+                offered_commodity: CommodityKind::Coin,
+                offered_quantity: Quantity(2),
+                requested_quantity: Quantity(2),
+            }))
+        );
+    }
+
+    #[test]
+    fn acquire_goal_trade_payload_resynthesizes_one_unit_affordance_for_desired_target() {
+        let (view, actor, seller) = base_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity {
+                desired_min: NonZeroU16::new(1).unwrap(),
+                desired_target: NonZeroU16::new(2).unwrap(),
+                horizon_ticks: NonZeroU32::new(40).unwrap(),
+            },
+        };
+        let def = ActionDef {
+            id: ActionDefId(9),
+            name: "trade".to_string(),
+            domain: ActionDomain::Trade,
+            actor_constraints: Vec::new(),
+            targets: Vec::new(),
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::Hidden,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Trade,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            synthetic_cargo: PlannerSyntheticCargo::None,
+        };
+        let one_unit_affordance = ActionPayload::Trade(TradeActionPayload {
+            counterparty: seller,
+            sale_lot: entity(30),
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(1),
+            requested_quantity: Quantity(1),
+        });
+
+        let payload = goal
+            .build_payload_override(
+                Some(&one_unit_affordance),
+                &state,
+                &[seller],
+                &def,
+                &semantics,
+            )
+            .unwrap();
+
+        assert_eq!(
+            payload,
+            Some(ActionPayload::Trade(TradeActionPayload {
+                counterparty: seller,
+                sale_lot: entity(30),
+                offered_commodity: CommodityKind::Coin,
+                offered_quantity: Quantity(2),
+                requested_quantity: Quantity(2),
             }))
         );
     }

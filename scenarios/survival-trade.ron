@@ -7,12 +7,6 @@
 // direct bread-market branch.
 (
     seed: 609009,
-    // S178: this scenario proves the substitute market branch, not food
-    // spoilage. Its market branch relies on merchant-side supply remaining
-    // viable, so durable displayed stock remains a scoped opt-out until
-    // tickets/AGEFOOREP-002.md defines founded restock/restage behavior.
-    // An empty map means no commodity perishes.
-    commodity_perish_profile: {},
     survival_health_contract: (
         max_authored_critical_run_ticks: 220,
         max_idle_window_ticks_with_elevated_need: 60,

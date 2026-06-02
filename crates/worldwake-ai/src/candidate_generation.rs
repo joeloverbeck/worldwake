@@ -929,6 +929,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
         .extractor_sources
         .extend(blocked_fallback_extractor_sources);
     remove_redundant_opportunity_compiler_candidates(&mut candidates, &mut diagnostics);
+    remove_redundant_self_consume_acquire_candidates(&mut candidates, &mut diagnostics, &ctx);
 
     CandidateGenerationResult {
         candidates,
@@ -1058,6 +1059,53 @@ fn remove_redundant_opportunity_compiler_candidates(
             .then_some(*opportunity)
         })
         .collect();
+
+    candidates.retain(|candidate| {
+        let opportunity = OpportunityKey {
+            goal_key: candidate.key,
+            anchor: candidate.anchor,
+        };
+        !removed_opportunities.contains(&opportunity)
+    });
+    diagnostics
+        .sources
+        .retain(|opportunity, _source| !removed_opportunities.contains(opportunity));
+    diagnostics
+        .offers
+        .retain(|offer| !removed_opportunities.contains(&offer.opportunity));
+    diagnostics
+        .extractor_sources
+        .retain(|opportunity, _source| !removed_opportunities.contains(opportunity));
+}
+
+fn remove_redundant_self_consume_acquire_candidates(
+    candidates: &mut Vec<GoalOffer>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    let removed_opportunities: BTreeSet<OpportunityKey> = candidates
+        .iter()
+        .filter_map(|candidate| {
+            let GoalKind::AcquireCommodity {
+                commodity,
+                purpose: CommodityPurpose::SelfConsume,
+                ..
+            } = candidate.key.kind
+            else {
+                return None;
+            };
+            local_owned_commodity_evidence(ctx.view, ctx.agent, ctx.place, commodity)
+                .is_some()
+                .then_some(OpportunityKey {
+                    goal_key: candidate.key,
+                    anchor: candidate.anchor,
+                })
+        })
+        .collect();
+
+    if removed_opportunities.is_empty() {
+        return;
+    }
 
     candidates.retain(|candidate| {
         let opportunity = OpportunityKey {
@@ -4179,6 +4227,8 @@ fn derive_acquire_commodity_quantity(
     };
 
     let target_level = thresholds.high(need_id);
+    let current_need = needs.value(need_id);
+    let recovery_floor = current_need.min(target_level);
     let rate = metabolism.rate(need_id);
     let projected_breach = needs.projected_tick_of(need_id, target_level, rate, ctx.current_tick);
 
@@ -4197,13 +4247,27 @@ fn derive_acquire_commodity_quantity(
         None => DEFAULT_ACQUISITION_HORIZON,
     };
 
-    let target_units = compute_target_units(ctx, need_id, commodity, horizon_ticks, rate);
+    let effective_horizon_ticks = ctx
+        .view
+        .commodity_perish_profile(commodity)
+        .map_or(horizon_ticks, |profile| {
+            horizon_ticks.min(profile.fresh_to_spoiled_ticks.get())
+        });
+    let target_units = compute_target_units(
+        ctx,
+        need_id,
+        commodity,
+        effective_horizon_ticks,
+        rate,
+        current_need,
+        recovery_floor,
+    );
     let target = std::num::NonZeroU16::new(target_units).unwrap_or(std::num::NonZeroU16::MIN);
 
     Some(AcquisitionQuantity {
         desired_min: std::num::NonZeroU16::MIN,
         desired_target: target,
-        horizon_ticks: std::num::NonZeroU32::new(horizon_ticks)
+        horizon_ticks: std::num::NonZeroU32::new(effective_horizon_ticks)
             .unwrap_or(std::num::NonZeroU32::MIN),
     })
 }
@@ -4217,6 +4281,8 @@ fn compute_target_units(
     commodity: CommodityKind,
     horizon: u32,
     rate: worldwake_core::Permille,
+    current_need: worldwake_core::Permille,
+    recovery_floor: worldwake_core::Permille,
 ) -> u16 {
     let Some(consumable) = commodity.spec().consumable_profile else {
         return 1;
@@ -4231,7 +4297,8 @@ fn compute_target_units(
         return 1;
     }
 
-    let total_increase = horizon.saturating_mul(rate_value);
+    let current_recovery = u32::from(current_need.value().saturating_sub(recovery_floor.value()));
+    let total_increase = current_recovery.saturating_add(horizon.saturating_mul(rate_value));
     let units_needed = total_increase.div_ceil(relief_per_unit);
 
     let bounded = match acquire_commodity_carry_headroom_units(ctx, commodity) {
@@ -4420,6 +4487,19 @@ fn emit_need_driven_candidates(
             current_place,
             candidate.seller,
         );
+        for sale_lot in ctx
+            .view
+            .listed_sale_lots_at(current_place, candidate.commodity)
+            .into_iter()
+            .filter(|sale_lot| {
+                ctx.view
+                    .seller_for_sale_lot(*sale_lot)
+                    .is_some_and(|seller| seller == candidate.seller)
+            })
+        {
+            evidence.entities.insert(sale_lot);
+            trace.contributor(CandidateEvidenceKind::LooseLot, current_place, sale_lot);
+        }
         if ctx.tracing_enabled {
             trace
                 .knowledge_path
@@ -5217,9 +5297,7 @@ fn emit_sell_goals(
             // need staging/listing. A mixed listed + unlisted facility state
             // should keep the sell path admitted until the remaining stock is
             // sale-ready.
-            let local_lots =
-                ctx.view
-                    .local_controlled_lots_for(ctx.agent, current_place, commodity);
+            let local_lots = saleable_local_lots(ctx.view, ctx.agent, current_place, commodity);
             if local_lots.is_empty() {
                 continue;
             }
@@ -5271,24 +5349,41 @@ fn emit_sell_goals(
         } else {
             // Remote: merchant has stock somewhere but isn't at the home facility's place.
             // Emit SellCommodity anchored at the home place so the planner
-            // searches Travel + StaffMarket.
-            if ctx.view.commodity_quantity(ctx.agent, commodity) == Quantity(0) {
+            // searches concrete stock movement before home-market staffing.
+            let local_lots = saleable_local_lots(ctx.view, ctx.agent, current_place, commodity);
+            if local_lots.is_empty() {
                 continue;
             }
             let mut evidence = Evidence::with_place(home_place);
             evidence.entities.insert(home_facility);
+            evidence.entities.extend(local_lots.iter().copied());
             let mut trace = EvidenceTrace::default();
+            for &lot in &local_lots {
+                trace.contributor(CandidateEvidenceKind::LooseLot, current_place, lot);
+            }
             if ctx.tracing_enabled {
                 trace
                     .knowledge_path
                     .self_knowledge
                     .push(SelfKnowledgeProvenance::MerchantIdentity);
+                trace
+                    .knowledge_path
+                    .entity_beliefs
+                    .extend(belief_provenance_for_contributors(
+                        ctx.view,
+                        ctx.agent,
+                        &trace.contributors,
+                        commodity,
+                    ));
             }
             emit_candidate_with_trace(
                 candidates,
                 diagnostics,
                 EmitterTag::Enterprise,
-                single_evidence(EvidenceKindTag::EnterpriseState),
+                combined_evidence(
+                    EvidenceKindTag::EnterpriseState,
+                    EvidenceKindTag::PerceptionObservation,
+                ),
                 GoalKind::SellCommodity { commodity },
                 OpportunityAnchor::Place(home_place),
                 evidence,
@@ -5317,9 +5412,7 @@ fn emit_move_cargo_goals(
     };
 
     for commodity in profile.sale_kinds {
-        let local_lots = ctx
-            .view
-            .local_controlled_lots_for(ctx.agent, current_place, commodity);
+        let local_lots = saleable_local_lots(ctx.view, ctx.agent, current_place, commodity);
         if local_lots.is_empty() {
             continue;
         }
@@ -5374,8 +5467,7 @@ fn deliverable_quantity(
     destination: EntityId,
     commodity: CommodityKind,
 ) -> Quantity {
-    let local_quantity =
-        view.controlled_commodity_quantity_at_place(agent, current_place, commodity);
+    let local_quantity = saleable_local_quantity(view, agent, current_place, commodity);
     let Some(restock_gap) = restock_gap_at_destination(view, agent, destination, commodity) else {
         return Quantity(0);
     };
@@ -5390,6 +5482,41 @@ fn deliverable_quantity(
     let carry_fit = Quantity(remaining_capacity / per_unit);
 
     Quantity(local_quantity.0.min(restock_gap.0).min(carry_fit.0))
+}
+
+fn saleable_local_lots(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: EntityId,
+    commodity: CommodityKind,
+) -> Vec<EntityId> {
+    view.local_controlled_lots_for(agent, place, commodity)
+        .into_iter()
+        .filter(|lot| matches!(view.lot_freshness_band(*lot), None | Some(Freshness::Fresh)))
+        .collect()
+}
+
+fn saleable_local_quantity(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: EntityId,
+    commodity: CommodityKind,
+) -> Quantity {
+    let lots = view.local_controlled_lots_for(agent, place, commodity);
+    if lots.is_empty() {
+        return view.controlled_commodity_quantity_at_place(agent, place, commodity);
+    }
+    lots.into_iter()
+        .filter(|lot| matches!(view.lot_freshness_band(*lot), None | Some(Freshness::Fresh)))
+        .fold(Quantity(0), |total, lot| {
+            let quantity = view.commodity_quantity(lot, commodity);
+            Quantity(
+                total
+                    .0
+                    .checked_add(quantity.0)
+                    .expect("saleable local quantity overflowed"),
+            )
+        })
 }
 
 fn extract_disposal_candidates(
@@ -7508,13 +7635,16 @@ fn local_owned_commodity_evidence(
     local_entities.extend(view.entities_at(place));
     local_entities.extend(view.direct_possessions(agent));
     for entity in local_entities {
-        if view.item_lot_commodity(entity) != Some(commodity) || !view.can_control(agent, entity) {
+        if view.item_lot_commodity(entity) != Some(commodity) {
+            continue;
+        }
+        let directly_possessed = view.direct_possessor(entity) == Some(agent);
+        if !directly_possessed && !view.can_control(agent, entity) {
             continue;
         }
         if !spoiled_food_allowed_for_agent(view, agent, entity) {
             continue;
         }
-        let directly_possessed = view.direct_possessor(entity) == Some(agent);
         let loose_local_owned = view.direct_container(entity).is_none()
             && view.seller_for_sale_lot(entity).is_none()
             && (view
@@ -7729,6 +7859,7 @@ mod tests {
         entity_loads: BTreeMap<EntityId, LoadUnits>,
         lot_commodities: BTreeMap<EntityId, CommodityKind>,
         lot_freshness: BTreeMap<EntityId, Freshness>,
+        perish_profiles: BTreeMap<CommodityKind, worldwake_core::CommodityPerishProfile>,
         consumable_profiles: BTreeMap<EntityId, CommodityConsumableProfile>,
         direct_containers: BTreeMap<EntityId, EntityId>,
         direct_possessors: BTreeMap<EntityId, EntityId>,
@@ -7830,6 +7961,7 @@ mod tests {
                 entity_loads: BTreeMap::new(),
                 lot_commodities: BTreeMap::new(),
                 lot_freshness: BTreeMap::new(),
+                perish_profiles: BTreeMap::new(),
                 consumable_profiles: BTreeMap::new(),
                 direct_containers: BTreeMap::new(),
                 direct_possessors: BTreeMap::new(),
@@ -8766,6 +8898,13 @@ mod tests {
 
         fn lot_freshness_band(&self, entity: EntityId) -> Option<Freshness> {
             self.lot_freshness.get(&entity).copied()
+        }
+
+        fn commodity_perish_profile(
+            &self,
+            commodity: CommodityKind,
+        ) -> Option<worldwake_core::CommodityPerishProfile> {
+            self.perish_profiles.get(&commodity).copied()
         }
 
         fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
@@ -10558,6 +10697,123 @@ mod tests {
                 commodity: CommodityKind::Bread,
             }
         ));
+    }
+
+    #[test]
+    fn directly_possessed_food_emits_consume_goal_without_separate_control_belief() {
+        let agent = entity(1);
+        let place = entity(10);
+        let apple = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(apple, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(apple, place);
+        view.homeostatic_needs.insert(agent, hunger(1000));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.direct_possessions.insert(agent, vec![apple]);
+        view.direct_possessors.insert(apple, agent);
+        view.lot_commodities.insert(apple, CommodityKind::Apple);
+        view.consumable_profiles.insert(
+            apple,
+            CommodityKind::Apple.spec().consumable_profile.unwrap(),
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Apple,
+            }
+        ));
+    }
+
+    #[test]
+    fn owned_self_consume_stock_suppresses_matching_acquire_opportunity() {
+        let agent = entity(1);
+        let place = entity(10);
+        let apple = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(place, EntityKind::Place);
+        view.entity_kinds.insert(apple, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(apple, place);
+        view.entities_at.insert(place, vec![agent, apple]);
+        view.homeostatic_needs.insert(agent, hunger(0));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.direct_possessions.insert(agent, vec![apple]);
+        view.direct_possessors.insert(apple, agent);
+        view.lot_commodities.insert(apple, CommodityKind::Apple);
+        view.consumable_profiles.insert(
+            apple,
+            CommodityKind::Apple.spec().consumable_profile.unwrap(),
+        );
+
+        let acquire_key = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        });
+        let opportunity = crate::opportunity_compiler::Opportunity {
+            key: OpportunityKey {
+                goal_key: acquire_key,
+                anchor: OpportunityAnchor::Place(place),
+            },
+            perceived_at: Tick(0),
+            source_belief: worldwake_core::BeliefRef {
+                claim_key: worldwake_core::BeliefClaimKey {
+                    subject: place,
+                    aspect: worldwake_core::EntityBeliefAspect::Location,
+                },
+                claim_held_at_tick: Tick(0),
+                status: worldwake_core::BeliefStatusTag::Probable,
+            },
+            possible_effects: vec![crate::opportunity_compiler::EffectFactKey::CommodityTransfer],
+            possible_information: Vec::new(),
+            required_actions: vec![PlannerOpKind::Trade],
+            legal_status: crate::opportunity_compiler::BelievedLegalStatus::BelievedUnclaimed,
+            social_exposure: crate::opportunity_compiler::SocialExposureBand::Private,
+            risks: Vec::new(),
+            salience: pm(500),
+        };
+
+        let result = super::generate_candidates_with_current_plan_with_memories_with_travel_horizon_and_opportunities(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &DiscrepancyMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            4,
+            false,
+            None,
+            &[opportunity],
+        );
+
+        assert!(
+            !contains_goal(
+                &result.candidates,
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Apple,
+                    purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
+                }
+            ),
+            "already-held local self-consume stock should suppress matching acquisition opportunities"
+        );
     }
 
     #[test]
@@ -15909,6 +16165,10 @@ mod tests {
             sell_candidate.unwrap().anchor,
             OpportunityAnchor::Place(home),
             "remote SellCommodity should be anchored at home_facility"
+        );
+        assert!(
+            sell_candidate.unwrap().evidence_entities.contains(&bread),
+            "remote SellCommodity should carry the local stock lot as evidence"
         );
     }
 
@@ -23796,7 +24056,7 @@ mod tests {
             },
         );
         view.sources_at
-            .insert((place, CommodityKind::Apple), vec![workstation]);
+            .insert((place, CommodityKind::Bread), vec![workstation]);
         view.beliefs.insert(
             agent,
             vec![(
@@ -23849,8 +24109,9 @@ mod tests {
         //
         // Setup: hunger 300 ‰ (above low=250, below high=750), rate=5 ‰/tick,
         // generous carry headroom. Projected breach is at tick
-        // (750-300)/5 = 90 → horizon=90. Apple's hunger_relief_per_unit
-        // is 220 ‰. target = ceil(90 × 5 / 220) = 3, well above the
+        // (750-300)/5 = 90 → horizon=90. This fixture intentionally omits
+        // Apple's perish profile, proving commodities without a known perish
+        // profile can still horizon-stock above the
         // collapsed `single()` value of 1.
         let agent = entity(1);
         let place = entity(10);
@@ -23942,6 +24203,95 @@ mod tests {
             key_quantity,
             AcquisitionQuantity::single(),
             "GoalKey identity must keep quantity collapsed to single()",
+        );
+    }
+
+    #[test]
+    fn candidate_gen_caps_perishable_self_consume_acquisition_to_fresh_horizon() {
+        let agent = entity(1);
+        let place = entity(10);
+        let workstation = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, workstation]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(workstation, EntityKind::Facility);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(workstation, place);
+        view.entities_at.insert(place, vec![agent, workstation]);
+        view.homeostatic_needs.insert(agent, hunger(300));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.metabolism_profiles.insert(
+            agent,
+            metabolism_with_rates(Permille::new(5).unwrap(), Permille::new(0).unwrap()),
+        );
+        view.carry_capacities.insert(agent, LoadUnits(20));
+        view.entity_loads.insert(agent, LoadUnits(0));
+        view.known_recipes.insert(agent, vec![RecipeId(0)]);
+        view.unique_item_counts
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
+        view.workstation_tags
+            .insert(workstation, WorkstationTag::OrchardRow);
+        view.workstations
+            .insert((place, WorkstationTag::OrchardRow), vec![workstation]);
+        view.resource_sources.insert(
+            workstation,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                quality: None,
+            },
+        );
+        view.sources_at
+            .insert((place, CommodityKind::Apple), vec![workstation]);
+        view.perish_profiles.insert(
+            CommodityKind::Apple,
+            worldwake_core::default_commodity_perish_profile_map()
+                .get(&CommodityKind::Apple)
+                .copied()
+                .expect("default apple perish profile should exist"),
+        );
+        view.beliefs.insert(
+            agent,
+            vec![(
+                workstation,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Facility),
+                    last_known_place: Some(place),
+                    ..believed_state(100, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(sample_recipe(
+            vec![(CommodityKind::Apple, Quantity(2))],
+            Vec::new(),
+            WorkstationTag::OrchardRow,
+        ));
+
+        let candidates =
+            generate_candidates(&view, agent, &BlockerMemory::default(), &recipes, Tick(5));
+
+        let acquire = find_acquire_commodity(
+            &candidates,
+            CommodityKind::Apple,
+            CommodityPurpose::SelfConsume,
+        )
+        .expect("agent below high but above low should emit AcquireCommodity for apples");
+        let quantity = acquire
+            .acquisition_quantity
+            .expect("AcquireCommodity offer must carry the un-normalized acquisition_quantity");
+
+        assert!(
+            quantity.desired_target.get() > 1,
+            "perishable self-consume acquisition should cover the fresh near-term horizon, got {}",
+            quantity.desired_target.get()
         );
     }
 

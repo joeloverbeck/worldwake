@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: Yes — scenario bootstrap for anonymous resource-source harvest affordances
-**Deps**: Follows from `archive/specs/S178-perishable-food-spoilage.md` (the change that surfaced this gap). Follow-up contracts are split to `tickets/AGEFOOREP-002.md` and `tickets/AGEFOOREP-003.md`.
+**Deps**: Follows from `archive/specs/S178-perishable-food-spoilage.md` (the change that surfaced this gap). Follow-up contracts were split to `archive/tickets/AGEFOOREP-002.md` and `tickets/AGEFOOREP-003.md`.
 
 ## Problem
 
@@ -34,7 +34,7 @@ Direct-harvest scenarios owned by this ticket:
 
 Deferred founded contracts:
 
-1. `scenarios/survival-trade.ron` — market restock/restage under spoilage, owned by `tickets/AGEFOOREP-002.md`
+1. `scenarios/survival-trade.ron` — market restock/restage under spoilage, completed by `archive/tickets/AGEFOOREP-002.md`
 2. `scenarios/survival-theft.ron` — theft survival under spoilage, owned by `tickets/AGEFOOREP-003.md`
 
 ## Assumption Reassessment (2026-06-02)
@@ -43,9 +43,9 @@ Deferred founded contracts:
 2. **Shared abstraction boundary**: scenario-authored resource-source definitions become authoritative `Facility`, `ResourceSource`, `ResourceExtractionQueues`, and, for anonymous harvest sources, the `WorkstationMarker` needed by canonical harvest recipes.
 3. **Belief substrate**: planner-visible source evidence is lawful only when backed by local observation/belief of a source. This ticket does not add omniscient planner reads; it aligns the authoritative bootstrap with the existing source/workstation contract.
 4. **Why `AcquireCommodity` failed to execute**: no `harvest` action committed because anonymous Apple resource sources did not carry `WorkstationTag::OrchardRow`, while `Harvest Apples` requires that tag.
-5. **Mismatch + correction**: the original broad ticket grouped five scenarios. Reassessment found three founded contracts: direct harvest replenishment (this ticket), market supply restock/restage (`tickets/AGEFOOREP-002.md`), and theft survival under spoilage (`tickets/AGEFOOREP-003.md`).
+5. **Mismatch + correction**: the original broad ticket grouped five scenarios. Reassessment found three founded contracts: direct harvest replenishment (this ticket), market supply restock/restage (`archive/tickets/AGEFOOREP-002.md`), and theft survival under spoilage (`tickets/AGEFOOREP-003.md`).
 6. **FOUNDATIONS alignment**: this ticket preserves FND-3/FND-4 concrete source state and source/sink accounting, FND-8 action preconditions, FND-14B planner-visible input boundaries, FND-20 reusable planning over ordinary harvest affordances, and FND-31 causal proof rather than scenario-only survival.
-7. **Deferred opt-outs**: `survival-trade` and `survival-theft` retain explicit `commodity_perish_profile: {}` containment comments pointing at their follow-up tickets. The direct-harvest scenarios removed the opt-out in this closeout.
+7. **Deferred opt-outs at AGEFOOREP-001 closeout**: `survival-trade` and `survival-theft` retained explicit `commodity_perish_profile: {}` containment comments pointing at their follow-up tickets. The direct-harvest scenarios removed the opt-out in this closeout. `survival-trade` was later resolved by `archive/tickets/AGEFOOREP-002.md`; `survival-theft` remains owned by `tickets/AGEFOOREP-003.md`.
 
 ## Architecture Check
 
@@ -57,12 +57,12 @@ The clean design is to make scenario-authored anonymous harvest sources complete
 - Harvest action actually executes in direct-harvest survival scenarios -> workflow-shaped release golden filters for combat, escort, and final-integration.
 - Agent stays under the authored critical-hunger run with spoilage enabled in direct-harvest scenarios -> same golden filters.
 - Determinism preserved -> each affected direct-harvest scenario's `*_replays_deterministically` golden.
-- Trade/theft opt-outs remain explicit and linked to active follow-up tickets -> scenario file comments and ticket dependency references.
+- Trade/theft opt-outs were explicit and linked to follow-up tickets at AGEFOOREP-001 closeout -> scenario file comments and ticket dependency references. `survival-trade` was later resolved by `archive/tickets/AGEFOOREP-002.md`; `survival-theft` remains linked to `tickets/AGEFOOREP-003.md`.
 
 ## Test Result
 
 - Re-enabled spoilage in the direct-harvest scenarios: `survival-combat`, `survival-escort`, and `final-integration`.
-- Kept `survival-trade` and `survival-theft` opt-outs in place with comments naming `AGEFOOREP-002` and `AGEFOOREP-003`.
+- Kept `survival-trade` and `survival-theft` opt-outs in place at AGEFOOREP-001 closeout with comments naming `AGEFOOREP-002` and `AGEFOOREP-003`. `survival-trade` was later resolved by `archive/tickets/AGEFOOREP-002.md`.
 - Added focused scenario spawn coverage that anonymous Apple sources have `WorkstationTag::OrchardRow`.
 - Verified release golden filters for the three direct-harvest scenarios, including deterministic replay tests.
 
@@ -70,14 +70,16 @@ The clean design is to make scenario-authored anonymous harvest sources complete
 
 - `crates/worldwake-cli/src/scenario/mod.rs` — when spawning an anonymous `ResourceSourceDef` facility, attach the canonical harvest `WorkstationMarker` for Apple (`OrchardRow`), Grain (`FieldPlot`), and Water (`Well`).
 - `scenarios/{survival-combat,survival-escort,final-integration}.ron` — removed the interim `commodity_perish_profile: {}` opt-out.
-- `scenarios/{survival-trade,survival-theft}.ron` — kept the scoped opt-out and pointed it to the follow-up ticket that owns the founded behavior.
-- `tickets/AGEFOOREP-002.md` / `tickets/AGEFOOREP-003.md` — recorded the split follow-up contracts.
+- `scenarios/{survival-trade,survival-theft}.ron` — kept the scoped opt-out at AGEFOOREP-001 closeout and pointed it to the follow-up ticket that owns the founded behavior. `survival-trade` was later resolved by `archive/tickets/AGEFOOREP-002.md`.
+- `archive/tickets/AGEFOOREP-002.md` / `tickets/AGEFOOREP-003.md` — recorded the split follow-up contracts.
 
 ## Outcome
 
 Completion date: 2026-06-02.
 
-Direct harvest replenishment now has a complete authoritative scenario bootstrap path: anonymous Apple, Grain, and Water resource sources carry the canonical workstation tags required by their harvest recipes. The direct-harvest survival scenarios run with spoilage enabled. Trade and theft remain explicitly contained by scoped opt-outs and active follow-up tickets because their founded contracts require market restock/restage and theft-survival design, not the anonymous-source bootstrap fix.
+Direct harvest replenishment now has a complete authoritative scenario bootstrap path: anonymous Apple, Grain, and Water resource sources carry the canonical workstation tags required by their harvest recipes. The direct-harvest survival scenarios run with spoilage enabled. At AGEFOOREP-001 closeout, trade and theft remained explicitly contained by scoped opt-outs and active follow-up tickets because their founded contracts required market restock/restage and theft-survival design, not the anonymous-source bootstrap fix.
+
+Outcome amended: 2026-06-02. The trade follow-up is now complete and archived at `archive/tickets/AGEFOOREP-002.md`; `survival-trade` runs with spoilage enabled through merchant restock/restage. Theft survival remains explicitly contained and owned by `tickets/AGEFOOREP-003.md`.
 
 ## Verification Result
 
@@ -86,5 +88,5 @@ Direct harvest replenishment now has a complete authoritative scenario bootstrap
 - Passed `cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 scenarios::survival_combat::`
 - Passed `cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 scenarios::survival_escort::`
 - Passed `cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 scenarios::final_integration::`
-- Waived `cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 scenarios::survival_trade::` for AGEFOOREP-001 closeout; it remains owned by `tickets/AGEFOOREP-002.md`.
+- Waived `cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 scenarios::survival_trade::` for AGEFOOREP-001 closeout; it was later completed by `archive/tickets/AGEFOOREP-002.md`.
 - Waived `cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 scenarios::survival_theft::` for AGEFOOREP-001 closeout; it remains owned by `tickets/AGEFOOREP-003.md`.

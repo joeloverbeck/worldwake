@@ -5,16 +5,17 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, AgentBeliefStore, AgentSchemaContextProfile, ArtifactPostingProfile,
     BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory,
-    BlockingFact, CombatProfile, CommodityConsumableProfile, CommodityKind, ContentionGrant,
-    DemandObservation, DisposalProfile, DriveThresholds, EntityId, EntityKind,
-    EpistemicDispositionProfile, ExpectationStore, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefRead, JusticeDispositionProfile, LastSeenMemory, LatrineFullness, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, OfficeData, OfficePatrolDuty, PatrolProfile,
-    PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecordData, RecordedViolation,
-    ResourceSource, RoutePreference, RoutePreferenceProfile, SocialObservation, StockStoragePolicy,
-    SuccessionLaw, TellMemoryKey, TellProfile, TheftDispositionProfile, Tick, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile,
-    WashBasinState, WorkstationTag, Wound,
+    BlockingFact, CombatProfile, CommodityConsumableProfile, CommodityKind,
+    CommodityPerishProfileMap, ContentionGrant, DemandObservation, DisposalProfile,
+    DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, ExpectationStore,
+    Freshness, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
+    JusticeDispositionProfile, LastSeenMemory, LatrineFullness, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, OfficeData, OfficePatrolDuty, PatrolProfile, PatrolRoute, Permille,
+    PlaceTag, Quantity, RecipeId, RecordData, RecordedViolation, ResourceSource, RoutePreference,
+    RoutePreferenceProfile, SocialObservation, StockStoragePolicy, SuccessionLaw, TellMemoryKey,
+    TellProfile, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WashBasinState,
+    WorkstationTag, Wound,
 };
 use worldwake_sim::{BeliefRead, RuntimeBeliefView};
 
@@ -140,6 +141,8 @@ pub(crate) struct SnapshotInventory {
     pub(crate) unique_item_counts: BTreeMap<UniqueItemKind, u32>,
     pub(crate) commodity_quantities: BTreeMap<CommodityKind, Quantity>,
     pub(crate) item_lot_commodity: Option<CommodityKind>,
+    pub(crate) item_lot_condition: Option<Permille>,
+    pub(crate) item_lot_freshness: Option<Freshness>,
     pub(crate) carry_capacity: Option<LoadUnits>,
     pub(crate) intrinsic_load: LoadUnits,
     pub(crate) item_lot_consumable_profile: Option<CommodityConsumableProfile>,
@@ -270,6 +273,8 @@ impl Default for SnapshotEntity {
                 unique_item_counts: BTreeMap::new(),
                 commodity_quantities: BTreeMap::new(),
                 item_lot_commodity: None,
+                item_lot_condition: None,
+                item_lot_freshness: None,
                 carry_capacity: None,
                 intrinsic_load: LoadUnits(0),
                 item_lot_consumable_profile: None,
@@ -469,6 +474,7 @@ pub struct PlanningSnapshot {
     pub(crate) blocked_facility_uses: BTreeSet<(EntityId, ActionDefId)>,
     pub(crate) actor_known_entity_beliefs: BTreeMap<EntityId, BelievedEntityState>,
     pub(crate) actor_known_social_observations: Vec<SocialObservation>,
+    pub(crate) commodity_perish_profiles: CommodityPerishProfileMap,
     pub(crate) actor_known_institutional_beliefs: Vec<BelievedInstitutionalClaim>,
     pub(crate) actor_told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,
     pub(crate) actor_bandit_factions: Vec<EntityId>,
@@ -637,6 +643,13 @@ impl PlanningSnapshot {
             blocked_facility_uses: blocked_facility_uses.clone(),
             actor_known_entity_beliefs,
             actor_known_social_observations,
+            commodity_perish_profiles: CommodityKind::ALL
+                .into_iter()
+                .filter_map(|commodity| {
+                    view.commodity_perish_profile(commodity)
+                        .map(|profile| (commodity, profile))
+                })
+                .collect(),
             actor_known_institutional_beliefs: view.known_institutional_beliefs(actor),
             actor_told_beliefs: view.told_belief_memories(actor).into_iter().collect(),
             actor_bandit_factions: view.bandit_factions_of(actor),
@@ -765,6 +778,7 @@ impl PlanningSnapshot {
             blocked_facility_uses: BTreeSet::new(),
             actor_known_entity_beliefs: BTreeMap::new(),
             actor_known_social_observations: Vec::new(),
+            commodity_perish_profiles: CommodityPerishProfileMap::new(),
             actor_known_institutional_beliefs: Vec::new(),
             actor_told_beliefs: BTreeMap::new(),
             actor_bandit_factions: Vec::new(),
@@ -1113,6 +1127,8 @@ fn build_snapshot_entity(
     let item_lot_commodity = belief_backed
         .and_then(believed_item_lot_commodity)
         .or_else(|| view.item_lot_commodity(entity));
+    let item_lot_condition = view.lot_condition(entity);
+    let item_lot_freshness = view.lot_freshness_band(entity);
     let carry_capacity = view.carry_capacity(entity);
     let intrinsic_load = view.load_of_entity(entity).unwrap_or(LoadUnits(0));
     let item_lot_consumable_profile = view.item_lot_consumable_profile(entity);
@@ -1186,6 +1202,8 @@ fn build_snapshot_entity(
             unique_item_counts,
             commodity_quantities,
             item_lot_commodity,
+            item_lot_condition,
+            item_lot_freshness,
             carry_capacity,
             intrinsic_load,
             item_lot_consumable_profile,

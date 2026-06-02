@@ -1290,6 +1290,10 @@ fn root_goal_satisfaction_allowed(goal: &GoalOffer, state: &PlanningState<'_>) -
             !goal.evidence_entities.iter().any(|entity| {
                 state.entity_kind(*entity) == Some(EntityKind::ItemLot)
                     && state.item_lot_commodity(*entity) == Some(*commodity)
+                    && matches!(
+                        state.lot_freshness_band(*entity),
+                        None | Some(worldwake_core::Freshness::Fresh)
+                    )
                     && state
                         .local_controlled_lots_for(actor, place, *commodity)
                         .contains(entity)

@@ -1,6 +1,6 @@
 use worldwake_core::{
-    CauseRef, CommodityKind, DemandMemory, EntityId, EventLog, EventTag, Quantity, SaleListing,
-    Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+    CauseRef, CommodityKind, DemandMemory, EntityId, EventLog, EventTag, Freshness, Quantity,
+    SaleListing, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -69,6 +69,9 @@ fn is_listing_valid(world: &World, lot: EntityId) -> bool {
     let Some(item_lot) = world.get_component_item_lot(lot) else {
         return false;
     };
+    if !is_saleable_lot(world, lot) {
+        return false;
+    }
     let commodity = item_lot.commodity;
     let Some(lot_place) = world.effective_place(lot) else {
         return false;
@@ -99,6 +102,22 @@ fn is_listing_valid(world: &World, lot: EntityId) -> bool {
                             .is_ok()
                 })
         })
+}
+
+fn is_saleable_lot(world: &World, lot: EntityId) -> bool {
+    let Some(item_lot) = world.get_component_item_lot(lot) else {
+        return false;
+    };
+    if item_lot.quantity == Quantity(0) {
+        return false;
+    }
+    let Some(state) = world.get_component_perishable_state(lot) else {
+        return true;
+    };
+    let Some(profile) = world.commodity_perish_profiles().get(&item_lot.commodity) else {
+        return true;
+    };
+    Freshness::derive_from(state.condition, profile) == Freshness::Fresh
 }
 
 fn has_displayed_stock_assignment(world: &World, lot: EntityId) -> bool {
@@ -187,8 +206,8 @@ mod tests {
     use worldwake_core::{
         CauseRef, CommodityKind, ControlSource, DemandMemory, DemandObservation,
         DemandObservationReason, EntityId, EventLog, EventTag, EventView, MerchandiseProfile,
-        Permille, Quantity, SaleListing, Seed, Tick, TradeDispositionProfile, VisibilitySpec,
-        WitnessData, World, WorldTxn, build_prototype_world,
+        PerishableState, Permille, Quantity, SaleListing, Seed, Tick, TradeDispositionProfile,
+        VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionInstance, ActionInstanceId, DeterministicRng,
@@ -906,6 +925,68 @@ mod tests {
         assert!(
             world.get_component_sale_listing(lot).is_some(),
             "valid listing should persist"
+        );
+    }
+
+    #[test]
+    fn prune_listing_when_lot_is_spoiled() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = seed_agent(&mut world, "SpoiledSeller", None, None);
+        place_agent_at(&mut world, agent, place);
+        set_merchandise_profile(&mut world, agent, sale_profile(&[CommodityKind::Apple]));
+        let lot = grant_stock(&mut world, agent, place, CommodityKind::Apple, Quantity(5));
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_perishable_state(
+                lot,
+                PerishableState {
+                    condition: Permille::new_unchecked(0),
+                    last_advanced_tick: Tick(5),
+                    decay_remainder: 0,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        list_lot(&mut world, lot, 6);
+
+        assert!(world.get_component_sale_listing(lot).is_some());
+        let _log = run_trade_tick(&mut world, 7);
+        assert!(
+            world.get_component_sale_listing(lot).is_none(),
+            "spoiled perishable stock should not remain an actionable listing"
+        );
+    }
+
+    #[test]
+    fn prune_listing_when_perishable_lot_is_stale() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = seed_agent(&mut world, "StaleSeller", None, None);
+        place_agent_at(&mut world, agent, place);
+        set_merchandise_profile(&mut world, agent, sale_profile(&[CommodityKind::Apple]));
+        let lot = grant_stock(&mut world, agent, place, CommodityKind::Apple, Quantity(5));
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_perishable_state(
+                lot,
+                PerishableState {
+                    condition: Permille::new_unchecked(500),
+                    last_advanced_tick: Tick(5),
+                    decay_remainder: 0,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        list_lot(&mut world, lot, 6);
+
+        assert!(world.get_component_sale_listing(lot).is_some());
+        let _log = run_trade_tick(&mut world, 7);
+        assert!(
+            world.get_component_sale_listing(lot).is_none(),
+            "stale perishable stock should leave the market listing lifecycle"
         );
     }
 

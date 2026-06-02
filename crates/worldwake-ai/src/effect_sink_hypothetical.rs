@@ -3,7 +3,7 @@ use crate::planner_ops::ExpectedMaterialization;
 use crate::planning_state::{PlanningEntityRef, PlanningState};
 use worldwake_core::{
     ActionDefId, CommodityKind, Discrepancy, EntityId, EntityKind, EventTag, ExpectationId,
-    InstitutionalBeliefRead, Permille, Quantity, WoundCause, load_per_unit,
+    Freshness, InstitutionalBeliefRead, Permille, Quantity, WoundCause, load_per_unit,
 };
 use worldwake_sim::{
     ActionPayload, CombatBeliefView, ControlBeliefView, EconomicBeliefView, EffectEntityRef,
@@ -522,14 +522,13 @@ impl EffectSink for HypotheticalEffectSink<'_> {
         &mut self,
         actor: EntityId,
         target: EntityId,
-        _effect: worldwake_sim::ConsumableEffect,
+        effect: worldwake_sim::ConsumableEffect,
     ) -> Result<(), Discrepancy> {
-        let commodity = self
-            .state
-            .item_lot_commodity_ref(PlanningEntityRef::Authoritative(target))
-            .ok_or_else(|| self.missing_observation_for(actor, target))?;
-        let _ = actor;
-        self.update_state(|state| state.consume_commodity(commodity));
+        let target_ref = PlanningEntityRef::Authoritative(target);
+        if self.state.item_lot_commodity_ref(target_ref).is_none() {
+            return Err(self.missing_observation_for(actor, target));
+        }
+        self.update_state(|state| state.consume_lot_effect(actor, target_ref, effect));
         Ok(())
     }
 
@@ -666,6 +665,12 @@ impl EffectSink for HypotheticalEffectSink<'_> {
 
     fn stage_stock_for_sale(&mut self, actor: EntityId, lot: EntityId) -> Result<(), Discrepancy> {
         let lot_ref = PlanningEntityRef::Authoritative(lot);
+        if matches!(
+            self.state.lot_freshness_band_ref(lot_ref),
+            Some(Freshness::Stale | Freshness::Spoiled)
+        ) {
+            return Err(Discrepancy::ImproperPlanningState);
+        }
         let display_container = self
             .display_container_for_lot(actor, lot_ref)
             .ok_or_else(|| self.missing_observation_for(actor, lot))?;
@@ -1116,7 +1121,7 @@ mod tests {
     use crate::{PlanningSnapshot, PlanningState};
     use std::collections::VecDeque;
     use worldwake_core::{
-        ActionDefId, AgentBeliefStore, Discrepancy, EntityId, ObservationOmission,
+        ActionDefId, AgentBeliefStore, Discrepancy, EntityId, Freshness, ObservationOmission,
         ObservationOmissionLog, OmissionReason, Tick,
     };
     use worldwake_sim::{ActionPayload, EffectSink};
@@ -1227,6 +1232,30 @@ mod tests {
         assert_eq!(
             sink.pick_up(actor, target, &ActionPayload::None, ActionDefId(1)),
             Err(Discrepancy::MissingObservation)
+        );
+    }
+
+    #[test]
+    fn stage_stock_for_sale_rejects_known_stale_lot_in_hypothetical_state() {
+        let actor = entity(1);
+        let stale_lot = entity(2);
+        let mut snapshot = PlanningSnapshot::for_effect_sink_test(
+            actor,
+            AgentBeliefStore::default(),
+            &[stale_lot],
+        );
+        snapshot
+            .entities
+            .get_mut(&stale_lot)
+            .expect("test snapshot should include lot")
+            .inventory
+            .item_lot_freshness = Some(Freshness::Stale);
+        let snapshot = Box::leak(Box::new(snapshot));
+        let mut sink = HypotheticalEffectSink::new(PlanningState::new(snapshot));
+
+        assert_eq!(
+            sink.stage_stock_for_sale(actor, stale_lot),
+            Err(Discrepancy::ImproperPlanningState)
         );
     }
 }
