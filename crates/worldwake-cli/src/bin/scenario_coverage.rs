@@ -1257,6 +1257,7 @@ fn authored_scenario_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str>
         resource_sources: _,
         hostilities: _,
         commodity_decay,
+        commodity_perish_profile: _,
         survival_health_contract: _,
         compaction_interval: _,
         scenario_lint_overrides: _,

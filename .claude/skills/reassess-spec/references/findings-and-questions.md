@@ -71,6 +71,7 @@ Present in this format:
 
 ### Additions (consider adding)
 [If none: "No additions proposed."]
+[Skip findings whose recommendation merely fills a defect, a missing required deliverable surfaced by a pattern trigger, or a Step 4.4 requirement — those belong under Issues with their resolution noted in the Recommendation line. Reserve Additions for beneficial extensions not required by any pattern trigger, FOUNDATIONS principle, or step trigger.]
 1. **[SEVERITY] <title>** — <what's missing> because <reason>. Recommendation: <new section>.
 
 ### FOUNDATIONS.md Alignment
@@ -97,7 +98,7 @@ Present in this format:
 1. <question>
 ```
 
-**Finding-key convention**: In Step 7's Pre-Apply Verification table and Step 8's status reporting, Issues are keyed `I1, I2, …`; Improvements are keyed `M1, M2, …`; Additions are keyed `F1, F2, …`. Preserve the within-category number from this section (e.g., the third Improvement listed here becomes `M3` in Step 7). Additions absorbed into an existing deliverable as a scope-extending edit (per the Step 7 pre-apply table's scope-extending tier) do not get a separate F-key — they are tracked in the table row of the originating finding or question with a `scope-extending` tag. Only net-new deliverables (new D-sections, new public types declared as their own deliverable surface) get F-keys.
+**Finding-key convention**: In Step 7's Pre-Apply Verification table and Step 8's status reporting, Issues are keyed `I1, I2, …`; Improvements are keyed `M1, M2, …`; Additions are keyed `F1, F2, …`. Preserve the within-category number from this section (e.g., the third Improvement listed here becomes `M3` in Step 7). Additions absorbed into an existing deliverable as a scope-extending edit (per the Step 7 pre-apply table's scope-extending tier) do not get a separate F-key — they are tracked in the table row of the originating finding or question with a `scope-extending` tag. Only net-new deliverables (new D-sections, new public types declared as their own deliverable surface) get F-keys. **Exception**: when the originating finding is a standalone Addition (no upstream Issue/Improvement/Question) whose work lands inside an existing D-section rather than as a new D-section, retain the F-key on the absorbed extension's pre-apply table row with a `scope-extending` tag — the F-key preserves the audit trail for the standalone Addition even though no new D-number is introduced.
 
 ## Question Handling
 

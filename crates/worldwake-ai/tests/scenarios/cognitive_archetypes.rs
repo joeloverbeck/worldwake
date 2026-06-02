@@ -89,6 +89,7 @@ fn scenario_with_agents(agents: Vec<AgentDef>) -> ScenarioDef {
         resource_sources: Vec::new(),
         hostilities: Vec::new(),
         commodity_decay: None,
+        commodity_perish_profile: None,
         survival_health_contract: None,
         compaction_interval: 0,
         scenario_lint_overrides: BTreeMap::new(),

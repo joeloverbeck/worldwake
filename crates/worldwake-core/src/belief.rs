@@ -1111,6 +1111,14 @@ fn entity_claims_for_snapshot(
             ClaimValue::WashBasinState(snapshot.wash_basin_state.clone()),
         ));
     }
+    if snapshot.last_observed_condition.is_some()
+        || prior_summary.is_some_and(|prior| prior.last_observed_condition.is_some())
+    {
+        claims.push((
+            EntityBeliefAspect::LotCondition,
+            ClaimValue::LotCondition(snapshot.last_observed_condition),
+        ));
+    }
     if snapshot.believed_artifact.is_some()
         || prior_summary.is_some_and(|prior| prior.believed_artifact.is_some())
     {
@@ -1634,6 +1642,8 @@ pub struct ObservedEntitySnapshot {
     pub last_known_inventory: BTreeMap<CommodityKind, Quantity>,
     pub workstation_tag: Option<WorkstationTag>,
     pub resource_source: Option<ResourceSource>,
+    #[serde(default)]
+    pub last_observed_condition: Option<Permille>,
     /// Last observed `WashBasinState` for a `WashBasin` facility. FND-14A:
     /// physical state is co-located perception only — agents observe the
     /// basin's current state when at its place and store it here. Off-place
@@ -1667,6 +1677,7 @@ impl ObservedEntitySnapshot {
             last_known_inventory: self.last_known_inventory.clone(),
             workstation_tag: self.workstation_tag,
             resource_source: self.resource_source.clone(),
+            last_observed_condition: self.last_observed_condition,
             wash_basin_state: self.wash_basin_state.clone(),
             alive: self.alive,
             wounds: self.wounds.clone(),
@@ -1737,6 +1748,11 @@ pub struct BelievedEntityState {
     pub last_known_inventory: BTreeMap<CommodityKind, Quantity>,
     pub workstation_tag: Option<WorkstationTag>,
     pub resource_source: Option<ResourceSource>,
+    /// Last observed perishable condition for an item lot. Co-located
+    /// perception refreshes this snapshot; remote planning reads this belief
+    /// instead of authoritative `PerishableState`.
+    #[serde(default)]
+    pub last_observed_condition: Option<Permille>,
     /// Last observed `WashBasinState` for a `WashBasin` facility. See
     /// `ObservedEntitySnapshot::wash_basin_state` for the FND-14A rationale.
     #[serde(default)]
@@ -1767,6 +1783,7 @@ impl BelievedEntityState {
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
             resource_source: None,
+            last_observed_condition: None,
             wash_basin_state: None,
             alive: true,
             wounds: Vec::new(),
@@ -2243,6 +2260,9 @@ pub fn build_observed_entity_snapshot(
             .get_component_workstation_marker(entity)
             .map(|marker| marker.0),
         resource_source: world.get_component_resource_source(entity).cloned(),
+        last_observed_condition: world
+            .get_component_perishable_state(entity)
+            .map(|state| state.condition),
         wash_basin_state: world.get_component_wash_basin_state(entity).cloned(),
         alive: world.get_component_dead_at(entity).is_none(),
         wounds: world
@@ -2382,6 +2402,7 @@ pub fn derive_entity_summary(
         last_known_inventory: BTreeMap::new(),
         workstation_tag: None,
         resource_source: None,
+        last_observed_condition: None,
         alive: true,
         wounds: Vec::new(),
         last_known_courage: None,
@@ -2429,6 +2450,9 @@ pub fn derive_entity_summary(
             }
             (EntityBeliefAspect::WashBasinState, ClaimValue::WashBasinState(state)) => {
                 summary.wash_basin_state.clone_from(state);
+            }
+            (EntityBeliefAspect::LotCondition, ClaimValue::LotCondition(condition)) => {
+                summary.last_observed_condition = *condition;
             }
             (EntityBeliefAspect::Artifact, ClaimValue::Artifact(artifact)) => {
                 summary.believed_artifact.clone_from(artifact);
@@ -6278,6 +6302,7 @@ mod tests {
             last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(3))]),
             workstation_tag: None,
             resource_source: None,
+            last_observed_condition: None,
             wash_basin_state: None,
             alive: true,
             wounds: vec![sample_wound(1, 4)],

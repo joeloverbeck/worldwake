@@ -196,6 +196,10 @@ pub struct MetabolismProfile {
     /// block (`TargetWashBasinNotTooDirty`).
     #[serde(default = "default_wash_worthwhile_effectiveness_floor")]
     pub wash_worthwhile_effectiveness_floor: Permille,
+    /// Hunger threshold at or above which spoiled food becomes a candidate
+    /// desperation affordance.
+    #[serde(default = "default_spoiled_food_hunger_threshold")]
+    pub spoiled_food_hunger_threshold: Permille,
 }
 
 impl MetabolismProfile {
@@ -254,6 +258,7 @@ impl MetabolismProfile {
             travel_bladder_multiplier,
             wilderness_relief_dirtiness_penalty,
             wash_worthwhile_effectiveness_floor: default_wash_worthwhile_effectiveness_floor(),
+            spoiled_food_hunger_threshold: default_spoiled_food_hunger_threshold(),
         }
     }
 }
@@ -274,6 +279,10 @@ const fn default_empty_latrine_duration_ticks() -> NonZeroU32 {
 
 const fn default_wash_worthwhile_effectiveness_floor() -> Permille {
     pm(500)
+}
+
+const fn default_spoiled_food_hunger_threshold() -> Permille {
+    pm(800)
 }
 
 const fn default_rough_sleep_recovery_floor() -> Permille {
@@ -304,6 +313,7 @@ impl Default for MetabolismProfile {
             travel_bladder_multiplier: pm(0),
             wilderness_relief_dirtiness_penalty: pm(0),
             wash_worthwhile_effectiveness_floor: default_wash_worthwhile_effectiveness_floor(),
+            spoiled_food_hunger_threshold: default_spoiled_food_hunger_threshold(),
         }
     }
 }
@@ -507,6 +517,7 @@ mod tests {
         // precedent: not in the `new()` signature, so `new()` seeds it from the
         // default.
         assert_eq!(profile.wash_worthwhile_effectiveness_floor, pm(500));
+        assert_eq!(profile.spoiled_food_hunger_threshold, pm(800));
     }
 
     #[test]
@@ -534,6 +545,14 @@ mod tests {
         assert_eq!(profile.min_sleep_ticks, nz(8));
         assert_eq!(profile.rough_sleep_recovery_floor, pm(300));
         assert_eq!(profile.wash_worthwhile_effectiveness_floor, pm(500));
+        assert_eq!(profile.spoiled_food_hunger_threshold, pm(800));
+    }
+
+    #[test]
+    fn metabolism_profile_default_includes_spoiled_food_hunger_threshold() {
+        let profile = MetabolismProfile::default();
+
+        assert_eq!(profile.spoiled_food_hunger_threshold, pm(800));
     }
 
     #[test]
@@ -571,6 +590,36 @@ mod tests {
         // Scenarios that omit the worthwhile-wash floor inherit the proactive
         // cleaning default so the FND-11 dampener engages without opt-in.
         assert_eq!(profile.wash_worthwhile_effectiveness_floor, pm(500));
+        assert_eq!(profile.spoiled_food_hunger_threshold, pm(800));
+    }
+
+    #[test]
+    fn metabolism_profile_serde_default_absorbs_missing_field() {
+        let ron = r"(
+            hunger_rate: 2,
+            thirst_rate: 3,
+            fatigue_rate: 4,
+            bladder_rate: 5,
+            dirtiness_rate: 6,
+            rest_efficiency: 20,
+            starvation_tolerance_ticks: 480,
+            dehydration_tolerance_ticks: 240,
+            exhaustion_collapse_ticks: 120,
+            bladder_accident_tolerance_ticks: 40,
+            toilet_ticks: 8,
+            wash_ticks: 12,
+            travel_fatigue_multiplier: 0,
+            travel_thirst_multiplier: 0,
+            travel_bladder_multiplier: 0,
+            wilderness_relief_dirtiness_penalty: 0,
+        )";
+
+        let profile: MetabolismProfile = ron::Options::default()
+            .with_default_extension(ron::extensions::Extensions::UNWRAP_NEWTYPES)
+            .from_str(ron)
+            .unwrap();
+
+        assert_eq!(profile.spoiled_food_hunger_threshold, pm(800));
     }
 
     #[test]

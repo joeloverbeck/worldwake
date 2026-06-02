@@ -29,6 +29,7 @@ pub enum EntityBeliefAspect {
     Artifact,
     Courage,
     Evidence,
+    LotCondition,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -47,6 +48,7 @@ pub enum ClaimValue {
     Courage(Option<Permille>),
     WoundSnapshot(Vec<Wound>),
     EvidenceState(Option<BelievedEvidenceState>),
+    LotCondition(Option<Permille>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

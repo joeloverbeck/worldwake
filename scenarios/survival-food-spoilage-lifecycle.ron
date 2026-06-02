@@ -1,0 +1,35 @@
+// S178 focused golden: perishable Apple lots age through freshness bands with
+// different storage-context rates.
+(
+    seed: 1780081,
+    compaction_interval: 0,
+    commodity_perish_profile: {
+        Apple: (
+            fresh_to_spoiled_ticks: 720,
+            stale_threshold: 667,
+            spoiled_threshold: 333,
+            storage_rates: (
+                ground: 1000,
+                container: 500,
+                possessed: 750,
+            ),
+        ),
+    },
+    places: [
+        (name: "Spoilage Pantry", tags: [Camp]),
+    ],
+    agents: [
+        (
+            name: "Pantry Keeper",
+            location: "Spoilage Pantry",
+            control: None,
+            known_recipes: ["Harvest Apples"],
+            needs: (hunger: 0, thirst: 0, fatigue: 0, bladder: 0, dirtiness: 0),
+        ),
+    ],
+    items: [
+        (commodity: Apple, quantity: 1, location: "Spoilage Pantry", container: false),
+        (commodity: Apple, quantity: 2, location: "Spoilage Pantry", container: false),
+        (commodity: Apple, quantity: 3, location: "Pantry Keeper", container: false),
+    ],
+)

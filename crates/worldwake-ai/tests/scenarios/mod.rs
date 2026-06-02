@@ -51,6 +51,7 @@ pub mod survival_escort;
 pub mod survival_exhaustion_collapse;
 pub mod survival_exhaustion_recovery;
 pub mod survival_failed_rest_cascade;
+pub mod survival_food_spoilage;
 pub mod survival_items_decay;
 pub mod survival_justice;
 pub mod survival_latrine_full;

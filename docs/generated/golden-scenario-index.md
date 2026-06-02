@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 252
-- Contributing golden scenario source files: 65
-- Associated tests: 309
+- Scenario blocks: 255
+- Contributing golden scenario source files: 66
+- Associated tests: 312
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -331,7 +331,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 447: S152 Seeded Assignment Is Deterministic
 
-- Source: `cognitive_archetypes.rs:130`
+- Source: `cognitive_archetypes.rs:131`
 - Systems: Scenario, AI
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -343,7 +343,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 448: S152 Cautious Backoff Exceeds Bold Backoff
 
-- Source: `cognitive_archetypes.rs:181`
+- Source: `cognitive_archetypes.rs:182`
 - Systems: Scenario, AI
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -355,7 +355,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 449: S152 Sociable Reasks Sooner Than Skeptical
 
-- Source: `cognitive_archetypes.rs:215`
+- Source: `cognitive_archetypes.rs:216`
 - Systems: Scenario, AI
 - GoalKinds: AskWitness
 - ActionDomains: Social
@@ -367,7 +367,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 450: S152 Greedy Boosts Economic Portfolio Weight
 
-- Source: `cognitive_archetypes.rs:246`
+- Source: `cognitive_archetypes.rs:247`
 - Systems: Scenario, AI
 - GoalKinds: ProduceCommodity, Trade
 - ActionDomains: Portfolio
@@ -379,7 +379,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 451: S152 PersonalityAssigned Event Per Agent
 
-- Source: `cognitive_archetypes.rs:288`
+- Source: `cognitive_archetypes.rs:289`
 - Systems: Scenario, EventLog
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -391,7 +391,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 452: S152 Explicit Override Pins Archetype
 
-- Source: `cognitive_archetypes.rs:330`
+- Source: `cognitive_archetypes.rs:331`
 - Systems: Scenario, AI
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -403,7 +403,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 453: S152 Save Load Preserves Archetype State
 
-- Source: `cognitive_archetypes.rs:370`
+- Source: `cognitive_archetypes.rs:371`
 - Systems: Scenario, SaveLoad
 - GoalKinds: None
 - ActionDomains: Scenario
@@ -2511,7 +2511,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 491: Dirty-Water Tolerance Tradeoff Hardy Agent Chooses Muddy
 
-- Source: `survival_dirty_water_tolerance_tradeoff.rs:145`
+- Source: `survival_dirty_water_tolerance_tradeoff.rs:149`
 - Systems: AI, SourceReliability, WaterToleranceProfile
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2524,7 +2524,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 492: Dirty-Water Tolerance Tradeoff Fragile Agent Travels To Fallback
 
-- Source: `survival_dirty_water_tolerance_tradeoff.rs:163`
+- Source: `survival_dirty_water_tolerance_tradeoff.rs:167`
 - Systems: AI, SourceReliability, WaterToleranceProfile
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2537,7 +2537,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 493: Dirty-Water Tolerance Tradeoff Replay Is Deterministic
 
-- Source: `survival_dirty_water_tolerance_tradeoff.rs:187`
+- Source: `survival_dirty_water_tolerance_tradeoff.rs:191`
 - Systems: AI, SourceReliability, WaterToleranceProfile
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -2577,6 +2577,45 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: Aster repeatedly emits the KnownRestSite sleep candidate, records failed-rest opportunities through rough fallback while the rest site remains occupied, and falls back to capped rough sleep while critical fatigue exposure accumulates without collapse.
 
 **Cross-system chain**: rest capacity belief -> Sleep candidate -> RestOccupancy start gate -> StartFailed trace -> rough Sleep fallback -> FailedRestOpportunity::RoughFallbackToKnownRestSite -> DeprivationExposure fatigue ticks.
+
+### Scenario 512: Food Spoilage Lifecycle Differentiates Storage Contexts
+
+- Source: `survival_food_spoilage.rs:271`
+- Systems: ItemDecay, EventLog, ItemLot provenance
+- GoalKinds: none
+- ActionDomains: none
+- Places: Spoilage Pantry
+- Principles: 3, 7, 9, 12, 31
+
+**Setup**: three authored Apple lots start fresh; one remains on the ground, one
+
+**Proves**: condition decay is concrete per lot, ground spoilage crosses the
+
+### Scenario 513: Food Spoilage Cache Corrects Belief On Arrival
+
+- Source: `survival_food_spoilage.rs:333`
+- Systems: AI, Perception, SurvivalForensics
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Travel, Needs
+- Places: Trail Camp, Remembered Cache, Fallback Grove
+- Principles: 7, 14, 14A, 15, 17, 22, 31
+
+**Setup**: the agent starts with a fresh belief about a remote Apple cache; the
+
+**Proves**: no omniscient condition correction appears before arrival, local
+
+### Scenario 514: Food Spoilage Cache Long Run Replays Deterministically
+
+- Source: `survival_food_spoilage.rs:385`
+- Systems: ItemDecay, EventLog, Replay hashing
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Travel, Needs
+- Places: Shared Camp, North Orchard, South Orchard
+- Principles: 2, 3, 9, 22, 31
+
+**Setup**: multiple agents share more authored Apple stock than they can consume
+
+**Proves**: the long-horizon scenario exercises normal spoilage over 1440 ticks
 
 ### Scenario 174: Survival Item Decay Lands Roadmap Row Ten
 
@@ -2640,7 +2679,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 494: Muddy Basin Refill Raises Dirtiness Level
 
-- Source: `survival_muddy_basin_refill.rs:116`
+- Source: `survival_muddy_basin_refill.rs:120`
 - Systems: ItemDecay, Dirtiness
 - GoalKinds: Wash
 - ActionDomains: Needs
@@ -2653,7 +2692,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 495: Muddy Basin Refill Degrades Wash Effectiveness
 
-- Source: `survival_muddy_basin_refill.rs:135`
+- Source: `survival_muddy_basin_refill.rs:139`
 - Systems: ItemDecay, Needs
 - GoalKinds: Wash
 - ActionDomains: Needs
@@ -2715,7 +2754,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 496: Quality-Degrading Water Collision Completes 1440 Ticks
 
-- Source: `survival_quality_degrading_1440.rs:232`
+- Source: `survival_quality_degrading_1440.rs:234`
 - Systems: AI, Needs, Production, SourceReliability, WaterToleranceProfile
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Needs, Travel
@@ -2728,7 +2767,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 497: Quality-Degrading Water Collision Records Muddy Beliefs
 
-- Source: `survival_quality_degrading_1440.rs:254`
+- Source: `survival_quality_degrading_1440.rs:256`
 - Systems: Perception, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -2741,7 +2780,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 498: Quality-Degrading Water Collision Diverges By Tolerance
 
-- Source: `survival_quality_degrading_1440.rs:281`
+- Source: `survival_quality_degrading_1440.rs:283`
 - Systems: AI, SourceReliability, WaterToleranceProfile
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Needs, Travel
@@ -2754,7 +2793,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 499: Quality-Degrading Water Collision Produces Critical Window
 
-- Source: `survival_quality_degrading_1440.rs:307`
+- Source: `survival_quality_degrading_1440.rs:309`
 - Systems: Needs, SurvivalForensicExtractor
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Needs, Travel
@@ -2767,7 +2806,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 500: Quality-Degrading Water Collision Dirties Backup Basin
 
-- Source: `survival_quality_degrading_1440.rs:337`
+- Source: `survival_quality_degrading_1440.rs:339`
 - Systems: ItemDecay, Dirtiness
 - GoalKinds: Wash
 - ActionDomains: Needs
@@ -2780,7 +2819,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 501: Quality-Degrading Water Collision Replay Is Deterministic
 
-- Source: `survival_quality_degrading_1440.rs:359`
+- Source: `survival_quality_degrading_1440.rs:361`
 - Systems: AI, Needs, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Needs, Travel
@@ -3016,7 +3055,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 488: Water Quality On Arrival Records Belief Correction
 
-- Source: `survival_water_quality_on_arrival.rs:135`
+- Source: `survival_water_quality_on_arrival.rs:139`
 - Systems: AI, Perception, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -3031,7 +3070,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 489: Water Quality On Arrival Has No Omniscient Pre-Arrival Update
 
-- Source: `survival_water_quality_on_arrival.rs:177`
+- Source: `survival_water_quality_on_arrival.rs:181`
 - Systems: AI, Perception, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel
@@ -3044,7 +3083,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 490: Water Quality On Arrival Replay Is Deterministic
 
-- Source: `survival_water_quality_on_arrival.rs:198`
+- Source: `survival_water_quality_on_arrival.rs:202`
 - Systems: AI, Perception, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel

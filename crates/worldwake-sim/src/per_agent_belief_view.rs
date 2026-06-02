@@ -11,14 +11,14 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     AgentBeliefStore, AgentSchemaContextProfile, ArtifactPostingProfile, BeliefConfidencePolicy,
     BelievedEntityState, BelievedInstitutionalClaim, CarryCapacity, CognitiveProfile,
-    CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityValuationProfile,
-    ContentionGrant, ControlSource, DemandObservation, DeprivationExposure, DisposalProfile,
-    DiversificationProfile, DriveEscalationProfile, DriveThresholds, EffectiveRight,
-    EntityBeliefAspect, EntityId, EntityKind, ExpectationStore, HomeostaticNeedId,
-    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    IntentionDispositionProfile, JusticeDispositionProfile, LastHarvestTrace,
-    LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LatrineFullness,
-    LawAbidingProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPerishProfile,
+    CommodityValuationProfile, ContentionGrant, ControlSource, DemandObservation,
+    DeprivationExposure, DisposalProfile, DiversificationProfile, DriveEscalationProfile,
+    DriveThresholds, EffectiveRight, EntityBeliefAspect, EntityId, EntityKind, ExpectationStore,
+    HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile,
+    LastHarvestTrace, LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance,
+    LatrineFullness, LawAbidingProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
     ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PerceptionProfile,
     PerceptionSource, Permille, PlaceDirtiness, PlaceTag, PortfolioWeightsProfile,
     PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation,
@@ -534,6 +534,29 @@ impl LocalPhysicalObservationView for PerAgentBeliefView<'_> {
                 .flatten(),
             observed_tick: self.current_tick,
             source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+
+    fn observed_lot_condition(&self, lot: EntityId) -> ObservedRead<Option<Permille>> {
+        let local = self.has_authoritative_local_visibility(lot);
+        let value = if local {
+            self.world
+                .get_component_perishable_state(lot)
+                .map(|state| state.condition)
+        } else {
+            self.agent_belief_store(self.agent)
+                .and_then(|store| store.get_entity(&lot))
+                .and_then(|belief| belief.last_observed_condition)
+        };
+
+        ObservedRead {
+            value,
+            observed_tick: self.current_tick,
+            source: if local {
+                ObservationSource::CoLocatedSameTick
+            } else {
+                ObservationSource::BeliefStoreSnapshot
+            },
         }
     }
 
@@ -1896,6 +1919,17 @@ impl InventoryBeliefView for PerAgentBeliefView<'_> {
         commodity.spec().consumable_profile
     }
 
+    fn lot_condition(&self, entity: EntityId) -> Option<Permille> {
+        LocalPhysicalObservationView::observed_lot_condition(self, entity).value
+    }
+
+    fn commodity_perish_profile(&self, commodity: CommodityKind) -> Option<CommodityPerishProfile> {
+        self.world
+            .commodity_perish_profiles()
+            .get(&commodity)
+            .copied()
+    }
+
     fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
         let accessible = self.knows_entity(entity)
             || self.has_authoritative_local_visibility(entity)
@@ -2412,7 +2446,7 @@ mod tests {
         InstitutionalClaim, InstitutionalKnowledgeSource, LastHarvestTrace, LastSeenMemory,
         LastSeenProvenance, LastSeenRecord, LawAbidingProfile, LoadUnits,
         ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PerceptionProfile,
-        PerceptionSource, Permille, Place, PlaceTag, PreferenceProfile, Quantity,
+        PerceptionSource, PerishableState, Permille, Place, PlaceTag, PreferenceProfile, Quantity,
         RecipientKnowledgeStatus, RecordData, RecordKind, ResourceExtractionQueues, ResourceSource,
         RestCapacity, RestOccupancy, RightKind, RiskWeightProfile, RouteExperience,
         SelfCareOccupancy, SelfCareUseKind, StockStoragePolicy, SuccessionLaw, TellMemoryKey,
@@ -6112,6 +6146,191 @@ mod tests {
         assert_eq!(remote_quantity.value, None);
         assert_eq!(local_kind.value, Some(EntityKind::ItemLot));
         assert_eq!(remote_kind.value, None);
+    }
+
+    #[test]
+    fn lot_condition_returns_authoritative_for_co_located_lot() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let condition = Permille::new_unchecked(640);
+        let (agent, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(CommodityKind::Apple, Quantity(3), place, None)
+                .unwrap();
+            txn.set_component_perishable_state(
+                lot,
+                PerishableState {
+                    condition,
+                    last_advanced_tick: Tick(1),
+                    decay_remainder: 0,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, lot)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new_at_tick(agent, Tick(12), &world, &beliefs);
+        let observed = LocalPhysicalObservationView::observed_lot_condition(&view, lot);
+
+        assert_eq!(observed.value, Some(condition));
+        assert_eq!(observed.source, ObservationSource::CoLocatedSameTick);
+        assert_eq!(GoalBeliefView::lot_condition(&view, lot), Some(condition));
+    }
+
+    #[test]
+    fn lot_condition_returns_belief_for_remote_lot_with_prior_observation() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let local_place = places[0];
+        let remote_place = places[1];
+        let condition = Permille::new_unchecked(520);
+        let (agent, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, local_place).unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(CommodityKind::Apple, Quantity(3), remote_place, None)
+                .unwrap();
+            commit_txn(txn);
+            (agent, lot)
+        };
+        let mut beliefs = AgentBeliefStore::new();
+        let mut belief = BelievedEntityState::single_observation_defaults(
+            Tick(7),
+            PerceptionSource::DirectObservation,
+        );
+        belief.believed_kind = Some(EntityKind::ItemLot);
+        belief.last_known_place = Some(remote_place);
+        belief
+            .last_known_inventory
+            .insert(CommodityKind::Apple, Quantity(3));
+        belief.last_observed_condition = Some(condition);
+        beliefs.update_entity(lot, belief);
+
+        let view = PerAgentBeliefView::new_at_tick(agent, Tick(12), &world, &beliefs);
+        let observed = LocalPhysicalObservationView::observed_lot_condition(&view, lot);
+
+        assert_eq!(observed.value, Some(condition));
+        assert_eq!(observed.source, ObservationSource::BeliefStoreSnapshot);
+        assert_eq!(GoalBeliefView::lot_condition(&view, lot), Some(condition));
+    }
+
+    #[test]
+    fn lot_condition_returns_none_for_remote_lot_with_no_belief() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let local_place = places[0];
+        let remote_place = places[1];
+        let (agent, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, local_place).unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(CommodityKind::Apple, Quantity(3), remote_place, None)
+                .unwrap();
+            commit_txn(txn);
+            (agent, lot)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new_at_tick(agent, Tick(12), &world, &beliefs);
+
+        assert_eq!(GoalBeliefView::lot_condition(&view, lot), None);
+    }
+
+    #[test]
+    fn lot_freshness_band_derives_from_condition_and_profile() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let local_place = places[0];
+        let remote_place = places[1];
+        let (agent, fresh_lot, stale_lot, spoiled_lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, local_place).unwrap();
+            let fresh_lot = txn
+                .create_item_lot_with_owner(CommodityKind::Apple, Quantity(1), remote_place, None)
+                .unwrap();
+            let stale_lot = txn
+                .create_item_lot_with_owner(CommodityKind::Apple, Quantity(1), remote_place, None)
+                .unwrap();
+            let spoiled_lot = txn
+                .create_item_lot_with_owner(CommodityKind::Apple, Quantity(1), remote_place, None)
+                .unwrap();
+            commit_txn(txn);
+            (agent, fresh_lot, stale_lot, spoiled_lot)
+        };
+        let mut beliefs = AgentBeliefStore::new();
+        for (lot, condition) in [
+            (fresh_lot, Permille::new_unchecked(1000)),
+            (stale_lot, Permille::new_unchecked(666)),
+            (spoiled_lot, Permille::new_unchecked(332)),
+        ] {
+            let mut belief = BelievedEntityState::single_observation_defaults(
+                Tick(7),
+                PerceptionSource::DirectObservation,
+            );
+            belief.believed_kind = Some(EntityKind::ItemLot);
+            belief.last_known_place = Some(remote_place);
+            belief
+                .last_known_inventory
+                .insert(CommodityKind::Apple, Quantity(1));
+            belief.last_observed_condition = Some(condition);
+            beliefs.update_entity(lot, belief);
+        }
+
+        let view = PerAgentBeliefView::new_at_tick(agent, Tick(12), &world, &beliefs);
+
+        assert_eq!(
+            GoalBeliefView::lot_freshness_band(&view, fresh_lot),
+            Some(worldwake_core::Freshness::Fresh)
+        );
+        assert_eq!(
+            GoalBeliefView::lot_freshness_band(&view, stale_lot),
+            Some(worldwake_core::Freshness::Stale)
+        );
+        assert_eq!(
+            GoalBeliefView::lot_freshness_band(&view, spoiled_lot),
+            Some(worldwake_core::Freshness::Spoiled)
+        );
+    }
+
+    #[test]
+    fn lot_freshness_band_returns_none_when_condition_unknown() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let local_place = places[0];
+        let remote_place = places[1];
+        let (agent, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, local_place).unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(CommodityKind::Apple, Quantity(1), remote_place, None)
+                .unwrap();
+            commit_txn(txn);
+            (agent, lot)
+        };
+        let mut beliefs = AgentBeliefStore::new();
+        let mut belief = BelievedEntityState::single_observation_defaults(
+            Tick(7),
+            PerceptionSource::DirectObservation,
+        );
+        belief.believed_kind = Some(EntityKind::ItemLot);
+        belief.last_known_place = Some(remote_place);
+        belief
+            .last_known_inventory
+            .insert(CommodityKind::Apple, Quantity(1));
+        beliefs.update_entity(lot, belief);
+
+        let view = PerAgentBeliefView::new_at_tick(agent, Tick(12), &world, &beliefs);
+
+        assert_eq!(GoalBeliefView::lot_freshness_band(&view, lot), None);
     }
 
     #[test]

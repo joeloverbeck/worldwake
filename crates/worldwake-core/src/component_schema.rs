@@ -2492,6 +2492,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                perishable_states,
+                PerishableState,
+                insert_perishable_state,
+                get_perishable_state,
+                get_perishable_state_mut,
+                remove_perishable_state,
+                has_perishable_state,
+                iter_perishable_states,
+                insert_component_perishable_state,
+                get_component_perishable_state,
+                get_component_perishable_state_mut,
+                remove_component_perishable_state,
+                has_component_perishable_state,
+                entities_with_perishable_state,
+                query_perishable_state,
+                count_with_perishable_state,
+                "PerishableState",
+                |kind| kind == EntityKind::ItemLot,
+                PerishableState,
+                crate::PerishableState,
+                set_component_perishable_state,
+                clear_component_perishable_state,
+                txn_simple_set
+            }
+            {
                 containers,
                 Container,
                 insert_container,

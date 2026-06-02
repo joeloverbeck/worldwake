@@ -1,6 +1,6 @@
 # Implementation Order
 
-**Status**: ACTIVE
+**Status**: COMPLETED
 
 The prior gameplay adjunct wave (S174 + S175, derived from the second-iteration
 ChatGPT-Pro Cluster 1 report) completed and was archived to
@@ -63,14 +63,15 @@ proof spec. Dismissals, reaffirmations, and per-item rationale:
 S175CIOWN-001 (Exhaustion golden CI ownership)   ── archived ticket; completed; no spec deps
 S176 (Sanitation Facility Degradation)           ── ✅ COMPLETED 2026-05-29 (archived); depended on archived S129 / S173 / S174 / S44 / S82; wired dead facility state into consequences
 S177 (Water Quality, Depletion, Reliability)     ── ✅ COMPLETED 2026-05-31 (archived); depended on archived S79 / S38 / S151 / S129; coupled to S176 (basin refill quality); realized canonical scenario D for water
-S178 (Perishable Food Spoilage)                  ── depends on archived S82 / S79; first emitter of LotOperation::Spoiled
+S178 (Perishable Food Spoilage)                  ── ✅ COMPLETED 2026-06-02 (archived); depended on archived S82 / S79; first emitter of LotOperation::Spoiled
 ```
 
 S176 was the recommended first slice (the report's §17 pick) and is now
 **completed and archived** (tickets S176SANFACDEG-001..008, 2026-05-29). S177 is
 also **completed and archived** (tickets S177WATSRCQUA-001..010, 2026-05-31);
 it coupled to S176 only through basin-refill water quality (consuming the now-live
-`WashBasinState`). S178 remains independent of S177's completion.
+`WashBasinState`). S178 is also **completed and archived** (tickets
+S178PERFOOSPO-001..008, 2026-06-02).
 
 ### Completed Proof-Integrity Ticket (not held)
 
@@ -109,10 +110,10 @@ it coupled to S176 only through basin-refill water quality (consuming the now-li
   `survival-quality-degrading-1440` collision scenario.
   **FND-1/3/4/7/14/14A/14B/15/16/17/19/21/22A/26/28/29/29A/31.**
 
-### Authored, Awaiting Activation
-
 - **S178 — Perishable Food Spoilage and Lot Condition** —
-  `specs/S178-perishable-food-spoilage.md` — *Status: Draft.*
+  *Status: ✅ COMPLETED 2026-06-02.*
+  `archive/specs/S178-perishable-food-spoilage.md` (tickets
+  `archive/tickets/S178PERFOOSPO-001..008`).
   Adds per-lot `PerishableState` (Fresh → Stale → Spoiled) with condition-scaled Eat
   relief, **first emission of `LotOperation::Spoiled`**, spoiled-but-edible
   desperation gating (per-agent profile threshold), and cache spoilage feeding the
@@ -144,3 +145,18 @@ it coupled to S176 only through basin-refill water quality (consuming the now-li
 - Boundary shocks / external supply failure → held
   `specs/S62-boundary-processes-remote-shocks.md` (internal degradation creates
   scarcity first; S62 does not gate this wave).
+
+## Outcome
+
+Completed on 2026-06-02. This implementation-order wave carried the Cluster 1
+material-degradation and source-reliability work through S176, S177, and S178,
+plus the S175 exhaustion CI-ownership proof-integrity ticket. All three wave
+specs are now archived, their ticket families are archived, and the remaining
+items in this document are watchlist or excluded-future-work notes rather than
+active implementation directives.
+
+Verification results for the final S178 closeout included focused S178 golden
+tests, the ignored CI-owned 1440 food-spoilage golden, regenerated golden and
+scenario coverage docs, `cargo test --workspace`, and `./scripts/verify.sh`
+through fmt, workspace tests, both clippy gates, and the final scenario-coverage
+check after regeneration.

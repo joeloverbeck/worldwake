@@ -199,10 +199,11 @@ pub use decision_event_payload::{
     DecisionEventPayload, EmitterTag, EvidenceKindTag, EvidenceSummary, ExpectationFailureCauseTag,
     ExpectationFailurePhaseTag, ExpectationMismatchPayload, GoalAbandonReason,
     GoalAbandonedPayload, GoalCommittedPayload, GoalOfferedPayload, GoalRejectionReason,
-    GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason, ObservationRef,
-    OpportunityExpectationKindTag, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
-    PlanInvalidationReason, PursuitInvalidationReasonTag, RankedGoalComparisonDimensionTag,
-    RecordRef, RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
+    GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
+    LotConditionExpectationMismatchPayload, ObservationRef, OpportunityExpectationKindTag,
+    PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
+    PursuitInvalidationReasonTag, RankedGoalComparisonDimensionTag, RecordRef,
+    RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
     ReplanTriggeredPayload, ResourceSourceQualityObservedPayload, RoutePreferenceSummary,
     SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepFailureCause,
     SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKeyPayload,
@@ -267,9 +268,11 @@ pub use intention_frame::{
 };
 pub use items::{
     CombatWeaponProfile, CommodityConsumableProfile, CommodityDecayMap, CommodityKind,
-    CommodityKindSpec, CommodityPhysicalProfile, CommodityTreatmentProfile, Container, GroundSince,
-    ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind,
-    UniqueItemKindSpec, UniqueItemPhysicalProfile, default_commodity_decay_map,
+    CommodityKindSpec, CommodityPerishProfile, CommodityPerishProfileMap, CommodityPhysicalProfile,
+    CommodityTreatmentProfile, Container, Freshness, GroundSince, ItemLot, LotOperation,
+    PerishableState, ProvenanceEntry, StorageRateMultipliers, TradeCategory, UniqueItem,
+    UniqueItemKind, UniqueItemKindSpec, UniqueItemPhysicalProfile, default_commodity_decay_map,
+    default_commodity_perish_profile_map,
 };
 pub use law_abiding_profile::LawAbidingProfile;
 pub use learned_opportunity_memory::{

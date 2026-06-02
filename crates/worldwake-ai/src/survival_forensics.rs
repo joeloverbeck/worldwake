@@ -8,7 +8,7 @@ use worldwake_core::{
     BlockerScope, CommodityKind, DeathCause, DecisionEventPayload, DeprivationKind,
     DriveThresholds, EntityId, EventLog, EventView, ExpectationFailureCauseTag, GoalKey,
     HomeostaticNeedId, HomeostaticNeeds, Permille, PlaceTag, Quantity, SleepFailureCause, Tick,
-    WaterQuality, WorkstationTag, World, WoundCause,
+    WaterQuality, WorkstationTag, World, WoundCause, default_commodity_perish_profile_map,
 };
 use worldwake_sim::{
     ActionInstance, ActionInstanceId, ActionTraceDetail, ActionTraceEvent, ActionTraceKind,
@@ -53,6 +53,8 @@ pub struct CriticalWindowFrame {
     pub degraded_self_care_opportunities: Vec<DegradedSelfCareOpportunity>,
     #[serde(default)]
     pub source_acquisition_failures: Vec<SourceAcquisitionFailure>,
+    #[serde(default)]
+    pub spoiled_food_discoveries: Vec<SpoiledFoodDiscovery>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,6 +120,25 @@ pub enum SourceFailureCause {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum SourceFailureOutcome {
     DrankAnyway,
+    TraveledToFallback,
+    GaveUp,
+}
+
+/// S178 D6: derived evidence that an agent reached a food lot whose believed
+/// condition was still edible but whose observed condition is now spoiled.
+/// This is forensic state only; it never feeds authoritative simulation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SpoiledFoodDiscovery {
+    pub tick: Tick,
+    pub lot: EntityId,
+    pub believed_condition: Permille,
+    pub observed_condition: Permille,
+    pub outcome: SpoiledFoodOutcome,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum SpoiledFoodOutcome {
+    AteAnyway,
     TraveledToFallback,
     GaveUp,
 }
@@ -323,6 +344,9 @@ impl SurvivalForensicExtractor {
                     .or_insert_with(|| WindowBuilder::new(tick, threshold));
                 builder
                     .update_pending_source_outcomes(source_failure_outcome(action_trace_snapshot));
+                builder.update_pending_spoiled_food_outcomes(spoiled_food_outcome(
+                    action_trace_snapshot,
+                ));
                 builder.observe(frame);
                 continue;
             }
@@ -398,6 +422,19 @@ impl WindowBuilder {
         }
     }
 
+    fn update_pending_spoiled_food_outcomes(&mut self, outcome: SpoiledFoodOutcome) {
+        if outcome == SpoiledFoodOutcome::GaveUp {
+            return;
+        }
+        for frame in &mut self.frames {
+            for discovery in &mut frame.spoiled_food_discoveries {
+                if discovery.outcome == SpoiledFoodOutcome::GaveUp {
+                    discovery.outcome = outcome;
+                }
+            }
+        }
+    }
+
     fn flush(self, agent: EntityId, need: HomeostaticNeedId) -> CriticalWindowReport {
         let end_tick = self
             .frames
@@ -467,7 +504,73 @@ fn build_frame(
             event_log,
             action_trace_snapshot,
         ),
+        spoiled_food_discoveries: spoiled_food_discoveries(
+            tick,
+            need,
+            agent,
+            event_log,
+            action_trace_snapshot,
+        ),
     }
+}
+
+fn spoiled_food_discoveries(
+    tick: Tick,
+    active_need: HomeostaticNeedId,
+    agent: EntityId,
+    event_log: &EventLog,
+    action_trace_snapshot: &ActionTraceSnapshot<'_>,
+) -> Vec<SpoiledFoodDiscovery> {
+    if active_need != HomeostaticNeedId::Hunger {
+        return Vec::new();
+    }
+
+    let profiles = default_commodity_perish_profile_map();
+    let outcome = spoiled_food_outcome(action_trace_snapshot);
+    event_log
+        .events_at_tick(tick)
+        .iter()
+        .filter_map(|event_id| event_log.get(*event_id))
+        .filter_map(|event| match event.decision_payload()? {
+            DecisionEventPayload::LotConditionExpectationMismatch(payload)
+                if payload.observer == agent =>
+            {
+                let profile = profiles.get(&payload.commodity)?;
+                (payload.believed_condition.value() >= profile.spoiled_threshold.value()
+                    && payload.observed_condition.value() < profile.spoiled_threshold.value())
+                .then_some(SpoiledFoodDiscovery {
+                    tick,
+                    lot: payload.lot,
+                    believed_condition: payload.believed_condition,
+                    observed_condition: payload.observed_condition,
+                    outcome,
+                })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn spoiled_food_outcome(action_trace_snapshot: &ActionTraceSnapshot<'_>) -> SpoiledFoodOutcome {
+    if action_trace_snapshot.tick_events.iter().any(|event| {
+        event.action_name == "eat"
+            && matches!(
+                event.kind,
+                ActionTraceKind::Started { .. } | ActionTraceKind::Committed { .. }
+            )
+    }) {
+        return SpoiledFoodOutcome::AteAnyway;
+    }
+    if action_trace_snapshot.tick_events.iter().any(|event| {
+        event.action_name == "travel"
+            && matches!(
+                event.kind,
+                ActionTraceKind::Started { .. } | ActionTraceKind::Committed { .. }
+            )
+    }) {
+        return SpoiledFoodOutcome::TraveledToFallback;
+    }
+    SpoiledFoodOutcome::GaveUp
 }
 
 fn source_acquisition_failures(
@@ -1516,6 +1619,206 @@ mod tests {
     }
 
     #[test]
+    fn spoiled_food_discovery_recorded_when_belief_fresh_and_observed_spoiled() {
+        let agent = entity(1);
+        let lot = entity(85);
+        let event_log =
+            event_log_with_decision_payload(
+                Tick(5),
+                agent,
+                EventTag::ExpectationMismatch,
+                DecisionEventPayload::LotConditionExpectationMismatch(
+                    lot_condition_mismatch_payload(agent, lot, pm(900), pm(200)),
+                ),
+            );
+        let mut extractor = SurvivalForensicExtractor::new(agent);
+
+        extractor.observe(
+            Tick(5),
+            &HomeostaticNeeds::new(pm(930), pm(0), pm(0), pm(0), pm(0)),
+            &DriveThresholds::default(),
+            None,
+            &ActionTraceSnapshot::empty(),
+            &event_log,
+            &sample_local_summary(),
+            false,
+        );
+
+        let reports = extractor.finalize();
+        assert_eq!(
+            reports[0].frames[0].spoiled_food_discoveries,
+            vec![SpoiledFoodDiscovery {
+                tick: Tick(5),
+                lot,
+                believed_condition: pm(900),
+                observed_condition: pm(200),
+                outcome: SpoiledFoodOutcome::GaveUp,
+            }]
+        );
+    }
+
+    #[test]
+    fn spoiled_food_discovery_outcome_ate_anyway_when_agent_eats_spoiled_lot() {
+        let agent = entity(1);
+        let lot = entity(86);
+        let event_log =
+            event_log_with_decision_payload(
+                Tick(5),
+                agent,
+                EventTag::ExpectationMismatch,
+                DecisionEventPayload::LotConditionExpectationMismatch(
+                    lot_condition_mismatch_payload(agent, lot, pm(900), pm(200)),
+                ),
+            );
+        let eat_event = committed_event("eat");
+        let snapshot = ActionTraceSnapshot {
+            active_action: None,
+            tick_events: vec![&eat_event],
+        };
+        let mut extractor = SurvivalForensicExtractor::new(agent);
+
+        extractor.observe(
+            Tick(5),
+            &HomeostaticNeeds::new(pm(930), pm(0), pm(0), pm(0), pm(0)),
+            &DriveThresholds::default(),
+            None,
+            &snapshot,
+            &event_log,
+            &sample_local_summary(),
+            false,
+        );
+
+        let reports = extractor.finalize();
+        assert_eq!(
+            reports[0].frames[0].spoiled_food_discoveries[0].outcome,
+            SpoiledFoodOutcome::AteAnyway
+        );
+        assert_eq!(reports[0].frames[0].spoiled_food_discoveries[0].lot, lot);
+    }
+
+    #[test]
+    fn spoiled_food_discovery_outcome_traveled_to_fallback_when_agent_seeks_other_food() {
+        let agent = entity(1);
+        let lot = entity(87);
+        let discovery_log =
+            event_log_with_decision_payload(
+                Tick(5),
+                agent,
+                EventTag::ExpectationMismatch,
+                DecisionEventPayload::LotConditionExpectationMismatch(
+                    lot_condition_mismatch_payload(agent, lot, pm(900), pm(200)),
+                ),
+            );
+        let travel_log = EventLog::new();
+        let travel_event = ActionTraceEvent::new(
+            Tick(6),
+            agent,
+            ActionDefId(6),
+            "travel".to_string(),
+            ActionTraceKind::Started {
+                targets: vec![entity(90)],
+            },
+        );
+        let travel_snapshot = ActionTraceSnapshot {
+            active_action: None,
+            tick_events: vec![&travel_event],
+        };
+        let mut extractor = SurvivalForensicExtractor::new(agent);
+        let critical_hunger = HomeostaticNeeds::new(pm(930), pm(0), pm(0), pm(0), pm(0));
+
+        extractor.observe(
+            Tick(5),
+            &critical_hunger,
+            &DriveThresholds::default(),
+            None,
+            &ActionTraceSnapshot::empty(),
+            &discovery_log,
+            &sample_local_summary(),
+            false,
+        );
+        extractor.observe(
+            Tick(6),
+            &critical_hunger,
+            &DriveThresholds::default(),
+            None,
+            &travel_snapshot,
+            &travel_log,
+            &sample_local_summary(),
+            false,
+        );
+
+        let reports = extractor.finalize();
+        assert_eq!(
+            reports[0].frames[0].spoiled_food_discoveries[0].outcome,
+            SpoiledFoodOutcome::TraveledToFallback
+        );
+    }
+
+    #[test]
+    fn spoiled_food_discovery_outcome_gave_up_when_agent_idles_past_window() {
+        let agent = entity(1);
+        let lot = entity(88);
+        let event_log =
+            event_log_with_decision_payload(
+                Tick(5),
+                agent,
+                EventTag::ExpectationMismatch,
+                DecisionEventPayload::LotConditionExpectationMismatch(
+                    lot_condition_mismatch_payload(agent, lot, pm(900), pm(200)),
+                ),
+            );
+        let mut extractor = SurvivalForensicExtractor::new(agent);
+        let critical_hunger = HomeostaticNeeds::new(pm(930), pm(0), pm(0), pm(0), pm(0));
+
+        extractor.observe(
+            Tick(5),
+            &critical_hunger,
+            &DriveThresholds::default(),
+            None,
+            &ActionTraceSnapshot::empty(),
+            &event_log,
+            &sample_local_summary(),
+            false,
+        );
+        extractor.observe(
+            Tick(6),
+            &critical_hunger,
+            &DriveThresholds::default(),
+            None,
+            &ActionTraceSnapshot::empty(),
+            &EventLog::new(),
+            &sample_local_summary(),
+            false,
+        );
+
+        let reports = extractor.finalize();
+        assert_eq!(
+            reports[0].frames[0].spoiled_food_discoveries[0].outcome,
+            SpoiledFoodOutcome::GaveUp
+        );
+    }
+
+    #[test]
+    fn spoiled_food_discovery_does_not_fire_without_prior_belief() {
+        let agent = entity(1);
+        let mut extractor = SurvivalForensicExtractor::new(agent);
+
+        extractor.observe(
+            Tick(5),
+            &HomeostaticNeeds::new(pm(930), pm(0), pm(0), pm(0), pm(0)),
+            &DriveThresholds::default(),
+            None,
+            &ActionTraceSnapshot::empty(),
+            &EventLog::new(),
+            &sample_local_summary(),
+            false,
+        );
+
+        let reports = extractor.finalize();
+        assert!(reports[0].frames[0].spoiled_food_discoveries.is_empty());
+    }
+
+    #[test]
     fn critical_window_frame_deserializes_missing_failed_rest_as_empty() {
         let mut frame_value = serde_json::to_value(build_frame(
             entity(1),
@@ -2268,6 +2571,21 @@ mod tests {
             decisive_beliefs: Vec::new(),
             decisive_records: Vec::new(),
             decisive_world_observations: Vec::new(),
+        }
+    }
+
+    fn lot_condition_mismatch_payload(
+        agent: EntityId,
+        lot: EntityId,
+        believed_condition: Permille,
+        observed_condition: Permille,
+    ) -> worldwake_core::LotConditionExpectationMismatchPayload {
+        worldwake_core::LotConditionExpectationMismatchPayload {
+            observer: agent,
+            lot,
+            commodity: CommodityKind::Apple,
+            believed_condition,
+            observed_condition,
         }
     }
 

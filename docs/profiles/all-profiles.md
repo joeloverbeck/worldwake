@@ -52,6 +52,7 @@ Applied only when the scenario definition includes them. Agents without these pr
 
 Attached to non-agent entities (places, offices, etc.) or not referenced in the agent spawn path.
 
+- [CommodityPerishProfile](#commodityperishprofile) — (no description)
 - [MemoryCapacityProfile](#memorycapacityprofile) — (no description)
 - [OfficeForceProfile](#officeforceprofile) — Explicit force-succession timing policy attached to force-law offices.
 - [PlaceVisibilityProfile](#placevisibilityprofile) — Environmental visibility parameters attached to place entities.
@@ -286,6 +287,7 @@ Per-agent physiology parameters that drive metabolism and recovery.
 | `travel_bladder_multiplier` | `Permille` | Multiplier applied to bladder rate while traveling. (default: `pm(0)`) |
 | `wilderness_relief_dirtiness_penalty` | `Permille` | Additional dirtiness incurred when relieving oneself in the wilderness rather than at a proper facility. (default: `pm(0)`) |
 | `wash_worthwhile_effectiveness_floor` | `Permille` | Minimum acceptable wash effectiveness (the effective relief fraction in permille) before the planner inserts proactive `clean_wash_basin` maintenance ahead of a wash. A basin's live effectiveness is `(max_effective_dirtiness - dirtiness_level) / max_effective_dirtiness`. When that falls below this floor — while the basin is still below its hard `max_effective_dirtiness` block — the agent cleans the basin first so the recovered wash delivers worthwhile relief. This is the FND-11 maintenance-labor dampener engaging before the basin becomes unusable. `0` disables proactive cleaning, leaving only the hard authoritative block (`TargetWashBasinNotTooDirty`). (default: `default_wash_worthwhile_effectiveness_floor()`) |
+| `spoiled_food_hunger_threshold` | `Permille` | Hunger threshold at or above which spoiled food becomes a candidate desperation affordance. (default: `default_spoiled_food_hunger_threshold()`) |
 
 ---
 
@@ -358,7 +360,7 @@ Per-agent portfolio slot weights and planning breadth caps.
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/experience.rs:214`
+**Source**: `crates/worldwake-core/src/experience.rs:233`
 
 Per-agent experience-based route and source preference parameters.
 
@@ -700,6 +702,21 @@ Per-agent parameters governing investigation behavior. Enables agent diversity (
 | `violation_memory_retention_ticks` | `u32` | How many ticks before a recorded violation expires from memory. |
 | `investigation_motive_weight` | `Permille` | Base motive weight for investigation goals. |
 | `ownership_motive_bonus` | `Permille` | Additional motive when the agent owns the missing entity. |
+
+---
+
+## CommodityPerishProfile
+
+**Category**: Non-agent / special-purpose
+
+**Source**: `crates/worldwake-core/src/items.rs:365`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `fresh_to_spoiled_ticks` | `NonZeroU32` | *(undocumented)* |
+| `stale_threshold` | `Permille` | *(undocumented)* |
+| `spoiled_threshold` | `Permille` | *(undocumented)* |
+| `storage_rates` | `StorageRateMultipliers` | *(undocumented)* |
 
 ---
 

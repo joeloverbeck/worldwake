@@ -38,8 +38,8 @@ use worldwake_core::{
     CommodityKind, CommodityPurpose, Discrepancy, DiscrepancyClearing, DiscrepancyMemory,
     DiversificationProfile, DriveThresholds, EligibilityRule, EmitterTag, EntityId, EntityKind,
     EvidenceKindTag, EvidenceSummary, ExpectationBasis, ExpectationOutcome, ExpectationRecord,
-    ExpectationState, ExplorationMotivation, ExplorationProfile, GoalDispatchKey, GoalKey,
-    GoalKind, GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, HypothesisKind,
+    ExpectationState, ExplorationMotivation, ExplorationProfile, Freshness, GoalDispatchKey,
+    GoalKey, GoalKind, GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, HypothesisKind,
     InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
     InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor, OpportunityKey,
     PerceptionSource, Permille, PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace,
@@ -6626,6 +6626,7 @@ fn place_has_direct_acquisition_support(
 ) -> bool {
     view.listed_sale_lots_at(place, commodity)
         .into_iter()
+        .filter(|lot| spoiled_food_allowed_for_agent(view, agent, *lot))
         .filter_map(|lot| view.seller_for_sale_lot(lot))
         .any(|seller| seller != agent)
         || local_unpossessed_commodity_evidence(view, agent, place, commodity).is_some()
@@ -6883,6 +6884,9 @@ fn acquisition_path_evidence_inner(
         let mut place_trace = EvidenceTrace::default();
 
         for lot in view.listed_sale_lots_at(candidate_place, commodity) {
+            if !spoiled_food_allowed_for_agent(view, agent, lot) {
+                continue;
+            }
             if let Some(seller) = view.seller_for_sale_lot(lot)
                 && seller != agent
             {
@@ -6983,6 +6987,9 @@ fn acquisition_path_evidence_at_place(
     let mut place_trace = EvidenceTrace::default();
 
     for lot in view.listed_sale_lots_at(candidate_place, commodity) {
+        if !spoiled_food_allowed_for_agent(view, agent, lot) {
+            continue;
+        }
         if let Some(seller) = view.seller_for_sale_lot(lot)
             && seller != agent
         {
@@ -7192,6 +7199,9 @@ fn local_unpossessed_commodity_evidence(
             continue;
         }
         if view.seller_for_sale_lot(entity).is_some() {
+            continue;
+        }
+        if !spoiled_food_allowed_for_agent(view, agent, entity) {
             continue;
         }
         if view.direct_container(entity).is_some() || view.direct_possessor(entity).is_some() {
@@ -7501,6 +7511,9 @@ fn local_owned_commodity_evidence(
         if view.item_lot_commodity(entity) != Some(commodity) || !view.can_control(agent, entity) {
             continue;
         }
+        if !spoiled_food_allowed_for_agent(view, agent, entity) {
+            continue;
+        }
         let directly_possessed = view.direct_possessor(entity) == Some(agent);
         let loose_local_owned = view.direct_container(entity).is_none()
             && view.seller_for_sale_lot(entity).is_none()
@@ -7518,6 +7531,25 @@ fn local_owned_commodity_evidence(
         evidence.entities.insert(entity);
     }
     (!evidence.entities.is_empty()).then_some(evidence)
+}
+
+fn spoiled_food_allowed_for_agent(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    lot: EntityId,
+) -> bool {
+    if view.lot_freshness_band(lot) != Some(Freshness::Spoiled) {
+        return true;
+    }
+
+    let Some(needs) = view.homeostatic_needs(agent) else {
+        return false;
+    };
+    let threshold = view
+        .metabolism_profile(agent)
+        .unwrap_or_default()
+        .spoiled_food_hunger_threshold;
+    needs.hunger >= threshold
 }
 
 fn any_local_need_relief(
@@ -7629,7 +7661,7 @@ mod tests {
         DiversificationProfile, DriveThresholds, EffectiveRight, EligibilityRule, EmitterTag,
         EntityId, EntityKind, EpistemicDispositionProfile, EvidenceKindTag, ExpectationBasis,
         ExpectationId, ExpectationKindTag, ExpectationRecord, ExpectationState, ExpectationStore,
-        ExplorationProfile, GoalKey, GoalKind, GoalRejectionReason, GroundComfortTag,
+        ExplorationProfile, Freshness, GoalKey, GoalKind, GoalRejectionReason, GroundComfortTag,
         HomeostaticNeedId, HomeostaticNeeds, HypothesisKind, InTransitOnEdge,
         InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
         InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
@@ -7696,6 +7728,7 @@ mod tests {
         carry_capacities: BTreeMap<EntityId, LoadUnits>,
         entity_loads: BTreeMap<EntityId, LoadUnits>,
         lot_commodities: BTreeMap<EntityId, CommodityKind>,
+        lot_freshness: BTreeMap<EntityId, Freshness>,
         consumable_profiles: BTreeMap<EntityId, CommodityConsumableProfile>,
         direct_containers: BTreeMap<EntityId, EntityId>,
         direct_possessors: BTreeMap<EntityId, EntityId>,
@@ -7796,6 +7829,7 @@ mod tests {
                 carry_capacities: BTreeMap::new(),
                 entity_loads: BTreeMap::new(),
                 lot_commodities: BTreeMap::new(),
+                lot_freshness: BTreeMap::new(),
                 consumable_profiles: BTreeMap::new(),
                 direct_containers: BTreeMap::new(),
                 direct_possessors: BTreeMap::new(),
@@ -8728,6 +8762,10 @@ mod tests {
             entity: EntityId,
         ) -> Option<CommodityConsumableProfile> {
             self.consumable_profiles.get(&entity).copied()
+        }
+
+        fn lot_freshness_band(&self, entity: EntityId) -> Option<Freshness> {
+            self.lot_freshness.get(&entity).copied()
         }
 
         fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
@@ -10523,6 +10561,102 @@ mod tests {
     }
 
     #[test]
+    fn spoiled_owned_food_is_not_emitted_when_hunger_below_desperation_threshold() {
+        let agent = entity(1);
+        let place = entity(10);
+        let apple = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(apple, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(apple, place);
+        view.homeostatic_needs.insert(agent, hunger(700));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.metabolism_profiles.insert(
+            agent,
+            MetabolismProfile {
+                spoiled_food_hunger_threshold: pm(800),
+                ..MetabolismProfile::default()
+            },
+        );
+        view.direct_possessions.insert(agent, vec![apple]);
+        view.direct_possessors.insert(apple, agent);
+        view.lot_commodities.insert(apple, CommodityKind::Apple);
+        view.lot_freshness.insert(apple, Freshness::Spoiled);
+        view.consumable_profiles.insert(
+            apple,
+            CommodityKind::Apple.spec().consumable_profile.unwrap(),
+        );
+        view.controllable.insert((agent, apple));
+        view.controlled_entities.insert(agent);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Apple,
+            }
+        ));
+    }
+
+    #[test]
+    fn spoiled_owned_food_is_emitted_when_hunger_reaches_desperation_threshold() {
+        let agent = entity(1);
+        let place = entity(10);
+        let apple = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(apple, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(apple, place);
+        view.homeostatic_needs.insert(agent, hunger(800));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.metabolism_profiles.insert(
+            agent,
+            MetabolismProfile {
+                spoiled_food_hunger_threshold: pm(800),
+                ..MetabolismProfile::default()
+            },
+        );
+        view.direct_possessions.insert(agent, vec![apple]);
+        view.direct_possessors.insert(apple, agent);
+        view.lot_commodities.insert(apple, CommodityKind::Apple);
+        view.lot_freshness.insert(apple, Freshness::Spoiled);
+        view.consumable_profiles.insert(
+            apple,
+            CommodityKind::Apple.spec().consumable_profile.unwrap(),
+        );
+        view.controllable.insert((agent, apple));
+        view.controlled_entities.insert(agent);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Apple,
+            }
+        ));
+    }
+
+    #[test]
     fn merchant_emits_consume_owned_for_directly_possessed_sale_commodity() {
         let agent = entity(1);
         let place = entity(10);
@@ -10776,6 +10910,59 @@ mod tests {
             !acquire_goal.evidence_entities.contains(&listed_lot),
             "listed sale lots must stay seller-backed evidence, not loose-cargo evidence"
         );
+    }
+
+    #[test]
+    fn spoiled_remote_loose_food_is_not_acquired_when_hunger_below_desperation_threshold() {
+        let agent = entity(1);
+        let home = entity(10);
+        let orchard = entity(11);
+        let apple = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, apple]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(home, EntityKind::Place);
+        view.entity_kinds.insert(orchard, EntityKind::Place);
+        view.entity_kinds.insert(apple, EntityKind::ItemLot);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(apple, orchard);
+        view.entities_at.insert(home, vec![agent]);
+        view.entities_at.insert(orchard, vec![apple]);
+        view.adjacent_places.insert(home, vec![orchard]);
+        view.adjacent_places.insert(orchard, vec![home]);
+        view.homeostatic_needs.insert(agent, hunger(700));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.metabolism_profiles.insert(
+            agent,
+            MetabolismProfile {
+                spoiled_food_hunger_threshold: pm(800),
+                ..MetabolismProfile::default()
+            },
+        );
+        view.lot_commodities.insert(apple, CommodityKind::Apple);
+        view.lot_freshness.insert(apple, Freshness::Spoiled);
+        view.consumable_profiles.insert(
+            apple,
+            CommodityKind::Apple.spec().consumable_profile.unwrap(),
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
+            }
+        ));
     }
 
     #[test]

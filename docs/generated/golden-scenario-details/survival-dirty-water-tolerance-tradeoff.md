@@ -7,7 +7,7 @@ Scenarios: 3
 
 ### Scenario 491: Dirty-Water Tolerance Tradeoff Hardy Agent Chooses Muddy
 
-- Source: `survival_dirty_water_tolerance_tradeoff.rs:145`
+- Source: `survival_dirty_water_tolerance_tradeoff.rs:149`
 - Systems: AI, SourceReliability, WaterToleranceProfile
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -23,7 +23,7 @@ Scenarios: 3
 
 ### Scenario 492: Dirty-Water Tolerance Tradeoff Fragile Agent Travels To Fallback
 
-- Source: `survival_dirty_water_tolerance_tradeoff.rs:163`
+- Source: `survival_dirty_water_tolerance_tradeoff.rs:167`
 - Systems: AI, SourceReliability, WaterToleranceProfile
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel
@@ -39,7 +39,7 @@ Scenarios: 3
 
 ### Scenario 493: Dirty-Water Tolerance Tradeoff Replay Is Deterministic
 
-- Source: `survival_dirty_water_tolerance_tradeoff.rs:187`
+- Source: `survival_dirty_water_tolerance_tradeoff.rs:191`
 - Systems: AI, SourceReliability, WaterToleranceProfile
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Travel

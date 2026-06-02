@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden scenario source files: 74
-- Files contributing `golden_*` tests: 74
-- Total `golden_*` tests: 336
+- Golden scenario source files: 75
+- Files contributing `golden_*` tests: 75
+- Total `golden_*` tests: 339
 
 ## Per-Scenario-File Inventory
 
@@ -66,6 +66,7 @@ Do not hand-edit it.
 | `survival_exhaustion_collapse.rs` | 2 |
 | `survival_exhaustion_recovery.rs` | 2 |
 | `survival_failed_rest_cascade.rs` | 2 |
+| `survival_food_spoilage.rs` | 3 |
 | `survival_items_decay.rs` | 2 |
 | `survival_justice.rs` | 5 |
 | `survival_latrine_full.rs` | 2 |
@@ -509,6 +510,12 @@ Do not hand-edit it.
 
 - `scenario_e_failed_rest_feed`
 - `scenario_e_failed_rest_feed_replays_deterministically`
+
+### `survival_food_spoilage.rs`
+
+- `golden_survival_food_spoilage_lifecycle`
+- `golden_survival_food_spoilage_cache`
+- `golden_survival_food_spoilage_cache_1440`
 
 ### `survival_items_decay.rs`
 

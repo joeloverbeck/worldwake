@@ -40,7 +40,8 @@ pub fn entity_aspect_to_topic_scope(aspect: &EntityBeliefAspect) -> TopicScope {
         | EntityBeliefAspect::WorkstationPresent
         | EntityBeliefAspect::ResourceAvailable(_)
         | EntityBeliefAspect::ContentionState
-        | EntityBeliefAspect::WashBasinState => TopicScope::ResourceAvailability,
+        | EntityBeliefAspect::WashBasinState
+        | EntityBeliefAspect::LotCondition => TopicScope::ResourceAvailability,
         EntityBeliefAspect::Evidence => TopicScope::AccusationCredibility,
         EntityBeliefAspect::Owner | EntityBeliefAspect::Artifact => TopicScope::GeneralFact,
     }

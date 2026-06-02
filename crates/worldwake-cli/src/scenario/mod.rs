@@ -31,8 +31,8 @@ use worldwake_core::{
     RiskWeightProfile, RoutePreferenceProfile, Seed, SleepQualityProfile, SocialObservation,
     SocialObservationDetail, SurveyMemory, TestimonyTrustProfile, Tick, Topology, TravelEdge,
     TravelEdgeId, VisibilitySpec, WashBasinState, WitnessData, WorkstationMarker, World, WorldTxn,
-    default_commodity_decay_map, default_uniform_five_archetypes, hash_serializable, hash_world,
-    load_per_unit, template_for,
+    default_commodity_decay_map, default_commodity_perish_profile_map,
+    default_uniform_five_archetypes, hash_serializable, hash_world, load_per_unit, template_for,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -161,6 +161,11 @@ fn spawn_scenario_inner(def: &ScenarioDef) -> Result<SpawnedSimulation, Scenario
         def.commodity_decay
             .clone()
             .unwrap_or_else(default_commodity_decay_map),
+    );
+    world.set_commodity_perish_profiles(
+        def.commodity_perish_profile
+            .clone()
+            .unwrap_or_else(default_commodity_perish_profile_map),
     );
     world.set_harvest_trace_retention_ticks(
         def.harvest_trace_retention_ticks
@@ -2039,6 +2044,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -2238,6 +2244,13 @@ mod tests {
                 .unwrap()
                 .min_sleep_ticks,
             NonZeroU32::new(8).unwrap()
+        );
+        assert_eq!(
+            world
+                .get_component_metabolism_profile(agent_id)
+                .unwrap()
+                .spoiled_food_hunger_threshold,
+            Permille::new(800).unwrap()
         );
         assert_eq!(
             world.get_component_survey_memory(agent_id),
@@ -2588,6 +2601,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -2674,6 +2688,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -2765,6 +2780,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -2869,6 +2885,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -2954,6 +2971,16 @@ mod tests {
     }
 
     #[test]
+    fn test_spawn_minimal_scenario_uses_default_commodity_perish_profile() {
+        let spawned = spawn_scenario(&minimal_def()).unwrap();
+
+        assert_eq!(
+            spawned.state.world().commodity_perish_profiles(),
+            &default_commodity_perish_profile_map()
+        );
+    }
+
+    #[test]
     fn test_spawn_scenario_applies_explicit_commodity_decay_override() {
         let mut def = minimal_def();
         def.commodity_decay = Some(CommodityDecayMap::from([(
@@ -2966,6 +2993,43 @@ mod tests {
         assert_eq!(
             spawned.state.world().commodity_decay(),
             &CommodityDecayMap::from([(CommodityKind::Waste, NonZeroU32::new(17).unwrap())])
+        );
+    }
+
+    #[test]
+    fn test_spawn_scenario_applies_explicit_commodity_perish_profile_override() {
+        let mut def = minimal_def();
+        def.commodity_perish_profile = Some(worldwake_core::CommodityPerishProfileMap::from([(
+            CommodityKind::Apple,
+            worldwake_core::CommodityPerishProfile {
+                fresh_to_spoiled_ticks: NonZeroU32::new(41).unwrap(),
+                stale_threshold: Permille::new(620).unwrap(),
+                spoiled_threshold: Permille::new(210).unwrap(),
+                storage_rates: worldwake_core::StorageRateMultipliers {
+                    ground: Permille::new(900).unwrap(),
+                    container: Permille::new(450).unwrap(),
+                    possessed: Permille::new(700).unwrap(),
+                },
+            },
+        )]));
+
+        let spawned = spawn_scenario(&def).unwrap();
+
+        assert_eq!(
+            spawned.state.world().commodity_perish_profiles(),
+            &worldwake_core::CommodityPerishProfileMap::from([(
+                CommodityKind::Apple,
+                worldwake_core::CommodityPerishProfile {
+                    fresh_to_spoiled_ticks: NonZeroU32::new(41).unwrap(),
+                    stale_threshold: Permille::new(620).unwrap(),
+                    spoiled_threshold: Permille::new(210).unwrap(),
+                    storage_rates: worldwake_core::StorageRateMultipliers {
+                        ground: Permille::new(900).unwrap(),
+                        container: Permille::new(450).unwrap(),
+                        possessed: Permille::new(700).unwrap(),
+                    },
+                },
+            )])
         );
     }
 
@@ -3028,6 +3092,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -3083,6 +3148,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -3127,6 +3193,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -3176,6 +3243,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -3224,6 +3292,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -3352,6 +3421,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -3413,6 +3483,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -3492,6 +3563,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -3563,6 +3635,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -3631,6 +3704,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -3705,6 +3779,7 @@ mod tests {
             }],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -3777,6 +3852,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -3853,6 +3929,7 @@ mod tests {
             }],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -3932,6 +4009,7 @@ mod tests {
             }],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -4024,6 +4102,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -4106,6 +4185,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -4167,6 +4247,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -4217,6 +4298,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -4615,6 +4697,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -4672,6 +4755,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -4749,6 +4833,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -4808,6 +4893,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -4936,6 +5022,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -5014,6 +5101,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -5076,6 +5164,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -5186,6 +5275,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -5306,6 +5396,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -5354,6 +5445,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
@@ -5447,6 +5539,7 @@ mod tests {
             resource_sources: vec![],
             hostilities: vec![],
             commodity_decay: None,
+            commodity_perish_profile: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
