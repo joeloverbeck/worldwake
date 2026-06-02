@@ -1,6 +1,6 @@
 # Implementation Order
 
-**Status**: ACTIVE
+**Status**: COMPLETED
 
 The prior gameplay adjunct wave (S174 + S175, derived from the second-iteration
 ChatGPT-Pro Cluster 1 report) completed and was archived to
@@ -145,3 +145,18 @@ S178PERFOOSPO-001..008, 2026-06-02).
 - Boundary shocks / external supply failure → held
   `specs/S62-boundary-processes-remote-shocks.md` (internal degradation creates
   scarcity first; S62 does not gate this wave).
+
+## Outcome
+
+Completed on 2026-06-02. This implementation-order wave carried the Cluster 1
+material-degradation and source-reliability work through S176, S177, and S178,
+plus the S175 exhaustion CI-ownership proof-integrity ticket. All three wave
+specs are now archived, their ticket families are archived, and the remaining
+items in this document are watchlist or excluded-future-work notes rather than
+active implementation directives.
+
+Verification results for the final S178 closeout included focused S178 golden
+tests, the ignored CI-owned 1440 food-spoilage golden, regenerated golden and
+scenario coverage docs, `cargo test --workspace`, and `./scripts/verify.sh`
+through fmt, workspace tests, both clippy gates, and the final scenario-coverage
+check after regeneration.
