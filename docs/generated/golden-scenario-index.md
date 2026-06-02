@@ -3025,22 +3025,22 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 176: Survival Theft Lands the Concealed Staged-Lot Branch
 
-- Source: `survival_theft.rs:407`
+- Source: `survival_theft.rs:418`
 - Systems: AI, Needs, Trade, Perception, Transport
 - GoalKinds: StealItem, ConsumeOwnedCommodity, SellCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Trade, Needs, Transport
 - Places: Shaded Market
 - Principles: 4, 7, 8, 17, 20, 21
 
-**Setup**: Run the authored survival theft scenario for 1440 ticks. The merchant
+**Setup**: Run the authored survival theft scenario for 1440 ticks with default S178 apple spoilage enabled, Merchant Sera carrying enough apples to stage a 120-apple displayed lot plus private bread at a concealed market stall, and Thief Rana hungry with no coin, harvestable food source, or remote food fallback, making the merchant's displayed apple lot the only local food branch.
 
-**Proves**: the thief stays within the authored survival-health envelope; the
+**Proves**: Thief Rana stays within the authored survival-health envelope; Merchant Sera stages stock; the thief selects `StealItem` against the staged apple lot, commits `steal`, and later commits `eat`; immediate direct witness pickup stays suppressed by concealment/profile math; physical evidence remains; investigation records suspicion; and accepted testimony teaches Clerk Nia the `SuspectedTheft` observation.
 
-**Cross-system chain**: merchant stages displayed apples -> listed owned lot becomes visible
+**Cross-system chain**: Merchant Sera stages displayed apples -> listed owned stock becomes the local food branch -> hungry Thief Rana selects `StealItem` -> committed `steal` clears the listing and transfers apples -> thief commits `eat` -> immediate witness path stays quiet while evidence remains -> investigation records suspicion -> accepted testimony transfers the social observation.
 
 ### Scenario 350: Survival Trade Proves the Substitute Market Branch
 
-- Source: `survival_trade.rs:467`
+- Source: `survival_trade.rs:466`
 - Systems: AI, Needs, Trade, Travel, Perception, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, SellCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Trade, Travel, Needs, Production

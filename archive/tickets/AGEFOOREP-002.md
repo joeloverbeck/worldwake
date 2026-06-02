@@ -71,7 +71,7 @@ Planner snapshots now carry lot freshness, lot condition, and commodity perish p
 
 ## Out of Scope
 
-- Theft survival under spoilage; owned by `tickets/AGEFOOREP-003.md`.
+- Theft survival under spoilage; completed by `archive/tickets/AGEFOOREP-003.md`.
 - Direct anonymous harvest-source workstation tagging; owned by `archive/tickets/AGEFOOREP-001.md`.
 
 ## Acceptance Result

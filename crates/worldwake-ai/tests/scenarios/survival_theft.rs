@@ -14,7 +14,7 @@ use worldwake_sim::{ActionTraceDetail, ActionTraceKind, TellBeliefDeltaKind, Tel
 
 const SURVIVAL_TICKS: u32 = 1440;
 const STOLEN_COMMODITY: CommodityKind = CommodityKind::Apple;
-const STAGED_APPLE_QUANTITY: Quantity = Quantity(60);
+const STAGED_APPLE_QUANTITY: Quantity = Quantity(120);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ThiefSurvivalObservation {
@@ -56,8 +56,19 @@ fn scenario_path() -> PathBuf {
 fn load_survival_theft_harness() -> (GoldenHarness, ScenarioDef) {
     let path = scenario_path();
     let def = load_scenario_file(&path).expect("survival theft scenario should parse");
+    assert!(
+        def.commodity_perish_profile.is_none(),
+        "survival theft should use the default perishable-food profile rather than a scenario opt-out"
+    );
     let spawned = spawn_scenario(&def).expect("survival theft scenario should spawn");
     let mut harness = GoldenHarness::from_simulation_state(&spawned.state);
+    assert!(
+        harness
+            .world
+            .commodity_perish_profiles()
+            .contains_key(&STOLEN_COMMODITY),
+        "survival theft should run with Apple spoilage enabled"
+    );
     let agents = harness
         .world
         .query_name_and_agent_data()
@@ -413,30 +424,11 @@ fn run_survival_theft() -> SurvivalTheftObservation {
 // Places: Shaded Market
 // Principles: 4, 7, 8, 17, 20, 21
 //
-// Setup: Run the authored survival theft scenario for 1440 ticks. The merchant
-// starts with apples plus private bread at a concealed market stall and can
-// lawfully stage apples for sale. The thief starts hungry with no coin, no
-// harvestable food source, and no remote food fallback, so the only local food
-// branch is the merchant's displayed apple lot.
+// Setup: Run the authored survival theft scenario for 1440 ticks with default S178 apple spoilage enabled, Merchant Sera carrying enough apples to stage a 120-apple displayed lot plus private bread at a concealed market stall, and Thief Rana hungry with no coin, harvestable food source, or remote food fallback, making the merchant's displayed apple lot the only local food branch.
 //
-// Proves: the thief stays within the authored survival-health envelope; the
-// merchant commits `stage_stock_for_sale`; the thief later selects a real
-// `StealItem` branch against the staged apple lot and commits `steal`; the
-// thief later commits `eat`; immediate direct witness pickup on the merchant is
-// suppressed under the authored concealment/profile math; and the stolen
-// display still leaves lawful physical scene evidence at the place. The same
-// branch then matures into a local `investigate` commit, and Merchant Sera
-// relays the resulting `SuspectedTheft` social observation to Clerk Nia, whose
-// zero-fidelity perception profile prevents direct event pickup and makes the
-// accepted testimony the proof surface for learning the theft suspicion.
+// Proves: Thief Rana stays within the authored survival-health envelope; Merchant Sera stages stock; the thief selects `StealItem` against the staged apple lot, commits `steal`, and later commits `eat`; immediate direct witness pickup stays suppressed by concealment/profile math; physical evidence remains; investigation records suspicion; and accepted testimony teaches Clerk Nia the `SuspectedTheft` observation.
 //
-// Chain: merchant stages displayed apples -> listed owned lot becomes visible
-// local stock -> hungry thief selects `StealItem` against that lot -> committed
-// `steal` clears the listing and moves the apple lot into the thief's
-// possession -> thief later commits `eat` -> concealed same-place witness path
-// stays quiet immediately, but the market keeps container/damage evidence ->
-// merchant investigation records a theft suspicion -> accepted testimony
-// transfers that social observation to the support listener.
+// Chain: Merchant Sera stages displayed apples -> listed owned stock becomes the local food branch -> hungry Thief Rana selects `StealItem` -> committed `steal` clears the listing and transfers apples -> thief commits `eat` -> immediate witness path stays quiet while evidence remains -> investigation records suspicion -> accepted testimony transfers the social observation.
 #[test]
 #[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn survival_theft_proves_concealed_staged_lot_branch() {
