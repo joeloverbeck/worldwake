@@ -3,8 +3,8 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-/// S178PERFOOSPO-001 stores perishable lot state and perish profiles.
-pub const SAVE_FORMAT_VERSION: u32 = 116;
+/// S178PERFOOSPO-002 stores the spoiled-food hunger threshold on metabolism profiles.
+pub const SAVE_FORMAT_VERSION: u32 = 117;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -367,6 +367,7 @@ mod tests {
                 actor,
                 MetabolismProfile {
                     min_sleep_ticks: NonZeroU32::new(11).unwrap(),
+                    spoiled_food_hunger_threshold: worldwake_core::Permille::new_unchecked(725),
                     ..MetabolismProfile::default()
                 },
             )
@@ -1456,8 +1457,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_116_after_perishable_foundation_substrate() {
-        assert_eq!(SAVE_FORMAT_VERSION, 116);
+    fn save_format_version_is_117_after_spoiled_food_threshold_profile_field() {
+        assert_eq!(SAVE_FORMAT_VERSION, 117);
     }
 
     #[test]
@@ -1468,7 +1469,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 116);
+        assert_eq!(SAVE_FORMAT_VERSION, 117);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1498,6 +1499,13 @@ mod tests {
             Some(&CognitiveArchetypeComponent {
                 archetype: CognitiveArchetype::Skeptical
             })
+        );
+        assert_eq!(
+            restored
+                .world()
+                .get_component_metabolism_profile(actor)
+                .map(|profile| profile.spoiled_food_hunger_threshold),
+            Some(worldwake_core::Permille::new_unchecked(725))
         );
         assert_eq!(
             restored_schema_context

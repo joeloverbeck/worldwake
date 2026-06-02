@@ -1,14 +1,14 @@
 # S178PERFOOSPO-002: MetabolismProfile spoiled_food_hunger_threshold field
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Yes — `MetabolismProfile` gains `spoiled_food_hunger_threshold: Permille`; 18 construction sites updated; `SAVE_FORMAT_VERSION` 116→117.
+**Engine Changes**: Yes — `MetabolismProfile` gains `spoiled_food_hunger_threshold: Permille`; compiler-confirmed constructor fallout resolved; `SAVE_FORMAT_VERSION` 116→117.
 **Deps**: `archive/tickets/S178PERFOOSPO-001.md`
 
 ## Problem
 
-D7 introduces a per-agent profile-driven desperation threshold that gates whether candidate generation emits a spoiled-food Eat candidate (D5, consumed by ticket 006). The threshold lives on the universal `MetabolismProfile` per the spec's universal-profile reuse decision — no new component, no new `AgentDef` field, no new `spawn_agent` call site. Field addition requires updating 18 literal-opening construction sites (no spread syntax in current code per spot-check (d)), regenerating `docs/profiles/all-profiles.md`, and bumping `SAVE_FORMAT_VERSION` 116→117 to cover the format-breaking `MetabolismProfile` change.
+Before this ticket, D7's per-agent desperation threshold for spoiled-food Eat candidates had no profile field. The threshold now lives on the universal `MetabolismProfile` per the spec's universal-profile reuse decision — no new component, no new `AgentDef` field, no new `spawn_agent` call site. The implementation resolved the compiler-confirmed construction fallout, regenerated `docs/profiles/all-profiles.md`, and bumped `SAVE_FORMAT_VERSION` 116→117 to cover the format-breaking `MetabolismProfile` change.
 
 ## Assumption Reassessment (2026-05-31)
 
@@ -24,14 +24,14 @@ D7 introduces a per-agent profile-driven desperation threshold that gates whethe
 1. Reusing the existing universal `MetabolismProfile` (rather than introducing a new component) keeps agent metabolic profile centralized and respects the `docs/spec-drafting-rules.md` §"Agent Profile Scenario Contract" universal-profile pattern. No new `AgentDef` field, no new `spawn_agent` call site, no new component schema entry. The change is purely additive on an existing universal profile.
 2. `#[serde(default)]` on the new field ensures forward compatibility for authored RON scenarios — those that omit `spoiled_food_hunger_threshold` continue to load. The `SAVE_FORMAT_VERSION` 116→117 bump covers the bincode positional reads on `SimulationState`'s serialized `MetabolismProfile` components, which break atomically when the field count changes (the bincode bump axis is independent of the RON serde-default axis per the spec-to-tickets sub-check (b) rule).
 
-## Verification Layers
+## Verified Layers
 
 1. `MetabolismProfile` round-trips through save/load post-117 → focused save-load test extension in `crates/worldwake-sim/src/save_load.rs`.
 2. `unwrap_or_default()` path in `spawn_agent` produces an agent with `spoiled_food_hunger_threshold = Permille::new_unchecked(800)` when `AgentDef.metabolism_profile` is `None` → focused scenario-spawn unit test.
 3. `world_txn.rs::create_agent_records_entity_component_and_in_transit_deltas_and_supports_read_through` (line 2515) extended if it field-enumerates `MetabolismProfile`'s shape in the produced agent's delta assertion.
 4. Single-layer ticket: field-addition plumbing only; downstream gating behavior emerges in ticket 006.
 
-## What to Change
+## Landed Changes
 
 ### 1. Add field to `MetabolismProfile`
 
@@ -81,7 +81,7 @@ Run `python3 scripts/profile_docs.py` (the canonical regen command for profile d
 
 In `crates/worldwake-sim/src/save_load.rs`, bump `SAVE_FORMAT_VERSION` from 116 (set by ticket 001) to 117 to cover the `MetabolismProfile` field addition.
 
-## Files to Touch
+## Landed Files
 
 - `crates/worldwake-core/src/needs.rs` (modify — add field + Default extension)
 - `crates/worldwake-core/src/world_txn.rs` (modify — extend `create_agent` delta test at line 2515 if field-enumerated)
@@ -108,14 +108,15 @@ In `crates/worldwake-sim/src/save_load.rs`, bump `SAVE_FORMAT_VERSION` from 116 
 - Touching authored `.ron` scenarios (the `#[serde(default)]` annotation absorbs missing-field deserialization).
 - Per-commodity desperation thresholds (the field is per-agent only; commodity-aware desperation is a future-spec scope).
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Tests Passed
 
 1. `metabolism_profile_default_includes_spoiled_food_hunger_threshold` — asserts `MetabolismProfile::default().spoiled_food_hunger_threshold == Permille::new_unchecked(800)`.
-2. `metabolism_profile_round_trips_through_save_load_post_117` — asserts save/load equivalence at `SAVE_FORMAT_VERSION=117`.
-3. `metabolism_profile_serde_default_absorbs_missing_field` — asserts a partial RON serialization that omits `spoiled_food_hunger_threshold` deserializes with the default value.
-4. Existing suite: `cargo test --workspace`.
+2. `metabolism_profile_serde_default_absorbs_missing_field` — asserts a partial RON serialization that omits `spoiled_food_hunger_threshold` deserializes with the default value.
+3. `save_load::tests::save_to_bytes_roundtrip_preserves_full_nondefault_state` — asserts save/load equivalence at `SAVE_FORMAT_VERSION=117` and proves the non-default threshold round-trips.
+4. `scenario::tests::test_spawn_minimal_scenario` — asserts the `unwrap_or_default()` spawn path applies the default threshold.
+5. Existing suite: `cargo test --workspace`.
 
 ### Invariants
 
@@ -123,16 +124,48 @@ In `crates/worldwake-sim/src/save_load.rs`, bump `SAVE_FORMAT_VERSION` from 116 
 2. The `spoiled_food_hunger_threshold` Default value is `Permille::new_unchecked(800)` — concrete and profile-authored, not magic-numbered (FND-2).
 3. `world_txn.rs` `create_agent` delta assertion remains valid post-field-addition (verified during implementation).
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
-1. `crates/worldwake-core/src/needs.rs` `#[cfg(test)]` — add 2 new unit tests (Default + serde-default).
-2. `crates/worldwake-sim/src/save_load.rs` `#[cfg(test)]` — extend existing `MetabolismProfile` round-trip test for the new field.
-3. `crates/worldwake-core/src/world_txn.rs` `#[cfg(test)]` — extend `create_agent_records_entity_component_and_in_transit_deltas_and_supports_read_through` (line 2515) only if field-enumerated.
+1. `crates/worldwake-core/src/needs.rs` `#[cfg(test)]` — added default and serde-default tests for `spoiled_food_hunger_threshold`.
+2. `crates/worldwake-sim/src/save_load.rs` `#[cfg(test)]` — extended the full non-default round-trip test for the new field and version 117.
+3. `crates/worldwake-cli/src/scenario/mod.rs` `#[cfg(test)]` — extended `test_spawn_minimal_scenario` to prove the universal-profile default path.
+4. `crates/worldwake-core/src/world_txn.rs` required no edit because its agent-create delta assertion uses `MetabolismProfile::default()` rather than field-enumerating the profile.
 
-### Commands
+### Commands Run
 
-1. `cargo test -p worldwake-core -- needs::tests::metabolism_profile_default_includes_spoiled_food_hunger_threshold needs::tests::metabolism_profile_serde_default_absorbs_missing_field`
-2. `cargo test --workspace`
-3. `./scripts/verify.sh`
+1. `cargo test -p worldwake-core --lib metabolism_profile_`
+2. `cargo test -p worldwake-sim --lib save_to_bytes_roundtrip_preserves_full_nondefault_state`
+3. `cargo test -p worldwake-cli --lib test_spawn_minimal_scenario`
+4. `python3 scripts/profile_docs.py --write`
+5. `cargo fmt --all`
+6. `cargo test --workspace --no-run`
+7. `cargo test --workspace`
+
+## Outcome
+
+Completed on 2026-06-02.
+
+- Added `MetabolismProfile.spoiled_food_hunger_threshold` with `#[serde(default = "default_spoiled_food_hunger_threshold")]` and default value `Permille::new_unchecked(800)`.
+- Kept the existing universal profile path: `AgentDef.metabolism_profile: Option<MetabolismProfile>` still flows through `unwrap_or_default()` in scenario spawning; no new `AgentDef` field or spawn call was added.
+- Bumped `SAVE_FORMAT_VERSION` from 116 to 117 and extended the full non-default save/load witness with a non-default spoiled-food threshold.
+- Regenerated `docs/profiles/all-profiles.md` with the new profile field.
+- Resolved the only compiler-confirmed exhaustive `MetabolismProfile` literal in `crates/worldwake-ai/tests/planner_pathology_harness/mod.rs`.
+
+## Deviations
+
+- The drafted "18 construction sites" note was stale. `cargo test --workspace --no-run` found only one exhaustive literal missing the new field; other listed sites either used struct update syntax or did not require explicit fallout. The completed ticket records the compiler-confirmed truth.
+- The save/load proof reused and extended `save_to_bytes_roundtrip_preserves_full_nondefault_state` instead of creating a narrowly named `metabolism_profile_round_trips_through_save_load_post_117` test. This stronger witness proves the new field inside the persisted `SimulationState`.
+- The drafted focused Cargo command used two test filters, which Cargo rejects. Focused coverage was run with valid filters instead.
+- `./scripts/verify.sh` is waived for this per-ticket closeout because the implement-spec-tickets harness owns the final full pre-PR verification after all S178 tickets land. This ticket ran `cargo test --workspace`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core --lib metabolism_profile_`.
+- Passed `cargo test -p worldwake-sim --lib save_to_bytes_roundtrip_preserves_full_nondefault_state`.
+- Passed `cargo test -p worldwake-cli --lib test_spawn_minimal_scenario`.
+- Passed `python3 scripts/profile_docs.py --write` (wrote `docs/profiles/all-profiles.md`; reported unrelated existing documentation gaps).
+- Passed `cargo fmt --all`.
+- Passed `cargo test --workspace --no-run`.
+- Passed `cargo test --workspace`.

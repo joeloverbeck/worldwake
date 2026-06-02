@@ -2246,6 +2246,13 @@ mod tests {
             NonZeroU32::new(8).unwrap()
         );
         assert_eq!(
+            world
+                .get_component_metabolism_profile(agent_id)
+                .unwrap()
+                .spoiled_food_hunger_threshold,
+            Permille::new(800).unwrap()
+        );
+        assert_eq!(
             world.get_component_survey_memory(agent_id),
             Some(&SurveyMemory::default())
         );
