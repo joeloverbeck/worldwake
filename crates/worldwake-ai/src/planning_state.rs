@@ -33,15 +33,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use worldwake_core::{
     ActionDefId, ActionDomain, AgentSchemaContextProfile, ArtifactPostingProfile,
-    BelievedEntityState, BelievedInstitutionalClaim, CombatProfile, CommodityKind, ContentionGrant,
-    DemandObservation, DisposalProfile, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
-    InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits,
-    MetabolismProfile, OfficeData, OfficePatrolDuty, PatrolProfile, PatrolRoute, Permille,
-    PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource,
-    SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
-    TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound, load_per_unit,
-    to_shared_belief_snapshot,
+    BelievedEntityState, BelievedInstitutionalClaim, CombatProfile, CommodityKind,
+    CommodityPerishProfile, ContentionGrant, DemandObservation, DisposalProfile, DriveThresholds,
+    EntityId, EntityKind, Freshness, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
+    JusticeDispositionProfile, LoadUnits, MetabolismProfile, OfficeData, OfficePatrolDuty,
+    PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus,
+    RecordData, ResourceSource, SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey,
+    TellProfile, TellTopic, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
+    load_per_unit, to_shared_belief_snapshot,
 };
 use worldwake_sim::belief_view::{BeliefStatus, BeliefValue};
 use worldwake_sim::{
@@ -703,6 +703,36 @@ impl<'snapshot> PlanningState<'snapshot> {
     }
 
     #[must_use]
+    pub fn lot_freshness_band_ref(&self, entity: PlanningEntityRef) -> Option<Freshness> {
+        if self.removed_entities.contains(&entity) {
+            return None;
+        }
+        match entity {
+            PlanningEntityRef::Authoritative(entity) => self
+                .snapshot
+                .entities
+                .get(&entity)
+                .and_then(|snapshot| snapshot.inventory.item_lot_freshness),
+            PlanningEntityRef::Hypothetical(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn lot_condition_ref(&self, entity: PlanningEntityRef) -> Option<Permille> {
+        if self.removed_entities.contains(&entity) {
+            return None;
+        }
+        match entity {
+            PlanningEntityRef::Authoritative(entity) => self
+                .snapshot
+                .entities
+                .get(&entity)
+                .and_then(|snapshot| snapshot.inventory.item_lot_condition),
+            PlanningEntityRef::Hypothetical(_) => None,
+        }
+    }
+
+    #[must_use]
     pub fn carry_capacity_ref(&self, entity: PlanningEntityRef) -> Option<LoadUnits> {
         if self.removed_entities.contains(&entity) {
             return None;
@@ -773,6 +803,58 @@ impl<'snapshot> PlanningState<'snapshot> {
 
         self.needs_overrides.insert(actor, needs);
         self
+    }
+
+    #[must_use]
+    pub fn consume_lot_effect(
+        mut self,
+        actor: EntityId,
+        lot: PlanningEntityRef,
+        effect: worldwake_sim::ConsumableEffect,
+    ) -> Self {
+        let Some(commodity) = self.item_lot_commodity_ref(lot) else {
+            return self;
+        };
+        let Some(profile) = commodity.spec().consumable_profile else {
+            return self;
+        };
+        let Some(mut needs) = self.homeostatic_needs(actor) else {
+            return self;
+        };
+
+        match effect {
+            worldwake_sim::ConsumableEffect::Hunger => {
+                let relief =
+                    self.hunger_relief_for_lot(lot, commodity, profile.hunger_relief_per_unit);
+                needs.hunger = needs.hunger.saturating_sub(relief);
+            }
+            worldwake_sim::ConsumableEffect::Thirst => {
+                needs.thirst = needs.thirst.saturating_sub(profile.thirst_relief_per_unit);
+            }
+        }
+
+        self.needs_overrides.insert(actor, needs);
+        self
+    }
+
+    fn hunger_relief_for_lot(
+        &self,
+        lot: PlanningEntityRef,
+        commodity: CommodityKind,
+        base_relief: Permille,
+    ) -> Permille {
+        let (Some(condition), Some(profile)) = (
+            self.lot_condition_ref(lot),
+            self.snapshot.commodity_perish_profiles.get(&commodity),
+        ) else {
+            return base_relief;
+        };
+        scale_hunger_relief_by_condition(
+            base_relief,
+            condition,
+            profile,
+            Permille::new_unchecked(150),
+        )
     }
 
     #[must_use]
@@ -1201,6 +1283,40 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .get(&entity)
                 .is_some_and(|snapshot| snapshot.control.controllable_by_actor),
             PlanningEntityRef::Hypothetical(_) => false,
+        }
+    }
+}
+
+fn scale_hunger_relief_by_condition(
+    base_relief: Permille,
+    condition: Permille,
+    profile: &CommodityPerishProfile,
+    spoiled_floor: Permille,
+) -> Permille {
+    match Freshness::derive_from(condition, profile) {
+        Freshness::Fresh => base_relief,
+        Freshness::Stale => {
+            let range = profile
+                .stale_threshold
+                .value()
+                .saturating_sub(profile.spoiled_threshold.value());
+            if range == 0 {
+                return base_relief;
+            }
+            let above_spoiled = condition
+                .value()
+                .saturating_sub(profile.spoiled_threshold.value());
+            let scaled =
+                u32::from(base_relief.value()) * u32::from(above_spoiled) / u32::from(range);
+            Permille::new_unchecked(
+                u16::try_from(scaled).expect("scaled stale relief is bounded by base relief"),
+            )
+        }
+        Freshness::Spoiled => {
+            let scaled = u32::from(base_relief.value()) * u32::from(spoiled_floor.value()) / 1000;
+            Permille::new_unchecked(
+                u16::try_from(scaled).expect("scaled spoiled relief is bounded by base relief"),
+            )
         }
     }
 }
@@ -2367,6 +2483,21 @@ impl InventoryBeliefView for PlanningState<'_> {
             .and_then(|snapshot| snapshot.inventory.item_lot_consumable_profile)
     }
 
+    fn lot_freshness_band(&self, entity: EntityId) -> Option<Freshness> {
+        self.lot_freshness_band_ref(PlanningEntityRef::Authoritative(entity))
+    }
+
+    fn lot_condition(&self, entity: EntityId) -> Option<Permille> {
+        self.lot_condition_ref(PlanningEntityRef::Authoritative(entity))
+    }
+
+    fn commodity_perish_profile(&self, commodity: CommodityKind) -> Option<CommodityPerishProfile> {
+        self.snapshot
+            .commodity_perish_profiles
+            .get(&commodity)
+            .copied()
+    }
+
     fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
         self.direct_container_ref(PlanningEntityRef::Authoritative(entity))
             .and_then(|entity| match entity {
@@ -2522,11 +2653,11 @@ mod tests {
     use worldwake_core::{
         ActionDefId, AgentBeliefStore, ArtifactPostingProfile, BeliefConfidencePolicy,
         BelievedActivity, BelievedEntityState, BodyCostPerTick, ClaimId, ClaimValue, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation,
-        DemandObservationReason, DisposalProfile, DriveThresholds, EntityBeliefAspect,
-        EntityBeliefClaim, EntityId, EntityKind, EpistemicDispositionProfile, HomeostaticNeeds,
-        InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute,
+        CommodityConsumableProfile, CommodityKind, CommodityPerishProfile, ContentionGrant,
+        DemandObservation, DemandObservationReason, DisposalProfile, DriveThresholds,
+        EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EpistemicDispositionProfile,
+        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute,
         PerceptionSource, Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
         RecordKind, ResourceSource, SharedTellState, SuccessionLaw, TellMemoryKey, TellProfile,
         TellTopic, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
@@ -2557,6 +2688,8 @@ mod tests {
         direct_containers: BTreeMap<EntityId, EntityId>,
         adjacent: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
+        lot_conditions: BTreeMap<EntityId, Permille>,
+        perish_profiles: BTreeMap<CommodityKind, CommodityPerishProfile>,
         consumable_profiles: BTreeMap<EntityId, CommodityConsumableProfile>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
         carry_capacities: BTreeMap<EntityId, LoadUnits>,
@@ -2615,6 +2748,8 @@ mod tests {
                 direct_containers: BTreeMap::new(),
                 adjacent: BTreeMap::new(),
                 item_lot_commodities: BTreeMap::new(),
+                lot_conditions: BTreeMap::new(),
+                perish_profiles: BTreeMap::new(),
                 consumable_profiles: BTreeMap::new(),
                 commodity_quantities: BTreeMap::new(),
                 carry_capacities: BTreeMap::new(),
@@ -3070,6 +3205,17 @@ mod tests {
             entity: EntityId,
         ) -> Option<CommodityConsumableProfile> {
             self.consumable_profiles.get(&entity).copied()
+        }
+
+        fn lot_condition(&self, entity: EntityId) -> Option<Permille> {
+            self.lot_conditions.get(&entity).copied()
+        }
+
+        fn commodity_perish_profile(
+            &self,
+            commodity: CommodityKind,
+        ) -> Option<CommodityPerishProfile> {
+            self.perish_profiles.get(&commodity).copied()
         }
 
         fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
@@ -3836,6 +3982,33 @@ mod tests {
 
         assert!(needs.hunger < thresholds.hunger.low());
         assert!(needs.thirst < thresholds.thirst.low());
+    }
+
+    #[test]
+    fn consume_lot_effect_scales_hunger_relief_by_lot_condition() {
+        let (mut view, actor, _town, _field, bread) = test_view();
+        view.item_lot_commodities
+            .insert(bread, CommodityKind::Apple);
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Apple), Quantity(1));
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Apple), Quantity(1));
+        view.lot_conditions.insert(bread, pm(500));
+        view.perish_profiles = worldwake_core::default_commodity_perish_profile_map();
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::from([bread]), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot).consume_lot_effect(
+            actor,
+            PlanningEntityRef::Authoritative(bread),
+            worldwake_sim::ConsumableEffect::Hunger,
+        );
+
+        assert_eq!(
+            ProfileBeliefView::homeostatic_needs(&state, actor)
+                .unwrap()
+                .hunger,
+            pm(590)
+        );
     }
 
     #[test]

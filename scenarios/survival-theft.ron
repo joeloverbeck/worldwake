@@ -10,12 +10,6 @@
 // suspicion to a support listener who did not directly witness the theft.
 (
     seed: 612012,
-    // S178: this scenario proves the concealed staged-lot theft branch, not food
-    // spoilage. Its agents rely on durable starting food stock (they do not
-    // replenish under hunger pressure here — see tickets/AGEFOOREP-001.md), so it
-    // opts out of the default Apple perish profile to preserve its pre-S178
-    // survival contract. An empty map means no commodity perishes.
-    commodity_perish_profile: {},
     survival_health_contract: (
         max_authored_critical_run_ticks: 220,
         max_idle_window_ticks_with_elevated_need: 45,
@@ -128,7 +122,7 @@
                 beam_width: 12,
                 preferred_operator_boost: 3,
             ),
-            carry_capacity: 120,
+            carry_capacity: 400,
             drive_thresholds: (
                 hunger: (low: 250, medium: 450, high: 650, critical: 840),
                 thirst: (low: 200, medium: 400, high: 650, critical: 820),
@@ -434,7 +428,7 @@
     ],
     items: [
         (commodity: Bread, quantity: 40, location: "Merchant Sera"),
-        (commodity: Apple, quantity: 60, location: "Merchant Sera"),
+        (commodity: Apple, quantity: 120, location: "Merchant Sera"),
     ],
     facilities: [
         (

@@ -378,7 +378,6 @@ fn run_survival_trade() -> SurvivalTradeObservation {
         .iter()
         .map(|event| format!("{:?}: {}", event.tick, event.summary()))
         .collect::<Vec<_>>();
-
     let trade = TradeObservation {
         listing_tick: listing_tick.unwrap_or_else(|| {
             panic!(

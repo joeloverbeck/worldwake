@@ -26,14 +26,15 @@ use worldwake_core::{
     ArtifactVisibility, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState, Blocker,
     BlockerKey, BlockerMemory, BlockingFact, BodyCostPerTick, BodyPart, BountyTarget, BountyTerms,
     CarryCapacity, CauseRef, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
-    CommodityKind, ContentionGrant, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
-    DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
-    DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EventLog, ExecutionBudget,
-    GoalPlanningBudget, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, KnownRecipes,
-    LatrineFullness, LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic,
-    ObservationOmission, ObservationOmissionLog, OmissionReason, OpportunityAnchor, OpportunityKey,
-    PatrolProfile, PatrolRoute, PerceptionSource, Permille, Place, PlaceTag, ProofRequirement,
-    PrototypePlace, Quantity, RecipeId, RecordedViolation, ResourceSource, RewardSource, TellTopic,
+    CommodityKind, CommodityPerishProfile, ContentionGrant, ContentionPolicy, ContentionQueue,
+    ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
+    DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
+    EpistemicDispositionProfile, EventLog, ExecutionBudget, GoalPlanningBudget, HomeostaticNeedId,
+    HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LatrineFullness, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, NoticeTopic, ObservationOmission,
+    ObservationOmissionLog, OmissionReason, OpportunityAnchor, OpportunityKey, PatrolProfile,
+    PatrolRoute, PerceptionSource, Permille, Place, PlaceTag, ProofRequirement, PrototypePlace,
+    Quantity, RecipeId, RecordedViolation, ResourceSource, RewardSource, TellTopic,
     TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge,
     TravelEdgeId, UniqueItemKind, ViolationDispositionProfile, ViolationId, ViolationKind,
     VisibilitySpec, WashBasinState, WitnessData, WorkstationMarker, WorkstationTag, World,
@@ -589,6 +590,8 @@ struct TestBeliefView {
     adjacent: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
     lot_commodities: BTreeMap<EntityId, CommodityKind>,
     consumable_profiles: BTreeMap<EntityId, CommodityConsumableProfile>,
+    lot_conditions: BTreeMap<EntityId, Permille>,
+    perish_profiles: BTreeMap<CommodityKind, CommodityPerishProfile>,
     commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
     carry_capacities: BTreeMap<EntityId, LoadUnits>,
     entity_loads: BTreeMap<EntityId, LoadUnits>,
@@ -634,6 +637,8 @@ impl Default for TestBeliefView {
             adjacent: BTreeMap::new(),
             lot_commodities: BTreeMap::new(),
             consumable_profiles: BTreeMap::new(),
+            lot_conditions: BTreeMap::new(),
+            perish_profiles: BTreeMap::new(),
             commodity_quantities: BTreeMap::new(),
             carry_capacities: BTreeMap::new(),
             entity_loads: BTreeMap::new(),
@@ -963,6 +968,12 @@ impl worldwake_sim::InventoryBeliefView for TestBeliefView {
     }
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile> {
         self.consumable_profiles.get(&entity).copied()
+    }
+    fn lot_condition(&self, entity: EntityId) -> Option<Permille> {
+        self.lot_conditions.get(&entity).copied()
+    }
+    fn commodity_perish_profile(&self, commodity: CommodityKind) -> Option<CommodityPerishProfile> {
+        self.perish_profiles.get(&commodity).copied()
     }
     fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
         self.direct_containers.get(&entity).copied()
@@ -1517,7 +1528,7 @@ fn search_returns_one_step_consume_plan_for_local_food() {
     );
     view.needs.insert(
         actor,
-        HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        HomeostaticNeeds::new(pm(400), pm(0), pm(0), pm(0), pm(0)),
     );
     view.thresholds.insert(actor, DriveThresholds::default());
     let (registry, handlers) = build_registry();
@@ -1539,6 +1550,72 @@ fn search_returns_one_step_consume_plan_for_local_food() {
     .unwrap();
 
     assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Consume);
+}
+
+#[test]
+fn search_returns_progress_consume_plan_for_low_condition_owned_food() {
+    let actor = entity(1);
+    let town = entity(10);
+    let apple = entity(20);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, town, apple]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(town, EntityKind::Place);
+    view.kinds.insert(apple, EntityKind::ItemLot);
+    view.effective_places.insert(actor, town);
+    view.effective_places.insert(apple, town);
+    view.entities_at.insert(town, vec![actor, apple]);
+    view.controllable.insert((actor, apple));
+    view.direct_possessions.insert(actor, vec![apple]);
+    view.direct_possessors.insert(apple, actor);
+    view.lot_commodities.insert(apple, CommodityKind::Apple);
+    view.commodity_quantities
+        .insert((apple, CommodityKind::Apple), Quantity(1));
+    view.consumable_profiles.insert(
+        apple,
+        CommodityKind::Apple.spec().consumable_profile.unwrap(),
+    );
+    view.lot_conditions.insert(apple, pm(0));
+    view.perish_profiles.insert(
+        CommodityKind::Apple,
+        worldwake_core::default_commodity_perish_profile_map()
+            .get(&CommodityKind::Apple)
+            .copied()
+            .expect("default apple perish profile should exist"),
+    );
+    view.needs.insert(
+        actor,
+        HomeostaticNeeds::new(pm(1000), pm(0), pm(0), pm(0), pm(0)),
+    );
+    view.thresholds.insert(actor, DriveThresholds::default());
+    let (registry, handlers) = build_registry();
+    let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+
+    let plan = search_plan(
+        &snapshot,
+        &consume_goal(CommodityKind::Apple),
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockerMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .unwrap();
+
+    assert!(matches!(
+        plan.terminal_kind,
+        PlanTerminalKind::ResourceBarrier {
+            commodity: CommodityKind::Apple,
+            ..
+        }
+    ));
     assert_eq!(plan.steps.len(), 1);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Consume);
 }
@@ -1879,18 +1956,25 @@ fn search_returns_travel_then_trade_barrier_for_remote_listed_sale_lot_without_c
         },
     );
     view.commodity_quantities
-        .insert((actor, CommodityKind::Coin), Quantity(3));
+        .insert((actor, CommodityKind::Coin), Quantity(8));
     view.commodity_quantities
         .insert((seller, CommodityKind::Bread), Quantity(2));
+    view.commodity_quantities
+        .insert((sale_lot, CommodityKind::Bread), Quantity(2));
 
+    let acquisition_quantity = AcquisitionQuantity {
+        desired_min: std::num::NonZeroU16::new(1).unwrap(),
+        desired_target: std::num::NonZeroU16::new(2).unwrap(),
+        horizon_ticks: std::num::NonZeroU32::new(40).unwrap(),
+    };
     let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(market),
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
-            quantity: AcquisitionQuantity::single(),
+            quantity: acquisition_quantity,
         }),
-        evidence_entities: BTreeSet::from([seller]),
+        evidence_entities: BTreeSet::from([seller, sale_lot]),
         evidence_places: BTreeSet::from([market]),
         obligation_source: None,
         commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
@@ -1898,7 +1982,7 @@ fn search_returns_travel_then_trade_barrier_for_remote_listed_sale_lot_without_c
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
         motive_sources: Vec::new(),
-        acquisition_quantity: None,
+        acquisition_quantity: Some(acquisition_quantity),
     };
     let (registry, handlers) = build_registry();
     let snapshot = build_planning_snapshot(
@@ -1928,10 +2012,109 @@ fn search_returns_travel_then_trade_barrier_for_remote_listed_sale_lot_without_c
     assert_eq!(plan.steps.len(), 2);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
     assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Trade);
-    assert!(matches!(
+    assert_eq!(
         plan.steps[1].payload_override,
-        Some(ActionPayload::Trade(_))
-    ));
+        Some(ActionPayload::Trade(TradeActionPayload {
+            counterparty: seller,
+            sale_lot,
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(4),
+            requested_quantity: Quantity(2),
+        }))
+    );
+}
+
+#[test]
+fn self_consume_acquire_filters_trade_when_owned_stock_is_already_believed() {
+    let actor = entity(1);
+    let seller = entity(2);
+    let market = entity(10);
+    let sale_lot = entity(100);
+    let owned_lot = entity(101);
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, seller, market, sale_lot, owned_lot]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(seller, EntityKind::Agent);
+    view.kinds.insert(market, EntityKind::Place);
+    view.kinds.insert(sale_lot, EntityKind::ItemLot);
+    view.kinds.insert(owned_lot, EntityKind::ItemLot);
+    view.effective_places.insert(actor, market);
+    view.effective_places.insert(seller, market);
+    view.effective_places.insert(sale_lot, market);
+    view.effective_places.insert(owned_lot, market);
+    view.entities_at
+        .insert(market, vec![actor, seller, sale_lot]);
+    view.direct_possessions.insert(actor, vec![owned_lot]);
+    view.direct_possessors.insert(owned_lot, actor);
+    view.lot_commodities.insert(sale_lot, CommodityKind::Apple);
+    view.lot_commodities.insert(owned_lot, CommodityKind::Apple);
+    view.commodity_quantities
+        .insert((owned_lot, CommodityKind::Apple), Quantity(1));
+    view.commodity_quantities
+        .insert((sale_lot, CommodityKind::Apple), Quantity(1));
+    view.listed_lots
+        .insert((market, CommodityKind::Apple), vec![sale_lot]);
+    view.lot_sellers.insert(sale_lot, seller);
+
+    let goal = GoalOffer {
+        anchor: OpportunityAnchor::Place(market),
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        }),
+        evidence_entities: BTreeSet::from([seller]),
+        evidence_places: BTreeSet::from([market]),
+        obligation_source: None,
+        commitment_impact_if_ignored: Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
+        acquisition_quantity: Some(AcquisitionQuantity::single()),
+    };
+    let (registry, _handlers) = build_registry();
+    let trade = registry.iter().find(|def| def.name == "trade").unwrap();
+    let semantics = build_semantics_table(&registry);
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let state = PlanningState::new(&snapshot);
+    let mut candidates = vec![SearchCandidate {
+        def_id: trade.id,
+        authoritative_targets: vec![seller],
+        planning_targets: vec![PlanningEntityRef::Authoritative(seller)],
+        payload_override: Some(ActionPayload::Trade(TradeActionPayload {
+            counterparty: seller,
+            sale_lot,
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(1),
+            requested_quantity: Quantity(1),
+        })),
+        planner_only: false,
+        trace_index: None,
+        expansion_trace_index: None,
+    }];
+
+    apply_commodity_relevance_filter(
+        &mut candidates,
+        &goal,
+        &state,
+        CommodityFilterContext {
+            tactical_goal: None,
+            semantics_table: &semantics,
+            registry: &registry,
+            recipes: &RecipeRegistry::new(),
+        },
+        None,
+    );
+
+    assert!(candidates.is_empty());
 }
 
 #[test]
@@ -3772,6 +3955,243 @@ fn sell_search_for_stored_home_stock_requires_stage_before_goal_satisfaction() {
     assert_eq!(
         registry
             .get(plan.steps[0].def_id)
+            .map(|def| def.name.as_str()),
+        Some("stage_stock_for_sale")
+    );
+}
+
+#[test]
+fn sell_search_does_not_restage_non_saleable_unlisted_stock() {
+    let actor = entity(1);
+    let market = entity(10);
+    let facility = entity(11);
+    let display_container = entity(13);
+    let apple = entity(20);
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, market, facility, display_container, apple]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(market, EntityKind::Place);
+    view.kinds.insert(facility, EntityKind::Facility);
+    view.kinds.insert(display_container, EntityKind::Container);
+    view.kinds.insert(apple, EntityKind::ItemLot);
+    view.effective_places.insert(actor, market);
+    view.effective_places.insert(facility, market);
+    view.effective_places.insert(display_container, market);
+    view.effective_places.insert(apple, market);
+    view.entities_at
+        .insert(market, vec![actor, facility, display_container, apple]);
+    view.direct_containers.insert(apple, display_container);
+    view.lot_commodities.insert(apple, CommodityKind::Apple);
+    view.lot_conditions.insert(apple, pm(0));
+    view.perish_profiles.insert(
+        CommodityKind::Apple,
+        worldwake_core::default_commodity_perish_profile_map()
+            .get(&CommodityKind::Apple)
+            .copied()
+            .expect("default apple perish profile should exist"),
+    );
+    view.commodity_quantities
+        .insert((apple, CommodityKind::Apple), Quantity(3));
+    view.controllable.extend([
+        (actor, facility),
+        (actor, display_container),
+        (actor, apple),
+    ]);
+    view.merchandise_profiles.insert(
+        actor,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Apple]),
+            home_facility: Some(facility),
+        },
+    );
+
+    let (registry, handlers) = build_registry();
+    let goal = GoalOffer {
+        anchor: worldwake_core::OpportunityAnchor::Place(market),
+        key: GoalKey::from(GoalKind::SellCommodity {
+            commodity: CommodityKind::Apple,
+        }),
+        evidence_entities: BTreeSet::from([apple, facility]),
+        evidence_places: BTreeSet::from([market]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
+        acquisition_quantity: None,
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockerMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("non-saleable unlisted stock should not keep sell goal open");
+
+    assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
+    assert!(plan.steps.is_empty());
+}
+
+#[test]
+fn sell_search_for_remote_home_stock_moves_stores_and_stages_before_goal_satisfaction() {
+    let actor = entity(1);
+    let origin = entity(10);
+    let market = entity(11);
+    let facility = entity(12);
+    let stock_container = entity(13);
+    let display_container = entity(14);
+    let bread = entity(20);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([
+        actor,
+        origin,
+        market,
+        facility,
+        stock_container,
+        display_container,
+        bread,
+    ]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(origin, EntityKind::Place);
+    view.kinds.insert(market, EntityKind::Place);
+    view.kinds.insert(facility, EntityKind::Facility);
+    view.kinds.insert(stock_container, EntityKind::Container);
+    view.kinds.insert(display_container, EntityKind::Container);
+    view.kinds.insert(bread, EntityKind::ItemLot);
+    view.effective_places.insert(actor, origin);
+    view.effective_places.insert(facility, market);
+    view.effective_places.insert(stock_container, market);
+    view.effective_places.insert(display_container, market);
+    view.effective_places.insert(bread, origin);
+    view.entities_at.insert(origin, vec![actor, bread]);
+    view.entities_at
+        .insert(market, vec![facility, stock_container, display_container]);
+    view.adjacent
+        .insert(origin, vec![(market, NonZeroU32::new(2).unwrap())]);
+    view.adjacent
+        .insert(market, vec![(origin, NonZeroU32::new(2).unwrap())]);
+    view.lot_commodities.insert(bread, CommodityKind::Bread);
+    view.commodity_quantities
+        .insert((bread, CommodityKind::Bread), Quantity(2));
+    view.controllable.extend([
+        (actor, bread),
+        (actor, facility),
+        (actor, stock_container),
+        (actor, display_container),
+    ]);
+    view.carry_capacities.insert(actor, LoadUnits(4));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.entity_loads.insert(bread, LoadUnits(2));
+    view.thresholds.insert(actor, DriveThresholds::default());
+    view.merchandise_profiles.insert(
+        actor,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+            home_facility: Some(facility),
+        },
+    );
+    let mut facility_belief = believed_entity_state_at(market, Tick(1), None);
+    facility_belief.believed_kind = Some(EntityKind::Facility);
+    remember_entity(&mut view, actor, facility, facility_belief);
+    let mut stock_container_belief = believed_entity_state_at(market, Tick(1), None);
+    stock_container_belief.believed_kind = Some(EntityKind::Container);
+    remember_entity(&mut view, actor, stock_container, stock_container_belief);
+    let mut display_container_belief = believed_entity_state_at(market, Tick(1), None);
+    display_container_belief.believed_kind = Some(EntityKind::Container);
+    remember_entity(
+        &mut view,
+        actor,
+        display_container,
+        display_container_belief,
+    );
+    view.stock_storage_policies.insert(
+        facility,
+        worldwake_core::StockStoragePolicy {
+            stock_container,
+            display_container: Some(display_container),
+        },
+    );
+
+    let (registry, handlers) = build_registry();
+    let goal = GoalOffer {
+        anchor: worldwake_core::OpportunityAnchor::Place(market),
+        key: GoalKey::from(GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        }),
+        evidence_entities: BTreeSet::from([bread, facility]),
+        evidence_places: BTreeSet::from([origin, market]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
+        acquisition_quantity: None,
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockerMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .unwrap();
+
+    let ops = plan
+        .steps
+        .iter()
+        .map(|step| step.op_kind)
+        .collect::<Vec<_>>();
+    assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
+    assert_eq!(
+        ops,
+        vec![
+            PlannerOpKind::MoveCargo,
+            PlannerOpKind::Travel,
+            PlannerOpKind::StockManagement,
+            PlannerOpKind::StockManagement,
+        ]
+    );
+    assert_eq!(
+        registry
+            .get(plan.steps[2].def_id)
+            .map(|def| def.name.as_str()),
+        Some("store_stock")
+    );
+    assert_eq!(
+        registry
+            .get(plan.steps[3].def_id)
             .map(|def| def.name.as_str()),
         Some("stage_stock_for_sale")
     );

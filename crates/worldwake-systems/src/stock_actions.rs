@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, BodyCostPerTick, CommodityKind, Discrepancy, EntityId, EntityKind, EventTag,
-    Quantity, SaleListing, StockAssignment, StockAssignmentKind, StockStoragePolicy,
+    Freshness, Quantity, SaleListing, StockAssignment, StockAssignmentKind, StockStoragePolicy,
     VisibilitySpec, WorldTxn,
 };
 use worldwake_sim::{
@@ -584,6 +584,11 @@ fn start_stage_stock_for_sale(
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
     let lot = require_item_lot_target(instance)?;
+    if !is_saleable_lot(txn, lot) {
+        return Err(ActionError::PreconditionFailed(
+            "target lot is not saleable".to_string(),
+        ));
+    }
     // Lot must be stored (not displayed, not possessed).
     match txn.get_component_stock_assignment(lot) {
         Some(assignment) if assignment.kind == StockAssignmentKind::Stored => {}
@@ -602,6 +607,22 @@ fn start_stage_stock_for_sale(
         ));
     }
     Ok(None)
+}
+
+fn is_saleable_lot(txn: &WorldTxn<'_>, lot: EntityId) -> bool {
+    let Some(item_lot) = txn.get_component_item_lot(lot) else {
+        return false;
+    };
+    if item_lot.quantity == Quantity(0) {
+        return false;
+    }
+    let Some(state) = txn.get_component_perishable_state(lot) else {
+        return true;
+    };
+    let Some(profile) = txn.commodity_perish_profiles().get(&item_lot.commodity) else {
+        return true;
+    };
+    Freshness::derive_from(state.condition, profile) == Freshness::Fresh
 }
 
 fn commit_stage_stock_for_sale(

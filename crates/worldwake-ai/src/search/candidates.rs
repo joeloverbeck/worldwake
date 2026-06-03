@@ -6,7 +6,7 @@ use crate::planner_ops::{PlannerOpKind, planner_only_candidates};
 use crate::{GoalKindPlannerExt, GoalOffer, PlannerOpSemantics, PlanningEntityRef, PlanningState};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    ActionDefId, BlockerMemory, ContentionStatus, EntityId, GoalKind, OmissionReason,
+    ActionDefId, BlockerMemory, ContentionStatus, EntityId, Freshness, GoalKind, OmissionReason,
     OpportunityAnchor, Tick,
 };
 use worldwake_sim::{
@@ -737,11 +737,38 @@ fn commodity_filter_outcome(
             .and_then(ActionPayload::as_trade)
             .and_then(|payload| state.item_lot_commodity(payload.sale_lot))
         {
-            Some(candidate_commodity) => (
-                candidate_commodity == goal_commodity,
-                Some(candidate_commodity),
-            ),
+            Some(candidate_commodity) => {
+                let already_holds_self_consume_stock =
+                    matches!(
+                        goal_kind,
+                        worldwake_core::GoalKind::AcquireCommodity {
+                            purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                            ..
+                        }
+                    ) && direct_possession_quantity(state, candidate_commodity) > 0;
+                (
+                    !already_holds_self_consume_stock && candidate_commodity == goal_commodity,
+                    Some(candidate_commodity),
+                )
+            }
             None => (true, None),
+        },
+        PlannerOpKind::StaffMarket => match goal_kind {
+            worldwake_core::GoalKind::SellCommodity { commodity } => {
+                let actor = state.snapshot().actor();
+                let actor_place = state.effective_place(actor);
+                let home_place = state
+                    .merchandise_profile(actor)
+                    .and_then(|profile| profile.home_facility)
+                    .and_then(|facility| state.effective_place(facility));
+                let has_listed_stock = actor_place
+                    .is_some_and(|place| !state.listed_sale_lots_at(place, *commodity).is_empty());
+                (
+                    actor_place.is_some() && actor_place == home_place && has_listed_stock,
+                    Some(*commodity),
+                )
+            }
+            _ => (true, None),
         },
         PlannerOpKind::StockManagement => {
             let target = candidate.planning_targets.first().copied().or_else(|| {
@@ -755,10 +782,18 @@ fn commodity_filter_outcome(
                 return (false, None);
             };
             match state.item_lot_commodity_ref(target) {
-                Some(candidate_commodity) => (
-                    candidate_commodity == goal_commodity,
-                    Some(candidate_commodity),
-                ),
+                Some(candidate_commodity) => {
+                    let sell_goal =
+                        matches!(goal_kind, worldwake_core::GoalKind::SellCommodity { .. });
+                    let saleable = matches!(
+                        state.lot_freshness_band_ref(target),
+                        None | Some(Freshness::Fresh)
+                    );
+                    (
+                        candidate_commodity == goal_commodity && (!sell_goal || saleable),
+                        Some(candidate_commodity),
+                    )
+                }
                 None => (false, None),
             }
         }

@@ -81,7 +81,7 @@ Scenarios: 13
 - Replay tests: None
 - All tests: `seller_return_completes_resumed_purchase_after_live_offer_refresh`
 
-**Proves**: after seller departure parks a buyer's concrete local bread purchase into pending, seller return revives the goal and the resumed purchase commits through the authoritative trade path at the live three-coin unit-purchase price instead of looping forever on `InsufficientPayment`.
+**Proves**: after seller departure parks a buyer's concrete local bread purchase into pending, seller return revives the goal and the resumed purchase commits through the authoritative trade path at the live one-coin unit-purchase price instead of looping forever on `InsufficientPayment`.
 
 ### Scenario 77: Unlisted Stock Not Sellable
 

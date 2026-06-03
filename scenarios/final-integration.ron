@@ -15,12 +15,6 @@
 //   full-stack structural pressure rather than starvation pathfinding
 (
     seed: 940217,
-    // S178: this scenario proves full-stack coexistence, not food spoilage. Its
-    // agents rely on durable starting food stock (they do not replenish under
-    // hunger pressure here — see tickets/AGEFOOREP-001.md), so it opts out of the
-    // default Apple perish profile to preserve its pre-S178 survival contract. An
-    // empty map means no commodity perishes.
-    commodity_perish_profile: {},
     commodity_decay: {
         Apple: 720,
         Waste: 200,

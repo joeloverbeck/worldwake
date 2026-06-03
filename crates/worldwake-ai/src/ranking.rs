@@ -367,8 +367,7 @@ fn ranked_motive_score_with_memory(
                     .motive_inputs
                     .iter()
                     .map(|input| input.score)
-                    .max()
-                    .unwrap_or(0);
+                    .fold(0_u32, u32::saturating_add);
                 self_consume_commodity(candidate.key.kind).map_or(base, |commodity| {
                     scale_by_freshness(
                         base,
@@ -1294,6 +1293,10 @@ fn self_consume_freshness_factor(
     context: &RankingContext<'_>,
     commodity: CommodityKind,
 ) -> u32 {
+    if matches!(candidate.key.kind, GoalKind::ConsumeOwnedCommodity { .. }) {
+        return 1000;
+    }
+
     candidate
         .evidence_entities
         .iter()
@@ -1396,22 +1399,14 @@ fn greed_motive_score(candidate: &GoalOffer, context: &RankingContext<'_>) -> u3
 fn score_goal_kind_motive(candidate: &GoalOffer, context: &RankingContext<'_>) -> u32 {
     match candidate.key.kind {
         GoalKind::ConsumeOwnedCommodity { commodity } => {
-            relevant_self_consume_factors(commodity, context)
-                .into_iter()
-                .map(effective_drive_factor_score)
-                .max()
-                .unwrap_or(0)
+            self_consume_drive_score(commodity, context)
         }
         GoalKind::AcquireCommodity {
             commodity,
             purpose: CommodityPurpose::SelfConsume,
             quantity,
         } => {
-            let base = relevant_self_consume_factors(commodity, context)
-                .into_iter()
-                .map(effective_drive_factor_score)
-                .max()
-                .unwrap_or(0);
+            let base = self_consume_drive_score(commodity, context);
             base.saturating_add(acquire_commodity_quantity_bonus(quantity))
         }
         GoalKind::AcquireCommodity {
@@ -2571,6 +2566,13 @@ fn relevant_self_consume_factors(
     factors
 }
 
+fn self_consume_drive_score(commodity: CommodityKind, context: &RankingContext<'_>) -> u32 {
+    relevant_self_consume_factors(commodity, context)
+        .into_iter()
+        .map(effective_drive_factor_score)
+        .fold(0_u32, u32::saturating_add)
+}
+
 fn enterprise_score(commodity: CommodityKind, context: &RankingContext<'_>) -> u32 {
     let signal = opportunity_signal(
         context.view,
@@ -2741,11 +2743,7 @@ fn commodity_shared_motive_score(
     context: &RankingContext<'_>,
 ) -> u32 {
     if breakdown.direct_survival_score > 0 {
-        return relevant_self_consume_factors(commodity, context)
-            .into_iter()
-            .map(effective_drive_factor_score)
-            .max()
-            .unwrap_or(0);
+        return self_consume_drive_score(commodity, context);
     }
     if breakdown.treatment_score > 0 {
         return treatment_motive_score(context);
@@ -4903,7 +4901,7 @@ mod tests {
 
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
-        assert_eq!(ranked[0].motive_score, 567_000);
+        assert_eq!(ranked[0].motive_score, 623_000);
         match ranked[0]
             .provenance
             .as_ref()
@@ -6321,6 +6319,31 @@ mod tests {
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
         assert_eq!(ranked[0].motive_score, 900 * 900);
+    }
+
+    #[test]
+    fn multi_need_consumable_scores_all_relevant_self_care_drives() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(900), pm(800), pm(0), pm(0), pm(0)),
+        );
+
+        let ranked = rank(
+            &[goal(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Apple,
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
+        assert_eq!(ranked[0].motive_score, (900 * 900) + (800 * 800));
     }
 
     #[test]

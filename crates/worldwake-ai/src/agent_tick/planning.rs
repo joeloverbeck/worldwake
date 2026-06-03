@@ -33,7 +33,7 @@ use crate::{
     AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime,
     DirtySet, ExhaustionEntry, ExhaustionRetryState, ExpectationFailureCause,
     ExpectationFailurePhase, KillCondition, OpportunityExpectationFailureIncident, OpportunityKey,
-    PendingRepairContext, PlanValue, PlannedPlan, PlannedStep, PlannerOpSemantics,
+    PendingRepairContext, PlanValue, PlannedPlan, PlannedStep, PlannerOpKind, PlannerOpSemantics,
     PlanningStateCacheCounters, RevivalTrigger, authoritative_target,
     budget_exhausted_partial_plan_segment,
     build_planning_snapshot_with_blocked_facility_uses_and_route_preference,
@@ -976,6 +976,7 @@ fn summarize_snapshot_continuation(
     current_opportunity: OpportunityKey,
     ranked_candidates: &OrderedRanked<'_>,
     planning_switch_margin: Permille,
+    allow_terminal_step_same_class_continuation: bool,
 ) -> SnapshotContinuationTrace {
     let top = ranked_candidates.first();
     let current = ranked_goal_for_opportunity(ranked_candidates, current_opportunity);
@@ -1001,7 +1002,11 @@ fn summarize_snapshot_continuation(
             if top.motive_score
                 >= current.motive_score + u32::from(planning_switch_margin.value()) =>
         {
-            SnapshotContinuationOutcome::ReplannedMarginExceeded
+            if allow_terminal_step_same_class_continuation {
+                SnapshotContinuationOutcome::ContinuedTerminalStepWithinPriorityClass
+            } else {
+                SnapshotContinuationOutcome::ReplannedMarginExceeded
+            }
         }
         (Some(_), Some(_)) => SnapshotContinuationOutcome::ContinuedWithinMargin,
     };
@@ -1017,6 +1022,14 @@ fn summarize_snapshot_continuation(
         motive_delta,
         outcome,
     }
+}
+
+fn allow_terminal_step_same_class_snapshot_continuation(
+    runtime: &AgentDecisionRuntime,
+    plan: &PlannedPlan,
+) -> bool {
+    matches!(plan.goal.kind, GoalKind::Patrol { .. })
+        && current_step(runtime).is_some_and(|step| step.op_kind == PlannerOpKind::Patrol)
 }
 
 fn try_continue_snapshot_plan(
@@ -1037,6 +1050,7 @@ fn try_continue_snapshot_plan(
         plan.opportunity,
         ranked_candidates,
         planning_switch_margin,
+        allow_terminal_step_same_class_snapshot_continuation(runtime, plan),
     );
     if !continuation.continues_plan() {
         return None;
@@ -2596,6 +2610,7 @@ pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
                 plan_for_trace.opportunity,
                 ranked_candidates,
                 cognitive.planning_switch_margin,
+                allow_terminal_step_same_class_snapshot_continuation(runtime, plan_for_trace),
             );
             selection_trace.snapshot_continuation = Some(continuation.clone());
             if continuation.continues_plan()
@@ -5954,6 +5969,7 @@ mod tests {
                 ranked_goal_with_score(current, GoalPriorityClass::High, 800),
             ]),
             Permille::new(150).unwrap(),
+            false,
         );
 
         assert_eq!(
@@ -5983,6 +5999,7 @@ mod tests {
                 ranked_goal_with_score(current, GoalPriorityClass::High, 800),
             ]),
             Permille::new(150).unwrap(),
+            false,
         );
 
         assert_eq!(
@@ -5991,6 +6008,34 @@ mod tests {
         );
         assert_eq!(trace.motive_delta, Some(150));
         assert!(!trace.continues_plan());
+    }
+
+    #[test]
+    fn snapshot_continuation_finishes_terminal_step_against_same_class_margin() {
+        let current = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Patrol { place: entity(43) }),
+            anchor: OpportunityAnchor::Place(entity(43)),
+        };
+        let top = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::EngageHostile { target: entity(44) }),
+            anchor: OpportunityAnchor::Entity(entity(44)),
+        };
+        let trace = summarize_snapshot_continuation(
+            current,
+            &ordered(&[
+                ranked_goal_with_score(top, GoalPriorityClass::Low, 100_000),
+                ranked_goal_with_score(current, GoalPriorityClass::Low, 100),
+            ]),
+            Permille::new(150).unwrap(),
+            true,
+        );
+
+        assert_eq!(
+            trace.outcome,
+            SnapshotContinuationOutcome::ContinuedTerminalStepWithinPriorityClass
+        );
+        assert_eq!(trace.motive_delta, Some(99_900));
+        assert!(trace.continues_plan());
     }
 
     #[test]
@@ -6012,6 +6057,7 @@ mod tests {
                 ranked_goal_with_score(current, GoalPriorityClass::High, 1000),
             ]),
             Permille::new(300).unwrap(),
+            false,
         );
 
         assert_eq!(
@@ -6038,6 +6084,7 @@ mod tests {
             current,
             &ordered(&[ranked_goal_with_score(top, GoalPriorityClass::High, 900)]),
             Permille::new(150).unwrap(),
+            false,
         );
 
         assert_eq!(
@@ -6069,6 +6116,7 @@ mod tests {
                 ranked_goal_with_score(current, GoalPriorityClass::High, 800),
             ]),
             Permille::ZERO,
+            false,
         );
 
         assert_eq!(

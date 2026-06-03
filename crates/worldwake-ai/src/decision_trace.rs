@@ -1507,6 +1507,7 @@ pub enum SelectedPlanSource {
 pub enum SnapshotContinuationOutcome {
     ContinuedAsTopRanked,
     ContinuedWithinMargin,
+    ContinuedTerminalStepWithinPriorityClass,
     ReplannedHigherPriorityClass,
     ReplannedMarginExceeded,
     ReplannedCurrentOpportunityMissing,
@@ -1532,6 +1533,7 @@ impl SnapshotContinuationTrace {
             self.outcome,
             SnapshotContinuationOutcome::ContinuedAsTopRanked
                 | SnapshotContinuationOutcome::ContinuedWithinMargin
+                | SnapshotContinuationOutcome::ContinuedTerminalStepWithinPriorityClass
         )
     }
 }

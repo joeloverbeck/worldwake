@@ -30,8 +30,8 @@ use worldwake_core::{
     RecordKind, ResourceExtractionQueues, ResourceSource, RestCapacity, RewardSource,
     RiskWeightProfile, RoutePreferenceProfile, Seed, SleepQualityProfile, SocialObservation,
     SocialObservationDetail, SurveyMemory, TestimonyTrustProfile, Tick, Topology, TravelEdge,
-    TravelEdgeId, VisibilitySpec, WashBasinState, WitnessData, WorkstationMarker, World, WorldTxn,
-    default_commodity_decay_map, default_commodity_perish_profile_map,
+    TravelEdgeId, VisibilitySpec, WashBasinState, WitnessData, WorkstationMarker, WorkstationTag,
+    World, WorldTxn, default_commodity_decay_map, default_commodity_perish_profile_map,
     default_uniform_five_archetypes, hash_serializable, hash_world, load_per_unit, template_for,
 };
 use worldwake_sim::{
@@ -488,6 +488,9 @@ fn spawn_entities(
         } else {
             let source_id = txn.create_entity(EntityKind::Facility);
             txn.set_ground_location(source_id, place_id)?;
+            if let Some(tag) = harvest_workstation_tag_for_commodity(source_def.commodity) {
+                txn.set_component_workstation_marker(source_id, WorkstationMarker(tag))?;
+            }
             txn.set_component_production_output_ownership_policy(
                 source_id,
                 ProductionOutputOwnershipPolicy {
@@ -532,6 +535,17 @@ fn spawn_entities(
         emit_personality_assigned_event(event_log, payload);
     }
     Ok(())
+}
+
+fn harvest_workstation_tag_for_commodity(
+    commodity: worldwake_core::CommodityKind,
+) -> Option<WorkstationTag> {
+    match commodity {
+        worldwake_core::CommodityKind::Apple => Some(WorkstationTag::OrchardRow),
+        worldwake_core::CommodityKind::Grain => Some(WorkstationTag::FieldPlot),
+        worldwake_core::CommodityKind::Water => Some(WorkstationTag::Well),
+        _ => None,
+    }
 }
 
 fn spawn_bandit_camp(
@@ -3823,6 +3837,14 @@ mod tests {
         assert_eq!(rs.max_quantity, Quantity(20));
         assert_eq!(rs.available_quantity, Quantity(20));
         assert_eq!(rs.regeneration_ticks_per_unit, NonZeroU32::new(5));
+        assert_eq!(
+            world
+                .get_component_workstation_marker(*source.unwrap())
+                .unwrap()
+                .0,
+            WorkstationTag::OrchardRow,
+            "anonymous Apple sources must be harvestable by the canonical Harvest Apples recipe"
+        );
     }
 
     #[test]

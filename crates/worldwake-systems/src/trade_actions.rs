@@ -9,8 +9,8 @@ use std::{
 use worldwake_core::{
     ActionDefId, Blocker, BlockerClearingCondition, BlockerScope, BlockingFact, BodyCostPerTick,
     CauseRef, CommodityKind, DemandMemory, DemandObservation, DemandObservationReason, Discrepancy,
-    EntityId, EntityKind, EventTag, GoalKey, GoalKind, MerchandiseProfile, Quantity, SourceKey,
-    Tick, VisibilitySpec, WorldTxn, WoundList,
+    EntityId, EntityKind, EventTag, Freshness, GoalKey, GoalKind, MerchandiseProfile, Quantity,
+    SourceKey, Tick, VisibilitySpec, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
@@ -537,6 +537,7 @@ impl EffectSink for TradeEffectSink<'_, '_, '_> {
             && let Some(home_facility) = profile.home_facility
             && let Some(place) = self.txn.effective_place(home_facility)
             && staff_market_has_sellable_stock(self.txn, actor, home_facility, commodity)
+            && !recent_successful_market_sale(self.txn, actor, commodity, place)
         {
             record_unproductive_demand(self.txn, actor, commodity, place);
             record_sell_blocked_intent(self.txn, actor, commodity, place);
@@ -710,6 +711,15 @@ fn validate_trade_context_for_negotiation(
 ) -> Result<(EntityId, EntityId, CommodityKind), ActionError> {
     let (counterparty, place) = validate_trade_context(txn, instance, payload)?;
     let requested_commodity = sale_lot_commodity(txn, payload.sale_lot)?;
+    if !is_saleable_lot(txn, payload.sale_lot) {
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+                holder: counterparty,
+                commodity: requested_commodity,
+                quantity: payload.requested_quantity,
+            },
+        ));
+    }
     if txn.get_component_sale_listing(payload.sale_lot).is_none() {
         return Err(ActionError::AbortRequested(
             ActionAbortRequestReason::SaleLotNotListed {
@@ -801,6 +811,31 @@ pub(crate) fn count_local_alternatives(
         .count() as u32
 }
 
+fn counterparty_local_stock_units(
+    view: &dyn RuntimeBeliefView,
+    counterparty: EntityId,
+    place: EntityId,
+    commodity: CommodityKind,
+) -> u32 {
+    if view.effective_place(counterparty) != Some(place)
+        || !view
+            .merchandise_profile(counterparty)
+            .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
+    {
+        return 0;
+    }
+
+    view.listed_sale_lots_at(place, commodity)
+        .into_iter()
+        .filter(|lot| view.seller_for_sale_lot(*lot) == Some(counterparty))
+        .filter(|lot| {
+            view.lot_freshness_band(*lot)
+                .is_none_or(|freshness| freshness == Freshness::Fresh)
+        })
+        .map(|lot| view.commodity_quantity(lot, commodity).0)
+        .sum()
+}
+
 pub fn buyer_trade_opening_offer_for_view(
     view: &dyn RuntimeBeliefView,
     actor: EntityId,
@@ -814,7 +849,9 @@ pub fn buyer_trade_opening_offer_for_view(
         wounds_for(view, actor).as_ref(),
         commodity,
         InventoryBeliefView::commodity_quantity(view, actor, CommodityKind::Coin),
-        count_local_alternatives(view, actor, counterparty, place, commodity),
+        count_local_alternatives(view, actor, counterparty, place, commodity).saturating_add(
+            counterparty_local_stock_units(view, counterparty, place, commodity),
+        ),
     );
     if reservation < Quantity(1) {
         return None;
@@ -825,14 +862,15 @@ pub fn buyer_trade_opening_offer_for_view(
         commodity,
     );
 
-    Some(opening_offer_for_deadline(
+    let opening_offer = opening_offer_for_deadline(
         worldwake_core::TradeRole::Buyer,
         reservation,
         disposition.initial_offer_bias,
         disposition.rejection_escalation_rate,
         rejection_count_for(view, actor, counterparty, commodity),
         deadline,
-    ))
+    );
+    Some(opening_offer)
 }
 
 #[allow(dead_code)]
@@ -889,8 +927,8 @@ pub(crate) fn seller_reservation_price(
 
     Quantity(
         scarcity_floor
-            .saturating_add(scarcity_need)
-            .saturating_add(scarcity_demand)
+            .max(scarcity_need)
+            .max(scarcity_demand)
             .max(1),
     )
 }
@@ -1059,8 +1097,6 @@ fn remembered_demand_pressure(
                         obs.reason,
                         DemandObservationReason::WantedToBuyButNoSeller
                             | DemandObservationReason::WantedToBuyButSellerOutOfStock
-                            | DemandObservationReason::WantedToBuyButTooExpensive
-                            | DemandObservationReason::TradeAgreed
                     )
             })
             .map(|obs| obs.quantity.0)
@@ -1828,7 +1864,8 @@ fn staff_market_has_sellable_stock(
     };
     txn.possessions_of(actor).into_iter().any(|entity| {
         txn.get_component_item_lot(entity)
-            .is_some_and(|lot| lot.commodity == commodity && lot.quantity > Quantity(0))
+            .is_some_and(|lot| lot.commodity == commodity)
+            && is_saleable_lot(txn, entity)
             && txn.effective_place(entity) == Some(place)
     }) || displayed_sale_lots_at_facility(txn, home_facility, commodity)
 }
@@ -1847,13 +1884,30 @@ fn displayed_sale_lots_at_facility(
         .into_iter()
         .any(|entity| {
             txn.get_component_item_lot(entity)
-                .is_some_and(|lot| lot.commodity == commodity && lot.quantity > Quantity(0))
+                .is_some_and(|lot| lot.commodity == commodity)
+                && is_saleable_lot(txn, entity)
                 && txn.has_component_sale_listing(entity)
                 && txn.get_component_stock_assignment(entity).is_some_and(|a| {
                     a.kind == worldwake_core::StockAssignmentKind::Displayed
                         && a.facility == facility
                 })
         })
+}
+
+fn is_saleable_lot(txn: &WorldTxn<'_>, lot: EntityId) -> bool {
+    let Some(item_lot) = txn.get_component_item_lot(lot) else {
+        return false;
+    };
+    if item_lot.quantity == Quantity(0) {
+        return false;
+    }
+    let Some(state) = txn.get_component_perishable_state(lot) else {
+        return true;
+    };
+    let Some(profile) = txn.commodity_perish_profiles().get(&item_lot.commodity) else {
+        return true;
+    };
+    Freshness::derive_from(state.condition, profile) == Freshness::Fresh
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -1934,6 +1988,27 @@ fn record_unproductive_demand(
         reason: DemandObservationReason::WantedToSellButNoBuyer,
     });
     let _ = txn.set_component_demand_memory(actor, memory);
+}
+
+fn recent_successful_market_sale(
+    txn: &WorldTxn<'_>,
+    actor: EntityId,
+    commodity: CommodityKind,
+    place: EntityId,
+) -> bool {
+    let current_tick = txn.tick();
+    let window = txn
+        .get_component_trade_disposition_profile(actor)
+        .map_or(30, |profile| profile.market_presence_ticks.get());
+    txn.get_component_demand_memory(actor)
+        .is_some_and(|memory| {
+            memory.observations.iter().any(|observation| {
+                observation.commodity == commodity
+                    && observation.place == place
+                    && observation.reason == DemandObservationReason::TradeAgreed
+                    && current_tick.0.saturating_sub(observation.tick.0) <= u64::from(window)
+            })
+        })
 }
 
 /// Create a `Blocker` for `SellCommodity { commodity }` after an unproductive
@@ -2241,13 +2316,57 @@ mod tests {
                         place: entity(90),
                         tick: Tick(2),
                         counterparty: Some(entity(92)),
-                        reason: DemandObservationReason::WantedToBuyButTooExpensive,
+                        reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
                     },
                 ],
             }),
         );
 
         assert!(remembered > none);
+    }
+
+    #[test]
+    fn seller_reservation_price_ignores_too_expensive_rejections_as_demand_pressure() {
+        let none = seller_reservation_price(None, CommodityKind::Apple, Quantity(2), None);
+        let remembered = seller_reservation_price(
+            None,
+            CommodityKind::Apple,
+            Quantity(2),
+            Some(&DemandMemory {
+                observations: vec![DemandObservation {
+                    commodity: CommodityKind::Apple,
+                    quantity: Quantity(4),
+                    place: entity(90),
+                    tick: Tick(2),
+                    counterparty: Some(entity(92)),
+                    reason: DemandObservationReason::WantedToBuyButTooExpensive,
+                }],
+            }),
+        );
+
+        assert_eq!(remembered, none);
+    }
+
+    #[test]
+    fn seller_reservation_price_ignores_completed_trades_as_unmet_demand_pressure() {
+        let none = seller_reservation_price(None, CommodityKind::Apple, Quantity(2), None);
+        let remembered = seller_reservation_price(
+            None,
+            CommodityKind::Apple,
+            Quantity(2),
+            Some(&DemandMemory {
+                observations: vec![DemandObservation {
+                    commodity: CommodityKind::Apple,
+                    quantity: Quantity(4),
+                    place: entity(90),
+                    tick: Tick(2),
+                    counterparty: Some(entity(92)),
+                    reason: DemandObservationReason::TradeAgreed,
+                }],
+            }),
+        );
+
+        assert_eq!(remembered, none);
     }
 
     #[test]
@@ -2812,6 +2931,13 @@ mod tests {
             commit_txn(txn);
         }
 
+        fn set_counterparty_needs(&mut self, needs: HomeostaticNeeds) {
+            let mut txn = new_txn(&mut self.world, 3);
+            txn.set_component_homeostatic_needs(self.counterparty, needs)
+                .unwrap();
+            commit_txn(txn);
+        }
+
         fn set_actor_preference_profile(&mut self, source_memory_capacity: u32) {
             let mut txn = new_txn(&mut self.world, 3);
             txn.set_component_preference_profile(
@@ -3030,8 +3156,71 @@ mod tests {
 
         assert_eq!(
             payload.offered_quantity,
-            Quantity(3),
+            Quantity(1),
             "when the buyer can only afford one trade tick, the opening offer must already meet the full reservation price"
+        );
+    }
+
+    #[test]
+    fn trade_affordance_dampens_urgent_buyer_offer_when_local_stock_is_abundant() {
+        let harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(20),
+            CommodityKind::Apple,
+            Quantity(40),
+            1,
+            HomeostaticNeeds::new(pm(1000), pm(0), pm(0), pm(0), pm(0)),
+        );
+
+        let affordances = affordances_for(
+            &harness.world,
+            harness.actor,
+            &harness.defs,
+            &harness.handlers,
+        );
+
+        let payload = affordances
+            .into_iter()
+            .find(|affordance| {
+                affordance.def_id == harness.def_id
+                    && affordance.bound_targets == vec![harness.counterparty]
+            })
+            .and_then(|affordance| affordance.payload_override)
+            .and_then(|payload| payload.as_trade().cloned())
+            .expect("trade affordance should expose a payload override");
+
+        assert_eq!(
+            payload.offered_quantity,
+            Quantity(1),
+            "abundant local seller stock should dampen emergency buyer offers to the minimum"
+        );
+    }
+
+    #[test]
+    fn abundant_sale_stock_allows_one_coin_trade_overlap() {
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(20),
+            CommodityKind::Apple,
+            Quantity(60),
+            1,
+            HomeostaticNeeds::new(pm(1000), pm(0), pm(0), pm(0), pm(0)),
+        );
+        harness.payload.offered_quantity = Quantity(1);
+        harness.payload.requested_quantity = Quantity(1);
+
+        let (instance_id, mut active) = harness.start_with_active();
+        let outcome = harness.tick(instance_id, &mut active, 4).unwrap();
+
+        assert!(
+            matches!(outcome, TickOutcome::Committed { .. }),
+            "abundant concrete seller stock should let the minimum buyer offer overlap seller reservation"
+        );
+        assert_eq!(
+            harness
+                .world
+                .controlled_commodity_quantity(harness.actor, CommodityKind::Apple),
+            Quantity(1)
         );
     }
 
@@ -3410,12 +3599,12 @@ mod tests {
             Quantity(5),
             CommodityKind::Bread,
             Quantity(1),
-            20,
+            100,
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
         harness.payload.offered_quantity = Quantity(1);
         harness.set_actor_trade_profile(TradeDispositionProfile {
-            negotiation_round_ticks: nz(20),
+            negotiation_round_ticks: nz(200),
             initial_offer_bias: pm(500),
             concession_rate: pm(700),
             rejection_escalation_rate: pm(200),
@@ -3423,35 +3612,51 @@ mod tests {
             market_presence_ticks: nz(30),
         });
         harness.set_counterparty_trade_profile(TradeDispositionProfile {
-            negotiation_round_ticks: nz(5),
+            negotiation_round_ticks: nz(100),
             initial_offer_bias: pm(500),
             concession_rate: pm(200),
             rejection_escalation_rate: pm(200),
             demand_memory_retention_ticks: 10,
             market_presence_ticks: nz(30),
         });
-        harness.set_counterparty_demand_memory(vec![
-            expensive_rejection(CommodityKind::Bread, harness.actor, 1),
-            expensive_rejection(CommodityKind::Bread, harness.actor, 2),
-        ]);
+        harness.set_counterparty_demand_memory(vec![DemandObservation {
+            commodity: CommodityKind::Bread,
+            quantity: Quantity(4),
+            place: harness.place,
+            tick: Tick(2),
+            counterparty: Some(harness.actor),
+            reason: DemandObservationReason::WantedToBuyButNoSeller,
+        }]);
 
         let (instance_id, mut active) = harness.start_with_active();
         let first = harness.tick(instance_id, &mut active, 4).unwrap();
         assert!(matches!(first, TickOutcome::Continuing));
-        let second = harness.tick(instance_id, &mut active, 5).unwrap();
+        let mut committed = false;
+        for tick in 5..=30 {
+            match harness.tick(instance_id, &mut active, tick).unwrap() {
+                TickOutcome::Committed { .. } => {
+                    committed = true;
+                    break;
+                }
+                TickOutcome::Continuing => {}
+                other @ TickOutcome::Aborted { .. } => {
+                    panic!("expected continuing or committed negotiation, got {other:?}")
+                }
+            }
+        }
 
-        assert!(matches!(second, TickOutcome::Committed { .. }));
+        assert!(committed, "negotiation should converge before deadline");
         assert_eq!(
             harness
                 .world
                 .controlled_commodity_quantity(harness.counterparty, CommodityKind::Coin),
-            Quantity(4)
+            Quantity(5)
         );
         assert_eq!(
             harness
                 .world
                 .controlled_commodity_quantity(harness.actor, CommodityKind::Coin),
-            Quantity(1)
+            Quantity(0)
         );
         let buyer_memory = harness
             .world
@@ -3466,14 +3671,14 @@ mod tests {
                 .observations
                 .iter()
                 .any(|obs| obs.reason == DemandObservationReason::TradeAgreed
-                    && obs.quantity == Quantity(4))
+                    && obs.quantity == Quantity(5))
         );
         assert!(
             seller_memory
                 .observations
                 .iter()
                 .any(|obs| obs.reason == DemandObservationReason::TradeAgreed
-                    && obs.quantity == Quantity(4))
+                    && obs.quantity == Quantity(5))
         );
     }
 
@@ -3495,6 +3700,7 @@ mod tests {
             demand_memory_retention_ticks: 10,
             market_presence_ticks: nz(30),
         });
+        harness.set_counterparty_needs(HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)));
         harness.set_counterparty_demand_memory(vec![
             expensive_rejection(CommodityKind::Bread, harness.actor, 1),
             expensive_rejection(CommodityKind::Bread, harness.actor, 2),
@@ -3572,6 +3778,7 @@ mod tests {
             demand_memory_retention_ticks: 10,
             market_presence_ticks: nz(30),
         });
+        harness.set_counterparty_needs(HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)));
         harness.set_counterparty_demand_memory(vec![
             expensive_rejection(CommodityKind::Bread, harness.actor, 1),
             expensive_rejection(CommodityKind::Bread, harness.actor, 2),
@@ -4617,6 +4824,63 @@ mod tests {
         assert_eq!(obs.commodity, CommodityKind::Bread);
         assert_eq!(obs.reason, DemandObservationReason::WantedToSellButNoBuyer);
         assert_eq!(obs.place, h.place);
+    }
+
+    #[test]
+    fn staff_market_commit_after_recent_sale_does_not_record_no_buyer_blocker() {
+        let mut h = StaffMarketHarness::new();
+        {
+            let mut txn = new_txn(&mut h.world, 3);
+            txn.set_component_demand_memory(
+                h.actor,
+                DemandMemory {
+                    observations: vec![DemandObservation {
+                        commodity: CommodityKind::Bread,
+                        quantity: Quantity(1),
+                        place: h.place,
+                        tick: Tick(3),
+                        counterparty: Some(entity(99)),
+                        reason: DemandObservationReason::TradeAgreed,
+                    }],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        let (instance_id, mut active) = h.start_with_active();
+
+        for tick in 4..14 {
+            let outcome = tick_action(
+                instance_id,
+                &h.defs,
+                &h.handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut h.world,
+                    event_log: &mut h.log,
+                    rng: &mut h.rng,
+                },
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(tick),
+                ),
+            )
+            .unwrap();
+            if matches!(outcome, TickOutcome::Committed { .. }) {
+                break;
+            }
+        }
+
+        let memory = h.world.get_component_demand_memory(h.actor).unwrap();
+        assert!(!memory.observations.iter().any(|obs| {
+            obs.reason == DemandObservationReason::WantedToSellButNoBuyer
+                && obs.commodity == CommodityKind::Bread
+        }));
+        assert!(
+            h.world
+                .get_component_blocker_memory(h.actor)
+                .is_none_or(|memory| memory.intents.is_empty())
+        );
     }
 
     #[test]

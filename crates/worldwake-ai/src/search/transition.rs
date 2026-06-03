@@ -15,7 +15,7 @@ use heuristic::{
 use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, CognitiveProfile, EntityId, EntityKind, EpistemicSubject, ExecutionBudget,
-    TellTopic,
+    GoalKind, TellTopic,
 };
 use worldwake_sim::{
     ActionDefRegistry, EffectEvaluationContext, EffectMode, RecipeRegistry, TemporalBeliefView,
@@ -129,9 +129,20 @@ pub(super) fn build_successor_detailed<'snapshot>(
     }
 
     let actor = node.state.snapshot().actor();
-    let payload_override = goal
-        .key
-        .kind
+    let payload_goal_kind = match (&goal.key.kind, goal.acquisition_quantity) {
+        (
+            GoalKind::AcquireCommodity {
+                commodity, purpose, ..
+            },
+            Some(quantity),
+        ) => GoalKind::AcquireCommodity {
+            commodity: *commodity,
+            purpose: *purpose,
+            quantity,
+        },
+        _ => goal.key.kind,
+    };
+    let payload_override = payload_goal_kind
         .build_payload_override(
             candidate.payload_override.as_ref(),
             &node.state,

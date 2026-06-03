@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use worldwake_core::{CommodityKind, EntityId, Permille, Quantity};
+use worldwake_core::{CommodityKind, EntityId, Freshness, Permille, Quantity};
 use worldwake_sim::GoalBeliefView;
 
 /// Baseline enterprise signal for a merchant who has stock but no demand
@@ -77,7 +77,7 @@ pub(crate) fn market_signal_for_place(
     place: EntityId,
 ) -> Permille {
     let demand = relevant_demand_quantity(view, agent, place, commodity);
-    let stock = view.commodity_quantity(agent, commodity).0;
+    let stock = saleable_quantity_at_place(view, agent, place, commodity).0;
     if demand == 0 {
         // Baseline: a merchant with stock but no demand memory still gets a
         // modest signal so SellCommodity can emerge without prior demand
@@ -85,7 +85,8 @@ pub(crate) fn market_signal_for_place(
         // any demand-memory-boosted signal, preserving demand memory as a
         // ranking boost rather than a gate.  Per-agent diversity comes from
         // `enterprise_weight` in the caller (`enterprise_score`).
-        return if stock > 0 {
+        let stock_present = stock > 0 || view.commodity_quantity(agent, commodity) > Quantity(0);
+        return if stock_present {
             STOCK_PRESENT_BASELINE
         } else {
             Permille::new_unchecked(0)
@@ -119,16 +120,15 @@ fn restock_gap_for_market(
     commodity: CommodityKind,
 ) -> Option<Quantity> {
     let observed_quantity = relevant_demand_quantity(view, agent, market, commodity);
-    if observed_quantity == 0 {
-        return None;
-    }
-
-    let current_stock = view.commodity_quantity(agent, commodity).0;
-    if current_stock < observed_quantity {
-        Some(Quantity(observed_quantity - current_stock))
+    let current_stock = saleable_quantity_at_place(view, agent, market, commodity).0;
+    let demand_gap = observed_quantity.saturating_sub(current_stock);
+    let replacement_gap = if current_stock == 0 {
+        non_saleable_lot_count_at_place(view, agent, market, commodity)
     } else {
-        None
-    }
+        0
+    };
+    let gap = demand_gap.max(replacement_gap);
+    if gap > 0 { Some(Quantity(gap)) } else { None }
 }
 
 pub(crate) fn restock_gap_at_destination(
@@ -139,21 +139,27 @@ pub(crate) fn restock_gap_at_destination(
 ) -> Option<Quantity> {
     let destination_place = view.effective_place(destination).unwrap_or(destination);
     let observed_quantity = relevant_demand_quantity(view, agent, destination_place, commodity);
-    if observed_quantity == 0 {
-        return None;
-    }
-
     let current_stock_at_destination = exact_destination_facility(view, agent, destination)
-        .and_then(|facility| facility_custody_quantity_for_facility(view, facility, commodity))
-        .unwrap_or_else(|| {
-            view.controlled_commodity_quantity_at_place(agent, destination_place, commodity)
+        .and_then(|facility| {
+            saleable_facility_custody_quantity_for_facility(view, facility, commodity)
         })
+        .unwrap_or_else(|| saleable_quantity_at_place(view, agent, destination_place, commodity))
         .0;
-    if current_stock_at_destination < observed_quantity {
-        Some(Quantity(observed_quantity - current_stock_at_destination))
+    let replacement_gap = if current_stock_at_destination == 0 {
+        exact_destination_facility(view, agent, destination)
+            .and_then(|facility| {
+                non_saleable_facility_custody_lot_count_for_facility(view, facility, commodity)
+            })
+            .unwrap_or_else(|| {
+                non_saleable_lot_count_at_place(view, agent, destination_place, commodity)
+            })
     } else {
-        None
-    }
+        0
+    };
+    let gap = observed_quantity
+        .saturating_sub(current_stock_at_destination)
+        .max(replacement_gap);
+    if gap > 0 { Some(Quantity(gap)) } else { None }
 }
 
 fn exact_destination_facility(
@@ -170,7 +176,30 @@ fn exact_destination_facility(
         .filter(|facility| view.can_control(agent, *facility))
 }
 
-fn facility_custody_quantity_for_facility(
+fn saleable_quantity_at_place(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: EntityId,
+    commodity: CommodityKind,
+) -> Quantity {
+    let lots = view.local_controlled_lots_for(agent, place, commodity);
+    if lots.is_empty() {
+        return view.controlled_commodity_quantity_at_place(agent, place, commodity);
+    }
+    lots.into_iter()
+        .filter(|lot| is_saleable_lot(view, *lot))
+        .fold(Quantity(0), |total, lot| {
+            let quantity = view.commodity_quantity(lot, commodity);
+            Quantity(
+                total
+                    .0
+                    .checked_add(quantity.0)
+                    .expect("saleable quantity overflowed"),
+            )
+        })
+}
+
+fn saleable_facility_custody_quantity_for_facility(
     view: &dyn GoalBeliefView,
     facility: EntityId,
     commodity: CommodityKind,
@@ -182,6 +211,7 @@ fn facility_custody_quantity_for_facility(
             .into_iter()
             .filter(|lot| view.item_lot_commodity(*lot) == Some(commodity))
             .filter(|lot| lot_is_inside_any_container(view, *lot, &containers))
+            .filter(|lot| is_saleable_lot(view, *lot))
             .fold(Quantity(0), |total, lot| {
                 let quantity = view.commodity_quantity(lot, commodity);
                 Quantity(
@@ -192,6 +222,44 @@ fn facility_custody_quantity_for_facility(
                 )
             }),
     )
+}
+
+fn non_saleable_lot_count_at_place(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: EntityId,
+    commodity: CommodityKind,
+) -> u32 {
+    view.local_controlled_lots_for(agent, place, commodity)
+        .into_iter()
+        .filter(|lot| !is_saleable_lot(view, *lot))
+        .count()
+        .try_into()
+        .expect("non-saleable lot count overflowed")
+}
+
+fn non_saleable_facility_custody_lot_count_for_facility(
+    view: &dyn GoalBeliefView,
+    facility: EntityId,
+    commodity: CommodityKind,
+) -> Option<u32> {
+    let containers = facility_custody_containers_for_facility(view, facility)?;
+
+    Some(
+        view.entities_at(view.effective_place(facility)?)
+            .into_iter()
+            .filter(|lot| view.item_lot_commodity(*lot) == Some(commodity))
+            .filter(|lot| lot_is_inside_any_container(view, *lot, &containers))
+            .filter(|lot| !is_saleable_lot(view, *lot))
+            .count()
+            .try_into()
+            .expect("non-saleable facility custody lot count overflowed"),
+    )
+}
+
+fn is_saleable_lot(view: &dyn GoalBeliefView, lot: EntityId) -> bool {
+    view.lot_freshness_band(lot)
+        .is_none_or(|freshness| freshness == Freshness::Fresh)
 }
 
 fn facility_custody_containers_for_facility(
@@ -246,10 +314,10 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation,
-        DemandObservationReason, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
-        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity,
-        RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
-        WorkstationTag, Wound,
+        DemandObservationReason, DriveThresholds, EntityId, EntityKind, Freshness,
+        HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
@@ -262,6 +330,10 @@ mod tests {
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
         controlled_quantities: BTreeMap<(EntityId, EntityId, CommodityKind), Quantity>,
+        local_lots: BTreeMap<(EntityId, EntityId, CommodityKind), Vec<EntityId>>,
+        lot_commodities: BTreeMap<EntityId, CommodityKind>,
+        lot_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
+        lot_freshness: BTreeMap<EntityId, Freshness>,
     }
 
     impl ControlBeliefView for TestBeliefView {
@@ -419,19 +491,35 @@ mod tests {
             place: EntityId,
             commodity: CommodityKind,
         ) -> Quantity {
-            self.controlled_quantities
-                .get(&(agent, place, commodity))
-                .copied()
-                .unwrap_or(Quantity(0))
+            let lot_quantity = self
+                .local_controlled_lots_for(agent, place, commodity)
+                .into_iter()
+                .fold(Quantity(0), |total, lot| {
+                    let quantity = self
+                        .lot_quantities
+                        .get(&(lot, commodity))
+                        .copied()
+                        .unwrap_or(Quantity(0));
+                    Quantity(total.0 + quantity.0)
+                });
+            lot_quantity.max(
+                self.controlled_quantities
+                    .get(&(agent, place, commodity))
+                    .copied()
+                    .unwrap_or(Quantity(0)),
+            )
         }
 
         fn local_controlled_lots_for(
             &self,
-            _agent: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
+            agent: EntityId,
+            place: EntityId,
+            commodity: CommodityKind,
         ) -> Vec<EntityId> {
-            Vec::new()
+            self.local_lots
+                .get(&(agent, place, commodity))
+                .cloned()
+                .unwrap_or_default()
         }
 
         fn listed_sale_lots_at(
@@ -471,12 +559,13 @@ mod tests {
         fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
             self.commodity_quantities
                 .get(&(holder, kind))
+                .or_else(|| self.lot_quantities.get(&(holder, kind)))
                 .copied()
                 .unwrap_or(Quantity(0))
         }
 
-        fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
-            None
+        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+            self.lot_commodities.get(&entity).copied()
         }
 
         fn item_lot_consumable_profile(
@@ -484,6 +573,10 @@ mod tests {
             _entity: EntityId,
         ) -> Option<CommodityConsumableProfile> {
             None
+        }
+
+        fn lot_freshness_band(&self, entity: EntityId) -> Option<Freshness> {
+            self.lot_freshness.get(&entity).copied()
         }
 
         fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
@@ -620,11 +713,71 @@ mod tests {
 
         assert_eq!(
             restock_gap_for_market(&view, agent, market, CommodityKind::Bread),
-            None
+            Some(Quantity(5))
         );
         assert_eq!(
             restock_gap_at_destination(&view, agent, market, CommodityKind::Bread),
             Some(Quantity(5))
+        );
+    }
+
+    #[test]
+    fn restock_gap_replaces_non_saleable_market_stock() {
+        let agent = entity(1);
+        let market = entity(2);
+        let fresh = entity(3);
+        let spoiled = entity(4);
+        let stale = entity(6);
+        let mut view = TestBeliefView::default();
+        view.demand_memory
+            .insert(agent, vec![demand(market, CommodityKind::Apple, 5)]);
+        view.local_lots.insert(
+            (agent, market, CommodityKind::Apple),
+            vec![fresh, stale, spoiled],
+        );
+        view.lot_commodities.insert(fresh, CommodityKind::Apple);
+        view.lot_commodities.insert(stale, CommodityKind::Apple);
+        view.lot_commodities.insert(spoiled, CommodityKind::Apple);
+        view.lot_quantities
+            .insert((fresh, CommodityKind::Apple), Quantity(2));
+        view.lot_quantities
+            .insert((stale, CommodityKind::Apple), Quantity(3));
+        view.lot_quantities
+            .insert((spoiled, CommodityKind::Apple), Quantity(3));
+        view.lot_freshness.insert(fresh, Freshness::Fresh);
+        view.lot_freshness.insert(stale, Freshness::Stale);
+        view.lot_freshness.insert(spoiled, Freshness::Spoiled);
+
+        assert_eq!(
+            restock_gap_for_market(&view, agent, market, CommodityKind::Apple),
+            Some(Quantity(3))
+        );
+        assert_eq!(
+            market_signal_for_place(&view, agent, CommodityKind::Apple, market),
+            Permille::new_unchecked(600)
+        );
+    }
+
+    #[test]
+    fn restock_gap_replaces_non_saleable_market_stock_without_demand_memory() {
+        let agent = entity(1);
+        let market = entity(2);
+        let stale = entity(3);
+        let mut view = TestBeliefView::default();
+        view.local_lots
+            .insert((agent, market, CommodityKind::Apple), vec![stale]);
+        view.lot_commodities.insert(stale, CommodityKind::Apple);
+        view.lot_quantities
+            .insert((stale, CommodityKind::Apple), Quantity(4));
+        view.lot_freshness.insert(stale, Freshness::Stale);
+
+        assert_eq!(
+            restock_gap_for_market(&view, agent, market, CommodityKind::Apple),
+            Some(Quantity(1))
+        );
+        assert_eq!(
+            restock_gap_at_destination(&view, agent, market, CommodityKind::Apple),
+            Some(Quantity(1))
         );
     }
 
