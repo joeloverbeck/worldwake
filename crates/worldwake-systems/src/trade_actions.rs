@@ -3639,7 +3639,9 @@ mod tests {
                     break;
                 }
                 TickOutcome::Continuing => {}
-                other => panic!("expected continuing or committed negotiation, got {other:?}"),
+                other @ TickOutcome::Aborted { .. } => {
+                    panic!("expected continuing or committed negotiation, got {other:?}")
+                }
             }
         }
 
