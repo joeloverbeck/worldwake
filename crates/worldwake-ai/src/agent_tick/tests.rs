@@ -7050,14 +7050,25 @@ fn read_phase_runs_opportunity_compiler_before_candidate_generation() {
     let place = harness.world.effective_place(harness.actor).unwrap();
     {
         let mut txn = new_txn(&mut harness.world, 2);
-        let bread = txn
-            .create_item_lot(CommodityKind::Bread, Quantity(1))
+        let apple = txn
+            .create_item_lot(CommodityKind::Apple, Quantity(1))
             .unwrap();
-        txn.set_ground_location(bread, place).unwrap();
+        txn.set_ground_location(apple, place).unwrap();
+        txn.set_component_homeostatic_needs(
+            harness.actor,
+            HomeostaticNeeds::new(
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+            ),
+        )
+        .unwrap();
         commit_txn(txn);
     }
     sync_all_beliefs(&mut harness.world, harness.actor, Tick(2));
-    let bread = harness
+    let apple = harness
         .world
         .get_component_agent_belief_store(harness.actor)
         .expect("actor should have a belief store")
@@ -7066,19 +7077,19 @@ fn read_phase_runs_opportunity_compiler_before_candidate_generation() {
         .find_map(|(entity, state)| {
             (state
                 .last_known_inventory
-                .contains_key(&CommodityKind::Bread)
+                .contains_key(&CommodityKind::Apple)
                 && harness.world.possessor_of(*entity).is_none())
             .then_some(*entity)
         })
-        .expect("harness should seed a believed bread lot");
+        .expect("harness should seed a believed apple lot");
     let goal = GoalKey::from(GoalKind::AcquireCommodity {
-        commodity: CommodityKind::Bread,
+        commodity: CommodityKind::Apple,
         purpose: CommodityPurpose::SelfConsume,
         quantity: AcquisitionQuantity::single(),
     });
     let opportunity = OpportunityKey {
         goal_key: goal,
-        anchor: OpportunityAnchor::Entity(bread),
+        anchor: OpportunityAnchor::Entity(apple),
     };
     let effect_schema_index = crate::EffectSchemaIndex {
         by_effect: BTreeMap::from([(
@@ -7087,7 +7098,7 @@ fn read_phase_runs_opportunity_compiler_before_candidate_generation() {
         )]),
         by_effect_op: BTreeMap::from([(
             crate::opportunity_compiler::EffectFactKey::CommodityTransfer,
-            BTreeSet::from([PlannerOpKind::MoveCargo]),
+            BTreeSet::from([PlannerOpKind::Trade]),
         )]),
     };
     let utility = UtilityProfile::default();

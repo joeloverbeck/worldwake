@@ -1052,7 +1052,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 - ActionDomains: Travel, Trade
 - Principles: P1, P3, P4
 
-**Proves**: after seller departure parks a buyer's concrete local bread purchase into pending, seller return revives the goal and the resumed purchase commits through the authoritative trade path at the live three-coin unit-purchase price instead of looping forever on `InsufficientPayment`.
+**Proves**: after seller departure parks a buyer's concrete local bread purchase into pending, seller return revives the goal and the resumed purchase commits through the authoritative trade path at the live one-coin unit-purchase price instead of looping forever on `InsufficientPayment`.
 
 ### Scenario 77: Unlisted Stock Not Sellable
 

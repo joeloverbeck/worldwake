@@ -915,7 +915,7 @@ fn seller_return_restores_displayed_listing_after_pending_revival() {
 // Principles: P1, P3, P4
 // Proves: after seller departure parks a buyer's concrete local bread purchase
 //         into pending, seller return revives the goal and the resumed purchase
-//         commits through the authoritative trade path at the live three-coin
+//         commits through the authoritative trade path at the live one-coin
 //         unit-purchase price instead of looping forever on
 //         `InsufficientPayment`.
 // ---------------------------------------------------------------------------
@@ -1049,8 +1049,8 @@ fn seller_return_completes_resumed_purchase_after_live_offer_refresh() {
     );
     assert_eq!(
         h.agent_commodity_qty(buyer, CommodityKind::Coin),
-        Quantity(0),
-        "buyer should spend the full three-coin unit-purchase price on the resumed purchase"
+        Quantity(2),
+        "buyer should spend one coin for the one-unit resumed purchase"
     );
 }
 

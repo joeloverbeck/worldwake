@@ -4901,7 +4901,7 @@ mod tests {
 
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
-        assert_eq!(ranked[0].motive_score, 567_000);
+        assert_eq!(ranked[0].motive_score, 623_000);
         match ranked[0]
             .provenance
             .as_ref()

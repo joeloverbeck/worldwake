@@ -23,7 +23,7 @@ Before this ticket, the `commodity_perish_profile: {}` opt-out in `scenarios/sur
 7. Live proof without the opt-out showed the theft branch still runs deterministically, but a 60-unit apple lot leaves the thief above critical hunger for 408 consecutive ticks against the authored 220-tick limit.
 8. The founded contract that landed here is a larger concrete local displayed apple lot: the merchant starts with 120 apples, has enough authored carry capacity to hold the starting stock, and the display container can stage that full lot. No harvestable food source, remote fallback, coin, hidden durable food, or production AI shortcut was added.
 9. The golden harness now asserts `ScenarioDef.commodity_perish_profile == None` and that the spawned world has an Apple perish profile, proving the scenario uses default S178 spoilage rather than an empty-map opt-out.
-10. `cargo test -p worldwake-ai` fails in seven library tests on both this worktree and a clean `HEAD` (`6d627d68`) baseline. That pre-existing broad-gate blocker is split to `tickets/AILIBBASE-001.md`.
+10. `cargo test -p worldwake-ai` failed in seven library tests on both this worktree and a clean `HEAD` (`6d627d68`) baseline. That pre-existing broad-gate blocker was split to `archive/tickets/AILIBBASE-001.md`.
 
 ## Architecture Check
 
@@ -52,7 +52,7 @@ Removed the scenario `commodity_perish_profile: {}` opt-out. Increased Merchant 
 - `scenarios/survival-theft.ron` — removed the spoilage opt-out; raised Merchant Sera's carry capacity and concrete Apple lot quantity to keep the theft-survival path founded under default spoilage.
 - `crates/worldwake-ai/tests/scenarios/survival_theft.rs` — updated expected stolen Apple quantity, asserted that the scenario uses the default perishable-food profile with Apple spoilage enabled, and refreshed generator-facing scenario metadata.
 - `docs/generated/golden-scenario-details/survival-theft.md`, `docs/generated/golden-scenario-index.md` — regenerated after the source metadata update so the published golden detail records the full spoilage-enabled contract.
-- `tickets/AILIBBASE-001.md` — follow-up for the pre-existing `cargo test -p worldwake-ai` library failures discovered during broad verification.
+- `archive/tickets/AILIBBASE-001.md` — follow-up for the pre-existing `cargo test -p worldwake-ai` library failures discovered during broad verification.
 
 ## Out of Scope
 
@@ -65,7 +65,7 @@ Removed the scenario `commodity_perish_profile: {}` opt-out. Increased Merchant 
 
 1. Focused golden coverage proves the selected theft-survival contract at the strongest relevant layer for this scenario.
 2. `cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 scenarios::survival_theft::` passed.
-3. `cargo test -p worldwake-ai` was run and failed on seven pre-existing clean-baseline library failures, now tracked by `tickets/AILIBBASE-001.md`.
+3. `cargo test -p worldwake-ai` was run and failed on seven pre-existing clean-baseline library failures, then tracked by `archive/tickets/AILIBBASE-001.md`.
 
 ### Invariants
 
@@ -92,13 +92,15 @@ The `survival-theft` scenario now runs under the default S178 perishable-food pr
 
 Post-ticket review found the generated survival-theft detail page was publishing truncated first-line `Setup`, `Proves`, and `Cross-system chain` metadata from wrapped source comments. That blocker was resolved by rewriting the source metadata as complete generator-facing first-line fields and rerunning the golden inventory generator.
 
+Outcome amended: 2026-06-02. The package-level AI blocker split out during this ticket was restored and archived as `archive/tickets/AILIBBASE-001.md`.
+
 ## Deviations
 
 - No production AI files changed. Reassessment showed candidate generation, ranking, and search already support the theft branch; the missing slice was the authored scenario contract under S178 spoilage.
-- `cargo test -p worldwake-ai` remains blocked by pre-existing clean-baseline library failures. Follow-up `tickets/AILIBBASE-001.md` owns restoring that broad package gate.
+- At completion time, `cargo test -p worldwake-ai` was blocked by pre-existing clean-baseline library failures. Follow-up `archive/tickets/AILIBBASE-001.md` later restored that broad package gate.
 
 ## Verification Result
 
 - Passed `cargo test --release -p worldwake-ai --test golden_ai -- --ignored --test-threads=1 scenarios::survival_theft::`
 - Passed `python3 scripts/golden_inventory.py --write --check-docs`
-- Waived `cargo test -p worldwake-ai` as completion proof for AGEFOOREP-003 because the same seven library failures reproduce on clean `HEAD` (`6d627d68`) without AGEFOOREP-003 edits; tracked by `tickets/AILIBBASE-001.md`.
+- Waived `cargo test -p worldwake-ai` as completion proof for AGEFOOREP-003 because the same seven library failures reproduced on clean `HEAD` (`6d627d68`) without AGEFOOREP-003 edits; later restored by `archive/tickets/AILIBBASE-001.md`.

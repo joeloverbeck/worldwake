@@ -24056,7 +24056,7 @@ mod tests {
             },
         );
         view.sources_at
-            .insert((place, CommodityKind::Bread), vec![workstation]);
+            .insert((place, CommodityKind::Apple), vec![workstation]);
         view.beliefs.insert(
             agent,
             vec![(

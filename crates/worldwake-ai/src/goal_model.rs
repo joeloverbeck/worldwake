@@ -1339,13 +1339,13 @@ impl GoalKindPlannerExt for GoalKind {
                 let home_place = home_place.unwrap();
                 let has_listed_stock =
                     !state.listed_sale_lots_at(home_place, *commodity).is_empty();
-                let has_saleable_local_stock = state
-                    .local_controlled_lots_for(actor, home_place, *commodity)
-                    .into_iter()
-                    .any(|lot| {
-                        matches!(state.lot_freshness_band(lot), None | Some(Freshness::Fresh))
-                    });
-                has_listed_stock || !has_saleable_local_stock
+                let mut local_stock =
+                    state.local_controlled_lots_for(actor, home_place, *commodity);
+                let has_local_stock = !local_stock.is_empty();
+                let has_saleable_local_stock = local_stock.drain(..).any(|lot| {
+                    matches!(state.lot_freshness_band(lot), None | Some(Freshness::Fresh))
+                });
+                has_listed_stock || (has_local_stock && !has_saleable_local_stock)
             }
             GoalKind::RestockCommodity { commodity } => state
                 .merchandise_profile(actor)
