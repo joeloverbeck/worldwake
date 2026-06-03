@@ -1600,10 +1600,7 @@ fn emit_bounty_posting_candidates(
                 violation_id: _,
                 ..
             },
-            InstitutionalKnowledgeSource::RecordConsultation {
-                record,
-                entry_id: _,
-            },
+            InstitutionalKnowledgeSource::RecordConsultation { record, entry_id },
         ) = (belief.claim, belief.source)
         else {
             continue;
@@ -1640,6 +1637,22 @@ fn emit_bounty_posting_candidates(
             continue;
         }
         if theft.quantity == Quantity(0) {
+            continue;
+        }
+        if let Some(profile) = ctx.view.justice_disposition_profile(ctx.agent)
+            && let Some((PunishmentKind::Fine { .. }, _)) = candidate_punishment_for_case(
+                ctx.view,
+                ctx.agent,
+                &PunishmentCaseContext {
+                    accused,
+                    office,
+                    office_data: &office_data,
+                    accusation_entry: entry_id,
+                    theft,
+                },
+                profile.fine_severity.value(),
+            )
+        {
             continue;
         }
         let Some(reward_source) = ctx
@@ -17703,6 +17716,116 @@ mod tests {
                 },
             }
         ));
+    }
+
+    #[test]
+    fn posting_candidates_defer_bounty_when_same_case_fine_is_lawful() {
+        let agent = entity(1);
+        let accused = entity(2);
+        let office = entity(3);
+        let record = entity(4);
+        let seat = entity(10);
+        let faction = entity(11);
+        let violation_id = worldwake_core::ViolationId(12);
+        let accusation_entry = RecordEntryId(21);
+        let theft = TheftFacts {
+            missing_entity: entity(20),
+            expected_place: seat,
+            commodity: CommodityKind::Bread,
+            quantity: Quantity(6),
+        };
+        let claim = InstitutionalClaim::Accusation {
+            accuser: entity(9),
+            accused,
+            violation_id,
+            theft,
+            effective_tick: Tick(3),
+        };
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, accused]);
+        view.effective_places.insert(agent, seat);
+        view.effective_places.insert(accused, seat);
+        view.utility_profiles.insert(
+            agent,
+            UtilityProfile {
+                bounty_posting_weight: pm(700),
+                ..UtilityProfile::default()
+            },
+        );
+        view.justice_disposition_profiles
+            .insert(agent, default_justice_profile());
+        view.artifact_posting_profiles
+            .insert(agent, ArtifactPostingProfile::default());
+        view.office_data
+            .insert(office, vacant_office("Magistrate", seat, faction));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
+        view.record_data.insert(
+            record,
+            crime_register_record(office, seat, accusation_entry, claim),
+        );
+        view.institutional_claims.insert(
+            (
+                agent,
+                InstitutionalBeliefKey::CrimeCase {
+                    accused,
+                    violation_id,
+                },
+            ),
+            vec![BelievedInstitutionalClaim {
+                claim,
+                source: InstitutionalKnowledgeSource::RecordConsultation {
+                    record,
+                    entry_id: accusation_entry,
+                },
+                learned_tick: Tick(4),
+                learned_at: Some(seat),
+            }],
+        );
+        view.believed_rights.insert(
+            (agent, accused),
+            vec![EffectiveRight {
+                kind: RightKind::JurisdictionalAuthority,
+                via: Some(office),
+            }],
+        );
+        view.commodity_quantities
+            .insert((accused, CommodityKind::Bread), Quantity(6));
+        seed_local_controlled_coin(&mut view, agent, seat, entity(30), Quantity(6));
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert!(
+            result.candidates.iter().any(|candidate| matches!(
+                candidate.key.kind,
+                GoalKind::PunishAccused {
+                    accused: goal_accused,
+                    punishment: worldwake_core::PunishmentKind::Fine {
+                        commodity: CommodityKind::Bread,
+                        amount: Quantity(3),
+                    },
+                    ..
+                } if goal_accused == accused
+            )),
+            "fine should remain available for the local accusation case",
+        );
+        assert!(
+            !result
+                .candidates
+                .iter()
+                .any(|candidate| matches!(candidate.key.kind, GoalKind::PostBounty { .. })),
+            "bounty posting should wait while the same accusation case has a lawful fine",
+        );
     }
 
     #[test]

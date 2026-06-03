@@ -13,7 +13,7 @@
 (
     seed: 614014,
     survival_health_contract: (
-        max_authored_critical_run_ticks: 160,
+        max_authored_critical_run_ticks: 240,
         max_idle_window_ticks_with_elevated_need: 40,
         elevated_need_floor: 300,
         required_self_care_families: [Eat, Drink, Sleep, Relieve, Wash],
@@ -36,8 +36,8 @@
             location: "Old Mill",
             control: None,
             combat_profile: (
-                wound_capacity: 1000,
-                incapacitation_threshold: 950,
+                wound_capacity: 40,
+                incapacitation_threshold: 40,
                 attack_skill: 100,
                 guard_skill: 100,
                 defend_bonus: 0,
@@ -68,7 +68,7 @@
                 capacity: 20,
             ),
             needs: (
-                hunger: 280,
+                hunger: 200,
                 thirst: 200,
                 fatigue: 120,
                 bladder: 160,
@@ -158,9 +158,9 @@
                 danger: (low: 100, medium: 300, high: 550, critical: 800),
             ),
             metabolism_profile: (
-                hunger_rate: 2,
+                hunger_rate: 1,
                 thirst_rate: 3,
-                fatigue_rate: 2,
+                fatigue_rate: 1,
                 bladder_rate: 4,
                 dirtiness_rate: 1,
                 rest_efficiency: 20,

@@ -1865,9 +1865,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Setup**: Rebuilds the Forager Lina Eldergrove Forest slice from cli-evaluation with local apples, water, orchard source, and seed 7777.
 
-**Proves**: The late-run window has no repeated 0-step FreeCarryCapacity loop and self-care resumes with a late eat commit.
+**Proves**: The late-run window has no repeated 0-step FreeCarryCapacity loop and hunger pressure keeps recovering.
 
-**Cross-system chain**: harvest/eat/waste accumulation -> carry strain from actual load -> no spurious FreeCarryCapacity loop -> self-care resumes.
+**Cross-system chain**: harvest/eat/waste accumulation -> carry strain from actual load -> no spurious FreeCarryCapacity loop -> hunger remains controlled.
 
 ### Scenario 167: Portfolio Rejects Infeasible Commitment After Sleep Blocker Suppression
 
